@@ -1,10 +1,17 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useColorScheme } from "nativewind";
+import {
+  ThemeProvider,
+  DarkTheme,
+  DefaultTheme,
+} from "@react-navigation/native";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { UserDatabaseProvider } from "@/db/user-provider";
+import { loadTheme, applyTheme } from "@/lib/theme";
 import "../global.css";
 
 export { ErrorBoundary } from "expo-router";
@@ -57,30 +64,43 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
+  const [themeReady, setThemeReady] = useState(false);
+  const { colorScheme } = useColorScheme();
+
+  useEffect(() => {
+    loadTheme().then((pref) => {
+      applyTheme(pref);
+      setThemeReady(true);
+    });
+  }, []);
 
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && themeReady) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, themeReady]);
 
-  if (!loaded) return null;
+  if (!loaded || !themeReady) return null;
+
+  const navTheme = colorScheme === "dark" ? DarkTheme : DefaultTheme;
 
   return (
-    <AuthProvider>
-      <AuthGate>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="word/[id]"
-            options={{ title: "Word Detail", headerBackTitle: "Back" }}
-          />
-        </Stack>
-      </AuthGate>
-    </AuthProvider>
+    <ThemeProvider value={navTheme}>
+      <AuthProvider>
+        <AuthGate>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="word/[id]"
+              options={{ title: "Word Detail", headerBackTitle: "Back" }}
+            />
+          </Stack>
+        </AuthGate>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
