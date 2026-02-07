@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+package-lock.json
 
 # Expo
 .expo/
@@ -31,6 +32,7 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
@@ -39,3 +41,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Dictionary build cache
+.cache/
+
+# Dictionary database (built from source data, large binary)
+# Run `yarn build:db` to regenerate
+assets/dictionary.db
