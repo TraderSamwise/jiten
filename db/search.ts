@@ -69,25 +69,37 @@ function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean 
 
 // ─── Gloss matching ───
 
-function computeGlossBonus(glosses: string, query: string, senseIndex: number): number {
+function computeGlossBonus(glosses: string, query: string, senseIndex: number, isCommon: boolean): number {
   const senseBonus = senseIndex === 0 ? 3000 : 1000;
+  const exactBonus = isCommon ? 5000 : 0;
   try {
     const parsed = JSON.parse(glosses) as { lang: string; text: string }[];
+    let best = 0;
+    let gi = 0;
     for (const g of parsed) {
       if (g.lang !== "eng") continue;
       const gl = g.text.toLowerCase();
-      if (
-        gl === query ||
+      const isExact = gl === query || gl === "to " + query;
+      const isAnnotated =
+        !isExact &&
+        (gl.startsWith(query + " (") ||
+          gl.startsWith(query + "(") ||
+          gl.startsWith("to " + query + " (") ||
+          gl.startsWith("to " + query + "("));
+      if (isExact || isAnnotated) {
+        const posFactor = gi === 0 ? 1.0 : 0.5;
+        best = Math.max(best, senseBonus + Math.floor(exactBonus * posFactor));
+      } else if (
         gl.startsWith(query + " ") ||
-        gl.startsWith(query + "(") ||
         gl.startsWith(query + ",") ||
-        gl === "to " + query ||
         gl.startsWith("to " + query + " ") ||
-        gl.startsWith("to " + query + "(")
+        gl.startsWith("to " + query + ",")
       ) {
-        return senseBonus;
+        best = Math.max(best, senseBonus);
       }
+      gi++;
     }
+    return best;
   } catch {}
   return 0;
 }
@@ -105,8 +117,8 @@ async function searchJapanese(
   const matchRows = await db.getAllAsync<{ entry_id: number }>(
     `SELECT DISTINCT entry_id FROM kanji WHERE text LIKE ?
      UNION
-     SELECT DISTINCT entry_id FROM kana WHERE text LIKE ?`,
-    [`${input}%`, `${hiragana}%`]
+     SELECT DISTINCT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?`,
+    [`${input}%`, `${hiragana}%`, `${input}%`]
   );
 
   if (matchRows.length === 0) return [];
@@ -127,8 +139,8 @@ async function searchJapanese(
       [input]
     ),
     db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM kana WHERE text = ?`,
-      [hiragana]
+      `SELECT entry_id FROM kana WHERE text = ? OR text = ?`,
+      [hiragana, input]
     ),
   ]);
   const exactSet = new Set([
@@ -199,11 +211,29 @@ async function searchRomaji(
     };
   });
 
+  // Sense count tiebreaker: words with more senses are more common/fundamental
+  const exactIds = results.filter((r) => r.score >= 9000).map((r) => r.entryId);
+  if (exactIds.length > 1) {
+    const ph = exactIds.map(() => "?").join(",");
+    const senseCounts = await db.getAllAsync<{ entry_id: number; c: number }>(
+      `SELECT entry_id, COUNT(*) as c FROM senses WHERE entry_id IN (${ph}) GROUP BY entry_id`,
+      exactIds
+    );
+    const countMap = new Map(senseCounts.map((r) => [r.entry_id, r.c]));
+    for (const r of results) {
+      if (r.score >= 9000) {
+        r.score += Math.min((countMap.get(r.entryId) ?? 0) * 2, 20);
+      }
+    }
+  }
+
   results.sort((a, b) => b.score - a.score);
   return results.slice(0, limit);
 }
 
-async function searchEnglish(
+let fts5Available: boolean | null = null;
+
+async function searchEnglishFts(
   db: SQLite.SQLiteDatabase,
   input: string,
   limit: number
@@ -221,21 +251,49 @@ async function searchEnglish(
      WHERE glosses_fts MATCH ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`"${ftsQuery}"*`, limit]
+    [`"${ftsQuery}"*`, limit * 4]
   );
 
-  // Compute gloss bonus for each result, weighted by sense position
+  return applyGlossBonus(db, ftsRows, input);
+}
+
+async function searchEnglishLike(
+  db: SQLite.SQLiteDatabase,
+  input: string,
+  limit: number
+): Promise<ScoredEntry[]> {
+  const lowerQuery = input.toLowerCase().replace(/%/g, "").replace(/_/g, "");
+  if (!lowerQuery) return [];
+
+  const rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+    `SELECT DISTINCT s.entry_id, e.priority, e.common
+     FROM senses s
+     JOIN entries e ON s.entry_id = e.id
+     WHERE s.glosses LIKE ?
+     ORDER BY e.priority + (e.common * 50) DESC
+     LIMIT ?`,
+    [`%${lowerQuery}%`, limit * 4]
+  );
+
+  return applyGlossBonus(db, rows, input);
+}
+
+async function applyGlossBonus(
+  db: SQLite.SQLiteDatabase,
+  rows: { entry_id: number; priority: number; common: number }[],
+  input: string
+): Promise<ScoredEntry[]> {
   const lowerQuery = input.toLowerCase();
   const results: ScoredEntry[] = [];
 
-  for (const r of ftsRows) {
+  for (const r of rows) {
     let bonus = 0;
     const senseRows = await db.getAllAsync<{ glosses: string }>(
       `SELECT glosses FROM senses WHERE entry_id = ?`,
       [r.entry_id]
     );
     for (let si = 0; si < senseRows.length; si++) {
-      const b = computeGlossBonus(senseRows[si].glosses, lowerQuery, si);
+      const b = computeGlossBonus(senseRows[si].glosses, lowerQuery, si, !!r.common);
       bonus = Math.max(bonus, b);
     }
     results.push({
@@ -245,6 +303,29 @@ async function searchEnglish(
   }
 
   return results;
+}
+
+async function searchEnglish(
+  db: SQLite.SQLiteDatabase,
+  input: string,
+  limit: number
+): Promise<ScoredEntry[]> {
+  if (fts5Available === false) {
+    return searchEnglishLike(db, input, limit);
+  }
+
+  try {
+    const results = await searchEnglishFts(db, input, limit);
+    fts5Available = true;
+    return results;
+  } catch (e) {
+    if (fts5Available === null && String(e).includes("fts5")) {
+      console.warn("FTS5 not available, falling back to LIKE-based English search");
+      fts5Available = false;
+      return searchEnglishLike(db, input, limit);
+    }
+    throw e;
+  }
 }
 
 // ─── Helpers ───
