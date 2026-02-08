@@ -96,8 +96,6 @@ async function downloadWeb(
   manifest: DictManifest,
   onProgress?: (progress: number) => void
 ): Promise<void> {
-  const SQLite = await import("expo-sqlite");
-
   const res = await fetch(manifest.url);
   if (!res.ok) throw new Error(`Download failed: ${res.status}`);
 
@@ -105,7 +103,7 @@ async function downloadWeb(
   if (!reader) throw new Error("ReadableStream not supported");
 
   const contentLength = manifest.sizeBytes;
-  const chunks: BlobPart[] = [];
+  const chunks: Uint8Array[] = [];
   let received = 0;
 
   while (true) {
@@ -116,17 +114,12 @@ async function downloadWeb(
     onProgress?.(contentLength > 0 ? received / contentLength : 0);
   }
 
+  // Write directly to OPFS where expo-sqlite (wa-sqlite) stores databases
   const blob = new Blob(chunks);
-  const blobUrl = URL.createObjectURL(blob);
-
-  try {
-    // Import the downloaded DB into expo-sqlite's OPFS storage
-    await (SQLite as any).importAssetDatabaseAsync(
-      `./${DB_NAME}`,
-      blobUrl,
-      true
-    );
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
+  const arrayBuffer = await blob.arrayBuffer();
+  const root = await navigator.storage.getDirectory();
+  const fileHandle = await root.getFileHandle(DB_NAME, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(arrayBuffer);
+  await writable.close();
 }

@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:db": "npx tsx scripts/build-dictionary.ts"
+    "build:db": "npx tsx scripts/build-dictionary.ts",
+    "serve:dict": "npx tsx scripts/serve-dict.ts"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.22",

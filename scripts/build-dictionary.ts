@@ -318,9 +318,12 @@ async function main() {
 
   // Write manifest JSON for on-demand download
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
+  const dbUrl = process.env.DICT_CDN_URL
+    ? `${process.env.DICT_CDN_URL}/dictionary-v1.db`
+    : "http://localhost:3001/dictionary.db";
   const manifest = {
     version: 1,
-    url: "https://your-cdn.com/dictionary-v1.db",
+    url: dbUrl,
     sizeBytes: stats.size,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
