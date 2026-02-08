@@ -14,9 +14,8 @@ const UserDbContext = createContext<UserDbContextType>({
   isReady: false,
 });
 
-export function useUserDb(): WrappedUserDb {
+export function useUserDb(): WrappedUserDb | null {
   const { userDb } = useContext(UserDbContext);
-  if (!userDb) throw new Error("User database not ready");
   return userDb;
 }
 

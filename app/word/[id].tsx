@@ -30,13 +30,14 @@ export default function WordDetailScreen() {
   }, [dictDb, isReady, id]);
 
   useEffect(() => {
+    if (!userDb) return;
     userDb
       .getAllAsync<WordList>("SELECT * FROM lists ORDER BY name")
       .then(setLists);
-  }, []);
+  }, [userDb]);
 
   async function addToList(listId: string) {
-    if (!entry) return;
+    if (!entry || !userDb) return;
     const now = new Date().toISOString();
     const entryExists = await userDb.getFirstAsync<{ id: string }>(
       "SELECT id FROM list_entries WHERE list_id = ? AND entry_id = ?",

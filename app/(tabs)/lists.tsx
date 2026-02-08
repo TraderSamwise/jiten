@@ -19,10 +19,12 @@ export default function ListsScreen() {
   const [newName, setNewName] = useState("");
 
   useEffect(() => {
+    if (!userDb) return;
     loadLists();
-  }, []);
+  }, [userDb]);
 
   async function loadLists() {
+    if (!userDb) return;
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
@@ -32,7 +34,7 @@ export default function ListsScreen() {
   }
 
   async function handleCreateList() {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !userDb) return;
     const now = new Date().toISOString();
     const list: WordList = {
       id: generateId(),
@@ -60,6 +62,7 @@ export default function ListsScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            if (!userDb) return;
             await userDb.runAsync("DELETE FROM lists WHERE id = ?", [id]);
             removeList(id);
           },

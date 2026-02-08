@@ -10,8 +10,8 @@ const UserDbContext = createContext<UserDbContextType>({
   isReady: true,
 });
 
-export function useUserDb(): never {
-  throw new Error("User database not available on web");
+export function useUserDb(): null {
+  return null;
 }
 
 export function UserDatabaseProvider({

@@ -20,11 +20,12 @@ export default function FlashcardsScreen() {
   const [sessionDone, setSessionDone] = useState(false);
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || !userDb) return;
     loadDueCards();
-  }, [isReady]);
+  }, [isReady, userDb]);
 
   async function loadDueCards() {
+    if (!userDb) return;
     const rows = await userDb.getAllAsync<SrsCardRow>(
       "SELECT * FROM srs_cards WHERE due <= ? ORDER BY due ASC",
       [new Date().toISOString()]
@@ -75,6 +76,7 @@ export default function FlashcardsScreen() {
     const updated = result.card;
     const now = new Date().toISOString();
 
+    if (!userDb) return;
     await userDb.runAsync(
       `UPDATE srs_cards SET
         due = ?, stability = ?, difficulty = ?,
