@@ -1,87 +1,61 @@
-import React, { useEffect, useState } from "react";
-import { View, ScrollView, Alert } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import { View, ScrollView, Pressable } from "react-native";
+import { useLocalSearchParams, useNavigation } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { PitchAccent } from "@/components/PitchAccent";
+import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntry } from "@/db/search";
-import { createNewCard } from "@/stores/srs";
-import type { DictEntry, WordList } from "@/db/types";
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
+import { Bookmark } from "@/lib/icons";
+import type { DictEntry } from "@/db/types";
 
 export default function WordDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { dictDb, isReady } = useDatabase();
   const userDb = useUserDb();
+  const navigation = useNavigation();
   const [entry, setEntry] = useState<DictEntry | null>(null);
-  const [lists, setLists] = useState<WordList[]>([]);
+  const [popoverVisible, setPopoverVisible] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   useEffect(() => {
     if (!dictDb || !isReady || !id) return;
     getEntry(dictDb, Number(id)).then(setEntry);
   }, [dictDb, isReady, id]);
 
+  const checkBookmarked = useCallback(async () => {
+    if (!userDb || !id) return;
+    const row = await userDb.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ?",
+      [Number(id)]
+    );
+    setIsBookmarked((row?.count ?? 0) > 0);
+  }, [userDb, id]);
+
   useEffect(() => {
-    if (!userDb) return;
-    userDb
-      .getAllAsync<WordList>("SELECT * FROM lists ORDER BY name")
-      .then(setLists);
-  }, [userDb]);
+    checkBookmarked();
+  }, [checkBookmarked]);
 
-  async function addToList(listId: string) {
-    if (!entry || !userDb) return;
-    const now = new Date().toISOString();
-    const entryExists = await userDb.getFirstAsync<{ id: string }>(
-      "SELECT id FROM list_entries WHERE list_id = ? AND entry_id = ?",
-      [listId, entry.id]
-    );
-    if (entryExists) {
-      Alert.alert(
-        "Already in list",
-        "This word is already in the selected list."
-      );
-      return;
-    }
-    await userDb.runAsync(
-      "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-      [generateId(), listId, entry.id, now]
-    );
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable onPress={() => setPopoverVisible(true)} className="mr-2">
+          <Bookmark
+            size={22}
+            fill={isBookmarked ? "currentColor" : "none"}
+            className="text-foreground"
+          />
+        </Pressable>
+      ),
+    });
+  }, [navigation, isBookmarked]);
 
-    const card = createNewCard();
-    const cardId = generateId();
-    await userDb.runAsync(
-      `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty,
-        elapsed_days, scheduled_days, reps, lapses, state, last_review,
-        front_mode, back_mode, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        cardId,
-        entry.id,
-        listId,
-        card.due.toISOString(),
-        card.stability,
-        card.difficulty,
-        card.elapsed_days,
-        card.scheduled_days,
-        card.reps,
-        card.lapses,
-        card.state,
-        card.last_review?.toISOString() ?? null,
-        "kanji",
-        "english",
-        now,
-        now,
-      ]
-    );
-
-    Alert.alert("Added", "Word added to list with a flashcard.");
+  function handlePopoverClose() {
+    setPopoverVisible(false);
+    checkBookmarked();
   }
 
   if (!entry) {
@@ -160,24 +134,11 @@ export default function WordDetailScreen() {
         ))}
       </Card>
 
-      {lists.length > 0 && (
-        <Card className="mb-4">
-          <Text className="text-sm font-semibold text-foreground mb-2">
-            Add to List
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            {lists.map((list) => (
-              <Button
-                key={list.id}
-                variant="outline"
-                size="sm"
-                label={list.name}
-                onPress={() => addToList(list.id)}
-              />
-            ))}
-          </View>
-        </Card>
-      )}
+      <BookmarkPopover
+        visible={popoverVisible}
+        onClose={handlePopoverClose}
+        entryId={Number(id)}
+      />
     </ScrollView>
   );
 }

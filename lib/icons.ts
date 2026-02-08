@@ -1,6 +1,7 @@
 export {
   Search,
   BookOpen,
+  Bookmark,
   GraduationCap,
   Settings,
   Plus,
