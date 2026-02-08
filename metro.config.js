@@ -3,7 +3,7 @@ const { withNativeWind } = require("nativewind/metro");
 
 const config = getDefaultConfig(__dirname);
 
-// Allow bundling .db files as assets
-config.resolver.assetExts.push("db");
+// expo-sqlite web support requires wa-sqlite WASM to be served as an asset
+config.resolver.assetExts.push("wasm");
 
 module.exports = withNativeWind(config, { input: "./global.css" });

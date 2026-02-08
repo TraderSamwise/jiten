@@ -10,6 +10,7 @@ import {
 } from "@react-navigation/native";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
+import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { UserDatabaseProvider } from "@/db/user-provider";
 import { loadTheme, applyTheme } from "@/lib/theme";
 import "../global.css";
@@ -53,9 +54,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <DatabaseProvider>
-      <UserDatabaseProvider userId={userId!}>
-        {children}
-      </UserDatabaseProvider>
+      <DictDownloadGate>
+        <UserDatabaseProvider userId={userId!}>
+          {children}
+        </UserDatabaseProvider>
+      </DictDownloadGate>
     </DatabaseProvider>
   );
 }

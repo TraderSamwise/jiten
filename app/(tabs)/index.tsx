@@ -9,7 +9,7 @@ import { searchDictionary } from "@/db/search";
 import type { DictEntry } from "@/db/types";
 
 export default function SearchScreen() {
-  const { dictDb, isReady, isWeb } = useDatabase();
+  const { dictDb, isReady } = useDatabase();
   const { query, results, isSearching, setQuery, setResults, setIsSearching } =
     useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,9 +90,7 @@ export default function SearchScreen() {
             <View className="items-center pt-10">
               <Text className="text-2xl">辞典</Text>
               <Text className="mt-2 text-muted-foreground">
-                {isWeb
-                  ? "Web preview mode — search requires native build"
-                  : "Type to search the dictionary"}
+                Type to search the dictionary
               </Text>
             </View>
           ) : null

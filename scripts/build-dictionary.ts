@@ -315,6 +315,16 @@ async function main() {
   console.log(
     `\nDone! Database: ${DB_PATH} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`
   );
+
+  // Write manifest JSON for on-demand download
+  const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
+  const manifest = {
+    version: 1,
+    url: "https://your-cdn.com/dictionary-v1.db",
+    sizeBytes: stats.size,
+  };
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  console.log(`Manifest: ${manifestPath}`);
 }
 
 main().catch((err) => {
