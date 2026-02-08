@@ -5,6 +5,7 @@ import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 export const entries = sqliteTable("entries", {
   id: integer("id").primaryKey(),
   common: integer("common", { mode: "boolean" }).notNull().default(false),
+  priority: integer("priority").notNull().default(0),
 });
 
 export const kanji = sqliteTable("kanji", {

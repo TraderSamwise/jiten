@@ -95,6 +95,27 @@ async function extractTgz(tgzPath: string, outDir: string): Promise<string> {
   return path.join(outDir, files[0]);
 }
 
+function computePriority(word: JMdictWord): number {
+  // jmdict-simplified strips frequency tags (ichi1, news1, nf01, etc.)
+  // and only exposes a boolean `common` flag. We approximate priority using
+  // common status + shortest form length (shorter common words are more basic).
+  const isCommon =
+    word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
+  if (!isCommon) return 0;
+
+  // Shortest kanji or kana form length (1-char kanji = highest priority)
+  const lengths = [
+    ...word.kanji.filter((k) => k.common).map((k) => k.text.length),
+    ...word.kana.filter((k) => k.common).map((k) => k.text.length),
+  ];
+  const minLen = Math.min(...lengths, 20);
+
+  // Common words get 50 base + length bonus (shorter = higher)
+  // 1 char → +30, 2 chars → +20, 3 chars → +15, 4+ chars → diminishing
+  const lengthBonus = Math.max(0, Math.round(30 / minLen));
+  return 50 + lengthBonus;
+}
+
 function loadPitchAccents(
   filePath: string
 ): Map<string, { reading: string; pitchNumber: number }[]> {
@@ -156,7 +177,8 @@ async function main() {
   db.exec(`
     CREATE TABLE entries (
       id INTEGER PRIMARY KEY,
-      common INTEGER NOT NULL DEFAULT 0
+      common INTEGER NOT NULL DEFAULT 0,
+      priority INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE kanji (
@@ -194,7 +216,7 @@ async function main() {
 
   // Prepare statements
   const insertEntry = db.prepare(
-    "INSERT INTO entries (id, common) VALUES (?, ?)"
+    "INSERT INTO entries (id, common, priority) VALUES (?, ?, ?)"
   );
   const insertKanji = db.prepare(
     "INSERT INTO kanji (entry_id, text, common) VALUES (?, ?, ?)"
@@ -218,8 +240,9 @@ async function main() {
       const entryId = parseInt(word.id, 10);
       const isCommon =
         word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
+      const priority = computePriority(word);
 
-      insertEntry.run(entryId, isCommon ? 1 : 0);
+      insertEntry.run(entryId, isCommon ? 1 : 0, priority);
 
       for (const k of word.kanji) {
         insertKanji.run(entryId, k.text, k.common ? 1 : 0);
@@ -286,6 +309,7 @@ async function main() {
     CREATE INDEX idx_senses_entry ON senses(entry_id);
     CREATE INDEX idx_pitch_entry ON pitch_accents(entry_id);
     CREATE INDEX idx_entries_common ON entries(common);
+    CREATE INDEX idx_entries_priority ON entries(priority);
   `);
 
   // Create FTS5 table for English gloss search
@@ -299,10 +323,11 @@ async function main() {
 
     INSERT INTO glosses_fts (glosses, entry_id)
     SELECT
-      GROUP_CONCAT(glosses, ' '),
-      entry_id
-    FROM senses
-    GROUP BY entry_id;
+      GROUP_CONCAT(json_extract(j.value, '$.text'), ' '),
+      s.entry_id
+    FROM senses s, json_each(s.glosses) j
+    WHERE json_extract(j.value, '$.lang') = 'eng'
+    GROUP BY s.entry_id;
   `);
 
   // Optimize

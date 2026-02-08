@@ -16,7 +16,7 @@ export interface DictManifest {
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
-const CURRENT_FORMAT = 3; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize
+const CURRENT_FORMAT = 4; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS
 const DB_NAME = "dictionary.db";
 
 const MANIFEST_URL =
