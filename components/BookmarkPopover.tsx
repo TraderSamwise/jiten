@@ -6,6 +6,7 @@ import { useUserDb } from "@/db/user-provider";
 import { useListsStore } from "@/stores/lists";
 import { createNewCard } from "@/stores/srs";
 import { Plus, Check, FolderOpen } from "@/lib/icons";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
@@ -26,6 +27,8 @@ export function BookmarkPopover({
   const insets = useSafeAreaInsets();
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
+  const addBookmark = useBookmarkStore((s) => s.add);
+  const removeBookmark = useBookmarkStore((s) => s.remove);
   const [lists, setLists] = useState<WordList[]>([]);
   const [membershipMap, setMembershipMap] = useState<Set<string>>(new Set());
   const [showNewList, setShowNewList] = useState(false);
@@ -63,11 +66,11 @@ export function BookmarkPopover({
         "DELETE FROM srs_cards WHERE entry_id = ? AND list_id = ?",
         [entryId, listId]
       );
-      setMembershipMap((prev) => {
-        const next = new Set(prev);
-        next.delete(listId);
-        return next;
-      });
+      const newMap = new Set(membershipMap);
+      newMap.delete(listId);
+      setMembershipMap(newMap);
+      // If no longer in any list, remove from global bookmark set
+      if (newMap.size === 0) removeBookmark(entryId);
     } else {
       await userDb.runAsync(
         "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
@@ -100,6 +103,7 @@ export function BookmarkPopover({
         ]
       );
       setMembershipMap((prev) => new Set(prev).add(listId));
+      addBookmark(entryId);
     }
   }
 

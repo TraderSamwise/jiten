@@ -1,7 +1,17 @@
+import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { Search, BookOpen, GraduationCap, Settings } from "lucide-react-native";
+import { useUserDb } from "@/db/user-provider";
+import { useBookmarkStore } from "@/stores/bookmarks";
 
 export default function TabLayout() {
+  const userDb = useUserDb();
+  const loadBookmarks = useBookmarkStore((s) => s.load);
+
+  useEffect(() => {
+    if (userDb) loadBookmarks(userDb);
+  }, [userDb]);
+
   return (
     <Tabs
       screenOptions={{

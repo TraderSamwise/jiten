@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { Badge } from "@/components/ui/badge";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
 
 interface EntryCardProps {
@@ -12,6 +13,7 @@ interface EntryCardProps {
 
 export function EntryCard({ entry }: EntryCardProps) {
   const router = useRouter();
+  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(entry.id));
   const primaryKanji = entry.kanji[0]?.text;
   const primaryKana = entry.kana[0]?.text;
   const primaryGloss = entry.senses[0]?.glosses
@@ -22,7 +24,11 @@ export function EntryCard({ entry }: EntryCardProps) {
 
   return (
     <PressableCard
-      className="mb-2"
+      className={
+        isBookmarked
+          ? "mb-2 border-l-4 border-l-primary bg-primary/5"
+          : "mb-2"
+      }
       onPress={() => router.push(`/dictionary/word/${entry.id}`)}
     >
       <View className="flex-row items-baseline gap-3">

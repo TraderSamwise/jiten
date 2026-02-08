@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { Text } from "@/components/ui/text";
@@ -7,38 +7,26 @@ import { Badge } from "@/components/ui/badge";
 import { PitchAccent } from "@/components/PitchAccent";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { useDatabase } from "@/db/provider";
-import { useUserDb } from "@/db/user-provider";
 import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
 import { shouldDeEmphasize, getTagLabel } from "@/lib/tags";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
 
 export default function WordDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { dictDb, isReady } = useDatabase();
-  const userDb = useUserDb();
   const navigation = useNavigation();
   const [entry, setEntry] = useState<DictEntry | null>(null);
   const [popoverVisible, setPopoverVisible] = useState(false);
-  const [isBookmarked, setIsBookmarked] = useState(false);
+  const isBookmarked = useBookmarkStore((s) =>
+    s.bookmarkedIds.has(Number(id))
+  );
 
   useEffect(() => {
     if (!dictDb || !isReady || !id) return;
     getEntry(dictDb, Number(id)).then(setEntry);
   }, [dictDb, isReady, id]);
-
-  const checkBookmarked = useCallback(async () => {
-    if (!userDb || !id) return;
-    const row = await userDb.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ?",
-      [Number(id)]
-    );
-    setIsBookmarked((row?.count ?? 0) > 0);
-  }, [userDb, id]);
-
-  useEffect(() => {
-    checkBookmarked();
-  }, [checkBookmarked]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -54,11 +42,6 @@ export default function WordDetailScreen() {
     });
   }, [navigation, isBookmarked]);
 
-  function handlePopoverClose() {
-    setPopoverVisible(false);
-    checkBookmarked();
-  }
-
   if (!entry) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -72,7 +55,13 @@ export default function WordDetailScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={{ padding: 16 }}
     >
-      <View className="mb-4">
+      <View
+        className={
+          isBookmarked
+            ? "mb-4 rounded-lg border-l-4 border-primary bg-primary/5 pl-3 py-2"
+            : "mb-4"
+        }
+      >
         {entry.kanji.map((k, i) => {
           const muted = shouldDeEmphasize(k.tags);
           return (
@@ -170,7 +159,7 @@ export default function WordDetailScreen() {
 
       <BookmarkPopover
         visible={popoverVisible}
-        onClose={handlePopoverClose}
+        onClose={() => setPopoverVisible(false)}
         entryId={Number(id)}
       />
     </ScrollView>
