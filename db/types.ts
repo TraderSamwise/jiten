@@ -10,12 +10,14 @@ export interface DictEntry {
 export interface DictKanji {
   text: string;
   common: boolean;
+  tags: string[];
 }
 
 export interface DictKana {
   text: string;
   romaji: string | null;
   common: boolean;
+  tags: string[];
 }
 
 export interface DictSense {

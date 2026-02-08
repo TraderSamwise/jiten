@@ -10,6 +10,7 @@ import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
+import { shouldDeEmphasize, getTagLabel } from "@/lib/tags";
 import type { DictEntry } from "@/db/types";
 
 export default function WordDetailScreen() {
@@ -72,27 +73,60 @@ export default function WordDetailScreen() {
       contentContainerStyle={{ padding: 16 }}
     >
       <View className="mb-4">
-        {entry.kanji.map((k, i) => (
-          <View key={i} className="flex-row items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">{k.text}</Text>
-            {k.common && <Badge variant="common" label="common" />}
-          </View>
-        ))}
+        {entry.kanji.map((k, i) => {
+          const muted = shouldDeEmphasize(k.tags);
+          return (
+            <View key={i} className="flex-row items-center gap-2">
+              <Text
+                className={
+                  muted
+                    ? "text-2xl text-muted-foreground"
+                    : "text-4xl font-bold text-foreground"
+                }
+              >
+                {k.text}
+              </Text>
+              {k.common && <Badge variant="common" label="common" />}
+              {k.tags.map((t, j) => (
+                <Badge key={j} variant="outline" label={getTagLabel(t)} />
+              ))}
+            </View>
+          );
+        })}
         <View className="flex-wrap gap-2 mt-2">
           {entry.kana.map((k, i) => {
+            const muted = shouldDeEmphasize(k.tags);
             const accents = entry.pitchAccents.filter(
               (pa) => pa.reading === k.text
             );
             return (
               <View key={i} className="flex-row items-center gap-1 flex-wrap">
-                <Text className="text-xl text-muted-foreground">{k.text}</Text>
+                <Text
+                  className={
+                    muted
+                      ? "text-base text-muted-foreground/50"
+                      : "text-xl text-muted-foreground"
+                  }
+                >
+                  {k.text}
+                </Text>
                 {k.romaji && (
-                  <Text className="text-sm text-muted-foreground">
+                  <Text
+                    className={
+                      muted
+                        ? "text-xs text-muted-foreground/50"
+                        : "text-sm text-muted-foreground"
+                    }
+                  >
                     ({k.romaji})
                   </Text>
                 )}
-                {accents.map((pa, j) => (
-                  <PitchAccent key={j} accent={pa} />
+                {!muted &&
+                  accents.map((pa, j) => (
+                    <PitchAccent key={j} accent={pa} />
+                  ))}
+                {k.tags.map((t, j) => (
+                  <Badge key={j} variant="outline" label={getTagLabel(t)} />
                 ))}
               </View>
             );

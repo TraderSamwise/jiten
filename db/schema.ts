@@ -15,6 +15,7 @@ export const kanji = sqliteTable("kanji", {
     .references(() => entries.id),
   text: text("text").notNull(),
   common: integer("common", { mode: "boolean" }).notNull().default(false),
+  tags: text("tags"), // JSON array of tag codes e.g. ["oK","rK"]
 });
 
 export const kana = sqliteTable("kana", {
@@ -25,6 +26,7 @@ export const kana = sqliteTable("kana", {
   text: text("text").notNull(),
   romaji: text("romaji"),
   common: integer("common", { mode: "boolean" }).notNull().default(false),
+  tags: text("tags"), // JSON array of tag codes e.g. ["ok","ik"]
 });
 
 export const senses = sqliteTable("senses", {

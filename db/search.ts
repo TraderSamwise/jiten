@@ -14,6 +14,7 @@ interface RawKanjiRow {
   entry_id: number;
   text: string;
   common: number;
+  tags: string | null;
 }
 
 interface RawKanaRow {
@@ -21,6 +22,7 @@ interface RawKanaRow {
   text: string;
   romaji: string | null;
   common: number;
+  tags: string | null;
 }
 
 interface RawSenseRow {
@@ -341,6 +343,15 @@ function parseGlosses(raw: string): Gloss[] {
   }
 }
 
+function parseTags(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
 function parsePOS(raw: string | null): string[] {
   if (!raw) return [];
   try {
@@ -361,14 +372,14 @@ function assembleEntries(
   const kanjiMap = new Map<number, DictKanji[]>();
   for (const r of kanjiRows) {
     const arr = kanjiMap.get(r.entry_id) ?? [];
-    arr.push({ text: r.text, common: !!r.common });
+    arr.push({ text: r.text, common: !!r.common, tags: parseTags(r.tags) });
     kanjiMap.set(r.entry_id, arr);
   }
 
   const kanaMap = new Map<number, DictKana[]>();
   for (const r of kanaRows) {
     const arr = kanaMap.get(r.entry_id) ?? [];
-    arr.push({ text: r.text, romaji: r.romaji, common: !!r.common });
+    arr.push({ text: r.text, romaji: r.romaji, common: !!r.common, tags: parseTags(r.tags) });
     kanaMap.set(r.entry_id, arr);
   }
 
@@ -456,11 +467,11 @@ export async function searchDictionary(
       entryIds
     ),
     db.getAllAsync<RawKanjiRow>(
-      `SELECT entry_id, text, common FROM kanji WHERE entry_id IN (${placeholders})`,
+      `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
       entryIds
     ),
     db.getAllAsync<RawKanaRow>(
-      `SELECT entry_id, text, romaji, common FROM kana WHERE entry_id IN (${placeholders})`,
+      `SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id IN (${placeholders})`,
       entryIds
     ),
     db.getAllAsync<RawSenseRow>(
@@ -492,11 +503,11 @@ export async function getEntry(
 
   const [kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
     db.getAllAsync<RawKanjiRow>(
-      "SELECT entry_id, text, common FROM kanji WHERE entry_id = ?",
+      "SELECT entry_id, text, common, tags FROM kanji WHERE entry_id = ?",
       [entryId]
     ),
     db.getAllAsync<RawKanaRow>(
-      "SELECT entry_id, text, romaji, common FROM kana WHERE entry_id = ?",
+      "SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id = ?",
       [entryId]
     ),
     db.getAllAsync<RawSenseRow>(

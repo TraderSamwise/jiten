@@ -185,7 +185,8 @@ async function main() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry_id INTEGER NOT NULL REFERENCES entries(id),
       text TEXT NOT NULL,
-      common INTEGER NOT NULL DEFAULT 0
+      common INTEGER NOT NULL DEFAULT 0,
+      tags TEXT
     );
 
     CREATE TABLE kana (
@@ -193,7 +194,8 @@ async function main() {
       entry_id INTEGER NOT NULL REFERENCES entries(id),
       text TEXT NOT NULL,
       romaji TEXT,
-      common INTEGER NOT NULL DEFAULT 0
+      common INTEGER NOT NULL DEFAULT 0,
+      tags TEXT
     );
 
     CREATE TABLE senses (
@@ -219,10 +221,10 @@ async function main() {
     "INSERT INTO entries (id, common, priority) VALUES (?, ?, ?)"
   );
   const insertKanji = db.prepare(
-    "INSERT INTO kanji (entry_id, text, common) VALUES (?, ?, ?)"
+    "INSERT INTO kanji (entry_id, text, common, tags) VALUES (?, ?, ?, ?)"
   );
   const insertKana = db.prepare(
-    "INSERT INTO kana (entry_id, text, romaji, common) VALUES (?, ?, ?, ?)"
+    "INSERT INTO kana (entry_id, text, romaji, common, tags) VALUES (?, ?, ?, ?, ?)"
   );
   const insertSense = db.prepare(
     "INSERT INTO senses (entry_id, part_of_speech, glosses, field, misc, info) VALUES (?, ?, ?, ?, ?, ?)"
@@ -245,12 +247,14 @@ async function main() {
       insertEntry.run(entryId, isCommon ? 1 : 0, priority);
 
       for (const k of word.kanji) {
-        insertKanji.run(entryId, k.text, k.common ? 1 : 0);
+        const tags = k.tags.length > 0 ? JSON.stringify(k.tags) : null;
+        insertKanji.run(entryId, k.text, k.common ? 1 : 0, tags);
       }
 
       for (const k of word.kana) {
         const romaji = toRomaji(k.text);
-        insertKana.run(entryId, k.text, romaji, k.common ? 1 : 0);
+        const tags = k.tags.length > 0 ? JSON.stringify(k.tags) : null;
+        insertKana.run(entryId, k.text, romaji, k.common ? 1 : 0, tags);
       }
 
       for (const s of word.sense) {
