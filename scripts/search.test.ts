@@ -154,28 +154,11 @@ function searchRomaji(db: Database.Database, input: string, limit: number): Scor
   return results.slice(0, limit);
 }
 
-function searchEnglish(db: Database.Database, input: string, limit: number): ScoredEntry[] {
-  const ftsQuery = input
-    .replace(/['"]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!ftsQuery) return [];
-
-  const rows = db
-    .prepare(
-      `SELECT fts.entry_id, e.priority, e.common
-       FROM glosses_fts fts
-       JOIN entries e ON fts.entry_id = e.id
-       WHERE glosses_fts MATCH ?
-       ORDER BY e.priority + (e.common * 50) DESC
-       LIMIT ?`
-    )
-    .all(`"${ftsQuery}"*`, limit * 4) as {
-    entry_id: number;
-    priority: number;
-    common: number;
-  }[];
-
+function applyGlossBonus(
+  db: Database.Database,
+  rows: { entry_id: number; priority: number; common: number }[],
+  input: string
+): ScoredEntry[] {
   const lowerQuery = input.toLowerCase();
   return rows.map((r) => {
     let bonus = 0;
@@ -218,6 +201,64 @@ function searchEnglish(db: Database.Database, input: string, limit: number): Sco
       score: 2000 + r.priority + r.common * 50 + bonus,
     };
   });
+}
+
+function searchEnglishFts(db: Database.Database, input: string, limit: number): ScoredEntry[] {
+  const ftsQuery = input
+    .replace(/['"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!ftsQuery) return [];
+
+  const rows = db
+    .prepare(
+      `SELECT fts.entry_id, e.priority, e.common
+       FROM glosses_fts fts
+       JOIN entries e ON fts.entry_id = e.id
+       WHERE glosses_fts MATCH ?
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`
+    )
+    .all(`"${ftsQuery}"*`, limit * 4) as {
+    entry_id: number;
+    priority: number;
+    common: number;
+  }[];
+
+  return applyGlossBonus(db, rows, input);
+}
+
+function searchEnglishLike(db: Database.Database, input: string, limit: number): ScoredEntry[] {
+  const lowerQuery = input.toLowerCase().replace(/%/g, "").replace(/_/g, "");
+  if (!lowerQuery) return [];
+
+  // Use word-boundary patterns to avoid substring noise
+  // '% query%' matches query preceded by space (word in a phrase)
+  // '%"query%' matches query at start of a JSON text value
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT s.entry_id, e.priority, e.common
+       FROM senses s
+       JOIN entries e ON s.entry_id = e.id
+       WHERE s.glosses LIKE ? OR s.glosses LIKE ?
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`
+    )
+    .all(`% ${lowerQuery}%`, `%"${lowerQuery}%`, limit * 4) as {
+    entry_id: number;
+    priority: number;
+    common: number;
+  }[];
+
+  return applyGlossBonus(db, rows, input);
+}
+
+let useLikeFallback = false;
+
+function searchEnglish(db: Database.Database, input: string, limit: number): ScoredEntry[] {
+  return useLikeFallback
+    ? searchEnglishLike(db, input, limit)
+    : searchEnglishFts(db, input, limit);
 }
 
 function searchDictionary(db: Database.Database, query: string, limit = 50): DictResult[] {
@@ -390,6 +431,15 @@ describe("classifyInput", () => {
     expect(r.hasJapanese).toBe(false);
   });
 });
+
+// ════════════════════════════════════════════════════════════
+// Run all search tests in both FTS5 and LIKE modes
+// ════════════════════════════════════════════════════════════
+
+describe.each(["FTS5", "LIKE"] as const)("Search [%s]", (mode) => {
+  beforeAll(() => {
+    useLikeFallback = mode === "LIKE";
+  });
 
 // ════════════════════════════════════════════════════════════
 // 2. Kanji search — exact match first (12 tests)
@@ -1050,3 +1100,5 @@ describe("Result structure", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+}); // end describe.each FTS5/LIKE

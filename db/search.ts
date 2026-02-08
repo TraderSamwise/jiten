@@ -265,14 +265,17 @@ async function searchEnglishLike(
   const lowerQuery = input.toLowerCase().replace(/%/g, "").replace(/_/g, "");
   if (!lowerQuery) return [];
 
+  // Use word-boundary patterns to avoid substring noise
+  // '% query%' matches query preceded by space (word in a phrase)
+  // '%"query%' matches query at start of a JSON text value
   const rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
     `SELECT DISTINCT s.entry_id, e.priority, e.common
      FROM senses s
      JOIN entries e ON s.entry_id = e.id
-     WHERE s.glosses LIKE ?
+     WHERE s.glosses LIKE ? OR s.glosses LIKE ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`%${lowerQuery}%`, limit * 4]
+    [`% ${lowerQuery}%`, `%"${lowerQuery}%`, limit * 4]
   );
 
   return applyGlossBonus(db, rows, input);
