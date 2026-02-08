@@ -1,13 +1,15 @@
 import { Stack } from "expo-router";
+import { DictionaryHeader } from "@/components/DictionaryHeader";
 
 export default function DictionaryLayout() {
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="word/[id]"
-        options={{ title: "Word Detail", headerBackTitle: "Search" }}
-      />
+    <Stack
+      screenOptions={{
+        header: (props) => <DictionaryHeader {...props} />,
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="word/[id]" />
     </Stack>
   );
 }

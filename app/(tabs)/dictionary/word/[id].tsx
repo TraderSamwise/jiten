@@ -42,7 +42,7 @@ export default function WordDetailScreen() {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => setPopoverVisible(true)} className="mr-2">
+        <Pressable onPress={() => setPopoverVisible(true)}>
           <Bookmark
             size={22}
             fill={isBookmarked ? "currentColor" : "none"}

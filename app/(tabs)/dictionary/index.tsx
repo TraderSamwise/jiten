@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
-import { Input } from "@/components/ui/input";
 import { EntryCard } from "@/components/EntryCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
@@ -11,10 +9,7 @@ import type { DictEntry } from "@/db/types";
 
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
-  const { q } = useLocalSearchParams<{ q?: string }>();
-  const router = useRouter();
-  const query = q ?? "";
-  const { results, isSearching, setResults, setIsSearching } =
+  const { query, results, isSearching, setResults, setIsSearching } =
     useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -43,13 +38,6 @@ export default function SearchScreen() {
     };
   }, [dictDb, isReady, query]);
 
-  const handleSearch = useCallback(
-    (text: string) => {
-      router.setParams({ q: text || undefined });
-    },
-    [router]
-  );
-
   const renderItem = useCallback(
     ({ item }: { item: DictEntry }) => <EntryCard entry={item} />,
     []
@@ -68,18 +56,6 @@ export default function SearchScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="px-4 pt-2 pb-2">
-        <Input
-          placeholder="Search Japanese or English..."
-          value={query}
-          onChangeText={handleSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-      </View>
-
       {isSearching && (
         <View className="px-4 py-2">
           <ActivityIndicator size="small" />
