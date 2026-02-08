@@ -37,7 +37,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!isSignedIn && !onAuthScreen) {
       router.replace("/sign-in");
     } else if (isSignedIn && onAuthScreen) {
-      router.replace("/");
+      router.replace("/dictionary");
     }
   }, [isSignedIn, isLoaded, segments]);
 
@@ -96,11 +96,8 @@ export default function RootLayout() {
       <AuthProvider>
         <AuthGate>
           <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="word/[id]"
-              options={{ title: "Word Detail", headerBackTitle: "Back" }}
-            />
           </Stack>
         </AuthGate>
       </AuthProvider>

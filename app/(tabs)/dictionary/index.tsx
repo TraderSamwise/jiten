@@ -1,5 +1,6 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { EntryCard } from "@/components/EntryCard";
@@ -10,34 +11,43 @@ import type { DictEntry } from "@/db/types";
 
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
-  const { query, results, isSearching, setQuery, setResults, setIsSearching } =
+  const { q } = useLocalSearchParams<{ q?: string }>();
+  const router = useRouter();
+  const query = q ?? "";
+  const { results, isSearching, setResults, setIsSearching } =
     useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (!dictDb || !isReady) return;
+
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const entries = await searchDictionary(dictDb, query);
+        setResults(entries);
+      } catch (err) {
+        console.error("Search error:", err);
+        setResults([]);
+      }
+    }, 200);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [dictDb, isReady, query]);
+
   const handleSearch = useCallback(
     (text: string) => {
-      setQuery(text);
-
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-
-      if (!text.trim()) {
-        setResults([]);
-        return;
-      }
-
-      setIsSearching(true);
-      debounceRef.current = setTimeout(async () => {
-        if (!dictDb) return;
-        try {
-          const entries = await searchDictionary(dictDb, text);
-          setResults(entries);
-        } catch (err) {
-          console.error("Search error:", err);
-          setResults([]);
-        }
-      }, 200);
+      router.setParams({ q: text || undefined });
     },
-    [dictDb, setQuery, setResults, setIsSearching]
+    [router]
   );
 
   const renderItem = useCallback(

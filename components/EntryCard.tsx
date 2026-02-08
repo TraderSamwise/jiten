@@ -23,7 +23,7 @@ export function EntryCard({ entry }: EntryCardProps) {
   return (
     <PressableCard
       className="mb-2"
-      onPress={() => router.push(`/word/${entry.id}`)}
+      onPress={() => router.push(`/dictionary/word/${entry.id}`)}
     >
       <View className="flex-row items-baseline gap-3">
         {primaryKanji && (

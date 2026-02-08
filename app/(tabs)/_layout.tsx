@@ -10,9 +10,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="dictionary"
         options={{
-          title: "Search",
+          title: "Dictionary",
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Search color={color} size={size} />,
         }}
       />
