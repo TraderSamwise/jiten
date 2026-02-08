@@ -5,7 +5,6 @@ import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { PitchAccent } from "@/components/PitchAccent";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
@@ -105,30 +104,27 @@ export default function WordDetailScreen() {
             {k.common && <Badge variant="common" label="common" />}
           </View>
         ))}
-        <View className="flex-row flex-wrap gap-2 mt-2">
-          {entry.kana.map((k, i) => (
-            <View key={i} className="flex-row items-center gap-1">
-              <Text className="text-xl text-muted-foreground">{k.text}</Text>
-              {k.romaji && (
-                <Text className="text-sm text-muted-foreground">
-                  ({k.romaji})
-                </Text>
-              )}
-            </View>
-          ))}
+        <View className="flex-wrap gap-2 mt-2">
+          {entry.kana.map((k, i) => {
+            const accents = entry.pitchAccents.filter(
+              (pa) => pa.reading === k.text
+            );
+            return (
+              <View key={i} className="flex-row items-center gap-1 flex-wrap">
+                <Text className="text-xl text-muted-foreground">{k.text}</Text>
+                {k.romaji && (
+                  <Text className="text-sm text-muted-foreground">
+                    ({k.romaji})
+                  </Text>
+                )}
+                {accents.map((pa, j) => (
+                  <PitchAccent key={j} accent={pa} />
+                ))}
+              </View>
+            );
+          })}
         </View>
       </View>
-
-      {entry.pitchAccents.length > 0 && (
-        <Card className="mb-4">
-          <Text className="text-sm font-semibold text-foreground mb-2">
-            Pitch Accent
-          </Text>
-          {entry.pitchAccents.map((pa, i) => (
-            <PitchAccent key={i} accent={pa} />
-          ))}
-        </Card>
-      )}
 
       <Card className="mb-4">
         <Text className="text-sm font-semibold text-foreground mb-2">
