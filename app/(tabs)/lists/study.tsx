@@ -15,6 +15,8 @@ import { useListsStore } from "@/stores/lists";
 import type { DictEntry, CardFace, SrsCardRow } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
+const NEW_CARD_BATCH_SIZE = 5;
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
@@ -59,6 +61,7 @@ export default function StudyScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
+  const [longPressActive, setLongPressActive] = useState(false);
 
   useEffect(() => {
     if (dictDb && userDb && list) loadQueue();
@@ -109,17 +112,25 @@ export default function StudyScreen() {
       setRevealed(false);
       setSessionDone(items.length === 0);
     } else {
-      // SRS mode
-      const srsRows = await userDb.getAllAsync<SrsCardRow>(
-        `SELECT id, entry_id as entryId, list_id as listId, due,
+      // SRS mode: reviews first, then a batch of new cards
+      const srsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
           stability, difficulty, elapsed_days as elapsedDays,
           scheduled_days as scheduledDays, reps, lapses, state,
           last_review as lastReview, front_mode as frontMode,
           back_mode as backMode, created_at as createdAt,
-          updated_at as updatedAt
-         FROM srs_cards WHERE list_id = ? AND due <= ? ORDER BY due ASC`,
+          updated_at as updatedAt`;
+
+      const reviewRows = await userDb.getAllAsync<SrsCardRow>(
+        `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
         [listId, new Date().toISOString()]
       );
+
+      const newRows = await userDb.getAllAsync<SrsCardRow>(
+        `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 ORDER BY created_at ASC LIMIT ?`,
+        [listId, NEW_CARD_BATCH_SIZE]
+      );
+
+      const srsRows = [...reviewRows, ...newRows];
 
       if (srsRows.length === 0) {
         setQueue([]);
@@ -250,12 +261,10 @@ export default function StudyScreen() {
   function advance(currentQueue: QueueItem[]) {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= currentQueue.length) {
-      if (list?.flashcardMode === "add_order") {
-        // Load next batch (will wrap around at end)
-        loadQueue();
-      } else {
-        setSessionDone(true);
-      }
+      // Both modes: reload queue for next batch
+      // SRS: picks up learning cards that became due + next batch of new cards
+      // add_order: wraps around at end
+      loadQueue();
     } else {
       setCurrentIndex(nextIndex);
       setRevealed(false);
@@ -264,8 +273,10 @@ export default function StudyScreen() {
 
   function handlePassPressIn() {
     isLongPressRef.current = false;
+    setLongPressActive(false);
     longPressTimerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
+      setLongPressActive(true);
     }, 500);
   }
 
@@ -274,7 +285,9 @@ export default function StudyScreen() {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    handlePass(isLongPressRef.current);
+    const wasLongPress = isLongPressRef.current;
+    setLongPressActive(false);
+    handlePass(wasLongPress);
   }
 
   function handleGear() {
@@ -311,14 +324,14 @@ export default function StudyScreen() {
         style={{ paddingTop: insets.top }}
       >
         <Text className="text-4xl mb-4">
-          {reviewedCount > 0 ? "Session complete!" : "All studied!"}
+          {reviewedCount > 0 ? "All done!" : "Nothing to study!"}
         </Text>
         <Text className="text-lg text-muted-foreground text-center mb-2">
           {reviewedCount > 0
             ? `You reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"}.`
             : list?.flashcardMode === "add_order"
               ? "You've studied all cards in this list. You can reset your position in settings."
-              : "No cards are due for review right now."}
+              : "No cards are due and no new cards remain."}
         </Text>
         <Button
           className="mt-4"
@@ -421,9 +434,9 @@ export default function StudyScreen() {
           <Pressable
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
-            className="flex-1 items-center justify-center rounded-lg bg-green-500 h-11"
+            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-blue-500" : "bg-green-500"}`}
           >
-            <Text className="font-medium text-white">Pass</Text>
+            <Text className="font-medium text-white">{longPressActive ? "Easy!" : "Pass"}</Text>
           </Pressable>
         </View>
       )}

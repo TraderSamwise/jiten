@@ -24,7 +24,8 @@ export default function ListDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
-  const [studyCount, setStudyCount] = useState(0);
+  const [reviewCount, setReviewCount] = useState(0);
+  const [newCount, setNewCount] = useState(0);
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
 
   // Load list from DB if not in store (e.g. direct navigation / refresh)
@@ -72,7 +73,8 @@ export default function ListDetailScreen() {
     if (entries.length > 0 && list) {
       updateStudyCount();
     } else {
-      setStudyCount(0);
+      setReviewCount(0);
+      setNewCount(0);
     }
   }, [entries.length, list?.flashcardMode, list?.studyPosition]);
 
@@ -80,13 +82,19 @@ export default function ListDetailScreen() {
     if (!userDb || !list || !id) return;
     if (list.flashcardMode === "add_order") {
       const remaining = entries.length - (list.studyPosition ?? 0);
-      setStudyCount(Math.max(0, remaining));
+      setReviewCount(Math.max(0, remaining));
+      setNewCount(0);
     } else {
-      const row = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND due <= ?",
+      const reviewRow = await userDb.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ?",
         [id, new Date().toISOString()]
       );
-      setStudyCount(row?.count ?? 0);
+      const newRow = await userDb.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state = 0",
+        [id]
+      );
+      setReviewCount(reviewRow?.count ?? 0);
+      setNewCount(newRow?.count ?? 0);
     }
   }
 
@@ -194,7 +202,13 @@ export default function ListDetailScreen() {
 
   const studyLabel =
     list?.flashcardMode === "srs"
-      ? `Study (${studyCount} due)`
+      ? reviewCount > 0 && newCount > 0
+        ? `Study (${reviewCount} due, ${newCount} new)`
+        : reviewCount > 0
+          ? `Study (${reviewCount} due)`
+          : newCount > 0
+            ? `Study (${newCount} new)`
+            : "Study"
       : `Study (${entries.length} cards)`;
 
   return (
@@ -222,7 +236,7 @@ export default function ListDetailScreen() {
         <Button
           label={studyLabel}
           onPress={handleStudy}
-          disabled={list?.flashcardMode === "srs" ? studyCount === 0 : entries.length === 0}
+          disabled={list?.flashcardMode === "srs" ? (reviewCount === 0 && newCount === 0) : entries.length === 0}
         />
       </View>
 
