@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, ActionSheetIOS, Platform, Modal } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { X } from "@/lib/icons";
+import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
+import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
@@ -54,6 +55,8 @@ export default function StudyScreen() {
   const [loading, setLoading] = useState(true);
   const [sessionDone, setSessionDone] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
 
@@ -254,6 +257,22 @@ export default function StudyScreen() {
     handlePass(isLongPressRef.current);
   }
 
+  function handleGear() {
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Options", "Cancel"],
+          cancelButtonIndex: 1,
+        },
+        (index) => {
+          if (index === 0) setSettingsVisible(true);
+        }
+      );
+    } else {
+      setMenuVisible(true);
+    }
+  }
+
   if (loading) {
     return (
       <View
@@ -307,7 +326,9 @@ export default function StudyScreen() {
         <Text className="text-sm text-muted-foreground">
           {currentIndex + 1} / {total}
         </Text>
-        <View className="w-10" />
+        <Pressable onPress={handleGear} className="p-2">
+          <Settings size={20} className="text-foreground" />
+        </Pressable>
       </View>
 
       {/* Progress bar */}
@@ -386,6 +407,40 @@ export default function StudyScreen() {
           </Pressable>
         </View>
       )}
+
+      {/* Web/Android action sheet menu */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable
+          className="flex-1 justify-end bg-black/50"
+          onPress={() => setMenuVisible(false)}
+        >
+          <View className="mx-4 mb-8 rounded-2xl border border-border bg-background overflow-hidden">
+            <Pressable
+              onPress={() => { setMenuVisible(false); setSettingsVisible(true); }}
+              className="items-center py-4 border-b border-border"
+            >
+              <Text className="text-base text-foreground">Options</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setMenuVisible(false)}
+              className="items-center py-4"
+            >
+              <Text className="text-base text-muted-foreground">Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <FlashcardSettingsModal
+        visible={settingsVisible}
+        onClose={() => { setSettingsVisible(false); loadQueue(); }}
+        listId={listId!}
+      />
     </View>
   );
 }
