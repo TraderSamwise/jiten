@@ -41,10 +41,17 @@ export interface PitchAccent {
 // SRS card display modes
 export type CardFace = "kanji" | "kana" | "english";
 
+export type FlashcardMode = "add_order" | "srs";
+
 export interface WordList {
   id: string;
   name: string;
   description: string | null;
+  flashcardMode: FlashcardMode;
+  frontFaces: CardFace[];
+  backFaces: CardFace[];
+  configured: boolean;
+  studyPosition: number;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;

@@ -79,6 +79,12 @@ const USER_DB_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_srs_cards_list ON srs_cards(list_id)`,
   `CREATE INDEX IF NOT EXISTS idx_list_entries_list ON list_entries(list_id)`,
   `CREATE INDEX IF NOT EXISTS idx_review_logs_card ON review_logs(card_id)`,
+  `ALTER TABLE lists ADD COLUMN flashcard_mode TEXT NOT NULL DEFAULT 'add_order'`,
+  `ALTER TABLE lists ADD COLUMN front_faces TEXT NOT NULL DEFAULT '["kanji"]'`,
+  `ALTER TABLE lists ADD COLUMN back_faces TEXT NOT NULL DEFAULT '["english"]'`,
+  `ALTER TABLE lists ADD COLUMN study_position INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lists ADD COLUMN configured INTEGER NOT NULL DEFAULT 0`,
+  `UPDATE lists SET configured = 1`,
 ];
 
 export function UserDatabaseProvider({
@@ -118,7 +124,11 @@ export function UserDatabaseProvider({
 
       // Run migrations
       for (const sql of USER_DB_MIGRATIONS) {
-        await db.execute(sql);
+        try {
+          await db.execute(sql);
+        } catch (err) {
+          if (!String(err).includes("duplicate column")) throw err;
+        }
       }
 
       wrapped = wrapUserDb(db);

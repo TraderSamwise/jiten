@@ -23,6 +23,7 @@ export default function ListDetailScreen() {
   const [entries, setEntries] = useState<DictEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [setupMode, setSetupMode] = useState(false);
   const [studyCount, setStudyCount] = useState(0);
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
 
@@ -175,7 +176,12 @@ export default function ListDetailScreen() {
   );
 
   function handleStudy() {
-    router.push(`/lists/study?listId=${id}`);
+    if (!list?.configured) {
+      setSetupMode(true);
+      setSettingsVisible(true);
+    } else {
+      router.push(`/lists/study?listId=${id}`);
+    }
   }
 
   if (loading) {
@@ -222,8 +228,20 @@ export default function ListDetailScreen() {
 
       <FlashcardSettingsModal
         visible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
+        onClose={() => {
+          setSettingsVisible(false);
+          setSetupMode(false);
+        }}
         listId={id!}
+        onStartStudy={
+          setupMode
+            ? () => {
+                setSettingsVisible(false);
+                setSetupMode(false);
+                router.push(`/lists/study?listId=${id}`);
+              }
+            : undefined
+        }
       />
     </View>
   );

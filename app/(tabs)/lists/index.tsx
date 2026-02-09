@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Pencil, Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
-import { useListsStore } from "@/stores/lists";
+import { useListsStore, parseListRow } from "@/stores/lists";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { WordList } from "@/db/types";
 
@@ -38,7 +38,7 @@ export default function ListsIndexScreen() {
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
        GROUP BY l.id ORDER BY l.updated_at DESC`
     );
-    setLists(rows);
+    setLists(rows.map(parseListRow));
   }
 
   async function handleCreateList() {
@@ -48,6 +48,11 @@ export default function ListsIndexScreen() {
       id: generateId(),
       name: newName.trim(),
       description: null,
+      configured: false,
+      flashcardMode: "add_order",
+      frontFaces: ["kanji"],
+      backFaces: ["english"],
+      studyPosition: 0,
       createdAt: now,
       updatedAt: now,
     };

@@ -3,7 +3,7 @@ import { Modal, Pressable, View, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
-import { useListsStore } from "@/stores/lists";
+import { useListsStore, parseListRow } from "@/stores/lists";
 import { createNewCard } from "@/stores/srs";
 import { Plus, Check, FolderOpen } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -27,6 +27,7 @@ export function BookmarkPopover({
   const insets = useSafeAreaInsets();
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
+  const updateListInStore = useListsStore((s) => s.updateList);
   const addBookmark = useBookmarkStore((s) => s.add);
   const removeBookmark = useBookmarkStore((s) => s.remove);
   const [lists, setLists] = useState<WordList[]>([]);
@@ -44,7 +45,7 @@ export function BookmarkPopover({
     const allLists = await userDb.getAllAsync<WordList>(
       "SELECT * FROM lists ORDER BY name"
     );
-    setLists(allLists);
+    setLists(allLists.map(parseListRow));
 
     const memberships = await userDb.getAllAsync<{ list_id: string }>(
       "SELECT list_id FROM list_entries WHERE entry_id = ?",
@@ -69,6 +70,8 @@ export function BookmarkPopover({
       const newMap = new Set(membershipMap);
       newMap.delete(listId);
       setMembershipMap(newMap);
+      const cur = useListsStore.getState().lists.find((l) => l.id === listId);
+      if (cur) updateListInStore(listId, { entryCount: Math.max(0, (cur.entryCount ?? 1) - 1) });
       // If no longer in any list, remove from global bookmark set
       if (newMap.size === 0) removeBookmark(entryId);
     } else {
@@ -103,6 +106,8 @@ export function BookmarkPopover({
         ]
       );
       setMembershipMap((prev) => new Set(prev).add(listId));
+      const cur = useListsStore.getState().lists.find((l) => l.id === listId);
+      if (cur) updateListInStore(listId, { entryCount: (cur.entryCount ?? 0) + 1 });
       addBookmark(entryId);
     }
   }
@@ -114,6 +119,11 @@ export function BookmarkPopover({
       id: generateId(),
       name: newListName.trim(),
       description: null,
+      configured: false,
+      flashcardMode: "add_order",
+      frontFaces: ["kanji"],
+      backFaces: ["english"],
+      studyPosition: 0,
       createdAt: now,
       updatedAt: now,
     };
