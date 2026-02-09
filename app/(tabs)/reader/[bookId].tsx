@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Pressable, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
+import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
 import { ChevronLeft, SlidersHorizontal } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
@@ -22,7 +22,7 @@ export default function BookReaderScreen() {
   const isDark = colorScheme === "dark";
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
-  const webViewRef = useRef<WebView>(null);
+  const readerRef = useRef<ReaderViewRef>(null);
 
   const [book, setBook] = useState<Book | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -78,9 +78,9 @@ export default function BookReaderScreen() {
   }, [userDb, bookId]);
 
   const handleMessage = useCallback(
-    async (event: WebViewMessageEvent) => {
+    async (data: string) => {
       try {
-        const msg = JSON.parse(event.nativeEvent.data);
+        const msg = JSON.parse(data);
 
         if (msg.type === "tap" || msg.type === "selection") {
           if (!dictDb) return;
@@ -109,7 +109,7 @@ export default function BookReaderScreen() {
     (newSize: number) => {
       const rounded = Math.round(newSize);
       setFontSize(rounded);
-      webViewRef.current?.postMessage(
+      readerRef.current?.postMessage(
         JSON.stringify({ type: "setFontSize", size: rounded }),
       );
       if (userDb && bookId) {
@@ -177,18 +177,8 @@ export default function BookReaderScreen() {
         </View>
       )}
 
-      {/* WebView reader */}
-      <WebView
-        ref={webViewRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        onMessage={handleMessage}
-        scrollEnabled={false}
-        bounces={false}
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        style={{ flex: 1, backgroundColor: "transparent" }}
-      />
+      {/* Reader content */}
+      <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
 
       {/* Dictionary popup */}
       <DictionaryPopup

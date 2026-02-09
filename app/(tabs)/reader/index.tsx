@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, FlatList, Alert, ActivityIndicator } from "react-native";
+import { View, FlatList, Alert, ActivityIndicator, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
-import { readAsStringAsync, EncodingType } from "expo-file-system/legacy";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BookCard } from "@/components/BookCard";
@@ -66,21 +65,36 @@ export default function LibraryScreen() {
       const asset = result.assets[0];
 
       let content: string;
-      try {
-        content = await readAsStringAsync(asset.uri, {
-          encoding: EncodingType.UTF8,
-        });
-      } catch {
-        // Try reading as binary and attempting SJIS decode
-        const base64 = await readAsStringAsync(asset.uri, {
-          encoding: EncodingType.Base64,
-        });
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
+      if (Platform.OS === "web") {
+        // On web, fetch the blob URI and read as text
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        content = await blob.text();
+        // If content looks garbled (common with SJIS), try SJIS decode
+        if (content.includes("\ufffd")) {
+          const buffer = await blob.arrayBuffer();
+          content = new TextDecoder("shift-jis").decode(buffer);
         }
-        content = new TextDecoder("shift-jis").decode(bytes);
+      } else {
+        const { readAsStringAsync, EncodingType } = await import(
+          "expo-file-system/legacy"
+        );
+        try {
+          content = await readAsStringAsync(asset.uri, {
+            encoding: EncodingType.UTF8,
+          });
+        } catch {
+          // Try reading as binary and attempting SJIS decode
+          const base64 = await readAsStringAsync(asset.uri, {
+            encoding: EncodingType.Base64,
+          });
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          content = new TextDecoder("shift-jis").decode(bytes);
+        }
       }
 
       const title =

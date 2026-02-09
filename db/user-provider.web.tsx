@@ -72,6 +72,20 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN study_position INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lists ADD COLUMN configured INTEGER NOT NULL DEFAULT 0`,
   `UPDATE lists SET configured = 1`,
+  `CREATE TABLE IF NOT EXISTS books (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
+    aozora_id INTEGER,
+    source TEXT NOT NULL DEFAULT 'import',
+    raw_content TEXT,
+    html_content TEXT,
+    scroll_position REAL NOT NULL DEFAULT 0,
+    font_size INTEGER NOT NULL DEFAULT 22,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_read_at TEXT
+  )`,
 ];
 
 export function UserDatabaseProvider({
