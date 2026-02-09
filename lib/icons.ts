@@ -16,4 +16,5 @@ export {
   ArrowRight,
   ListPlus,
   FolderOpen,
+  Pencil,
 } from "lucide-react-native";

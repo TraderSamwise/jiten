@@ -491,6 +491,45 @@ export async function searchDictionary(
   return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
 }
 
+export async function getEntries(
+  db: SQLite.SQLiteDatabase,
+  entryIds: number[]
+): Promise<DictEntry[]> {
+  if (entryIds.length === 0) return [];
+
+  const placeholders = entryIds.map(() => "?").join(",");
+
+  const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
+    db.getAllAsync<{ id: number; common: number }>(
+      `SELECT id, common FROM entries WHERE id IN (${placeholders})`,
+      entryIds
+    ),
+    db.getAllAsync<RawKanjiRow>(
+      `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
+      entryIds
+    ),
+    db.getAllAsync<RawKanaRow>(
+      `SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id IN (${placeholders})`,
+      entryIds
+    ),
+    db.getAllAsync<RawSenseRow>(
+      `SELECT entry_id, part_of_speech, glosses, field, misc, info FROM senses WHERE entry_id IN (${placeholders})`,
+      entryIds
+    ),
+    db.getAllAsync<RawPitchRow>(
+      `SELECT entry_id, reading, pitch_number FROM pitch_accents WHERE entry_id IN (${placeholders})`,
+      entryIds
+    ),
+  ]);
+
+  const commonMap = new Map<number, boolean>();
+  for (const r of entryRows) {
+    commonMap.set(r.id, !!r.common);
+  }
+
+  return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+}
+
 export async function getEntry(
   db: SQLite.SQLiteDatabase,
   entryId: number

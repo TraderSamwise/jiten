@@ -1,22 +1,30 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { View, FlatList, Alert, TextInput } from "react-native";
+import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
+import { Pencil, Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore } from "@/stores/lists";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
-export default function ListsScreen() {
+export default function ListsIndexScreen() {
+  const router = useRouter();
   const userDb = useUserDb();
-  const { lists, setLists, addList, removeList } = useListsStore();
+  const { lists, setLists, addList, removeList, updateList } = useListsStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!userDb) return;
@@ -52,7 +60,27 @@ export default function ListsScreen() {
     setShowCreate(false);
   }
 
-  async function handleDeleteList(id: string) {
+  function handleRenameStart(item: WordList) {
+    setRenamingId(item.id);
+    setRenameValue(item.name);
+    setTimeout(() => renameInputRef.current?.focus(), 50);
+  }
+
+  async function handleRenameSubmit(id: string) {
+    if (!renameValue.trim() || !userDb) {
+      setRenamingId(null);
+      return;
+    }
+    const now = new Date().toISOString();
+    await userDb.runAsync(
+      "UPDATE lists SET name = ?, updated_at = ? WHERE id = ?",
+      [renameValue.trim(), now, id]
+    );
+    updateList(id, { name: renameValue.trim(), updatedAt: now });
+    setRenamingId(null);
+  }
+
+  function handleDeleteList(id: string) {
     Alert.alert(
       "Delete List",
       "Are you sure? This will also remove associated flashcards.",
@@ -63,8 +91,11 @@ export default function ListsScreen() {
           style: "destructive",
           onPress: async () => {
             if (!userDb) return;
+            await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ?", [id]);
+            await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [id]);
             await userDb.runAsync("DELETE FROM lists WHERE id = ?", [id]);
             removeList(id);
+            await useBookmarkStore.getState().load(userDb);
           },
         },
       ]
@@ -72,19 +103,48 @@ export default function ListsScreen() {
   }
 
   const renderItem = useCallback(
-    ({ item }: { item: WordList }) => (
-      <PressableCard
-        className="mb-2"
-        onPress={() => {
-          // TODO: navigate to list detail
-        }}
-        onLongPress={() => handleDeleteList(item.id)}
-      >
-        <CardTitle>{item.name}</CardTitle>
-        <CardDescription>{item.entryCount ?? 0} words</CardDescription>
-      </PressableCard>
-    ),
-    [userDb]
+    ({ item }: { item: WordList }) => {
+      const actions: SwipeAction[] = [
+        {
+          label: "Rename",
+          icon: Pencil,
+          color: "#3b82f6",
+          onPress: () => handleRenameStart(item),
+        },
+        {
+          label: "Delete",
+          icon: Trash2,
+          color: "#ef4444",
+          onPress: () => handleDeleteList(item.id),
+        },
+      ];
+
+      return (
+        <SwipeableRow actions={actions}>
+          <PressableCard
+            className="mb-2"
+            onPress={() => router.push(`/lists/${item.id}`)}
+          >
+            {renamingId === item.id ? (
+              <TextInput
+                ref={renameInputRef}
+                className="text-lg font-semibold text-card-foreground bg-transparent p-0"
+                value={renameValue}
+                onChangeText={setRenameValue}
+                onSubmitEditing={() => handleRenameSubmit(item.id)}
+                onBlur={() => handleRenameSubmit(item.id)}
+                autoFocus
+                selectTextOnFocus
+              />
+            ) : (
+              <CardTitle>{item.name}</CardTitle>
+            )}
+            <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+          </PressableCard>
+        </SwipeableRow>
+      );
+    },
+    [userDb, renamingId, renameValue, lists]
   );
 
   return (

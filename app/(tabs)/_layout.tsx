@@ -31,6 +31,7 @@ export default function TabLayout() {
         name="lists"
         options={{
           title: "Lists",
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <BookOpen color={color} size={size} />
           ),
