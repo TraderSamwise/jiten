@@ -1,35 +1,93 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, FlatList } from "react-native";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { View, FlatList, Pressable } from "react-native";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { ListEntryCard } from "@/components/ListEntryCard";
-import { Trash2 } from "@/lib/icons";
+import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
+import { Trash2, SlidersHorizontal } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
-import { useListsStore } from "@/stores/lists";
+import { useListsStore, parseListRow } from "@/stores/lists";
 import type { DictEntry } from "@/db/types";
 
 export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
+  const router = useRouter();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
   const [entries, setEntries] = useState<DictEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [studyCount, setStudyCount] = useState(0);
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
+
+  // Load list from DB if not in store (e.g. direct navigation / refresh)
+  useEffect(() => {
+    if (!list && userDb && id) {
+      loadListFromDb();
+    }
+  }, [list, userDb, id]);
+
+  async function loadListFromDb() {
+    if (!userDb || !id) return;
+    const row = await userDb.getFirstAsync<any>(
+      `SELECT l.*, COUNT(le.id) as entryCount
+       FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
+       WHERE l.id = ? GROUP BY l.id`,
+      [id]
+    );
+    if (row) {
+      const parsed = parseListRow(row);
+      useListsStore.getState().addList(parsed);
+    }
+  }
 
   useEffect(() => {
     if (list) {
-      navigation.setOptions({ title: list.name });
+      navigation.setOptions({
+        title: list.name,
+        headerRight: () => (
+          <Pressable
+            onPress={() => setSettingsVisible(true)}
+            className="mr-2 p-2"
+          >
+            <SlidersHorizontal size={20} className="text-foreground" />
+          </Pressable>
+        ),
+      });
     }
   }, [list?.name]);
 
   useEffect(() => {
     loadEntries();
   }, [userDb, dictDb, id]);
+
+  useEffect(() => {
+    if (entries.length > 0 && list) {
+      updateStudyCount();
+    } else {
+      setStudyCount(0);
+    }
+  }, [entries.length, list?.flashcardMode, list?.studyPosition]);
+
+  async function updateStudyCount() {
+    if (!userDb || !list || !id) return;
+    if (list.flashcardMode === "add_order") {
+      const remaining = entries.length - (list.studyPosition ?? 0);
+      setStudyCount(Math.max(0, remaining));
+    } else {
+      const row = await userDb.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND due <= ?",
+        [id, new Date().toISOString()]
+      );
+      setStudyCount(row?.count ?? 0);
+    }
+  }
 
   async function loadEntries() {
     if (!userDb || !dictDb || !id) return;
@@ -116,6 +174,10 @@ export default function ListDetailScreen() {
     [userDb, id]
   );
 
+  function handleStudy() {
+    router.push(`/lists/study?listId=${id}`);
+  }
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -123,6 +185,11 @@ export default function ListDetailScreen() {
       </View>
     );
   }
+
+  const studyLabel =
+    list?.flashcardMode === "srs"
+      ? `Study (${studyCount} due)`
+      : `Study (${studyCount} remaining)`;
 
   return (
     <View className="flex-1 bg-background">
@@ -133,7 +200,7 @@ export default function ListDetailScreen() {
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
-          paddingBottom: 20,
+          paddingBottom: 80,
         }}
         ListEmptyComponent={
           <View className="items-center pt-10">
@@ -142,6 +209,21 @@ export default function ListDetailScreen() {
             </Text>
           </View>
         }
+      />
+
+      {/* Sticky study footer */}
+      <View className="absolute bottom-0 left-0 right-0 border-t border-border bg-background px-4 py-3">
+        <Button
+          label={studyLabel}
+          onPress={handleStudy}
+          disabled={studyCount === 0}
+        />
+      </View>
+
+      <FlashcardSettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        listId={id!}
       />
     </View>
   );

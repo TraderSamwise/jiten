@@ -19,7 +19,7 @@ export function DictionaryHeader({
 
   const handleSubmit = () => {
     if (isWordDetail && query.trim()) {
-      router.navigate("/dictionary");
+      router.back();
     }
   };
 

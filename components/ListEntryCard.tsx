@@ -27,7 +27,7 @@ export function ListEntryCard({ entry }: ListEntryCardProps) {
           ? "mb-1 border-l-4 border-l-primary bg-primary/5 p-3"
           : "mb-1 p-3"
       }
-      onPress={() => router.push(`/dictionary/word/${entry.id}`)}
+      onPress={() => router.push(`/lists/word/${entry.id}`)}
     >
       <View className="flex-row items-baseline gap-2">
         {primaryKanji && (
