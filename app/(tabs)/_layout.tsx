@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Tabs } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { Search, BookOpen, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -12,10 +13,13 @@ export default function TabLayout() {
     if (userDb) loadBookmarks(userDb);
   }, [userDb]);
 
+  const { colorScheme } = useColorScheme();
+  const activeTint = colorScheme === "dark" ? "#fafafa" : "#18181b";
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#18181b",
+        tabBarActiveTintColor: activeTint,
         headerShown: true,
       }}
     >
