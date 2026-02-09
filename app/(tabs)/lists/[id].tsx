@@ -195,7 +195,7 @@ export default function ListDetailScreen() {
   const studyLabel =
     list?.flashcardMode === "srs"
       ? `Study (${studyCount} due)`
-      : `Study (${studyCount} remaining)`;
+      : `Study (${entries.length} cards)`;
 
   return (
     <View className="flex-1 bg-background">
@@ -222,7 +222,7 @@ export default function ListDetailScreen() {
         <Button
           label={studyLabel}
           onPress={handleStudy}
-          disabled={studyCount === 0}
+          disabled={list?.flashcardMode === "srs" ? studyCount === 0 : entries.length === 0}
         />
       </View>
 

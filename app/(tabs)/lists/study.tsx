@@ -69,10 +69,25 @@ export default function StudyScreen() {
     setLoading(true);
 
     if (list.flashcardMode === "add_order") {
-      const rows = await userDb.getAllAsync<{ entry_id: number }>(
+      let position = list.studyPosition ?? 0;
+      let rows = await userDb.getAllAsync<{ entry_id: number }>(
         "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
-        [listId, list.studyPosition ?? 0]
+        [listId, position]
       );
+
+      // Wrap around to start if we've passed the end
+      if (rows.length === 0 && position > 0) {
+        position = 0;
+        await userDb.runAsync(
+          "UPDATE lists SET study_position = 0, updated_at = ? WHERE id = ?",
+          [new Date().toISOString(), listId]
+        );
+        updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
+        rows = await userDb.getAllAsync<{ entry_id: number }>(
+          "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
+          [listId]
+        );
+      }
 
       if (rows.length === 0) {
         setQueue([]);
@@ -235,7 +250,12 @@ export default function StudyScreen() {
   function advance(currentQueue: QueueItem[]) {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= currentQueue.length) {
-      setSessionDone(true);
+      if (list?.flashcardMode === "add_order") {
+        // Load next batch (will wrap around at end)
+        loadQueue();
+      } else {
+        setSessionDone(true);
+      }
     } else {
       setCurrentIndex(nextIndex);
       setRevealed(false);
