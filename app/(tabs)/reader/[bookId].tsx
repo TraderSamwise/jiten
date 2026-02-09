@@ -1,0 +1,204 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Pressable, ActivityIndicator } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "nativewind";
+import { Text } from "@/components/ui/text";
+import { DictionaryPopup } from "@/components/DictionaryPopup";
+import { ChevronLeft, SlidersHorizontal } from "@/lib/icons";
+import { useUserDb } from "@/db/user-provider";
+import { useDatabase } from "@/db/provider";
+import { generateReaderHtml } from "@/lib/reader-html";
+import { smartLookup, type LookupResult } from "@/lib/smart-lookup";
+import { parseBookRow } from "./index";
+import type { Book } from "@/db/types";
+
+export default function BookReaderScreen() {
+  const { bookId } = useLocalSearchParams<{ bookId: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const userDb = useUserDb();
+  const { dictDb } = useDatabase();
+  const webViewRef = useRef<WebView>(null);
+
+  const [book, setBook] = useState<Book | null>(null);
+  const [html, setHtml] = useState<string | null>(null);
+  const [lookupResults, setLookupResults] = useState<LookupResult[]>([]);
+  const [showPopup, setShowPopup] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [fontSize, setFontSize] = useState(22);
+
+  // Track scroll position for saving
+  const scrollPosRef = useRef(0);
+
+  // Load book
+  useEffect(() => {
+    if (!userDb || !bookId) return;
+    (async () => {
+      const row = await userDb.getFirstAsync<any>(
+        "SELECT * FROM books WHERE id = ?",
+        [bookId],
+      );
+      if (!row) return;
+      const b = parseBookRow(row);
+      setBook(b);
+      setFontSize(b.fontSize);
+
+      if (b.htmlContent) {
+        const readerHtml = generateReaderHtml(b.htmlContent, {
+          fontSize: b.fontSize,
+          isDark,
+          scrollPosition: b.scrollPosition,
+        });
+        setHtml(readerHtml);
+      }
+
+      // Update last_read_at
+      const now = new Date().toISOString();
+      await userDb.runAsync(
+        "UPDATE books SET last_read_at = ?, updated_at = ? WHERE id = ?",
+        [now, now, bookId],
+      );
+    })();
+  }, [userDb, bookId, isDark]);
+
+  // Save scroll position on unmount
+  useEffect(() => {
+    return () => {
+      if (userDb && bookId && scrollPosRef.current > 0) {
+        userDb.runAsync(
+          "UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?",
+          [scrollPosRef.current, new Date().toISOString(), bookId],
+        );
+      }
+    };
+  }, [userDb, bookId]);
+
+  const handleMessage = useCallback(
+    async (event: WebViewMessageEvent) => {
+      try {
+        const msg = JSON.parse(event.nativeEvent.data);
+
+        if (msg.type === "tap" || msg.type === "selection") {
+          if (!dictDb) return;
+          const text = msg.text as string;
+          if (!text || text.length === 0) return;
+
+          const results = await smartLookup(text, dictDb);
+          setLookupResults(results);
+          setShowPopup(true);
+        } else if (msg.type === "scroll") {
+          scrollPosRef.current = msg.position;
+          // Debounced save to DB
+          if (userDb && bookId) {
+            userDb.runAsync(
+              "UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?",
+              [msg.position, new Date().toISOString(), bookId],
+            );
+          }
+        }
+      } catch {}
+    },
+    [dictDb, userDb, bookId],
+  );
+
+  const handleFontSizeChange = useCallback(
+    (newSize: number) => {
+      const rounded = Math.round(newSize);
+      setFontSize(rounded);
+      webViewRef.current?.postMessage(
+        JSON.stringify({ type: "setFontSize", size: rounded }),
+      );
+      if (userDb && bookId) {
+        userDb.runAsync(
+          "UPDATE books SET font_size = ?, updated_at = ? WHERE id = ?",
+          [rounded, new Date().toISOString(), bookId],
+        );
+      }
+    },
+    [userDb, bookId],
+  );
+
+  if (!book || !html) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-background">
+      {/* Header */}
+      <View
+        className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
+        style={{ paddingTop: insets.top }}
+      >
+        <Pressable onPress={() => router.back()} className="p-2">
+          <ChevronLeft size={24} className="text-foreground" />
+        </Pressable>
+        <Text
+          className="flex-1 text-base font-medium text-foreground"
+          numberOfLines={1}
+        >
+          {book.title}
+        </Text>
+        <Pressable
+          onPress={() => setShowSettings(!showSettings)}
+          className="p-2"
+        >
+          <SlidersHorizontal size={20} className="text-foreground" />
+        </Pressable>
+      </View>
+
+      {/* Settings panel */}
+      {showSettings && (
+        <View className="px-4 py-3 border-b border-border bg-background">
+          <View className="flex-row items-center justify-center gap-4">
+            <Pressable
+              onPress={() => handleFontSizeChange(Math.max(14, fontSize - 2))}
+              className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+            >
+              <Text className="text-lg text-foreground">A-</Text>
+            </Pressable>
+            <Text className="text-base text-foreground w-8 text-center">
+              {fontSize}
+            </Text>
+            <Pressable
+              onPress={() => handleFontSizeChange(Math.min(32, fontSize + 2))}
+              className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+            >
+              <Text className="text-lg text-foreground">A+</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* WebView reader */}
+      <WebView
+        ref={webViewRef}
+        source={{ html }}
+        originWhitelist={["*"]}
+        onMessage={handleMessage}
+        scrollEnabled={false}
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1, backgroundColor: "transparent" }}
+      />
+
+      {/* Dictionary popup */}
+      <DictionaryPopup
+        visible={showPopup}
+        onClose={() => {
+          setShowPopup(false);
+          setLookupResults([]);
+        }}
+        results={lookupResults}
+      />
+    </View>
+  );
+}

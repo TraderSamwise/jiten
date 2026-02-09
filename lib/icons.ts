@@ -19,4 +19,8 @@ export {
   Pencil,
   Play,
   SlidersHorizontal,
+  BookText,
+  Import,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react-native";

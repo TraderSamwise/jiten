@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { useColorScheme } from "nativewind";
-import { Search, BookOpen, Settings } from "lucide-react-native";
+import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 
@@ -38,6 +38,16 @@ export default function TabLayout() {
           headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <BookOpen color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="reader"
+        options={{
+          title: "Reader",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <BookText color={color} size={size} />
           ),
         }}
       />

@@ -73,6 +73,21 @@ export interface WordList {
   entryCount?: number;
 }
 
+export interface Book {
+  id: string;
+  title: string;
+  author: string;
+  aozoraId: number | null;
+  source: "aozora" | "import";
+  rawContent: string | null;
+  htmlContent: string | null;
+  scrollPosition: number;
+  fontSize: number;
+  createdAt: string;
+  updatedAt: string;
+  lastReadAt: string | null;
+}
+
 export interface SrsCardRow {
   id: string;
   entryId: number;
