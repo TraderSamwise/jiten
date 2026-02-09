@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, Alert, TextInput } from "react-native";
+import { View, FlatList, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ export default function ListsIndexScreen() {
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
-       GROUP BY l.id ORDER BY l.updated_at DESC`
+       GROUP BY l.id ORDER BY l.created_at DESC`
     );
     setLists(rows.map(parseListRow));
   }
@@ -85,7 +85,22 @@ export default function ListsIndexScreen() {
     setRenamingId(null);
   }
 
+  async function doDeleteList(id: string) {
+    if (!userDb) return;
+    await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ?", [id]);
+    await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [id]);
+    await userDb.runAsync("DELETE FROM lists WHERE id = ?", [id]);
+    removeList(id);
+    await useBookmarkStore.getState().load(userDb);
+  }
+
   function handleDeleteList(id: string) {
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure? This will also remove associated flashcards.")) {
+        doDeleteList(id);
+      }
+      return;
+    }
     Alert.alert(
       "Delete List",
       "Are you sure? This will also remove associated flashcards.",
@@ -94,14 +109,7 @@ export default function ListsIndexScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            if (!userDb) return;
-            await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ?", [id]);
-            await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [id]);
-            await userDb.runAsync("DELETE FROM lists WHERE id = ?", [id]);
-            removeList(id);
-            await useBookmarkStore.getState().load(userDb);
-          },
+          onPress: () => doDeleteList(id),
         },
       ]
     );
