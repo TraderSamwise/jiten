@@ -15,7 +15,7 @@ export function DictionaryHeader({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { query, setQuery } = useSearchStore();
-  const isWordDetail = route.name === "word/[id]";
+  const isWordDetail = route.name === "word/[id]" || route.name === "gloss-group";
 
   const navigateToSearch = () => {
     if (router.canGoBack()) {

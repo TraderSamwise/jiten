@@ -38,9 +38,20 @@ export interface PitchAccent {
   pitchNumber: number;
 }
 
+export interface EnglishMatchEntry {
+  entry: DictEntry;
+  matchedGloss: string;
+}
+
+export interface GlossGroup {
+  gloss: string;
+  entries: DictEntry[];
+}
+
 export interface SearchResults {
   japanese: DictEntry[];
   english: DictEntry[];
+  englishMatches?: EnglishMatchEntry[];
 }
 
 // SRS card display modes

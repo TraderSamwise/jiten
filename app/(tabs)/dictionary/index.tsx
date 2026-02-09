@@ -3,14 +3,17 @@ import { View, SectionList, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
+import { GlossGroupCard } from "@/components/GlossGroupCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
-import type { DictEntry } from "@/db/types";
+import { groupByGloss } from "@/lib/gloss-groups";
+import type { DictEntry, GlossGroup } from "@/db/types";
 
 interface Section {
   title: string;
-  data: DictEntry[];
+  type: "words" | "definitions";
+  data: (DictEntry | GlossGroup)[];
 }
 
 export default function SearchScreen() {
@@ -60,11 +63,12 @@ export default function SearchScreen() {
 
   const sections = useMemo<Section[]>(() => {
     const s: Section[] = [];
-    if (results.japanese.length > 0) {
-      s.push({ title: "Words", data: results.japanese });
-    }
-    if (results.english.length > 0) {
-      s.push({ title: "Definitions", data: results.english });
+    if (results.englishMatches && results.englishMatches.length > 0) {
+      const groups = groupByGloss(results.englishMatches);
+      s.push({ title: "Definitions", type: "definitions", data: groups });
+    } else if (results.japanese.length > 0) {
+      // Japanese/kana input with no English matches — show as entry cards
+      s.push({ title: "Words", type: "words", data: results.japanese });
     }
     return s;
   }, [results]);
@@ -72,7 +76,12 @@ export default function SearchScreen() {
   const hasBothSections = sections.length > 1;
 
   const renderItem = useCallback(
-    ({ item }: { item: DictEntry }) => <EntryCard entry={item} />,
+    ({ item, section }: { item: DictEntry | GlossGroup; section: Section }) => {
+      if (section.type === "definitions") {
+        return <GlossGroupCard group={item as GlossGroup} />;
+      }
+      return <EntryCard entry={item as DictEntry} />;
+    },
     []
   );
 
@@ -113,7 +122,9 @@ export default function SearchScreen() {
         sections={sections}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
-        keyExtractor={(item, index) => `${item.id}-${index}`}
+        keyExtractor={(item, index) =>
+          "gloss" in item ? `gloss-${item.gloss}-${index}` : `${item.id}-${index}`
+        }
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
         stickySectionHeadersEnabled={false}
         ListEmptyComponent={

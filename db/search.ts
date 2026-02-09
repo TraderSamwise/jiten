@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { toHiragana } from "wanakana";
-import type { DictEntry, DictKanji, DictKana, DictSense, Gloss, PitchAccent, SearchResults } from "./types";
+import type { DictEntry, DictKanji, DictKana, DictSense, Gloss, PitchAccent, SearchResults, EnglishMatchEntry } from "./types";
 
 // ─── Raw row types ───
 
@@ -43,6 +43,7 @@ interface RawPitchRow {
 interface ScoredEntry {
   entryId: number;
   score: number;
+  matchedGloss?: string;
 }
 
 const STOP_WORDS = new Set([
@@ -112,12 +113,13 @@ function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean 
 
 // ─── Gloss matching ───
 
-function computeGlossBonus(glosses: string, query: string, senseIndex: number, isCommon: boolean): number {
+function computeGlossBonus(glosses: string, query: string, senseIndex: number, isCommon: boolean): { score: number; matchedGloss: string | null } {
   const senseBonus = senseIndex === 0 ? 3000 : 1000;
   const exactBonus = isCommon ? 5000 : 0;
   try {
     const parsed = JSON.parse(glosses) as { lang: string; text: string }[];
     let best = 0;
+    let bestGloss: string | null = null;
     let gi = 0;
     for (const g of parsed) {
       if (g.lang !== "eng") continue;
@@ -131,20 +133,46 @@ function computeGlossBonus(glosses: string, query: string, senseIndex: number, i
           gl.startsWith("to " + query + "("));
       if (isExact || isAnnotated) {
         const posFactor = gi === 0 ? 1.0 : 0.5;
-        best = Math.max(best, senseBonus + Math.floor(exactBonus * posFactor));
+        const s = senseBonus + Math.floor(exactBonus * posFactor);
+        if (s > best) {
+          best = s;
+          bestGloss = g.text;
+        }
       } else if (
         gl.startsWith(query + " ") ||
         gl.startsWith(query + ",") ||
         gl.startsWith("to " + query + " ") ||
         gl.startsWith("to " + query + ",")
       ) {
-        best = Math.max(best, senseBonus);
+        if (senseBonus > best) {
+          best = senseBonus;
+          bestGloss = g.text;
+        }
       }
       gi++;
     }
-    return best;
+    return { score: best, matchedGloss: bestGloss };
   } catch {}
-  return 0;
+  return { score: 0, matchedGloss: null };
+}
+
+/** Find the first English gloss that contains the query (fallback for tier 3 / OR results). */
+function findFirstMatchingGloss(entry: DictEntry, query: string): string {
+  const lq = query.toLowerCase();
+  for (const sense of entry.senses) {
+    for (const g of sense.glosses) {
+      if (g.lang === "eng" && g.text.toLowerCase().includes(lq)) {
+        return g.text;
+      }
+    }
+  }
+  // Ultimate fallback: first English gloss
+  for (const sense of entry.senses) {
+    for (const g of sense.glosses) {
+      if (g.lang === "eng") return g.text;
+    }
+  }
+  return "";
 }
 
 // ─── Search paths ───
@@ -292,7 +320,24 @@ async function searchEnglishFts(
   const seenIds = new Set<number>();
   const allResults: ScoredEntry[] = [];
 
-  // Tier 1: Phrase match (highest confidence)
+  // Tier 0: Exact word match — ensures entries with the exact token (e.g. "go")
+  // aren't drowned out by prefix matches ("go*" → good, going, government, ...)
+  const tier0Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+    `SELECT fts.entry_id, e.priority, e.common
+     FROM glosses_fts fts
+     JOIN entries e ON fts.entry_id = e.id
+     WHERE glosses_fts MATCH ?
+     ORDER BY e.priority + (e.common * 50) DESC
+     LIMIT ?`,
+    [`"${cleaned}"`, limit * 2]
+  );
+  const tier0 = await applyGlossBonus(db, tier0Rows, input, 1500);
+  for (const r of tier0) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
+
+  // Tier 1: Phrase prefix match (broader — catches partial word matches)
   const tier1Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
     `SELECT fts.entry_id, e.priority, e.common
      FROM glosses_fts fts
@@ -304,8 +349,10 @@ async function searchEnglishFts(
   );
   const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
   for (const r of tier1) {
-    seenIds.add(r.entryId);
-    allResults.push(r);
+    if (!seenIds.has(r.entryId)) {
+      seenIds.add(r.entryId);
+      allResults.push(r);
+    }
   }
 
   // Tier 2: AND of content words (only for multi-word queries)
@@ -395,7 +442,24 @@ async function searchEnglishLike(
   const seenIds = new Set<number>();
   const allResults: ScoredEntry[] = [];
 
-  // Tier 1: Full phrase LIKE (word-boundary match)
+  // Tier 0: Exact word LIKE — ensures entries with the exact word aren't
+  // drowned by prefix matches (e.g. "go" vs "good", "going", ...)
+  const tier0Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+    `SELECT DISTINCT s.entry_id, e.priority, e.common
+     FROM senses s
+     JOIN entries e ON s.entry_id = e.id
+     WHERE s.glosses LIKE ? OR s.glosses LIKE ? OR s.glosses LIKE ? OR s.glosses LIKE ?
+     ORDER BY e.priority + (e.common * 50) DESC
+     LIMIT ?`,
+    [`%"${cleaned}"%`, `%"${cleaned}",%`, `% ${cleaned} %`, `% ${cleaned},%`, limit * 2]
+  );
+  const tier0 = await applyGlossBonus(db, tier0Rows, input, 1500);
+  for (const r of tier0) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
+
+  // Tier 1: Full phrase LIKE (word-boundary prefix match)
   const tier1Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
     `SELECT DISTINCT s.entry_id, e.priority, e.common
      FROM senses s
@@ -407,8 +471,10 @@ async function searchEnglishLike(
   );
   const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
   for (const r of tier1) {
-    seenIds.add(r.entryId);
-    allResults.push(r);
+    if (!seenIds.has(r.entryId)) {
+      seenIds.add(r.entryId);
+      allResults.push(r);
+    }
   }
 
   // Tier 2: AND of stemmed content words
@@ -533,17 +599,22 @@ async function applyGlossBonus(
 
   for (const r of rows) {
     let bonus = 0;
+    let matchedGloss: string | null = null;
     const senseRows = await db.getAllAsync<{ glosses: string }>(
       `SELECT glosses FROM senses WHERE entry_id = ?`,
       [r.entry_id]
     );
     for (let si = 0; si < senseRows.length; si++) {
-      const b = computeGlossBonus(senseRows[si].glosses, lowerQuery, si, !!r.common);
-      bonus = Math.max(bonus, b);
+      const result = computeGlossBonus(senseRows[si].glosses, lowerQuery, si, !!r.common);
+      if (result.score > bonus) {
+        bonus = result.score;
+        matchedGloss = result.matchedGloss;
+      }
     }
     results.push({
       entryId: r.entry_id,
       score: 2000 + r.priority + r.common * 50 + bonus + tierBonus,
+      matchedGloss: matchedGloss ?? undefined,
     });
   }
 
@@ -683,17 +754,16 @@ export async function searchDictionary(
 
   // Deduplicate within each group (keep max score per entry)
   const dedup = (entries: ScoredEntry[]): ScoredEntry[] => {
-    const scoreMap = new Map<number, number>();
+    const bestMap = new Map<number, ScoredEntry>();
     for (const r of entries) {
-      const existing = scoreMap.get(r.entryId);
-      if (existing === undefined || r.score > existing) {
-        scoreMap.set(r.entryId, r.score);
+      const existing = bestMap.get(r.entryId);
+      if (!existing || r.score > existing.score) {
+        bestMap.set(r.entryId, r);
       }
     }
-    return [...scoreMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([entryId, score]) => ({ entryId, score }));
+    return [...bestMap.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   };
 
   const japSorted = dedup(japaneseResults);
@@ -749,9 +819,55 @@ export async function searchDictionary(
   const toEntries = (scored: ScoredEntry[]): DictEntry[] =>
     scored.map((r) => entryMap.get(r.entryId)!).filter(Boolean);
 
+  // Build englishMatches with matched gloss text
+  // For ASCII input, merge romaji results into the same pool so everything
+  // appears in one unified, ranked gloss-group list
+  const lowerQuery = trimmed.toLowerCase();
+  let allMatchSources: ScoredEntry[];
+  if (isAscii && japSorted.length > 0) {
+    // Cross-category pruning: when both romaji and English have results,
+    // drop low-scoring entries from either category if the other scores
+    // much higher. Keeps high scorers from both, removes noise.
+    let prunedJap = japSorted;
+    let prunedEng = engSorted;
+    if (japSorted.length > 0 && engSorted.length > 0) {
+      const overallMax = Math.max(japSorted[0].score, engSorted[0].score);
+      const threshold = overallMax * 0.4;
+      prunedJap = japSorted.filter((r) => r.score >= threshold);
+      prunedEng = engSorted.filter((r) => r.score >= threshold);
+    }
+
+    const merged = new Map<number, ScoredEntry>();
+    for (const r of prunedEng) {
+      merged.set(r.entryId, r);
+    }
+    for (const r of prunedJap) {
+      const existing = merged.get(r.entryId);
+      if (!existing || r.score > existing.score) {
+        merged.set(r.entryId, {
+          ...r,
+          matchedGloss: r.matchedGloss ?? existing?.matchedGloss,
+        });
+      }
+    }
+    allMatchSources = [...merged.values()].sort((a, b) => b.score - a.score);
+  } else {
+    allMatchSources = engSorted;
+  }
+
+  const englishMatches: EnglishMatchEntry[] = allMatchSources
+    .map((r) => {
+      const entry = entryMap.get(r.entryId);
+      if (!entry) return null;
+      const gloss = r.matchedGloss ?? findFirstMatchingGloss(entry, lowerQuery);
+      return { entry, matchedGloss: gloss };
+    })
+    .filter((m): m is EnglishMatchEntry => m !== null);
+
   return {
     japanese: toEntries(japSorted),
     english: toEntries(engSorted),
+    englishMatches,
   };
 }
 
