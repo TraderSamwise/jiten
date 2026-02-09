@@ -38,6 +38,11 @@ export interface PitchAccent {
   pitchNumber: number;
 }
 
+export interface SearchResults {
+  japanese: DictEntry[];
+  english: DictEntry[];
+}
+
 // SRS card display modes
 export type CardFace = "kanji" | "kana" | "english";
 

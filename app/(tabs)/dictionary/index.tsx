@@ -1,11 +1,16 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { View, FlatList, ActivityIndicator } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { View, SectionList, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
 import type { DictEntry } from "@/db/types";
+
+interface Section {
+  title: string;
+  data: DictEntry[];
+}
 
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
@@ -17,7 +22,7 @@ export default function SearchScreen() {
     if (!dictDb || !isReady) return;
 
     if (!query.trim()) {
-      setResults([]);
+      setResults({ japanese: [], english: [] });
       return;
     }
 
@@ -25,11 +30,11 @@ export default function SearchScreen() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const entries = await searchDictionary(dictDb, query);
-        setResults(entries);
+        const searchResults = await searchDictionary(dictDb, query);
+        setResults(searchResults);
       } catch (err) {
         console.error("Search error:", err);
-        setResults([]);
+        setResults({ japanese: [], english: [] });
       }
     }, 200);
 
@@ -38,9 +43,36 @@ export default function SearchScreen() {
     };
   }, [dictDb, isReady, query]);
 
+  const sections = useMemo<Section[]>(() => {
+    const s: Section[] = [];
+    if (results.japanese.length > 0) {
+      s.push({ title: "Words", data: results.japanese });
+    }
+    if (results.english.length > 0) {
+      s.push({ title: "Definitions", data: results.english });
+    }
+    return s;
+  }, [results]);
+
+  const hasBothSections = sections.length > 1;
+
   const renderItem = useCallback(
     ({ item }: { item: DictEntry }) => <EntryCard entry={item} />,
     []
+  );
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: Section }) => {
+      if (!hasBothSections) return null;
+      return (
+        <View className="pb-1 pt-3 px-1 bg-background">
+          <Text className="text-sm font-medium text-muted-foreground">
+            {section.title}
+          </Text>
+        </View>
+      );
+    },
+    [hasBothSections]
   );
 
   if (!isReady) {
@@ -62,11 +94,13 @@ export default function SearchScreen() {
         </View>
       )}
 
-      <FlatList
-        data={results}
+      <SectionList
+        sections={sections}
         renderItem={renderItem}
-        keyExtractor={(item) => String(item.id)}
+        renderSectionHeader={renderSectionHeader}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+        stickySectionHeadersEnabled={false}
         ListEmptyComponent={
           query.trim() && !isSearching ? (
             <View className="items-center pt-10">

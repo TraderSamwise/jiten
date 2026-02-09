@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { toHiragana } from "wanakana";
-import type { DictEntry, DictKanji, DictKana, DictSense, Gloss, PitchAccent } from "./types";
+import type { DictEntry, DictKanji, DictKana, DictSense, Gloss, PitchAccent, SearchResults } from "./types";
 
 // ─── Raw row types ───
 
@@ -43,6 +43,17 @@ interface RawPitchRow {
 interface ScoredEntry {
   entryId: number;
   score: number;
+}
+
+const STOP_WORDS = new Set([
+  "a","an","the","to","of","in","on","at","by","for","with","from","up","or","and","is","be","as","it","not","no",
+]);
+
+/** Crude stemming for LIKE search: drop last char so "starve" → "starv" matches "starving" */
+function stemForLike(word: string): string {
+  const w = word.toLowerCase().replace(/%/g, "").replace(/_/g, "");
+  if (w.length >= 5) return w.slice(0, -1);
+  return w;
 }
 
 // ─── Input classification ───
@@ -115,11 +126,13 @@ async function searchJapanese(
 ): Promise<ScoredEntry[]> {
   const hiragana = toHiragana(input);
 
-  // Step 1: find matching entry IDs via prefix match
+  // Step 1: find matching entry IDs via prefix match (cap at 500 to stay within SQL variable limits)
   const matchRows = await db.getAllAsync<{ entry_id: number }>(
-    `SELECT DISTINCT entry_id FROM kanji WHERE text LIKE ?
-     UNION
-     SELECT DISTINCT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?`,
+    `SELECT DISTINCT entry_id FROM (
+       SELECT entry_id FROM kanji WHERE text LIKE ?
+       UNION
+       SELECT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?
+     ) LIMIT 500`,
     [`${input}%`, `${hiragana}%`, `${input}%`]
   );
 
@@ -172,9 +185,9 @@ async function searchRomaji(
   const lower = input.toLowerCase();
   const hiragana = toHiragana(lower);
 
-  // Find matching entries via romaji or kana prefix
+  // Find matching entries via romaji or kana prefix (cap at 500 to stay within SQL variable limits)
   const matchRows = await db.getAllAsync<{ entry_id: number }>(
-    `SELECT DISTINCT entry_id FROM kana WHERE romaji LIKE ? OR text LIKE ?`,
+    `SELECT DISTINCT entry_id FROM kana WHERE romaji LIKE ? OR text LIKE ? LIMIT 500`,
     [`${lower}%`, `${hiragana}%`]
   );
 
@@ -240,23 +253,75 @@ async function searchEnglishFts(
   input: string,
   limit: number
 ): Promise<ScoredEntry[]> {
-  const ftsQuery = input
+  const cleaned = input
     .replace(/['"]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!ftsQuery) return [];
+  if (!cleaned) return [];
 
-  const ftsRows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+  const seenIds = new Set<number>();
+  const allResults: ScoredEntry[] = [];
+
+  // Tier 1: Phrase match (highest confidence)
+  const tier1Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
     `SELECT fts.entry_id, e.priority, e.common
      FROM glosses_fts fts
      JOIN entries e ON fts.entry_id = e.id
      WHERE glosses_fts MATCH ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`"${ftsQuery}"*`, limit * 4]
+    [`"${cleaned}"*`, limit * 4]
   );
+  const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
+  for (const r of tier1) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
 
-  return applyGlossBonus(db, ftsRows, input);
+  // Tier 2: AND of content words (only for multi-word queries)
+  const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  if (contentWords.length > 1) {
+    const andQuery = contentWords.map((w) => `"${w}"*`).join(" AND ");
+    const tier2Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      `SELECT fts.entry_id, e.priority, e.common
+       FROM glosses_fts fts
+       JOIN entries e ON fts.entry_id = e.id
+       WHERE glosses_fts MATCH ?
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`,
+      [andQuery, limit * 4]
+    );
+    const tier2 = await applyGlossBonus(db, tier2Rows, input, 500);
+    for (const r of tier2) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  // Tier 3: OR fallback (only if tiers 1+2 returned < 5 results)
+  if (allResults.length < 5 && contentWords.length > 1) {
+    const orQuery = contentWords.map((w) => `"${w}"*`).join(" OR ");
+    const tier3Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      `SELECT fts.entry_id, e.priority, e.common
+       FROM glosses_fts fts
+       JOIN entries e ON fts.entry_id = e.id
+       WHERE glosses_fts MATCH ?
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`,
+      [orQuery, limit * 4]
+    );
+    const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
+    for (const r of tier3) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  return allResults;
 }
 
 async function searchEnglishLike(
@@ -264,29 +329,88 @@ async function searchEnglishLike(
   input: string,
   limit: number
 ): Promise<ScoredEntry[]> {
-  const lowerQuery = input.toLowerCase().replace(/%/g, "").replace(/_/g, "");
-  if (!lowerQuery) return [];
+  const cleaned = input.toLowerCase().replace(/%/g, "").replace(/_/g, "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
 
-  // Use word-boundary patterns to avoid substring noise
-  // '% query%' matches query preceded by space (word in a phrase)
-  // '%"query%' matches query at start of a JSON text value
-  const rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+  const seenIds = new Set<number>();
+  const allResults: ScoredEntry[] = [];
+
+  // Tier 1: Full phrase LIKE (word-boundary match)
+  const tier1Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
     `SELECT DISTINCT s.entry_id, e.priority, e.common
      FROM senses s
      JOIN entries e ON s.entry_id = e.id
      WHERE s.glosses LIKE ? OR s.glosses LIKE ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`% ${lowerQuery}%`, `%"${lowerQuery}%`, limit * 4]
+    [`% ${cleaned}%`, `%"${cleaned}%`, limit * 4]
   );
+  const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
+  for (const r of tier1) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
 
-  return applyGlossBonus(db, rows, input);
+  // Tier 2: AND of stemmed content words
+  const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w));
+  if (contentWords.length > 1) {
+    const stems = contentWords.map(stemForLike);
+    const likePatterns = stems.map((s) => `%${s}%`);
+    const whereClause = stems.map(() => "s.glosses LIKE ?").join(" OR ");
+    const havingClause = stems.map(() => "SUM(CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END) > 0").join(" AND ");
+
+    const tier2Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      `SELECT s.entry_id, e.priority, e.common
+       FROM senses s
+       JOIN entries e ON s.entry_id = e.id
+       WHERE ${whereClause}
+       GROUP BY s.entry_id, e.priority, e.common
+       HAVING ${havingClause}
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`,
+      [...likePatterns, ...likePatterns, limit * 4]
+    );
+    const tier2 = await applyGlossBonus(db, tier2Rows, input, 500);
+    for (const r of tier2) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  // Tier 3: OR of stemmed content words (only if < 5 results)
+  if (allResults.length < 5 && contentWords.length > 1) {
+    const stems = contentWords.map(stemForLike);
+    const likePatterns = stems.map((s) => `%${s}%`);
+    const whereClause = stems.map(() => "s.glosses LIKE ?").join(" OR ");
+
+    const tier3Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      `SELECT DISTINCT s.entry_id, e.priority, e.common
+       FROM senses s
+       JOIN entries e ON s.entry_id = e.id
+       WHERE ${whereClause}
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`,
+      [...likePatterns, limit * 4]
+    );
+    const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
+    for (const r of tier3) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  return allResults;
 }
 
 async function applyGlossBonus(
   db: SQLite.SQLiteDatabase,
   rows: { entry_id: number; priority: number; common: number }[],
-  input: string
+  input: string,
+  tierBonus: number = 0
 ): Promise<ScoredEntry[]> {
   const lowerQuery = input.toLowerCase();
   const results: ScoredEntry[] = [];
@@ -303,7 +427,7 @@ async function applyGlossBonus(
     }
     results.push({
       entryId: r.entry_id,
-      score: 2000 + r.priority + r.common * 50 + bonus,
+      score: 2000 + r.priority + r.common * 50 + bonus + tierBonus,
     });
   }
 
@@ -419,46 +543,55 @@ export async function searchDictionary(
   db: SQLite.SQLiteDatabase,
   query: string,
   limit: number = 50
-): Promise<DictEntry[]> {
+): Promise<SearchResults> {
   const trimmed = query.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { japanese: [], english: [] };
 
   const { hasJapanese, isAscii } = classifyInput(trimmed);
 
-  // Run all applicable search paths
-  const allResults: ScoredEntry[] = [];
+  // Collect results by category
+  const japaneseResults: ScoredEntry[] = [];
+  const englishResults: ScoredEntry[] = [];
 
   if (hasJapanese) {
-    allResults.push(...(await searchJapanese(db, trimmed, limit)));
+    japaneseResults.push(...(await searchJapanese(db, trimmed, limit)));
   }
   if (isAscii) {
-    const [romajiResults, englishResults] = await Promise.all([
+    const [romajiResults, engResults] = await Promise.all([
       searchRomaji(db, trimmed, limit),
       searchEnglish(db, trimmed, limit),
     ]);
-    allResults.push(...romajiResults, ...englishResults);
+    japaneseResults.push(...romajiResults);
+    englishResults.push(...engResults);
   }
 
-  // Deduplicate: keep max score per entry
-  const scoreMap = new Map<number, number>();
-  for (const r of allResults) {
-    const existing = scoreMap.get(r.entryId);
-    if (existing === undefined || r.score > existing) {
-      scoreMap.set(r.entryId, r.score);
+  // Deduplicate within each group (keep max score per entry)
+  const dedup = (entries: ScoredEntry[]): ScoredEntry[] => {
+    const scoreMap = new Map<number, number>();
+    for (const r of entries) {
+      const existing = scoreMap.get(r.entryId);
+      if (existing === undefined || r.score > existing) {
+        scoreMap.set(r.entryId, r.score);
+      }
     }
-  }
+    return [...scoreMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([entryId, score]) => ({ entryId, score }));
+  };
 
-  // Sort by score DESC, take top N
-  const sorted = [...scoreMap.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
+  const japSorted = dedup(japaneseResults);
+  const engSorted = dedup(englishResults);
 
-  if (sorted.length === 0) return [];
+  // Gather all unique entry IDs to fetch
+  const allIds = new Set([
+    ...japSorted.map((r) => r.entryId),
+    ...engSorted.map((r) => r.entryId),
+  ]);
 
-  // Fetch full entry data
-  const entryIds = sorted.map((s) => s[0]);
-  const commonMap = new Map<number, boolean>();
+  if (allIds.size === 0) return { japanese: [], english: [] };
 
+  const entryIds = [...allIds];
   const placeholders = entryIds.map(() => "?").join(",");
 
   const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
@@ -484,11 +617,26 @@ export async function searchDictionary(
     ),
   ]);
 
+  const commonMap = new Map<number, boolean>();
   for (const r of entryRows) {
     commonMap.set(r.id, !!r.common);
   }
 
-  return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+  // Build a lookup map of assembled entries
+  const allAssembled = assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+  const entryMap = new Map<number, DictEntry>();
+  for (const e of allAssembled) {
+    entryMap.set(e.id, e);
+  }
+
+  // Map scored lists to DictEntry arrays, preserving sort order
+  const toEntries = (scored: ScoredEntry[]): DictEntry[] =>
+    scored.map((r) => entryMap.get(r.entryId)!).filter(Boolean);
+
+  return {
+    japanese: toEntries(japSorted),
+    english: toEntries(engSorted),
+  };
 }
 
 export async function getEntries(

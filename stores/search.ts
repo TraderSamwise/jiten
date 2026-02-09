@@ -1,22 +1,24 @@
 import { create } from "zustand";
-import type { DictEntry } from "@/db/types";
+import type { SearchResults } from "@/db/types";
+
+const EMPTY_RESULTS: SearchResults = { japanese: [], english: [] };
 
 interface SearchState {
   query: string;
-  results: DictEntry[];
+  results: SearchResults;
   isSearching: boolean;
   setQuery: (query: string) => void;
-  setResults: (results: DictEntry[]) => void;
+  setResults: (results: SearchResults) => void;
   setIsSearching: (isSearching: boolean) => void;
   clear: () => void;
 }
 
 export const useSearchStore = create<SearchState>((set) => ({
   query: "",
-  results: [],
+  results: EMPTY_RESULTS,
   isSearching: false,
   setQuery: (query) => set({ query }),
   setResults: (results) => set({ results, isSearching: false }),
   setIsSearching: (isSearching) => set({ isSearching }),
-  clear: () => set({ query: "", results: [], isSearching: false }),
+  clear: () => set({ query: "", results: EMPTY_RESULTS, isSearching: false }),
 }));

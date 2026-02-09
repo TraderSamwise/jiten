@@ -58,9 +58,11 @@ function searchJapanese(db: Database.Database, input: string, limit: number): Sc
   const hiragana = toHiragana(input);
   const matchRows = db
     .prepare(
-      `SELECT DISTINCT entry_id FROM kanji WHERE text LIKE ?
-       UNION
-       SELECT DISTINCT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?`
+      `SELECT DISTINCT entry_id FROM (
+         SELECT entry_id FROM kanji WHERE text LIKE ?
+         UNION
+         SELECT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?
+       ) LIMIT 500`
     )
     .all(`${input}%`, `${hiragana}%`, `${input}%`) as { entry_id: number }[];
 
@@ -102,7 +104,7 @@ function searchRomaji(db: Database.Database, input: string, limit: number): Scor
   const matchRows = db
     .prepare(
       `SELECT DISTINCT ka.entry_id FROM kana ka
-       WHERE ka.romaji LIKE ? OR ka.text LIKE ?`
+       WHERE ka.romaji LIKE ? OR ka.text LIKE ? LIMIT 500`
     )
     .all(`${lower}%`, `${hiragana}%`) as { entry_id: number }[];
 
@@ -154,10 +156,22 @@ function searchRomaji(db: Database.Database, input: string, limit: number): Scor
   return results.slice(0, limit);
 }
 
+const STOP_WORDS = new Set([
+  "a","an","the","to","of","in","on","at","by","for","with","from","up","or","and","is","be","as","it","not","no",
+]);
+
+/** Crude stemming for LIKE search: drop last char so "starve" → "starv" matches "starving" */
+function stemForLike(word: string): string {
+  const w = word.toLowerCase().replace(/%/g, "").replace(/_/g, "");
+  if (w.length >= 5) return w.slice(0, -1);
+  return w;
+}
+
 function applyGlossBonus(
   db: Database.Database,
   rows: { entry_id: number; priority: number; common: number }[],
-  input: string
+  input: string,
+  tierBonus: number = 0
 ): ScoredEntry[] {
   const lowerQuery = input.toLowerCase();
   return rows.map((r) => {
@@ -198,19 +212,23 @@ function applyGlossBonus(
     }
     return {
       entryId: r.entry_id,
-      score: 2000 + r.priority + r.common * 50 + bonus,
+      score: 2000 + r.priority + r.common * 50 + bonus + tierBonus,
     };
   });
 }
 
 function searchEnglishFts(db: Database.Database, input: string, limit: number): ScoredEntry[] {
-  const ftsQuery = input
+  const cleaned = input
     .replace(/['"]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!ftsQuery) return [];
+  if (!cleaned) return [];
 
-  const rows = db
+  const seenIds = new Set<number>();
+  const allResults: ScoredEntry[] = [];
+
+  // Tier 1: Phrase match
+  const tier1Rows = db
     .prepare(
       `SELECT fts.entry_id, e.priority, e.common
        FROM glosses_fts fts
@@ -219,23 +237,82 @@ function searchEnglishFts(db: Database.Database, input: string, limit: number): 
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`
     )
-    .all(`"${ftsQuery}"*`, limit * 4) as {
+    .all(`"${cleaned}"*`, limit * 4) as {
     entry_id: number;
     priority: number;
     common: number;
   }[];
+  const tier1 = applyGlossBonus(db, tier1Rows, input, 1000);
+  for (const r of tier1) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
 
-  return applyGlossBonus(db, rows, input);
+  // Tier 2: AND of content words (multi-word only)
+  const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  if (contentWords.length > 1) {
+    const andQuery = contentWords.map((w) => `"${w}"*`).join(" AND ");
+    const tier2Rows = db
+      .prepare(
+        `SELECT fts.entry_id, e.priority, e.common
+         FROM glosses_fts fts
+         JOIN entries e ON fts.entry_id = e.id
+         WHERE glosses_fts MATCH ?
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`
+      )
+      .all(andQuery, limit * 4) as {
+      entry_id: number;
+      priority: number;
+      common: number;
+    }[];
+    const tier2 = applyGlossBonus(db, tier2Rows, input, 500);
+    for (const r of tier2) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  // Tier 3: OR fallback (only if < 5 results)
+  if (allResults.length < 5 && contentWords.length > 1) {
+    const orQuery = contentWords.map((w) => `"${w}"*`).join(" OR ");
+    const tier3Rows = db
+      .prepare(
+        `SELECT fts.entry_id, e.priority, e.common
+         FROM glosses_fts fts
+         JOIN entries e ON fts.entry_id = e.id
+         WHERE glosses_fts MATCH ?
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`
+      )
+      .all(orQuery, limit * 4) as {
+      entry_id: number;
+      priority: number;
+      common: number;
+    }[];
+    const tier3 = applyGlossBonus(db, tier3Rows, input, 0);
+    for (const r of tier3) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  return allResults;
 }
 
 function searchEnglishLike(db: Database.Database, input: string, limit: number): ScoredEntry[] {
-  const lowerQuery = input.toLowerCase().replace(/%/g, "").replace(/_/g, "");
-  if (!lowerQuery) return [];
+  const cleaned = input.toLowerCase().replace(/%/g, "").replace(/_/g, "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
 
-  // Use word-boundary patterns to avoid substring noise
-  // '% query%' matches query preceded by space (word in a phrase)
-  // '%"query%' matches query at start of a JSON text value
-  const rows = db
+  const seenIds = new Set<number>();
+  const allResults: ScoredEntry[] = [];
+
+  // Tier 1: Full phrase LIKE (word-boundary match)
+  const tier1Rows = db
     .prepare(
       `SELECT DISTINCT s.entry_id, e.priority, e.common
        FROM senses s
@@ -244,13 +321,80 @@ function searchEnglishLike(db: Database.Database, input: string, limit: number):
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`
     )
-    .all(`% ${lowerQuery}%`, `%"${lowerQuery}%`, limit * 4) as {
+    .all(`% ${cleaned}%`, `%"${cleaned}%`, limit * 4) as {
     entry_id: number;
     priority: number;
     common: number;
   }[];
+  const tier1 = applyGlossBonus(db, tier1Rows, input, 1000);
+  for (const r of tier1) {
+    seenIds.add(r.entryId);
+    allResults.push(r);
+  }
 
-  return applyGlossBonus(db, rows, input);
+  // Tier 2: AND of stemmed content words
+  const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w));
+  if (contentWords.length > 1) {
+    const stems = contentWords.map(stemForLike);
+    const likePatterns = stems.map((s) => `%${s}%`);
+    const whereClause = stems.map(() => "s.glosses LIKE ?").join(" OR ");
+    const havingClause = stems.map(() => "SUM(CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END) > 0").join(" AND ");
+
+    const tier2Rows = db
+      .prepare(
+        `SELECT s.entry_id, e.priority, e.common
+         FROM senses s
+         JOIN entries e ON s.entry_id = e.id
+         WHERE ${whereClause}
+         GROUP BY s.entry_id, e.priority, e.common
+         HAVING ${havingClause}
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`
+      )
+      .all(...likePatterns, ...likePatterns, limit * 4) as {
+      entry_id: number;
+      priority: number;
+      common: number;
+    }[];
+    const tier2 = applyGlossBonus(db, tier2Rows, input, 500);
+    for (const r of tier2) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  // Tier 3: OR of stemmed content words (only if < 5 results)
+  if (allResults.length < 5 && contentWords.length > 1) {
+    const stems = contentWords.map(stemForLike);
+    const likePatterns = stems.map((s) => `%${s}%`);
+    const whereClause = stems.map(() => "s.glosses LIKE ?").join(" OR ");
+
+    const tier3Rows = db
+      .prepare(
+        `SELECT DISTINCT s.entry_id, e.priority, e.common
+         FROM senses s
+         JOIN entries e ON s.entry_id = e.id
+         WHERE ${whereClause}
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`
+      )
+      .all(...likePatterns, limit * 4) as {
+      entry_id: number;
+      priority: number;
+      common: number;
+    }[];
+    const tier3 = applyGlossBonus(db, tier3Rows, input, 0);
+    for (const r of tier3) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  return allResults;
 }
 
 let useLikeFallback = false;
@@ -1098,6 +1242,33 @@ describe("Result structure", () => {
     const results = searchDictionary(db, "take");
     const ids = results.map((r) => r.entryId);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// 15. Stemming + tiered matching (3 tests)
+// ════════════════════════════════════════════════════════════
+
+describe("Stemming + tiered matching", () => {
+  test("'starving to death' → finds 餓死 and 飢え死に", () => {
+    const results = searchDictionary(db, "starving to death");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+    expectContainsKanji(results, "飢え死に");
+  });
+
+  test("'starve to death' → finds 餓死 and 飢え死に", () => {
+    const results = searchDictionary(db, "starve to death");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+    expectContainsKanji(results, "飢え死に");
+  });
+
+  test("'starvation death' → finds 餓死 and 飢え死に (tiered AND matching)", () => {
+    const results = searchDictionary(db, "starvation death");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+    expectContainsKanji(results, "飢え死に");
   });
 });
 

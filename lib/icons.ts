@@ -17,4 +17,6 @@ export {
   ListPlus,
   FolderOpen,
   Pencil,
+  Play,
+  SlidersHorizontal,
 } from "lucide-react-native";

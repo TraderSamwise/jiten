@@ -322,7 +322,7 @@ async function main() {
     CREATE VIRTUAL TABLE glosses_fts USING fts5(
       glosses,
       entry_id UNINDEXED,
-      tokenize='unicode61'
+      tokenize='porter unicode61'
     );
 
     INSERT INTO glosses_fts (glosses, entry_id)

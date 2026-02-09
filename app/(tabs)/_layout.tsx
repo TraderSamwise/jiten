@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Tabs } from "expo-router";
-import { Search, BookOpen, GraduationCap, Settings } from "lucide-react-native";
+import { Search, BookOpen, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 
@@ -34,15 +34,6 @@ export default function TabLayout() {
           headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <BookOpen color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="flashcards"
-        options={{
-          title: "Study",
-          tabBarIcon: ({ color, size }) => (
-            <GraduationCap color={color} size={size} />
           ),
         }}
       />
