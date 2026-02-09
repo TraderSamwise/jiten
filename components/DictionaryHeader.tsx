@@ -17,9 +17,17 @@ export function DictionaryHeader({
   const { query, setQuery } = useSearchStore();
   const isWordDetail = route.name === "word/[id]";
 
+  const navigateToSearch = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/dictionary");
+    }
+  };
+
   const handleSubmit = () => {
     if (isWordDetail && query.trim()) {
-      router.back();
+      navigateToSearch();
     }
   };
 
@@ -31,7 +39,7 @@ export function DictionaryHeader({
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
         {back && (
           <Pressable
-            onPress={() => router.back()}
+            onPress={navigateToSearch}
             hitSlop={8}
             className="py-1"
           >

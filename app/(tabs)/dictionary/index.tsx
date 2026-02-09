@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { View, SectionList, ActivityIndicator } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
 import { useSearchStore } from "@/stores/search";
@@ -14,21 +15,34 @@ interface Section {
 
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
-  const { query, results, isSearching, setResults, setIsSearching } =
+  const { query, results, isSearching, setResults, setIsSearching, setQuery } =
     useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initializedRef = useRef(false);
+
+  // Seed store from URL query param on mount (for deep links)
+  useEffect(() => {
+    if (!initializedRef.current && params.q && !query) {
+      setQuery(params.q);
+    }
+    initializedRef.current = true;
+  }, []);
 
   useEffect(() => {
     if (!dictDb || !isReady) return;
 
     if (!query.trim()) {
       setResults({ japanese: [], english: [] });
+      setIsSearching(false);
+      router.setParams({ q: "" });
       return;
     }
 
-    setIsSearching(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
       try {
         const searchResults = await searchDictionary(dictDb, query);
         setResults(searchResults);
@@ -36,7 +50,8 @@ export default function SearchScreen() {
         console.error("Search error:", err);
         setResults({ japanese: [], english: [] });
       }
-    }, 200);
+      router.setParams(query.trim() ? { q: query.trim() } : { q: "" });
+    }, 350);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
