@@ -56,6 +56,36 @@ function stemForLike(word: string): string {
   return w;
 }
 
+/** Look up synonyms for a list of words from the synonyms table.
+ *  maxPerWord caps synonyms per word to keep LIKE queries fast. */
+async function expandWithSynonyms(
+  db: SQLite.SQLiteDatabase,
+  words: string[],
+  maxPerWord: number = 8
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (words.length === 0) return map;
+  for (const w of words) map.set(w.toLowerCase(), []);
+
+  try {
+    const placeholders = words.map(() => "?").join(",");
+    const rows = await db.getAllAsync<{ word: string; synonym: string }>(
+      `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`,
+      words.map((w) => w.toLowerCase())
+    );
+    for (const r of rows) {
+      const arr = map.get(r.word);
+      if (arr && arr.length < maxPerWord) {
+        arr.push(r.synonym);
+      }
+    }
+  } catch {
+    // No synonyms table — skip expansion
+  }
+
+  return map;
+}
+
 // ─── Input classification ───
 
 function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean } {
@@ -300,6 +330,36 @@ async function searchEnglishFts(
     }
   }
 
+  // Tier 2.5: Synonym-expanded AND
+  const synMap = await expandWithSynonyms(db, contentWords);
+  if (contentWords.length > 0) {
+    const groupQueries = contentWords.map((w) => {
+      const syns = synMap.get(w.toLowerCase()) ?? [];
+      const all = [w, ...syns];
+      if (all.length === 1) return `"${all[0]}"*`;
+      return "(" + all.map((s) => `"${s}"*`).join(" OR ") + ")";
+    });
+    const synQuery = groupQueries.join(" AND ");
+    try {
+      const tier25Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+        `SELECT fts.entry_id, e.priority, e.common
+         FROM glosses_fts fts
+         JOIN entries e ON fts.entry_id = e.id
+         WHERE glosses_fts MATCH ?
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`,
+        [synQuery, limit * 4]
+      );
+      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
+      for (const r of tier25) {
+        if (!seenIds.has(r.entryId)) {
+          seenIds.add(r.entryId);
+          allResults.push(r);
+        }
+      }
+    } catch {}
+  }
+
   // Tier 3: OR fallback (only if tiers 1+2 returned < 5 results)
   if (allResults.length < 5 && contentWords.length > 1) {
     const orQuery = contentWords.map((w) => `"${w}"*`).join(" OR ");
@@ -377,6 +437,62 @@ async function searchEnglishLike(
         allResults.push(r);
       }
     }
+  }
+
+  // Tier 2.5: Synonym-expanded AND (LIKE)
+  const synMapLike = await expandWithSynonyms(db, contentWords, 15);
+  if (contentWords.length > 0) {
+    const groups = contentWords.map((w) => {
+      const syns = synMapLike.get(w.toLowerCase()) ?? [];
+      // Use stemmed original word + full synonym words (synonyms are already canonical forms).
+      // Filter out very short synonyms (<=3 chars) to avoid excessive LIKE false positives.
+      const parts: string[] = [stemForLike(w)];
+      for (const s of syns) {
+        if (s.length > 3 && !parts.includes(s)) parts.push(s);
+      }
+      return parts;
+    });
+    // WHERE: any group's pattern matches (for efficient index use)
+    const allPatterns: string[] = [];
+    const whereTerms: string[] = [];
+    for (const group of groups) {
+      const groupPatterns = group.map((s) => `%${s}%`);
+      allPatterns.push(...groupPatterns);
+      whereTerms.push(group.map(() => "s.glosses LIKE ?").join(" OR "));
+    }
+    const whereClause = whereTerms.map((t) => `(${t})`).join(" OR ");
+    // HAVING: all groups must match
+    const havingTerms: string[] = [];
+    const havingPatterns: string[] = [];
+    for (const group of groups) {
+      const groupPatterns = group.map((s) => `%${s}%`);
+      havingPatterns.push(...groupPatterns);
+      havingTerms.push(
+        "(" + group.map(() => "CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END").join(" + ") + ") > 0"
+      );
+    }
+    const havingClause = havingTerms.join(" AND ");
+
+    try {
+      const tier25Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+        `SELECT s.entry_id, e.priority, e.common
+         FROM senses s
+         JOIN entries e ON s.entry_id = e.id
+         WHERE ${whereClause}
+         GROUP BY s.entry_id, e.priority, e.common
+         HAVING ${havingClause}
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`,
+        [...allPatterns, ...havingPatterns, limit * 4]
+      );
+      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
+      for (const r of tier25) {
+        if (!seenIds.has(r.entryId)) {
+          seenIds.add(r.entryId);
+          allResults.push(r);
+        }
+      }
+    } catch {}
   }
 
   // Tier 3: OR of stemmed content words (only if < 5 results)

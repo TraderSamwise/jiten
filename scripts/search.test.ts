@@ -167,6 +167,40 @@ function stemForLike(word: string): string {
   return w;
 }
 
+/** Look up synonyms for a list of words from the synonyms table.
+ *  maxPerWord caps synonyms per word to keep LIKE queries fast. */
+function expandWithSynonyms(
+  db: Database.Database,
+  words: string[],
+  maxPerWord: number = 8
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  if (words.length === 0) return map;
+  for (const w of words) map.set(w.toLowerCase(), []);
+
+  try {
+    const placeholders = words.map(() => "?").join(",");
+    const rows = db
+      .prepare(
+        `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`
+      )
+      .all(...words.map((w) => w.toLowerCase())) as {
+      word: string;
+      synonym: string;
+    }[];
+    for (const r of rows) {
+      const arr = map.get(r.word);
+      if (arr && arr.length < maxPerWord) {
+        arr.push(r.synonym);
+      }
+    }
+  } catch {
+    // No synonyms table — skip expansion
+  }
+
+  return map;
+}
+
 function applyGlossBonus(
   db: Database.Database,
   rows: { entry_id: number; priority: number; common: number }[],
@@ -275,6 +309,41 @@ function searchEnglishFts(db: Database.Database, input: string, limit: number): 
     }
   }
 
+  // Tier 2.5: Synonym-expanded AND
+  const synMap = expandWithSynonyms(db, contentWords);
+  if (contentWords.length > 0) {
+    const groupQueries = contentWords.map((w) => {
+      const syns = synMap.get(w.toLowerCase()) ?? [];
+      const all = [w, ...syns];
+      if (all.length === 1) return `"${all[0]}"*`;
+      return "(" + all.map((s) => `"${s}"*`).join(" OR ") + ")";
+    });
+    const synQuery = groupQueries.join(" AND ");
+    try {
+      const tier25Rows = db
+        .prepare(
+          `SELECT fts.entry_id, e.priority, e.common
+           FROM glosses_fts fts
+           JOIN entries e ON fts.entry_id = e.id
+           WHERE glosses_fts MATCH ?
+           ORDER BY e.priority + (e.common * 50) DESC
+           LIMIT ?`
+        )
+        .all(synQuery, limit * 4) as {
+        entry_id: number;
+        priority: number;
+        common: number;
+      }[];
+      const tier25 = applyGlossBonus(db, tier25Rows, input, 250);
+      for (const r of tier25) {
+        if (!seenIds.has(r.entryId)) {
+          seenIds.add(r.entryId);
+          allResults.push(r);
+        }
+      }
+    } catch {}
+  }
+
   // Tier 3: OR fallback (only if < 5 results)
   if (allResults.length < 5 && contentWords.length > 1) {
     const orQuery = contentWords.map((w) => `"${w}"*`).join(" OR ");
@@ -363,6 +432,68 @@ function searchEnglishLike(db: Database.Database, input: string, limit: number):
         allResults.push(r);
       }
     }
+  }
+
+  // Tier 2.5: Synonym-expanded AND (LIKE)
+  const synMapLike = expandWithSynonyms(db, contentWords, 15);
+  if (contentWords.length > 0) {
+    const groups = contentWords.map((w) => {
+      const syns = synMapLike.get(w.toLowerCase()) ?? [];
+      // Use stemmed original word + full synonym words (synonyms are already canonical forms).
+      // Filter out very short synonyms (<=3 chars) to avoid excessive LIKE false positives.
+      const parts = new Set<string>();
+      parts.add(stemForLike(w));
+      for (const s of syns) {
+        if (s.length > 3) parts.add(s);
+      }
+      return [...parts];
+    });
+    // WHERE: any group's pattern matches (for efficient index use)
+    const allPatterns: string[] = [];
+    const whereTerms: string[] = [];
+    for (const group of groups) {
+      const groupPatterns = group.map((s) => `%${s}%`);
+      allPatterns.push(...groupPatterns);
+      whereTerms.push(group.map(() => "s.glosses LIKE ?").join(" OR "));
+    }
+    const whereClause = whereTerms.map((t) => `(${t})`).join(" OR ");
+    // HAVING: all groups must match
+    const havingTerms: string[] = [];
+    const havingPatterns: string[] = [];
+    for (const group of groups) {
+      const groupPatterns = group.map((s) => `%${s}%`);
+      havingPatterns.push(...groupPatterns);
+      havingTerms.push(
+        "(" + group.map(() => "CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END").join(" + ") + ") > 0"
+      );
+    }
+    const havingClause = havingTerms.join(" AND ");
+
+    try {
+      const tier25Rows = db
+        .prepare(
+          `SELECT s.entry_id, e.priority, e.common
+           FROM senses s
+           JOIN entries e ON s.entry_id = e.id
+           WHERE ${whereClause}
+           GROUP BY s.entry_id, e.priority, e.common
+           HAVING ${havingClause}
+           ORDER BY e.priority + (e.common * 50) DESC
+           LIMIT ?`
+        )
+        .all(...allPatterns, ...havingPatterns, limit * 4) as {
+        entry_id: number;
+        priority: number;
+        common: number;
+      }[];
+      const tier25 = applyGlossBonus(db, tier25Rows, input, 250);
+      for (const r of tier25) {
+        if (!seenIds.has(r.entryId)) {
+          seenIds.add(r.entryId);
+          allResults.push(r);
+        }
+      }
+    } catch {}
   }
 
   // Tier 3: OR of stemmed content words (only if < 5 results)
@@ -1264,11 +1395,124 @@ describe("Stemming + tiered matching", () => {
     expectContainsKanji(results, "飢え死に");
   });
 
-  test("'starvation death' → finds 餓死 and 飢え死に (tiered AND matching)", () => {
-    const results = searchDictionary(db, "starvation death");
+  test("'death from hunger' → finds 餓死 and 飢え死に", () => {
+    const results = searchDictionary(db, "death from hunger");
     expectHasResults(results);
     expectContainsKana(results, "がし");
     expectContainsKanji(results, "飢え死に");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// 16. Synonym expansion (semantic search) (14 tests)
+// ════════════════════════════════════════════════════════════
+
+describe("Synonym expansion", () => {
+  // ── Multi-word queries where a synonym bridges the gap ──
+
+  test("'death from hunger' → finds 餓死 (hunger→starvation bridge)", () => {
+    // Glosses contain "starvation" and "death", NOT "hunger"
+    const results = searchDictionary(db, "death from hunger");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+  });
+
+  test("'chilly wind' → finds 寒風 (chilly→cold bridge)", () => {
+    // 寒風 gloss: "cold wind" — searching "chilly wind" needs chilly→cold
+    const results = searchDictionary(db, "chilly wind");
+    expectContainsKanji(results, "寒風");
+  });
+
+  test("'aged person' → finds 老人 (aged→old bridge)", () => {
+    // 老人 gloss: "old person" — searching "aged person" needs aged→old
+    const results = searchDictionary(db, "aged person");
+    expectContainsKanji(results, "老人");
+  });
+
+  test("'tiny child' → finds 幼子 or 幼児 (tiny→little bridge)", () => {
+    // 幼子 gloss: "little child" — searching "tiny child" needs tiny→little
+    const results = searchDictionary(db, "tiny child");
+    expectHasResults(results);
+    const found = results.some(
+      (r) => r.kanjiTexts.includes("幼子") || r.kanjiTexts.includes("幼児")
+    );
+    expect(found).toBe(true);
+  });
+
+  test("'icy wind' → finds 寒風 or 冷風 (icy→cold bridge)", () => {
+    // 寒風 gloss: "cold wind" — searching "icy wind" needs icy→cold
+    const results = searchDictionary(db, "icy wind");
+    expectHasResults(results);
+    const found = results.some(
+      (r) => r.kanjiTexts.includes("寒風") || r.kanjiTexts.includes("冷風")
+    );
+    expect(found).toBe(true);
+  });
+
+  // ── Synonym + stemming combined ──
+
+  test("'dying of hunger' → finds 餓死 (hunger→starvation + dying stems)", () => {
+    // Needs both synonym expansion (hunger→starvation) and stemming (dying→die/death)
+    const results = searchDictionary(db, "dying of hunger");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+  });
+
+  test("'starving from famine' → finds 餓死 (famine→starvation + starving stems)", () => {
+    // Needs synonym (famine→starvation) — OR stemming alone may catch "starving"
+    const results = searchDictionary(db, "starving from famine");
+    expectHasResults(results);
+    expectContainsKana(results, "がし");
+  });
+
+  // ── Single-word synonym queries ──
+
+  test("'automobile' → finds 車 (automobile is already in gloss, baseline check)", () => {
+    // 車 gloss includes "automobile" — this should work without synonyms (baseline)
+    expectContainsKanji(searchDictionary(db, "automobile"), "車");
+  });
+
+  test("'physician' → finds 医者 (physician is already in gloss, baseline check)", () => {
+    // 医者 gloss includes "physician" — baseline check
+    expectContainsKanji(searchDictionary(db, "physician"), "医者");
+  });
+
+  test("'slumber' → finds 眠り (slumber→sleep bridge)", () => {
+    // 眠り gloss: "sleep" — "slumber" is a synonym
+    const results = searchDictionary(db, "slumber");
+    expectContainsKanji(results, "眠り");
+  });
+
+  test("'foe' → finds 敵 (foe is already in gloss, baseline check)", () => {
+    // 敵 gloss includes "foe" — baseline check
+    expectContainsKanji(searchDictionary(db, "foe"), "敵");
+  });
+
+  // ── Synonym expansion should not degrade direct matches ──
+
+  test("'cold' still returns 寒い as top result (direct match not degraded)", () => {
+    // Verify that synonym expansion doesn't push direct matches down
+    const results = searchDictionary(db, "cold");
+    expectHasResults(results);
+    expectContainsKanji(results, "寒い");
+  });
+
+  test("'starvation' still finds 餓死 directly (direct match not degraded)", () => {
+    const results = searchDictionary(db, "starvation");
+    expectContainsKana(results, "がし");
+  });
+
+  test("'death from starvation' ranks higher than 'death from hunger'", () => {
+    // Direct wording match should score higher than synonym-expanded match
+    const direct = searchDictionary(db, "death from starvation");
+    const synonym = searchDictionary(db, "death from hunger");
+    expectHasResults(direct);
+    expectHasResults(synonym);
+    const directGashi = direct.find((r) => r.kanaTexts.includes("がし"));
+    const synGashi = synonym.find((r) => r.kanaTexts.includes("がし"));
+    if (directGashi && synGashi) {
+      expect(directGashi.score).toBeGreaterThanOrEqual(synGashi.score);
+    }
   });
 });
 

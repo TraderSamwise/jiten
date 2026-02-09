@@ -48,3 +48,5 @@ yarn-error.*
 # Dictionary database (built from source data, large binary)
 # Run `yarn build:db` to regenerate
 assets/dictionary.db
+assets/dictionary.db-shm
+assets/dictionary.db-wal
