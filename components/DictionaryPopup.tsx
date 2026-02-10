@@ -90,53 +90,57 @@ export function DictionaryPopup({ visible, onClose, results, loading }: Dictiona
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
             style={{ paddingBottom: insets.bottom + 16 }}
           >
-            {/* Pill tabs for word segments (only when multiple words) */}
-            {results.length > 1 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="mb-3"
-                contentContainerStyle={{ gap: 8 }}
-              >
-                {results.map((r, i) => (
-                  <Pressable
-                    key={i}
-                    onPress={() => {
-                      setSelectedWordIdx(i);
-                      setEntryIdx(0);
-                    }}
-                    className={`px-3 py-1.5 rounded-full border ${
-                      i === Math.min(selectedWordIdx, results.length - 1)
-                        ? "bg-primary/20 border-primary/40"
-                        : "border-border"
-                    }`}
+            {/* Header row: pills/matched text (flex) + controls (fixed) */}
+            <View className="flex-row items-center mb-3 gap-2">
+              {/* Left side: pills or matched text — fills available space */}
+              <View className="flex-1" style={{ minWidth: 0 }}>
+                {results.length > 1 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 6 }}
+                    style={{ flexGrow: 0 }}
                   >
-                    <Text
-                      className={`text-sm ${
-                        i === Math.min(selectedWordIdx, results.length - 1)
-                          ? "text-foreground font-medium"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {r.matchedText}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* Header with close, bookmark, and pagination */}
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-2">
-                {wordResult!.deinflectReasons.length > 0 && (
-                  <View className="bg-muted px-2 py-1 rounded">
-                    <Text className="text-xs text-muted-foreground">
-                      {wordResult!.deinflectReasons.join(" → ")}
-                    </Text>
+                    {results.map((r, i) => (
+                      <Pressable
+                        key={i}
+                        onPress={() => {
+                          setSelectedWordIdx(i);
+                          setEntryIdx(0);
+                        }}
+                        className={`px-3 py-1.5 rounded-full border ${
+                          i === Math.min(selectedWordIdx, results.length - 1)
+                            ? "bg-primary/20 border-primary/40"
+                            : "border-border"
+                        }`}
+                      >
+                        <Text
+                          className={`text-sm ${
+                            i === Math.min(selectedWordIdx, results.length - 1)
+                              ? "text-foreground font-medium"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {r.matchedText}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
+                    {wordResult!.deinflectReasons.length > 0 && (
+                      <View className="bg-muted px-2 py-1 rounded">
+                        <Text className="text-xs text-muted-foreground">
+                          {wordResult!.deinflectReasons.join(" → ")}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 )}
               </View>
 
+              {/* Right side: fixed controls */}
               <View className="flex-row items-center gap-2">
                 {total > 1 && (
                   <View className="flex-row items-center gap-1">
@@ -178,10 +182,14 @@ export function DictionaryPopup({ visible, onClose, results, loading }: Dictiona
               </View>
             </View>
 
-            {/* Matched text (only when single word — pills already show it for multi-word) */}
-            {results.length <= 1 && (
+            {/* Deinflect reasons (shown below pills for multi-word) */}
+            {results.length > 1 && wordResult!.deinflectReasons.length > 0 && (
               <View className="mb-2">
-                <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
+                <View className="bg-muted px-2 py-1 rounded self-start">
+                  <Text className="text-xs text-muted-foreground">
+                    {wordResult!.deinflectReasons.join(" → ")}
+                  </Text>
+                </View>
               </View>
             )}
 
