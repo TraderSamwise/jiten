@@ -2,7 +2,9 @@ import React, { createContext, useContext } from "react";
 import { ClerkProvider, useAuth as useClerkAuth } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+import { env } from "@/lib/env";
+
+const publishableKey = env.CLERK_PUBLISHABLE_KEY;
 
 /** true when no Clerk key is configured — app runs fully local */
 const LOCAL_MODE = !publishableKey;
