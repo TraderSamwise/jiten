@@ -89,7 +89,7 @@ declare const window: Window & {
     state.lastTapOffset = offset;
     state.lastTapAbsOffset = nodeOffsetToAbsolute(node, offset);
 
-    const before = getTextBeforePosition(node, offset, 10);
+    const before = getTextBeforePosition(node, offset, 15);
     const after = getTextFromPosition(node, offset, 20);
     if (!after || after.length === 0) return;
 

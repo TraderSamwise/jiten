@@ -487,6 +487,12 @@ describe("する (suru) irregular deinflection", () => {
     expect(hasCandidate("してる", "する")).toBe(true);
   });
 
+  test("蓄積させる → produces both 蓄積する and 蓄積 (noun base)", () => {
+    const words = candidates("蓄積させる");
+    expect(words).toContain("蓄積する"); // causative → する form
+    expect(words).toContain("蓄積"); // suru-verb noun base
+  });
+
   test("compound: 勉強する forms", () => {
     expect(hasCandidate("勉強した", "勉強する")).toBe(true);
     expect(hasCandidate("勉強して", "勉強する")).toBe(true);
