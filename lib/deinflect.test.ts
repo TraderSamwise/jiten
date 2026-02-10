@@ -903,10 +903,14 @@ describe("generateLookupCandidates", () => {
     const candidates = generateLookupCandidates(text, 10);
 
     // Should include the original substrings at various lengths
-    expect(candidates.some((c) => c.matchedText === "食べました" && c.searchWord === "食べました")).toBe(true);
+    expect(
+      candidates.some((c) => c.matchedText === "食べました" && c.searchWord === "食べました"),
+    ).toBe(true);
 
     // Should include deinflected forms
-    expect(candidates.some((c) => c.matchedText === "食べました" && c.searchWord === "食べる")).toBe(true);
+    expect(
+      candidates.some((c) => c.matchedText === "食べました" && c.searchWord === "食べる"),
+    ).toBe(true);
 
     // Should also have shorter substrings
     expect(candidates.some((c) => c.matchedText === "食べ")).toBe(true);
@@ -1049,7 +1053,9 @@ describe("Selection segmentation scenarios", () => {
 
   test("handles pure katakana text", () => {
     const candidates = generateLookupCandidates("コーヒー");
-    expect(candidates.some((c) => c.matchedText === "コーヒー" && c.searchWord === "コーヒー")).toBe(true);
+    expect(
+      candidates.some((c) => c.matchedText === "コーヒー" && c.searchWord === "コーヒー"),
+    ).toBe(true);
   });
 });
 

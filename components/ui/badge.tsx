@@ -4,22 +4,19 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { Text } from "./text";
 
-const badgeVariants = cva(
-  "items-center rounded-full px-2.5 py-0.5",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary",
-        secondary: "bg-secondary",
-        outline: "border border-border bg-transparent",
-        common: "bg-green-100 dark:bg-green-900",
-      },
+const badgeVariants = cva("items-center rounded-full px-2.5 py-0.5", {
+  variants: {
+    variant: {
+      default: "bg-primary",
+      secondary: "bg-secondary",
+      outline: "border border-border bg-transparent",
+      common: "bg-green-100 dark:bg-green-900",
     },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-);
+  },
+  defaultVariants: {
+    variant: "default",
+  },
+});
 
 const badgeTextVariants = cva("text-xs font-medium", {
   variants: {

@@ -7,11 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useSearchStore } from "@/stores/search";
 import { ChevronLeft } from "@/lib/icons";
 
-export function DictionaryHeader({
-  back,
-  options,
-  route,
-}: NativeStackHeaderProps) {
+export function DictionaryHeader({ back, options, route }: NativeStackHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { query, setQuery } = useSearchStore();
@@ -32,17 +28,10 @@ export function DictionaryHeader({
   };
 
   return (
-    <View
-      style={{ paddingTop: insets.top }}
-      className="bg-background border-b border-border"
-    >
+    <View style={{ paddingTop: insets.top }} className="bg-background border-b border-border">
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
         {back && (
-          <Pressable
-            onPress={navigateToSearch}
-            hitSlop={8}
-            className="py-1"
-          >
+          <Pressable onPress={navigateToSearch} hitSlop={8} className="py-1">
             <ChevronLeft size={24} className="text-primary" />
           </Pressable>
         )}

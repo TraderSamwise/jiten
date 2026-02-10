@@ -1,6 +1,15 @@
 import * as SQLite from "expo-sqlite";
 import { toHiragana } from "wanakana";
-import type { DictEntry, DictKanji, DictKana, DictSense, Gloss, PitchAccent, SearchResults, EnglishMatchEntry } from "./types";
+import type {
+  DictEntry,
+  DictKanji,
+  DictKana,
+  DictSense,
+  Gloss,
+  PitchAccent,
+  SearchResults,
+  EnglishMatchEntry,
+} from "./types";
 
 // ─── Raw row types ───
 
@@ -47,7 +56,27 @@ interface ScoredEntry {
 }
 
 const STOP_WORDS = new Set([
-  "a","an","the","to","of","in","on","at","by","for","with","from","up","or","and","is","be","as","it","not","no",
+  "a",
+  "an",
+  "the",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "by",
+  "for",
+  "with",
+  "from",
+  "up",
+  "or",
+  "and",
+  "is",
+  "be",
+  "as",
+  "it",
+  "not",
+  "no",
 ]);
 
 /** Crude stemming for LIKE search: drop last char so "starve" → "starv" matches "starving" */
@@ -62,7 +91,7 @@ function stemForLike(word: string): string {
 async function expandWithSynonyms(
   db: SQLite.SQLiteDatabase,
   words: string[],
-  maxPerWord: number = 8
+  maxPerWord: number = 8,
 ): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>();
   if (words.length === 0) return map;
@@ -72,7 +101,7 @@ async function expandWithSynonyms(
     const placeholders = words.map(() => "?").join(",");
     const rows = await db.getAllAsync<{ word: string; synonym: string }>(
       `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`,
-      words.map((w) => w.toLowerCase())
+      words.map((w) => w.toLowerCase()),
     );
     for (const r of rows) {
       const arr = map.get(r.word);
@@ -100,7 +129,7 @@ function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean 
       (c >= 0x4e00 && c <= 0x9fff) || // CJK unified
       (c >= 0x3400 && c <= 0x4dbf) || // CJK ext A
       (c >= 0xf900 && c <= 0xfaff) || // CJK compat
-      (c >= 0x3000 && c <= 0x303f)    // CJK symbols
+      (c >= 0x3000 && c <= 0x303f) // CJK symbols
     ) {
       hasJapanese = true;
       isAscii = false;
@@ -113,7 +142,12 @@ function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean 
 
 // ─── Gloss matching ───
 
-function computeGlossBonus(glosses: string, query: string, senseIndex: number, isCommon: boolean): { score: number; matchedGloss: string | null } {
+function computeGlossBonus(
+  glosses: string,
+  query: string,
+  senseIndex: number,
+  isCommon: boolean,
+): { score: number; matchedGloss: string | null } {
   const senseBonus = senseIndex === 0 ? 3000 : 1000;
   const exactBonus = isCommon ? 5000 : 0;
   try {
@@ -180,7 +214,7 @@ function findFirstMatchingGloss(entry: DictEntry, query: string): string {
 async function searchJapanese(
   db: SQLite.SQLiteDatabase,
   input: string,
-  limit: number
+  limit: number,
 ): Promise<ScoredEntry[]> {
   const hiragana = toHiragana(input);
 
@@ -191,7 +225,7 @@ async function searchJapanese(
        UNION
        SELECT entry_id FROM kana WHERE text LIKE ? OR text LIKE ?
      ) LIMIT 500`,
-    [`${input}%`, `${hiragana}%`, `${input}%`]
+    [`${input}%`, `${hiragana}%`, `${input}%`],
   );
 
   if (matchRows.length === 0) return [];
@@ -202,19 +236,16 @@ async function searchJapanese(
   // Step 2: fetch entry metadata
   const entryRows = await db.getAllAsync<RawEntryRow>(
     `SELECT id as entry_id, priority, common FROM entries WHERE id IN (${placeholders})`,
-    ids
+    ids,
   );
 
   // Step 3: check for exact matches
   const [kanjiExact, kanaExact] = await Promise.all([
-    db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM kanji WHERE text = ?`,
-      [input]
-    ),
-    db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM kana WHERE text = ? OR text = ?`,
-      [hiragana, input]
-    ),
+    db.getAllAsync<{ entry_id: number }>(`SELECT entry_id FROM kanji WHERE text = ?`, [input]),
+    db.getAllAsync<{ entry_id: number }>(`SELECT entry_id FROM kana WHERE text = ? OR text = ?`, [
+      hiragana,
+      input,
+    ]),
   ]);
   const exactSet = new Set([
     ...kanjiExact.map((r) => r.entry_id),
@@ -238,7 +269,7 @@ async function searchJapanese(
 async function searchRomaji(
   db: SQLite.SQLiteDatabase,
   input: string,
-  limit: number
+  limit: number,
 ): Promise<ScoredEntry[]> {
   const lower = input.toLowerCase();
   const hiragana = toHiragana(lower);
@@ -246,7 +277,7 @@ async function searchRomaji(
   // Find matching entries via romaji or kana prefix (cap at 500 to stay within SQL variable limits)
   const matchRows = await db.getAllAsync<{ entry_id: number }>(
     `SELECT DISTINCT entry_id FROM kana WHERE romaji LIKE ? OR text LIKE ? LIMIT 500`,
-    [`${lower}%`, `${hiragana}%`]
+    [`${lower}%`, `${hiragana}%`],
   );
 
   if (matchRows.length === 0) return [];
@@ -256,19 +287,13 @@ async function searchRomaji(
 
   const entryRows = await db.getAllAsync<RawEntryRow>(
     `SELECT id as entry_id, priority, common FROM entries WHERE id IN (${placeholders})`,
-    ids
+    ids,
   );
 
   // Check for exact romaji/kana matches
   const [romajiExact, kanaExact] = await Promise.all([
-    db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM kana WHERE romaji = ?`,
-      [lower]
-    ),
-    db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM kana WHERE text = ?`,
-      [hiragana]
-    ),
+    db.getAllAsync<{ entry_id: number }>(`SELECT entry_id FROM kana WHERE romaji = ?`, [lower]),
+    db.getAllAsync<{ entry_id: number }>(`SELECT entry_id FROM kana WHERE text = ?`, [hiragana]),
   ]);
   const exactSet = new Set([
     ...romajiExact.map((r) => r.entry_id),
@@ -290,7 +315,7 @@ async function searchRomaji(
     const ph = exactIds.map(() => "?").join(",");
     const senseCounts = await db.getAllAsync<{ entry_id: number; c: number }>(
       `SELECT entry_id, COUNT(*) as c FROM senses WHERE entry_id IN (${ph}) GROUP BY entry_id`,
-      exactIds
+      exactIds,
     );
     const countMap = new Map(senseCounts.map((r) => [r.entry_id, r.c]));
     for (const r of results) {
@@ -309,12 +334,9 @@ let fts5Available: boolean | null = null;
 async function searchEnglishFts(
   db: SQLite.SQLiteDatabase,
   input: string,
-  limit: number
+  limit: number,
 ): Promise<ScoredEntry[]> {
-  const cleaned = input
-    .replace(/['"]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = input.replace(/['"]/g, "").replace(/\s+/g, " ").trim();
   if (!cleaned) return [];
 
   const seenIds = new Set<number>();
@@ -329,7 +351,7 @@ async function searchEnglishFts(
      WHERE glosses_fts MATCH ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`"${cleaned}"`, limit * 2]
+    [`"${cleaned}"`, limit * 2],
   );
   const tier0 = await applyGlossBonus(db, tier0Rows, input, 1500);
   for (const r of tier0) {
@@ -345,7 +367,7 @@ async function searchEnglishFts(
      WHERE glosses_fts MATCH ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`"${cleaned}"*`, limit * 4]
+    [`"${cleaned}"*`, limit * 4],
   );
   const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
   for (const r of tier1) {
@@ -366,7 +388,7 @@ async function searchEnglishFts(
        WHERE glosses_fts MATCH ?
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`,
-      [andQuery, limit * 4]
+      [andQuery, limit * 4],
     );
     const tier2 = await applyGlossBonus(db, tier2Rows, input, 500);
     for (const r of tier2) {
@@ -388,14 +410,18 @@ async function searchEnglishFts(
     });
     const synQuery = groupQueries.join(" AND ");
     try {
-      const tier25Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      const tier25Rows = await db.getAllAsync<{
+        entry_id: number;
+        priority: number;
+        common: number;
+      }>(
         `SELECT fts.entry_id, e.priority, e.common
          FROM glosses_fts fts
          JOIN entries e ON fts.entry_id = e.id
          WHERE glosses_fts MATCH ?
          ORDER BY e.priority + (e.common * 50) DESC
          LIMIT ?`,
-        [synQuery, limit * 4]
+        [synQuery, limit * 4],
       );
       const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
       for (const r of tier25) {
@@ -417,7 +443,7 @@ async function searchEnglishFts(
        WHERE glosses_fts MATCH ?
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`,
-      [orQuery, limit * 4]
+      [orQuery, limit * 4],
     );
     const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
     for (const r of tier3) {
@@ -434,9 +460,14 @@ async function searchEnglishFts(
 async function searchEnglishLike(
   db: SQLite.SQLiteDatabase,
   input: string,
-  limit: number
+  limit: number,
 ): Promise<ScoredEntry[]> {
-  const cleaned = input.toLowerCase().replace(/%/g, "").replace(/_/g, "").replace(/\s+/g, " ").trim();
+  const cleaned = input
+    .toLowerCase()
+    .replace(/%/g, "")
+    .replace(/_/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cleaned) return [];
 
   const seenIds = new Set<number>();
@@ -451,7 +482,7 @@ async function searchEnglishLike(
      WHERE s.glosses LIKE ? OR s.glosses LIKE ? OR s.glosses LIKE ? OR s.glosses LIKE ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`%"${cleaned}"%`, `%"${cleaned}",%`, `% ${cleaned} %`, `% ${cleaned},%`, limit * 2]
+    [`%"${cleaned}"%`, `%"${cleaned}",%`, `% ${cleaned} %`, `% ${cleaned},%`, limit * 2],
   );
   const tier0 = await applyGlossBonus(db, tier0Rows, input, 1500);
   for (const r of tier0) {
@@ -467,7 +498,7 @@ async function searchEnglishLike(
      WHERE s.glosses LIKE ? OR s.glosses LIKE ?
      ORDER BY e.priority + (e.common * 50) DESC
      LIMIT ?`,
-    [`% ${cleaned}%`, `%"${cleaned}%`, limit * 4]
+    [`% ${cleaned}%`, `%"${cleaned}%`, limit * 4],
   );
   const tier1 = await applyGlossBonus(db, tier1Rows, input, 1000);
   for (const r of tier1) {
@@ -483,7 +514,9 @@ async function searchEnglishLike(
     const stems = contentWords.map(stemForLike);
     const likePatterns = stems.map((s) => `%${s}%`);
     const whereClause = stems.map(() => "s.glosses LIKE ?").join(" OR ");
-    const havingClause = stems.map(() => "SUM(CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END) > 0").join(" AND ");
+    const havingClause = stems
+      .map(() => "SUM(CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END) > 0")
+      .join(" AND ");
 
     const tier2Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
       `SELECT s.entry_id, e.priority, e.common
@@ -494,7 +527,7 @@ async function searchEnglishLike(
        HAVING ${havingClause}
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`,
-      [...likePatterns, ...likePatterns, limit * 4]
+      [...likePatterns, ...likePatterns, limit * 4],
     );
     const tier2 = await applyGlossBonus(db, tier2Rows, input, 500);
     for (const r of tier2) {
@@ -534,13 +567,17 @@ async function searchEnglishLike(
       const groupPatterns = group.map((s) => `%${s}%`);
       havingPatterns.push(...groupPatterns);
       havingTerms.push(
-        "(" + group.map(() => "CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END").join(" + ") + ") > 0"
+        "(" + group.map(() => "CASE WHEN s.glosses LIKE ? THEN 1 ELSE 0 END").join(" + ") + ") > 0",
       );
     }
     const havingClause = havingTerms.join(" AND ");
 
     try {
-      const tier25Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      const tier25Rows = await db.getAllAsync<{
+        entry_id: number;
+        priority: number;
+        common: number;
+      }>(
         `SELECT s.entry_id, e.priority, e.common
          FROM senses s
          JOIN entries e ON s.entry_id = e.id
@@ -549,7 +586,7 @@ async function searchEnglishLike(
          HAVING ${havingClause}
          ORDER BY e.priority + (e.common * 50) DESC
          LIMIT ?`,
-        [...allPatterns, ...havingPatterns, limit * 4]
+        [...allPatterns, ...havingPatterns, limit * 4],
       );
       const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
       for (const r of tier25) {
@@ -574,7 +611,7 @@ async function searchEnglishLike(
        WHERE ${whereClause}
        ORDER BY e.priority + (e.common * 50) DESC
        LIMIT ?`,
-      [...likePatterns, limit * 4]
+      [...likePatterns, limit * 4],
     );
     const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
     for (const r of tier3) {
@@ -592,7 +629,7 @@ async function applyGlossBonus(
   db: SQLite.SQLiteDatabase,
   rows: { entry_id: number; priority: number; common: number }[],
   input: string,
-  tierBonus: number = 0
+  tierBonus: number = 0,
 ): Promise<ScoredEntry[]> {
   const lowerQuery = input.toLowerCase();
   const results: ScoredEntry[] = [];
@@ -602,7 +639,7 @@ async function applyGlossBonus(
     let matchedGloss: string | null = null;
     const senseRows = await db.getAllAsync<{ glosses: string }>(
       `SELECT glosses FROM senses WHERE entry_id = ?`,
-      [r.entry_id]
+      [r.entry_id],
     );
     for (let si = 0; si < senseRows.length; si++) {
       const result = computeGlossBonus(senseRows[si].glosses, lowerQuery, si, !!r.common);
@@ -624,7 +661,7 @@ async function applyGlossBonus(
 async function searchEnglish(
   db: SQLite.SQLiteDatabase,
   input: string,
-  limit: number
+  limit: number,
 ): Promise<ScoredEntry[]> {
   if (fts5Available === false) {
     return searchEnglishLike(db, input, limit);
@@ -678,7 +715,7 @@ function assembleEntries(
   kanaRows: RawKanaRow[],
   senseRows: RawSenseRow[],
   pitchRows: RawPitchRow[],
-  commonMap: Map<number, boolean>
+  commonMap: Map<number, boolean>,
 ): DictEntry[] {
   const kanjiMap = new Map<number, DictKanji[]>();
   for (const r of kanjiRows) {
@@ -729,7 +766,7 @@ function assembleEntries(
 export async function searchDictionary(
   db: SQLite.SQLiteDatabase,
   query: string,
-  limit: number = 50
+  limit: number = 50,
 ): Promise<SearchResults> {
   const trimmed = query.trim();
   if (!trimmed) return { japanese: [], english: [] };
@@ -761,19 +798,14 @@ export async function searchDictionary(
         bestMap.set(r.entryId, r);
       }
     }
-    return [...bestMap.values()]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    return [...bestMap.values()].sort((a, b) => b.score - a.score).slice(0, limit);
   };
 
   const japSorted = dedup(japaneseResults);
   const engSorted = dedup(englishResults);
 
   // Gather all unique entry IDs to fetch
-  const allIds = new Set([
-    ...japSorted.map((r) => r.entryId),
-    ...engSorted.map((r) => r.entryId),
-  ]);
+  const allIds = new Set([...japSorted.map((r) => r.entryId), ...engSorted.map((r) => r.entryId)]);
 
   if (allIds.size === 0) return { japanese: [], english: [] };
 
@@ -783,23 +815,23 @@ export async function searchDictionary(
   const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
     db.getAllAsync<{ id: number; common: number }>(
       `SELECT id, common FROM entries WHERE id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawKanjiRow>(
       `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawKanaRow>(
       `SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawSenseRow>(
       `SELECT entry_id, part_of_speech, glosses, field, misc, info FROM senses WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawPitchRow>(
       `SELECT entry_id, reading, pitch_number FROM pitch_accents WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
   ]);
 
@@ -809,7 +841,14 @@ export async function searchDictionary(
   }
 
   // Build a lookup map of assembled entries
-  const allAssembled = assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+  const allAssembled = assembleEntries(
+    entryIds,
+    kanjiRows,
+    kanaRows,
+    senseRows,
+    pitchRows,
+    commonMap,
+  );
   const entryMap = new Map<number, DictEntry>();
   for (const e of allAssembled) {
     entryMap.set(e.id, e);
@@ -873,7 +912,7 @@ export async function searchDictionary(
 
 export async function getEntries(
   db: SQLite.SQLiteDatabase,
-  entryIds: number[]
+  entryIds: number[],
 ): Promise<DictEntry[]> {
   if (entryIds.length === 0) return [];
 
@@ -882,23 +921,23 @@ export async function getEntries(
   const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
     db.getAllAsync<{ id: number; common: number }>(
       `SELECT id, common FROM entries WHERE id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawKanjiRow>(
       `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawKanaRow>(
       `SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawSenseRow>(
       `SELECT entry_id, part_of_speech, glosses, field, misc, info FROM senses WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
     db.getAllAsync<RawPitchRow>(
       `SELECT entry_id, reading, pitch_number FROM pitch_accents WHERE entry_id IN (${placeholders})`,
-      entryIds
+      entryIds,
     ),
   ]);
 
@@ -912,41 +951,34 @@ export async function getEntries(
 
 export async function getEntry(
   db: SQLite.SQLiteDatabase,
-  entryId: number
+  entryId: number,
 ): Promise<DictEntry | null> {
   const row = await db.getFirstAsync<{ id: number; common: number }>(
     "SELECT id, common FROM entries WHERE id = ?",
-    [entryId]
+    [entryId],
   );
   if (!row) return null;
 
   const [kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
     db.getAllAsync<RawKanjiRow>(
       "SELECT entry_id, text, common, tags FROM kanji WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     ),
     db.getAllAsync<RawKanaRow>(
       "SELECT entry_id, text, romaji, common, tags FROM kana WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     ),
     db.getAllAsync<RawSenseRow>(
       "SELECT entry_id, part_of_speech, glosses, field, misc, info FROM senses WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     ),
     db.getAllAsync<RawPitchRow>(
       "SELECT entry_id, reading, pitch_number FROM pitch_accents WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     ),
   ]);
 
   const commonMap = new Map([[row.id, !!row.common]]);
-  const entries = assembleEntries(
-    [row.id],
-    kanjiRows,
-    kanaRows,
-    senseRows,
-    pitchRows,
-    commonMap
-  );
+  const entries = assembleEntries([row.id], kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
   return entries[0] ?? null;
 }

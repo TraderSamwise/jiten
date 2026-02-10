@@ -7,10 +7,7 @@ import type { DB, QueryResult } from "@op-engineering/op-sqlite";
 export interface WrappedUserDb {
   getAllAsync: <T>(sql: string, params?: any[]) => Promise<T[]>;
   getFirstAsync: <T>(sql: string, params?: any[]) => Promise<T | null>;
-  runAsync: (
-    sql: string,
-    params?: any[]
-  ) => Promise<{ changes: number; lastInsertRowId: number }>;
+  runAsync: (sql: string, params?: any[]) => Promise<{ changes: number; lastInsertRowId: number }>;
   sync: () => void;
 }
 
@@ -21,10 +18,7 @@ export function wrapUserDb(db: DB): WrappedUserDb {
       return result.rows as T[];
     },
 
-    getFirstAsync: async <T>(
-      sql: string,
-      params?: any[]
-    ): Promise<T | null> => {
+    getFirstAsync: async <T>(sql: string, params?: any[]): Promise<T | null> => {
       const result: QueryResult = await db.execute(sql, params);
       return (result.rows[0] as T) ?? null;
     },

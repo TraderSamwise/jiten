@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Modal, Pressable, View, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
@@ -22,26 +22,22 @@ function formatReading(entry: DictEntry): string {
 }
 
 function formatMeaning(entry: DictEntry): string {
-  return entry.senses
-    .map((s) => s.glosses.map((g) => g.text).join("; "))
-    .join(" / ");
+  return entry.senses.map((s) => s.glosses.map((g) => g.text).join("; ")).join(" / ");
 }
 
 function formatPos(entry: DictEntry): string {
-  const pos = entry.senses
-    .flatMap((s) => s.partOfSpeech)
-    .filter(Boolean);
+  const pos = entry.senses.flatMap((s) => s.partOfSpeech).filter(Boolean);
   return [...new Set(pos)].join(", ");
 }
 
-export function DictionaryPopup({
-  visible,
-  onClose,
-  results,
-}: DictionaryPopupProps) {
+export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [bookmarkEntryId, setBookmarkEntryId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setCurrentIdx(0);
+  }, [results]);
 
   // Flatten results into a flat entry list with metadata
   const flatEntries = results.flatMap((r) =>
@@ -63,9 +59,7 @@ export function DictionaryPopup({
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-4"
             style={{ paddingBottom: insets.bottom + 16 }}
           >
-            <Text className="text-center text-muted-foreground py-8">
-              No results found
-            </Text>
+            <Text className="text-center text-muted-foreground py-8">No results found</Text>
           </View>
         </View>
       </Modal>
@@ -115,17 +109,13 @@ export function DictionaryPopup({
                       {idx + 1}/{total}
                     </Text>
                     <Pressable
-                      onPress={() =>
-                        setCurrentIdx(Math.min(total - 1, idx + 1))
-                      }
+                      onPress={() => setCurrentIdx(Math.min(total - 1, idx + 1))}
                       disabled={idx === total - 1}
                       className="p-1"
                     >
                       <ChevronRight
                         size={18}
-                        className={
-                          idx === total - 1 ? "text-muted" : "text-foreground"
-                        }
+                        className={idx === total - 1 ? "text-muted" : "text-foreground"}
                       />
                     </Pressable>
                   </View>
@@ -138,9 +128,7 @@ export function DictionaryPopup({
 
             {/* Matched text */}
             <View className="mb-2">
-              <Text className="text-xs text-muted-foreground">
-                {current.matchedText}
-              </Text>
+              <Text className="text-xs text-muted-foreground">{current.matchedText}</Text>
             </View>
 
             {/* Word display */}
@@ -162,10 +150,7 @@ export function DictionaryPopup({
 
             {/* Add to list button */}
             <View className="mt-3">
-              <Button
-                label="Add to list"
-                onPress={() => setBookmarkEntryId(current.entry.id)}
-              />
+              <Button label="Add to list" onPress={() => setBookmarkEntryId(current.entry.id)} />
             </View>
           </View>
         </View>

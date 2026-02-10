@@ -5,9 +5,7 @@
 export function parseAozoraToHtml(rawText: string): string {
   // Strip Aozora bibliographic header (before first horizontal rule)
   let text = rawText;
-  const headerSep = text.indexOf(
-    "-------------------------------------------------------",
-  );
+  const headerSep = text.indexOf("-------------------------------------------------------");
   if (headerSep !== -1) {
     // Find the second separator (end of header section)
     const secondSep = text.indexOf(
@@ -15,7 +13,9 @@ export function parseAozoraToHtml(rawText: string): string {
       headerSep + 1,
     );
     if (secondSep !== -1) {
-      text = text.slice(secondSep + "-------------------------------------------------------".length);
+      text = text.slice(
+        secondSep + "-------------------------------------------------------".length,
+      );
     }
   }
 
@@ -60,10 +60,7 @@ export function parseAozoraToHtml(rawText: string): string {
     // ── Ruby annotations ──
 
     // Pattern 1: ｜漢字《かんじ》 (explicit ruby base with ｜ delimiter)
-    processed = processed.replace(
-      /[｜|]([^《]+)《([^》]+)》/g,
-      "<ruby>$1<rt>$2</rt></ruby>",
-    );
+    processed = processed.replace(/[｜|]([^《]+)《([^》]+)》/g, "<ruby>$1<rt>$2</rt></ruby>");
 
     // Pattern 2: 漢字《かんじ》 (implicit: kanji sequence before 《》)
     // Match one or more kanji (CJK Unified Ideographs) followed by furigana
@@ -74,10 +71,7 @@ export function parseAozoraToHtml(rawText: string): string {
 
     // ── Emphasis dots (bouten) ──
     // ［＃「text」に傍点］
-    processed = processed.replace(
-      /［＃「([^」]+)」に傍点］/g,
-      '<em class="bouten">$1</em>',
-    );
+    processed = processed.replace(/［＃「([^」]+)」に傍点］/g, '<em class="bouten">$1</em>');
 
     // ── Indent annotations ──
     // ［＃n字下げ］
@@ -89,10 +83,7 @@ export function parseAozoraToHtml(rawText: string): string {
     processed = processed.replace(/［＃字下げ終わり］/g, "</span>");
 
     // ── Heading annotations ──
-    processed = processed.replace(
-      /［＃[^］]*見出し］/g,
-      "",
-    );
+    processed = processed.replace(/［＃[^］]*見出し］/g, "");
 
     // ── Strip other Aozora annotations we don't handle ──
     processed = processed.replace(/［＃[^］]*］/g, "");

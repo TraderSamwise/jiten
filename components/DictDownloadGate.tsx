@@ -10,8 +10,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function DictDownloadGate({ children }: { children: React.ReactNode }) {
-  const { isReady, isDownloaded, downloadStatus, startDownload, retryManifest } =
-    useDatabase();
+  const { isReady, isDownloaded, downloadStatus, startDownload, retryManifest } = useDatabase();
 
   if (!isReady) {
     return (
@@ -30,9 +29,7 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
     <View className="flex-1 items-center justify-center bg-background px-6">
       <Card className="w-full max-w-sm items-center p-6">
         <Text className="text-4xl mb-2">辞典</Text>
-        <Text className="text-xl font-semibold text-foreground mb-1">
-          Jiten
-        </Text>
+        <Text className="text-xl font-semibold text-foreground mb-1">Jiten</Text>
         <Text className="text-sm text-muted-foreground text-center mb-6">
           Japanese dictionary with flashcards
         </Text>
@@ -49,8 +46,7 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
         {downloadStatus.state === "needs-download" && (
           <>
             <Text className="text-sm text-muted-foreground text-center mb-4">
-              The dictionary database needs to be downloaded before you can
-              search.
+              The dictionary database needs to be downloaded before you can search.
             </Text>
             <Button
               label={`Download Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`}

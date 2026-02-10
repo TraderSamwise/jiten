@@ -38,9 +38,7 @@ export default function SignInScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View className="flex-1 justify-center px-8">
-        <Text className="text-3xl font-bold text-foreground text-center mb-8">
-          Jiten
-        </Text>
+        <Text className="text-3xl font-bold text-foreground text-center mb-8">Jiten</Text>
 
         <TextInput
           className="h-12 rounded-lg border border-border bg-background px-4 text-foreground mb-3"
@@ -63,9 +61,7 @@ export default function SignInScreen() {
           textContentType="password"
         />
 
-        {error ? (
-          <Text className="text-red-500 text-sm mb-3">{error}</Text>
-        ) : null}
+        {error ? <Text className="text-red-500 text-sm mb-3">{error}</Text> : null}
 
         <Button
           label={loading ? "Signing in..." : "Sign In"}

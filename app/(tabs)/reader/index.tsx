@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, FlatList, Alert, ActivityIndicator, Platform } from "react-native";
+import { View, FlatList, ActivityIndicator, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/components/ui/text";
@@ -9,6 +9,7 @@ import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
+import { alert, confirm } from "@/lib/confirm";
 import type { Book } from "@/db/types";
 
 function generateId(): string {
@@ -76,9 +77,7 @@ export default function LibraryScreen() {
           content = new TextDecoder("shift-jis").decode(buffer);
         }
       } else {
-        const { readAsStringAsync, EncodingType } = await import(
-          "expo-file-system/legacy"
-        );
+        const { readAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
         try {
           content = await readAsStringAsync(asset.uri, {
             encoding: EncodingType.UTF8,
@@ -97,8 +96,7 @@ export default function LibraryScreen() {
         }
       }
 
-      const title =
-        asset.name?.replace(/\.txt$/i, "") ?? "Imported Book";
+      const title = asset.name?.replace(/\.txt$/i, "") ?? "Imported Book";
 
       const htmlContent = hasAozoraMarkup(content)
         ? parseAozoraToHtml(content)
@@ -120,26 +118,16 @@ export default function LibraryScreen() {
       router.push(`/reader/${id}`);
     } catch (err) {
       setLoading(false);
-      Alert.alert(
-        "Import failed",
-        err instanceof Error ? err.message : "Unknown error",
-      );
+      alert("Import failed", err instanceof Error ? err.message : "Unknown error");
     }
   }
 
   async function handleDelete(bookId: string) {
     if (!userDb) return;
-    Alert.alert("Delete book", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await userDb.runAsync("DELETE FROM books WHERE id = ?", [bookId]);
-          setBooks((prev) => prev.filter((b) => b.id !== bookId));
-        },
-      },
-    ]);
+    const ok = await confirm("Delete book", "Are you sure?");
+    if (!ok) return;
+    await userDb.runAsync("DELETE FROM books WHERE id = ?", [bookId]);
+    setBooks((prev) => prev.filter((b) => b.id !== bookId));
   }
 
   const renderBook = useCallback(
@@ -155,10 +143,7 @@ export default function LibraryScreen() {
 
       return (
         <SwipeableRow actions={actions}>
-          <BookCard
-            book={item}
-            onPress={() => router.push(`/reader/${item.id}`)}
-          />
+          <BookCard book={item} onPress={() => router.push(`/reader/${item.id}`)} />
         </SwipeableRow>
       );
     },

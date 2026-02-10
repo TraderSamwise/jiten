@@ -34,9 +34,7 @@ function WebRow({ actions, children }: SwipeableRowProps) {
               className="h-8 w-8 items-center justify-center rounded-md"
               style={{ backgroundColor: action.color }}
             >
-              {action.icon && (
-                <action.icon size={16} color="#fff" />
-              )}
+              {action.icon && <action.icon size={16} color="#fff" />}
             </Pressable>
           ))}
         </View>
@@ -49,8 +47,7 @@ function NativeRow({ actions, children }: SwipeableRowProps) {
   const swipeableRef = useRef<any>(null);
 
   // Lazy-load to avoid importing on web
-  const ReanimatedSwipeable =
-    require("react-native-gesture-handler/ReanimatedSwipeable").default;
+  const ReanimatedSwipeable = require("react-native-gesture-handler/ReanimatedSwipeable").default;
 
   const renderRightActions = () => (
     <View className="flex-row">
@@ -65,9 +62,7 @@ function NativeRow({ actions, children }: SwipeableRowProps) {
           style={{ backgroundColor: action.color }}
         >
           {action.icon && <action.icon size={20} color="#fff" />}
-          <Text className="mt-1 text-xs font-medium text-white">
-            {action.label}
-          </Text>
+          <Text className="mt-1 text-xs font-medium text-white">{action.label}</Text>
         </Pressable>
       ))}
     </View>

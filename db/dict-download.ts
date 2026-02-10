@@ -20,8 +20,7 @@ const CURRENT_FORMAT = 5; // v1: raw OPFS (broken), v2: VFS import (broken), v3:
 const DB_NAME = "dictionary.db";
 
 const MANIFEST_URL =
-  process.env.EXPO_PUBLIC_DICT_MANIFEST_URL ??
-  "https://your-cdn.com/dict-manifest.json";
+  process.env.EXPO_PUBLIC_DICT_MANIFEST_URL ?? "https://your-cdn.com/dict-manifest.json";
 
 async function getLocalVersion(): Promise<number | null> {
   const v = await AsyncStorage.getItem(VERSION_KEY);
@@ -57,9 +56,7 @@ export async function isDictReady(): Promise<boolean> {
   return version !== null && format === CURRENT_FORMAT;
 }
 
-export async function checkForUpdate(
-  manifest: DictManifest
-): Promise<boolean> {
+export async function checkForUpdate(manifest: DictManifest): Promise<boolean> {
   const local = await getLocalVersion();
   const format = await getLocalFormat();
   return local === null || format !== CURRENT_FORMAT || manifest.version > local;
@@ -67,7 +64,7 @@ export async function checkForUpdate(
 
 export async function downloadDictionary(
   manifest: DictManifest,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<void> {
   if (Platform.OS === "web") {
     await downloadWeb(manifest, onProgress);
@@ -84,7 +81,9 @@ async function clearStaleWebData(oldFormat: number): Promise<void> {
     // Format v1 wrote raw file to OPFS root
     if (oldFormat <= 1) {
       const root = await navigator.storage.getDirectory();
-      try { await root.removeEntry(DB_NAME); } catch {}
+      try {
+        await root.removeEntry(DB_NAME);
+      } catch {}
     }
     // Format v2 may have imported into wa-sqlite VFS
     if (oldFormat <= 2) {
@@ -99,8 +98,14 @@ async function clearStaleWebData(oldFormat: number): Promise<void> {
       const tx = db.transaction(IDB_STORE, "readwrite");
       tx.objectStore(IDB_STORE).delete(IDB_KEY);
       await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = () => { db.close(); reject(tx.error); };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
       });
     } catch {}
   } catch (err) {
@@ -110,7 +115,7 @@ async function clearStaleWebData(oldFormat: number): Promise<void> {
 
 async function downloadNative(
   manifest: DictManifest,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<void> {
   const FileSystem = require("expo-file-system");
 
@@ -128,10 +133,9 @@ async function downloadNative(
     {},
     (downloadProgress: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
       const progress =
-        downloadProgress.totalBytesWritten /
-        downloadProgress.totalBytesExpectedToWrite;
+        downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
       onProgress?.(progress);
-    }
+    },
   );
 
   const result = await download.downloadAsync();
@@ -142,7 +146,7 @@ async function downloadNative(
 
 async function downloadWeb(
   manifest: DictManifest,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<void> {
   // 1. Download with progress tracking
   const res = await fetch(manifest.url);
@@ -193,8 +197,14 @@ async function storeDbBytes(data: Uint8Array): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
     tx.objectStore(IDB_STORE).put(data, IDB_KEY);
-    tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
   });
 }
 
@@ -204,8 +214,14 @@ export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatab
   const data: Uint8Array | undefined = await new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readonly");
     const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
-    req.onsuccess = () => { db.close(); resolve(req.result); };
-    req.onerror = () => { db.close(); reject(req.error); };
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error);
+    };
   });
   if (!data) return null;
 
@@ -221,14 +237,13 @@ export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatab
 
   console.log("[DB] Deserializing", data.byteLength, "bytes...");
   const SQLite = require("expo-sqlite");
-  const sqlDb: import("expo-sqlite").SQLiteDatabase =
-    await SQLite.deserializeDatabaseAsync(data);
+  const sqlDb: import("expo-sqlite").SQLiteDatabase = await SQLite.deserializeDatabaseAsync(data);
   // Force in-memory journal and temp storage to avoid AccessHandlePoolVFS issues
   await sqlDb.execAsync("PRAGMA journal_mode = MEMORY");
   await sqlDb.execAsync("PRAGMA temp_store = MEMORY");
   // Validate the deserialized database works with the prepare/step code path
   const test = await sqlDb.getFirstAsync<{ cnt: number }>(
-    "SELECT count(*) as cnt FROM sqlite_master"
+    "SELECT count(*) as cnt FROM sqlite_master",
   );
   console.log("[DB] Deserialized OK, tables:", test?.cnt);
   return sqlDb;

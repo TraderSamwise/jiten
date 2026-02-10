@@ -60,7 +60,9 @@ function searchJapaneseSimple(query: string, limit: number = 5): DictResult[] {
          SELECT entry_id, 2 as pri FROM kana WHERE text LIKE ? OR text LIKE ?
        ) ORDER BY pri LIMIT ?`,
     )
-    .all(query, query, hiragana, `${query}%`, `${query}%`, `${hiragana}%`, limit) as { entry_id: number }[];
+    .all(query, query, hiragana, `${query}%`, `${query}%`, `${hiragana}%`, limit) as {
+    entry_id: number;
+  }[];
 
   if (matchRows.length === 0) return [];
 
@@ -135,9 +137,7 @@ function simulateSmartLookup(text: string, maxLen: number = 15): LookupHit[] {
 // Helper: check if any hit contains a specific kanji or kana in its results
 function hitsContainWord(hits: LookupHit[], word: string): boolean {
   return hits.some((h) =>
-    h.results.some(
-      (r) => r.kanjiTexts.includes(word) || r.kanaTexts.includes(word),
-    ),
+    h.results.some((r) => r.kanjiTexts.includes(word) || r.kanaTexts.includes(word)),
   );
 }
 
@@ -253,9 +253,7 @@ describe("Irregular verb lookup", () => {
   test("勉強しました (compound suru) → 勉強", () => {
     const hits = simulateSmartLookup("勉強しました");
     // Should find 勉強する or 勉強
-    expect(
-      hitsContainWord(hits, "勉強") || hitsContainGloss(hits, "study"),
-    ).toBe(true);
+    expect(hitsContainWord(hits, "勉強") || hitsContainGloss(hits, "study")).toBe(true);
   });
 
   test("来た (kuru past) → 来る", () => {
@@ -299,9 +297,7 @@ describe("Longest match preference", () => {
   test("学校 is found before 学 when tapping on 学校", () => {
     const hits = simulateSmartLookup("学校に行く");
     // First hit should be for the longer match
-    const firstKanjiHit = hits.find((h) =>
-      h.results.some((r) => r.kanjiTexts.length > 0),
-    );
+    const firstKanjiHit = hits.find((h) => h.results.some((r) => r.kanjiTexts.length > 0));
     if (firstKanjiHit) {
       // Matched text should be longer (学校) not shorter (学)
       expect(firstKanjiHit.matchedText.length).toBeGreaterThanOrEqual(2);
@@ -333,9 +329,7 @@ describe("Real reading scenarios", () => {
 
   test("それから — conjunction", () => {
     const hits = simulateSmartLookup("それから彼は");
-    expect(
-      hitsContainWord(hits, "それから") || hitsContainGloss(hits, "and then"),
-    ).toBe(true);
+    expect(hitsContainWord(hits, "それから") || hitsContainGloss(hits, "and then")).toBe(true);
   });
 
   test("分からなかった — negative past of 分かる", () => {
@@ -353,8 +347,8 @@ describe("Real reading scenarios", () => {
     // Through chain: 見つけられなかった → 見つけられる → 見つける
     expect(
       hitsContainWord(hits, "見つける") ||
-      hitsContainWord(hits, "見つけられる") ||
-      hitsContainGloss(hits, "find"),
+        hitsContainWord(hits, "見つけられる") ||
+        hitsContainGloss(hits, "find"),
     ).toBe(true);
   });
 
@@ -362,8 +356,8 @@ describe("Real reading scenarios", () => {
     const hits = simulateSmartLookup("おはようございます");
     expect(
       hitsContainWord(hits, "お早う") ||
-      hitsContainGloss(hits, "good morning") ||
-      hitsContainGloss(hits, "morning"),
+        hitsContainGloss(hits, "good morning") ||
+        hitsContainGloss(hits, "morning"),
     ).toBe(true);
   });
 });

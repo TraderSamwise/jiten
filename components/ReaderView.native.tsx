@@ -10,32 +10,30 @@ interface ReaderViewProps {
   onMessage: (data: string) => void;
 }
 
-export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(
-  ({ html, onMessage }, ref) => {
-    const webViewRef = useRef<WebView>(null);
+export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, onMessage }, ref) => {
+  const webViewRef = useRef<WebView>(null);
 
-    useImperativeHandle(ref, () => ({
-      postMessage: (data: string) => {
-        webViewRef.current?.postMessage(data);
-      },
-    }));
+  useImperativeHandle(ref, () => ({
+    postMessage: (data: string) => {
+      webViewRef.current?.postMessage(data);
+    },
+  }));
 
-    function handleMessage(event: WebViewMessageEvent) {
-      onMessage(event.nativeEvent.data);
-    }
+  function handleMessage(event: WebViewMessageEvent) {
+    onMessage(event.nativeEvent.data);
+  }
 
-    return (
-      <WebView
-        ref={webViewRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        onMessage={handleMessage}
-        scrollEnabled={false}
-        bounces={false}
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        style={{ flex: 1, backgroundColor: "transparent" }}
-      />
-    );
-  },
-);
+  return (
+    <WebView
+      ref={webViewRef}
+      source={{ html }}
+      originWhitelist={["*"]}
+      onMessage={handleMessage}
+      scrollEnabled={false}
+      bounces={false}
+      showsHorizontalScrollIndicator={false}
+      showsVerticalScrollIndicator={false}
+      style={{ flex: 1, backgroundColor: "transparent" }}
+    />
+  );
+});

@@ -180,7 +180,5 @@ export function UserDatabaseProvider({
     return () => subscription.remove();
   }, [state.userDb]);
 
-  return (
-    <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>
-  );
+  return <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>;
 }

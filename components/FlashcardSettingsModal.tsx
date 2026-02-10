@@ -41,11 +41,7 @@ export function FlashcardSettingsModal({
     }
   }, [visible, list]);
 
-  function toggleFace(
-    current: CardFace[],
-    setter: (v: CardFace[]) => void,
-    face: CardFace
-  ) {
+  function toggleFace(current: CardFace[], setter: (v: CardFace[]) => void, face: CardFace) {
     if (current.includes(face)) {
       if (current.length > 1) {
         setter(current.filter((f) => f !== face));
@@ -60,7 +56,7 @@ export function FlashcardSettingsModal({
     const now = new Date().toISOString();
     await userDb.runAsync(
       "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, configured = 1, updated_at = ? WHERE id = ?",
-      [mode, JSON.stringify(frontFaces), JSON.stringify(backFaces), now, listId]
+      [mode, JSON.stringify(frontFaces), JSON.stringify(backFaces), now, listId],
     );
     updateList(listId, {
       configured: true,
@@ -77,12 +73,7 @@ export function FlashcardSettingsModal({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View className="flex-1">
         <Pressable
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
@@ -92,28 +83,20 @@ export function FlashcardSettingsModal({
 
         <View className="flex-1 justify-center px-6">
           <View className="rounded-2xl border border-border bg-background p-5">
-            <Text className="text-lg font-semibold text-foreground mb-4">
-              Flashcard Settings
-            </Text>
+            <Text className="text-lg font-semibold text-foreground mb-4">Flashcard Settings</Text>
 
             {/* Mode toggle */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">
-              Mode
-            </Text>
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Mode</Text>
             <View className="flex-row gap-2 mb-4">
               <Pressable
                 onPress={() => setMode("add_order")}
                 className={`flex-1 items-center rounded-lg border py-2 ${
-                  mode === "add_order"
-                    ? "border-primary bg-primary/10"
-                    : "border-border"
+                  mode === "add_order" ? "border-primary bg-primary/10" : "border-border"
                 }`}
               >
                 <Text
                   className={`text-sm font-medium ${
-                    mode === "add_order"
-                      ? "text-primary"
-                      : "text-muted-foreground"
+                    mode === "add_order" ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
                   Sequential
@@ -122,9 +105,7 @@ export function FlashcardSettingsModal({
               <Pressable
                 onPress={() => setMode("srs")}
                 className={`flex-1 items-center rounded-lg border py-2 ${
-                  mode === "srs"
-                    ? "border-primary bg-primary/10"
-                    : "border-border"
+                  mode === "srs" ? "border-primary bg-primary/10" : "border-border"
                 }`}
               >
                 <Text
@@ -138,9 +119,7 @@ export function FlashcardSettingsModal({
             </View>
 
             {/* Front faces */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">
-              Front
-            </Text>
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Front</Text>
             <View className="flex-row gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = frontFaces.includes(opt.key);
@@ -149,9 +128,7 @@ export function FlashcardSettingsModal({
                     key={opt.key}
                     onPress={() => toggleFace(frontFaces, setFrontFaces, opt.key)}
                     className={`flex-1 items-center rounded-lg border py-2 ${
-                      active
-                        ? "border-primary bg-primary/10"
-                        : "border-border"
+                      active ? "border-primary bg-primary/10" : "border-border"
                     }`}
                   >
                     <Text
@@ -167,9 +144,7 @@ export function FlashcardSettingsModal({
             </View>
 
             {/* Back faces */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">
-              Back
-            </Text>
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Back</Text>
             <View className="flex-row gap-2 mb-5">
               {FACE_OPTIONS.map((opt) => {
                 const active = backFaces.includes(opt.key);
@@ -178,9 +153,7 @@ export function FlashcardSettingsModal({
                     key={opt.key}
                     onPress={() => toggleFace(backFaces, setBackFaces, opt.key)}
                     className={`flex-1 items-center rounded-lg border py-2 ${
-                      active
-                        ? "border-primary bg-primary/10"
-                        : "border-border"
+                      active ? "border-primary bg-primary/10" : "border-border"
                     }`}
                   >
                     <Text
@@ -197,13 +170,12 @@ export function FlashcardSettingsModal({
 
             {/* Actions */}
             <View className="flex-row gap-2">
+              <Button className="flex-1" variant="outline" label="Cancel" onPress={onClose} />
               <Button
                 className="flex-1"
-                variant="outline"
-                label="Cancel"
-                onPress={onClose}
+                label={onStartStudy ? "Start Study" : "Save"}
+                onPress={handleSave}
               />
-              <Button className="flex-1" label={onStartStudy ? "Start Study" : "Save"} onPress={handleSave} />
             </View>
           </View>
         </View>

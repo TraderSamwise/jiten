@@ -34,19 +34,12 @@ export function GlossGroupCard({ group }: GlossGroupCardProps) {
     <PressableCard className="mb-2" onPress={handlePress}>
       <View className="flex-row items-center">
         <View className="flex-1">
-          <Text className="text-base font-bold text-foreground">
-            {group.gloss}
-          </Text>
-          <Text
-            className="mt-1 text-sm text-muted-foreground"
-            numberOfLines={1}
-          >
+          <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
+          <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
             {japaneseLabels}
           </Text>
         </View>
-        {isMulti && (
-          <ChevronRight size={20} className="text-muted-foreground ml-2" />
-        )}
+        {isMulti && <ChevronRight size={20} className="text-muted-foreground ml-2" />}
       </View>
     </PressableCard>
   );

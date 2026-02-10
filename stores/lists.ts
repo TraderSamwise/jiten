@@ -17,13 +17,9 @@ export function parseListRow(row: any): WordList {
     configured: Boolean(row.configured ?? 0),
     flashcardMode: row.flashcardMode ?? row.flashcard_mode ?? "add_order",
     frontFaces:
-      typeof rawFront === "string"
-        ? (JSON.parse(rawFront) as CardFace[])
-        : rawFront ?? ["kanji"],
+      typeof rawFront === "string" ? (JSON.parse(rawFront) as CardFace[]) : (rawFront ?? ["kanji"]),
     backFaces:
-      typeof rawBack === "string"
-        ? (JSON.parse(rawBack) as CardFace[])
-        : rawBack ?? ["english"],
+      typeof rawBack === "string" ? (JSON.parse(rawBack) as CardFace[]) : (rawBack ?? ["english"]),
     studyPosition: row.studyPosition ?? row.study_position ?? 0,
   };
 }
@@ -32,12 +28,9 @@ export const useListsStore = create<ListsState>((set) => ({
   lists: [],
   setLists: (lists) => set({ lists }),
   addList: (list) => set((state) => ({ lists: [...state.lists, list] })),
-  removeList: (id) =>
-    set((state) => ({ lists: state.lists.filter((l) => l.id !== id) })),
+  removeList: (id) => set((state) => ({ lists: state.lists.filter((l) => l.id !== id) })),
   updateList: (id, updates) =>
     set((state) => ({
-      lists: state.lists.map((l) =>
-        l.id === id ? { ...l, ...updates } : l
-      ),
+      lists: state.lists.map((l) => (l.id === id ? { ...l, ...updates } : l)),
     })),
 }));

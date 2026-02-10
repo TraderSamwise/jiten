@@ -24,25 +24,15 @@ export function EntryCard({ entry }: EntryCardProps) {
 
   return (
     <PressableCard
-      className={
-        isBookmarked
-          ? "mb-2 border-l-4 border-l-primary bg-primary/5"
-          : "mb-2"
-      }
+      className={isBookmarked ? "mb-2 border-l-4 border-l-primary bg-primary/5" : "mb-2"}
       onPress={() => router.push(`/dictionary/word/${entry.id}`)}
     >
       <View className="flex-row items-baseline gap-3">
-        {primaryKanji && (
-          <Text className="text-2xl font-bold text-foreground">
-            {primaryKanji}
-          </Text>
-        )}
+        {primaryKanji && <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>}
         <Text className="text-base text-muted-foreground">{primaryKana}</Text>
         {entry.common && <Badge variant="common" label="common" />}
       </View>
-      {pos && (
-        <Text className="mt-1 text-xs text-muted-foreground italic">{pos}</Text>
-      )}
+      {pos && <Text className="mt-1 text-xs text-muted-foreground italic">{pos}</Text>}
       {primaryGloss && (
         <Text className="mt-1 text-sm text-foreground" numberOfLines={2}>
           {primaryGloss}

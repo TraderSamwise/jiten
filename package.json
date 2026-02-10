@@ -10,7 +10,12 @@
     "build:db": "npx tsx scripts/build-dictionary.ts",
     "serve:dict": "npx tsx scripts/serve-dict.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.22",
@@ -58,13 +63,30 @@
     "@types/wanakana": "^5.3.0",
     "better-sqlite3": "^12.6.2",
     "drizzle-kit": "^0.31.8",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "node-wordnet": "^0.1.12",
+    "prettier": "^3.8.1",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8",
     "vitest": "^4.0.18",
     "wordnet-db": "^3.1.14"
   },
   "private": true,
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  },
   "op-sqlite": {
     "libsql": true
   }

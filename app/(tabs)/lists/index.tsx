@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, Alert, Platform, TextInput } from "react-native";
+import { View, FlatList, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Pencil, Trash2 } from "@/lib/icons";
+import { confirm } from "@/lib/confirm";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -36,7 +37,7 @@ export default function ListsIndexScreen() {
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
-       GROUP BY l.id ORDER BY l.created_at DESC`
+       GROUP BY l.id ORDER BY l.created_at DESC`,
     );
     setLists(rows.map(parseListRow));
   }
@@ -58,7 +59,7 @@ export default function ListsIndexScreen() {
     };
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      [list.id, list.name, list.description, list.createdAt, list.updatedAt]
+      [list.id, list.name, list.description, list.createdAt, list.updatedAt],
     );
     addList({ ...list, entryCount: 0 });
     setNewName("");
@@ -77,10 +78,11 @@ export default function ListsIndexScreen() {
       return;
     }
     const now = new Date().toISOString();
-    await userDb.runAsync(
-      "UPDATE lists SET name = ?, updated_at = ? WHERE id = ?",
-      [renameValue.trim(), now, id]
-    );
+    await userDb.runAsync("UPDATE lists SET name = ?, updated_at = ? WHERE id = ?", [
+      renameValue.trim(),
+      now,
+      id,
+    ]);
     updateList(id, { name: renameValue.trim(), updatedAt: now });
     setRenamingId(null);
   }
@@ -94,25 +96,13 @@ export default function ListsIndexScreen() {
     await useBookmarkStore.getState().load(userDb);
   }
 
-  function handleDeleteList(id: string) {
-    if (Platform.OS === "web") {
-      if (window.confirm("Are you sure? This will also remove associated flashcards.")) {
-        doDeleteList(id);
-      }
-      return;
-    }
-    Alert.alert(
+  async function handleDeleteList(id: string) {
+    const ok = await confirm(
       "Delete List",
       "Are you sure? This will also remove associated flashcards.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => doDeleteList(id),
-        },
-      ]
     );
+    if (!ok) return;
+    await doDeleteList(id);
   }
 
   const renderItem = useCallback(
@@ -134,10 +124,7 @@ export default function ListsIndexScreen() {
 
       return (
         <SwipeableRow actions={actions}>
-          <PressableCard
-            className="mb-2"
-            onPress={() => router.push(`/lists/${item.id}`)}
-          >
+          <PressableCard className="mb-2" onPress={() => router.push(`/lists/${item.id}`)}>
             {renamingId === item.id ? (
               <TextInput
                 ref={renameInputRef}
@@ -157,7 +144,7 @@ export default function ListsIndexScreen() {
         </SwipeableRow>
       );
     },
-    [userDb, renamingId, renameValue, lists]
+    [userDb, renamingId, renameValue, lists],
   );
 
   return (

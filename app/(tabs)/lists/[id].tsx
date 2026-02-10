@@ -29,6 +29,7 @@ export default function ListDetailScreen() {
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
 
   // Load list from DB if not in store (e.g. direct navigation / refresh)
+
   useEffect(() => {
     if (!list && userDb && id) {
       loadListFromDb();
@@ -41,7 +42,7 @@ export default function ListDetailScreen() {
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
        WHERE l.id = ? GROUP BY l.id`,
-      [id]
+      [id],
     );
     if (row) {
       const parsed = parseListRow(row);
@@ -54,10 +55,7 @@ export default function ListDetailScreen() {
       navigation.setOptions({
         title: list.name,
         headerRight: () => (
-          <Pressable
-            onPress={() => setSettingsVisible(true)}
-            className="mr-2 p-2"
-          >
+          <Pressable onPress={() => setSettingsVisible(true)} className="mr-2 p-2">
             <SlidersHorizontal size={20} className="text-foreground" />
           </Pressable>
         ),
@@ -87,11 +85,11 @@ export default function ListDetailScreen() {
     } else {
       const reviewRow = await userDb.getFirstAsync<{ count: number }>(
         "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ?",
-        [id, new Date().toISOString()]
+        [id, new Date().toISOString()],
       );
       const newRow = await userDb.getFirstAsync<{ count: number }>(
         "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state = 0",
-        [id]
+        [id],
       );
       setReviewCount(reviewRow?.count ?? 0);
       setNewCount(newRow?.count ?? 0);
@@ -104,7 +102,7 @@ export default function ListDetailScreen() {
 
     const rows = await userDb.getAllAsync<{ entry_id: number }>(
       "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at DESC",
-      [id]
+      [id],
     );
 
     if (rows.length === 0) {
@@ -130,21 +128,21 @@ export default function ListDetailScreen() {
     if (!userDb) return;
 
     // Remove from list_entries
-    await userDb.runAsync(
-      "DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?",
-      [id, entryId]
-    );
+    await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?", [
+      id,
+      entryId,
+    ]);
 
     // Remove associated SRS cards for this list
-    await userDb.runAsync(
-      "DELETE FROM srs_cards WHERE list_id = ? AND entry_id = ?",
-      [id, entryId]
-    );
+    await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ? AND entry_id = ?", [
+      id,
+      entryId,
+    ]);
 
     // Check if entry is still in any list
     const remaining = await userDb.getFirstAsync<{ count: number }>(
       "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     );
 
     if (!remaining || remaining.count === 0) {
@@ -180,7 +178,7 @@ export default function ListDetailScreen() {
         </SwipeableRow>
       );
     },
-    [userDb, id]
+    [userDb, id],
   );
 
   function handleStudy() {
@@ -236,7 +234,11 @@ export default function ListDetailScreen() {
         <Button
           label={studyLabel}
           onPress={handleStudy}
-          disabled={list?.flashcardMode === "srs" ? (reviewCount === 0 && newCount === 0) : entries.length === 0}
+          disabled={
+            list?.flashcardMode === "srs"
+              ? reviewCount === 0 && newCount === 0
+              : entries.length === 0
+          }
         />
       </View>
 

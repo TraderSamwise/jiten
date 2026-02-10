@@ -118,10 +118,8 @@ export function UserDatabaseProvider({
         getAllAsync: <T,>(sql: string, params?: any[]): Promise<T[]> =>
           db.getAllAsync<T>(sql, params ?? []),
 
-        getFirstAsync: <T,>(
-          sql: string,
-          params?: any[]
-        ): Promise<T | null> => db.getFirstAsync<T>(sql, params ?? []),
+        getFirstAsync: <T,>(sql: string, params?: any[]): Promise<T | null> =>
+          db.getFirstAsync<T>(sql, params ?? []),
 
         runAsync: async (sql: string, params?: any[]) => {
           const result = await db.runAsync(sql, params ?? []);
@@ -144,7 +142,5 @@ export function UserDatabaseProvider({
     });
   }, [userId]);
 
-  return (
-    <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>
-  );
+  return <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>;
 }

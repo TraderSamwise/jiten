@@ -23,12 +23,14 @@ describe("generateReaderHtml", () => {
     expect(html).toContain("<body>");
   });
 
-  test("includes content in the document", () => {
+  test("includes content in raw div", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
     expect(html).toContain("テスト文章です。");
+    expect(html).toContain('id="raw"');
+    expect(html).toContain("display:none");
   });
 
   test("sets vertical writing mode", () => {
@@ -83,13 +85,35 @@ describe("generateReaderHtml", () => {
 
   // ── CSS structure tests ──
 
-  test("includes column layout for pagination", () => {
+  test("uses overflow hidden for virtualized content (no columns)", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("column-width:");
-    expect(html).toContain("column-gap:");
+    expect(html).not.toContain("column-width:");
+    expect(html).not.toContain("column-gap:");
+    expect(html).toContain("overflow: hidden");
+  });
+
+  test("includes #page and buffer divs for virtualized rendering", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain('id="page"');
+    expect(html).toContain('id="buf-prev"');
+    expect(html).toContain('id="buf-next"');
+    expect(html).toContain('class="buffer"');
+  });
+
+  test("buffer class is visually hidden but DOM-accessible", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain(".buffer");
+    expect(html).toContain("clip: rect(0,0,0,0)");
+    expect(html).toContain("position: absolute");
   });
 
   test("includes serif font family for Japanese", () => {
@@ -119,13 +143,13 @@ describe("generateReaderHtml", () => {
     expect(html).toContain("text-emphasis: filled dot");
   });
 
-  test("includes page-break styling", () => {
+  test("includes page-break styling (hidden)", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
     expect(html).toContain(".page-break");
-    expect(html).toContain("break-after: column");
+    expect(html).toContain("display: none");
   });
 
   // ── JS bridge tests ──
@@ -148,13 +172,13 @@ describe("generateReaderHtml", () => {
     expect(html).toContain("type: 'selection'");
   });
 
-  test("includes scroll position tracking", () => {
+  test("includes scroll position reporting", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
     expect(html).toContain("type: 'scroll'");
-    expect(html).toContain("scrollWidth");
+    expect(html).toContain("reportScroll");
   });
 
   test("includes postMessage bridge to React Native", () => {
@@ -193,12 +217,12 @@ describe("generateReaderHtml", () => {
 
   // ── Scroll position restore ──
 
-  test("defaults scroll position to 0", () => {
+  test("defaults scroll position to 0 (start of book)", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("var initialPos = 0");
+    expect(html).toContain("var savedPos = 0");
   });
 
   test("restores custom scroll position", () => {
@@ -207,7 +231,128 @@ describe("generateReaderHtml", () => {
       isDark: false,
       scrollPosition: 0.75,
     });
-    expect(html).toContain("var initialPos = 0.75");
+    expect(html).toContain("var savedPos = 0.75");
+  });
+
+  // ── Page controls ──
+
+  test("includes page controls with arrows and page number", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain('id="page-controls"');
+    expect(html).toContain('id="btn-next"');
+    expect(html).toContain('id="btn-prev"');
+    expect(html).toContain('id="page-num"');
+  });
+
+  test("includes page navigation functions", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("goToPage");
+    expect(html).toContain("nextPage");
+    expect(html).toContain("prevPage");
+    expect(html).toContain("paginate");
+  });
+
+  test("includes swipe gesture handling", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("touchstart");
+    expect(html).toContain("touchend");
+    expect(html).toContain("swipeHandled");
+  });
+
+  test("includes keyboard arrow navigation", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("ArrowLeft");
+    expect(html).toContain("ArrowRight");
+    expect(html).toContain("keydown");
+  });
+
+  // ── Virtualized pagination functions ──
+
+  test("includes parseBlocks function", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("parseBlocks");
+    expect(html).toContain("blockHtmls");
+    expect(html).toContain("outerHTML");
+  });
+
+  test("includes paginate function with measurement div", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("function paginate()");
+    expect(html).toContain("getComputedStyle");
+    expect(html).toContain("scrollWidth > measure.clientWidth");
+  });
+
+  test("includes renderPage function with buffer population", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("function renderPage(pageNum)");
+    expect(html).toContain("pageEl.innerHTML");
+    expect(html).toContain("bufPrevEl.innerHTML");
+    expect(html).toContain("bufNextEl.innerHTML");
+  });
+
+  // ── Highlight commands ──
+
+  test("includes highlight message handler", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("msg.type === 'highlight'");
+    expect(html).toContain("lastTapNode");
+    expect(html).toContain("lastTapOffset");
+  });
+
+  test("includes clearHighlight message handler", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("msg.type === 'clearHighlight'");
+    expect(html).toContain("clearHighlight");
+  });
+
+  // ── Responsive sizing ──
+
+  test("uses JS-based responsive sizing with resize listener", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("updateSizing");
+    expect(html).toContain("clientHeight");
+    expect(html).toContain("clientWidth");
+    expect(html).toContain("addEventListener('resize'");
+  });
+
+  test("resize handler re-paginates and preserves position", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).toContain("resize");
+    expect(html).toContain("paginate()");
+    expect(html).toContain("ratio");
   });
 
   // ── Viewport meta ──
@@ -226,5 +371,18 @@ describe("generateReaderHtml", () => {
       isDark: false,
     });
     expect(html).toContain('charset="utf-8"');
+  });
+
+  // ── No scroll-based pagination remnants ──
+
+  test("does not use CSS columns or scroll-based navigation", () => {
+    const html = generateReaderHtml(sampleContent, {
+      fontSize: 22,
+      isDark: false,
+    });
+    expect(html).not.toContain("column-width:");
+    expect(html).not.toContain("column-gap:");
+    expect(html).not.toContain("animateScroll");
+    expect(html).not.toContain("overflow-x: auto");
   });
 });

@@ -21,9 +21,7 @@ export function reviewCard(card: Card, rating: Rating, now?: Date): RecordLogIte
   return schedulingCards[rating];
 }
 
-export function getDueCards<T extends { due: string; state: number }>(
-  cards: T[]
-): T[] {
+export function getDueCards<T extends { due: string; state: number }>(cards: T[]): T[] {
   const now = new Date();
   return cards.filter((c) => new Date(c.due) <= now);
 }

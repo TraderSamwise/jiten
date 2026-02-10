@@ -38,10 +38,7 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!userDb || !bookId) return;
     (async () => {
-      const row = await userDb.getFirstAsync<any>(
-        "SELECT * FROM books WHERE id = ?",
-        [bookId],
-      );
+      const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
       if (!row) return;
       const b = parseBookRow(row);
       setBook(b);
@@ -58,10 +55,11 @@ export default function BookReaderScreen() {
 
       // Update last_read_at
       const now = new Date().toISOString();
-      await userDb.runAsync(
-        "UPDATE books SET last_read_at = ?, updated_at = ? WHERE id = ?",
-        [now, now, bookId],
-      );
+      await userDb.runAsync("UPDATE books SET last_read_at = ?, updated_at = ? WHERE id = ?", [
+        now,
+        now,
+        bookId,
+      ]);
     })();
   }, [userDb, bookId, isDark]);
 
@@ -69,10 +67,11 @@ export default function BookReaderScreen() {
   useEffect(() => {
     return () => {
       if (userDb && bookId && scrollPosRef.current > 0) {
-        userDb.runAsync(
-          "UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?",
-          [scrollPosRef.current, new Date().toISOString(), bookId],
-        );
+        userDb.runAsync("UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?", [
+          scrollPosRef.current,
+          new Date().toISOString(),
+          bookId,
+        ]);
       }
     };
   }, [userDb, bookId]);
@@ -90,14 +89,22 @@ export default function BookReaderScreen() {
           const results = await smartLookup(text, dictDb);
           setLookupResults(results);
           setShowPopup(true);
+
+          // Highlight matched text in reader (only for taps; selections have native highlight)
+          if (msg.type === "tap" && results.length > 0) {
+            readerRef.current?.postMessage(
+              JSON.stringify({ type: "highlight", length: results[0].matchedText.length }),
+            );
+          }
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.position;
           // Debounced save to DB
           if (userDb && bookId) {
-            userDb.runAsync(
-              "UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?",
-              [msg.position, new Date().toISOString(), bookId],
-            );
+            userDb.runAsync("UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?", [
+              msg.position,
+              new Date().toISOString(),
+              bookId,
+            ]);
           }
         }
       } catch {}
@@ -109,14 +116,13 @@ export default function BookReaderScreen() {
     (newSize: number) => {
       const rounded = Math.round(newSize);
       setFontSize(rounded);
-      readerRef.current?.postMessage(
-        JSON.stringify({ type: "setFontSize", size: rounded }),
-      );
+      readerRef.current?.postMessage(JSON.stringify({ type: "setFontSize", size: rounded }));
       if (userDb && bookId) {
-        userDb.runAsync(
-          "UPDATE books SET font_size = ?, updated_at = ? WHERE id = ?",
-          [rounded, new Date().toISOString(), bookId],
-        );
+        userDb.runAsync("UPDATE books SET font_size = ?, updated_at = ? WHERE id = ?", [
+          rounded,
+          new Date().toISOString(),
+          bookId,
+        ]);
       }
     },
     [userDb, bookId],
@@ -140,16 +146,10 @@ export default function BookReaderScreen() {
         <Pressable onPress={() => router.back()} className="p-2">
           <ChevronLeft size={24} className="text-foreground" />
         </Pressable>
-        <Text
-          className="flex-1 text-base font-medium text-foreground"
-          numberOfLines={1}
-        >
+        <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
           {book.title}
         </Text>
-        <Pressable
-          onPress={() => setShowSettings(!showSettings)}
-          className="p-2"
-        >
+        <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
           <SlidersHorizontal size={20} className="text-foreground" />
         </Pressable>
       </View>
@@ -164,9 +164,7 @@ export default function BookReaderScreen() {
             >
               <Text className="text-lg text-foreground">A-</Text>
             </Pressable>
-            <Text className="text-base text-foreground w-8 text-center">
-              {fontSize}
-            </Text>
+            <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
             <Pressable
               onPress={() => handleFontSizeChange(Math.min(32, fontSize + 2))}
               className="h-10 w-10 items-center justify-center rounded-lg border border-border"
@@ -186,6 +184,7 @@ export default function BookReaderScreen() {
         onClose={() => {
           setShowPopup(false);
           setLookupResults([]);
+          readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
         }}
         results={lookupResults}
       />

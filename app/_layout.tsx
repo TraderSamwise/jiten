@@ -3,11 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { useColorScheme } from "nativewind";
-import {
-  ThemeProvider,
-  DarkTheme,
-  DefaultTheme,
-} from "@react-navigation/native";
+import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
@@ -32,8 +28,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoaded) return;
 
-    const onAuthScreen =
-      segments[0] === "sign-in" || segments[0] === "sign-up";
+    const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
 
     if (!isSignedIn && !onAuthScreen) {
       router.replace("/sign-in");
@@ -56,9 +51,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <DatabaseProvider>
       <DictDownloadGate>
-        <UserDatabaseProvider userId={userId!}>
-          {children}
-        </UserDatabaseProvider>
+        <UserDatabaseProvider userId={userId!}>{children}</UserDatabaseProvider>
       </DictDownloadGate>
     </DatabaseProvider>
   );

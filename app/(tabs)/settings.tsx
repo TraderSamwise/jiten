@@ -4,12 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  loadTheme,
-  saveTheme,
-  applyTheme,
-  type ThemePreference,
-} from "@/lib/theme";
+import { loadTheme, saveTheme, applyTheme, type ThemePreference } from "@/lib/theme";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -35,9 +30,7 @@ export default function SettingsScreen() {
       <Card className="mb-4">
         <CardTitle>Jiten</CardTitle>
         <CardDescription>Japanese-English Dictionary</CardDescription>
-        <Text className="mt-2 text-xs text-muted-foreground">
-          Version 0.1.0
-        </Text>
+        <Text className="mt-2 text-xs text-muted-foreground">Version 0.1.0</Text>
       </Card>
 
       <Card className="mb-4">
@@ -64,8 +57,8 @@ export default function SettingsScreen() {
         <CardTitle className="text-base">Dictionary Data</CardTitle>
         <Separator className="my-2" />
         <Text className="text-sm text-muted-foreground">
-          Powered by JMdict/EDICT, a property of the Electronic Dictionary
-          Research and Development Group (EDRDG). Licensed under CC BY-SA 4.0.
+          Powered by JMdict/EDICT, a property of the Electronic Dictionary Research and Development
+          Group (EDRDG). Licensed under CC BY-SA 4.0.
         </Text>
         <Text className="mt-2 text-sm text-muted-foreground">
           Pitch accent data from Kanjium. Licensed under CC BY-SA 4.0.
@@ -76,8 +69,8 @@ export default function SettingsScreen() {
         <CardTitle className="text-base">Spaced Repetition</CardTitle>
         <Separator className="my-2" />
         <Text className="text-sm text-muted-foreground">
-          Uses the FSRS (Free Spaced Repetition Scheduler) algorithm for
-          optimized review scheduling.
+          Uses the FSRS (Free Spaced Repetition Scheduler) algorithm for optimized review
+          scheduling.
         </Text>
       </Card>
     </View>

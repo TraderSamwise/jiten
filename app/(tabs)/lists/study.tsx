@@ -75,20 +75,20 @@ export default function StudyScreen() {
       let position = list.studyPosition ?? 0;
       let rows = await userDb.getAllAsync<{ entry_id: number }>(
         "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
-        [listId, position]
+        [listId, position],
       );
 
       // Wrap around to start if we've passed the end
       if (rows.length === 0 && position > 0) {
         position = 0;
-        await userDb.runAsync(
-          "UPDATE lists SET study_position = 0, updated_at = ? WHERE id = ?",
-          [new Date().toISOString(), listId]
-        );
+        await userDb.runAsync("UPDATE lists SET study_position = 0, updated_at = ? WHERE id = ?", [
+          new Date().toISOString(),
+          listId,
+        ]);
         updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
         rows = await userDb.getAllAsync<{ entry_id: number }>(
           "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
-          [listId]
+          [listId],
         );
       }
 
@@ -122,12 +122,12 @@ export default function StudyScreen() {
 
       const reviewRows = await userDb.getAllAsync<SrsCardRow>(
         `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
-        [listId, new Date().toISOString()]
+        [listId, new Date().toISOString()],
       );
 
       const newRows = await userDb.getAllAsync<SrsCardRow>(
         `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 ORDER BY created_at ASC LIMIT ?`,
-        [listId, NEW_CARD_BATCH_SIZE]
+        [listId, NEW_CARD_BATCH_SIZE],
       );
 
       const srsRows = [...reviewRows, ...newRows];
@@ -180,7 +180,7 @@ export default function StudyScreen() {
       if (!userDb || !listId) return;
       await userDb.runAsync(
         "UPDATE lists SET study_position = study_position + 1, updated_at = ? WHERE id = ?",
-        [new Date().toISOString(), listId]
+        [new Date().toISOString(), listId],
       );
       const currentList = useListsStore.getState().lists.find((l) => l.id === listId);
       if (currentList) {
@@ -237,7 +237,7 @@ export default function StudyScreen() {
         updated.last_review?.toISOString() ?? now,
         now,
         card.id,
-      ]
+      ],
     );
 
     await userDb.runAsync(
@@ -254,7 +254,7 @@ export default function StudyScreen() {
         card.elapsedDays,
         card.scheduledDays,
         now,
-      ]
+      ],
     );
   }
 
@@ -299,7 +299,7 @@ export default function StudyScreen() {
         },
         (index) => {
           if (index === 0) setSettingsVisible(true);
-        }
+        },
       );
     } else {
       setMenuVisible(true);
@@ -366,17 +366,11 @@ export default function StudyScreen() {
 
       {/* Progress bar */}
       <View className="h-1 bg-border mx-4 rounded-full overflow-hidden">
-        <View
-          className="h-full bg-primary rounded-full"
-          style={{ width: `${progress}%` }}
-        />
+        <View className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
       </View>
 
       {/* Card */}
-      <Pressable
-        onPress={() => !revealed && setRevealed(true)}
-        className="flex-1 px-4 pt-4"
-      >
+      <Pressable onPress={() => !revealed && setRevealed(true)} className="flex-1 px-4 pt-4">
         <Card className="flex-1 items-center justify-center max-h-96">
           {currentItem && (
             <>
@@ -386,10 +380,7 @@ export default function StudyScreen() {
                   {getFaceText(currentItem.entry, frontFaces[0])}
                 </Text>
                 {frontFaces.slice(1).map((face, i) => (
-                  <Text
-                    key={`front-${i}`}
-                    className="mt-1 text-lg text-muted-foreground"
-                  >
+                  <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
                     {getFaceText(currentItem.entry, face)}
                   </Text>
                 ))}
@@ -403,10 +394,7 @@ export default function StudyScreen() {
                     {getFaceText(currentItem.entry, backFaces[0])}
                   </Text>
                   {backFaces.slice(1).map((face, i) => (
-                    <Text
-                      key={`back-${i}`}
-                      className="mt-1 text-base text-muted-foreground"
-                    >
+                    <Text key={`back-${i}`} className="mt-1 text-base text-muted-foreground">
                       {getFaceText(currentItem.entry, face)}
                     </Text>
                   ))}
@@ -414,9 +402,7 @@ export default function StudyScreen() {
               )}
 
               {!revealed && (
-                <Text className="mt-6 text-sm text-muted-foreground">
-                  Tap to reveal
-                </Text>
+                <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
               )}
             </>
           )}
@@ -426,11 +412,7 @@ export default function StudyScreen() {
       {/* Rating buttons */}
       {revealed && (
         <View className="flex-row gap-3 px-4 mt-4 mb-8">
-          <Button
-            className="flex-1 bg-red-500"
-            label="Fail"
-            onPress={handleFail}
-          />
+          <Button className="flex-1 bg-red-500" label="Fail" onPress={handleFail} />
           <Pressable
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
@@ -448,21 +430,18 @@ export default function StudyScreen() {
         animationType="fade"
         onRequestClose={() => setMenuVisible(false)}
       >
-        <Pressable
-          className="flex-1 justify-end bg-black/50"
-          onPress={() => setMenuVisible(false)}
-        >
+        <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setMenuVisible(false)}>
           <View className="mx-4 mb-8 rounded-2xl border border-border bg-background overflow-hidden">
             <Pressable
-              onPress={() => { setMenuVisible(false); setSettingsVisible(true); }}
+              onPress={() => {
+                setMenuVisible(false);
+                setSettingsVisible(true);
+              }}
               className="items-center py-4 border-b border-border"
             >
               <Text className="text-base text-foreground">Options</Text>
             </Pressable>
-            <Pressable
-              onPress={() => setMenuVisible(false)}
-              className="items-center py-4"
-            >
+            <Pressable onPress={() => setMenuVisible(false)} className="items-center py-4">
               <Text className="text-base text-muted-foreground">Cancel</Text>
             </Pressable>
           </View>
@@ -471,7 +450,10 @@ export default function StudyScreen() {
 
       <FlashcardSettingsModal
         visible={settingsVisible}
-        onClose={() => { setSettingsVisible(false); loadQueue(); }}
+        onClose={() => {
+          setSettingsVisible(false);
+          loadQueue();
+        }}
         listId={listId!}
       />
     </View>

@@ -34,18 +34,12 @@ export function PitchAccent({ accent }: PitchAccentProps) {
           </View>
         );
       })}
-      <Text className="ml-1 text-xs text-muted-foreground">
-        [{pitchNumber}]
-      </Text>
+      <Text className="ml-1 text-xs text-muted-foreground">[{pitchNumber}]</Text>
     </View>
   );
 }
 
-function getMoraPitch(
-  index: number,
-  downstep: number,
-  _totalMorae: number
-): boolean {
+function getMoraPitch(index: number, downstep: number, _totalMorae: number): boolean {
   if (downstep === 0) {
     // Heiban: first mora low, rest high
     return index > 0;
@@ -62,7 +56,7 @@ function getBridgeColor(
   prevIndex: number,
   _currIndex: number,
   downstep: number,
-  totalMorae: number
+  totalMorae: number,
 ): string {
   const prevHigh = getMoraPitch(prevIndex, downstep, totalMorae);
   const currHigh = getMoraPitch(prevIndex + 1, downstep, totalMorae);
@@ -74,8 +68,22 @@ function getBridgeColor(
 /** Split Japanese text into morae (treating digraphs like きょ as one mora) */
 function splitMorae(text: string): string[] {
   const smallKana = new Set([
-    "ゃ", "ゅ", "ょ", "ぁ", "ぃ", "ぅ", "ぇ", "ぉ",
-    "ャ", "ュ", "ョ", "ァ", "ィ", "ゥ", "ェ", "ォ",
+    "ゃ",
+    "ゅ",
+    "ょ",
+    "ぁ",
+    "ぃ",
+    "ぅ",
+    "ぇ",
+    "ぉ",
+    "ャ",
+    "ュ",
+    "ョ",
+    "ァ",
+    "ィ",
+    "ゥ",
+    "ェ",
+    "ォ",
   ]);
   const morae: string[] = [];
   for (let i = 0; i < text.length; i++) {

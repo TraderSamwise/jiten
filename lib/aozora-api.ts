@@ -63,18 +63,14 @@ export async function searchBooks(query: string): Promise<AozoraBook[]> {
   return data.map(mapBook);
 }
 
-export async function fetchBookMetadata(
-  bookId: number,
-): Promise<AozoraBook> {
+export async function fetchBookMetadata(bookId: number): Promise<AozoraBook> {
   const resp = await fetch(`${API_BASE}/books/${bookId}`);
   if (!resp.ok) throw new Error(`Aozora API error: ${resp.status}`);
   const raw: AozoraApiBook = await resp.json();
   return mapBook(raw);
 }
 
-export async function fetchBookContent(
-  textUrl: string,
-): Promise<string> {
+export async function fetchBookContent(textUrl: string): Promise<string> {
   // Aozora texts can be Shift-JIS encoded
   const resp = await fetch(textUrl);
   if (!resp.ok) throw new Error(`Failed to download book: ${resp.status}`);

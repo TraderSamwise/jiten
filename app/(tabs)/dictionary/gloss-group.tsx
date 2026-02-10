@@ -8,10 +8,7 @@ import type { DictEntry } from "@/db/types";
 export default function GlossGroupScreen() {
   const group = useSearchStore((s) => s.selectedGlossGroup);
 
-  const renderItem = useCallback(
-    ({ item }: { item: DictEntry }) => <EntryCard entry={item} />,
-    []
-  );
+  const renderItem = useCallback(({ item }: { item: DictEntry }) => <EntryCard entry={item} />, []);
 
   if (!group) {
     return (
@@ -24,9 +21,7 @@ export default function GlossGroupScreen() {
   return (
     <View className="flex-1 bg-background">
       <View className="px-4 pt-3 pb-1">
-        <Text className="text-sm font-medium text-muted-foreground">
-          {group.gloss}
-        </Text>
+        <Text className="text-sm font-medium text-muted-foreground">{group.gloss}</Text>
       </View>
       <FlatList
         data={group.entries}

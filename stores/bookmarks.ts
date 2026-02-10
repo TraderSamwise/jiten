@@ -16,7 +16,7 @@ export const useBookmarkStore = create<BookmarkState>((set) => ({
   bookmarkedIds: new Set(),
   load: async (userDb) => {
     const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT DISTINCT entry_id FROM list_entries"
+      "SELECT DISTINCT entry_id FROM list_entries",
     );
     set({ bookmarkedIds: new Set(rows.map((r) => r.entry_id)) });
   },

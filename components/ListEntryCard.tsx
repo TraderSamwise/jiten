@@ -22,27 +22,14 @@ export function ListEntryCard({ entry }: ListEntryCardProps) {
 
   return (
     <PressableCard
-      className={
-        isBookmarked
-          ? "mb-1 border-l-4 border-l-primary bg-primary/5 p-3"
-          : "mb-1 p-3"
-      }
+      className={isBookmarked ? "mb-1 border-l-4 border-l-primary bg-primary/5 p-3" : "mb-1 p-3"}
       onPress={() => router.push(`/lists/word/${entry.id}`)}
     >
       <View className="flex-row items-baseline gap-2">
-        {primaryKanji && (
-          <Text className="text-lg font-bold text-foreground">
-            {primaryKanji}
-          </Text>
-        )}
-        {primaryKana && (
-          <Text className="text-sm text-muted-foreground">{primaryKana}</Text>
-        )}
+        {primaryKanji && <Text className="text-lg font-bold text-foreground">{primaryKanji}</Text>}
+        {primaryKana && <Text className="text-sm text-muted-foreground">{primaryKana}</Text>}
         {primaryGloss && (
-          <Text
-            className="flex-1 text-sm text-foreground"
-            numberOfLines={1}
-          >
+          <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
             {primaryGloss}
           </Text>
         )}

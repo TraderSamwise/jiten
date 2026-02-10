@@ -3,15 +3,13 @@ import { View, type ViewProps, Pressable, type PressableProps } from "react-nati
 import { cn } from "@/lib/utils";
 import { Text } from "./text";
 
-const Card = React.forwardRef<View, ViewProps>(
-  ({ className, ...props }, ref) => (
-    <View
-      ref={ref}
-      className={cn("rounded-xl border border-border bg-card p-4", className)}
-      {...props}
-    />
-  )
-);
+const Card = React.forwardRef<View, ViewProps>(({ className, ...props }, ref) => (
+  <View
+    ref={ref}
+    className={cn("rounded-xl border border-border bg-card p-4", className)}
+    {...props}
+  />
+));
 Card.displayName = "Card";
 
 const PressableCard = React.forwardRef<
@@ -20,10 +18,7 @@ const PressableCard = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Pressable
     ref={ref}
-    className={cn(
-      "rounded-xl border border-border bg-card p-4 active:opacity-80",
-      className
-    )}
+    className={cn("rounded-xl border border-border bg-card p-4 active:opacity-80", className)}
     {...props}
   />
 ));
@@ -45,11 +40,7 @@ const CardDescription = React.forwardRef<
   React.ComponentRef<typeof Text>,
   React.ComponentProps<typeof Text>
 >(({ className, ...props }, ref) => (
-  <Text
-    ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
-    {...props}
-  />
+  <Text ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
 ));
 CardDescription.displayName = "CardDescription";
 

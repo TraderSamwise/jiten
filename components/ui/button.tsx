@@ -4,30 +4,27 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { Text } from "./text";
 
-const buttonVariants = cva(
-  "flex-row items-center justify-center rounded-lg",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary",
-        secondary: "bg-secondary",
-        outline: "border border-border bg-transparent",
-        ghost: "bg-transparent",
-        destructive: "bg-destructive",
-      },
-      size: {
-        default: "h-11 px-4 py-2",
-        sm: "h-9 px-3",
-        lg: "h-12 px-6",
-        icon: "h-10 w-10",
-      },
+const buttonVariants = cva("flex-row items-center justify-center rounded-lg", {
+  variants: {
+    variant: {
+      default: "bg-primary",
+      secondary: "bg-secondary",
+      outline: "border border-border bg-transparent",
+      ghost: "bg-transparent",
+      destructive: "bg-destructive",
     },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
+    size: {
+      default: "h-11 px-4 py-2",
+      sm: "h-9 px-3",
+      lg: "h-12 px-6",
+      icon: "h-10 w-10",
     },
-  }
-);
+  },
+  defaultVariants: {
+    variant: "default",
+    size: "default",
+  },
+});
 
 const buttonTextVariants = cva("font-medium", {
   variants: {
@@ -51,9 +48,7 @@ const buttonTextVariants = cva("font-medium", {
   },
 });
 
-interface ButtonProps
-  extends PressableProps,
-    VariantProps<typeof buttonVariants> {
+interface ButtonProps extends PressableProps, VariantProps<typeof buttonVariants> {
   label?: string;
   children?: React.ReactNode;
 }
@@ -63,21 +58,13 @@ const Button = React.forwardRef<React.ComponentRef<typeof Pressable>, ButtonProp
     return (
       <Pressable
         ref={ref}
-        className={cn(
-          buttonVariants({ variant, size }),
-          props.disabled && "opacity-50",
-          className
-        )}
+        className={cn(buttonVariants({ variant, size }), props.disabled && "opacity-50", className)}
         {...props}
       >
-        {children ?? (
-          <Text className={cn(buttonTextVariants({ variant, size }))}>
-            {label}
-          </Text>
-        )}
+        {children ?? <Text className={cn(buttonTextVariants({ variant, size }))}>{label}</Text>}
       </Pressable>
     );
-  }
+  },
 );
 Button.displayName = "Button";
 

@@ -36,9 +36,7 @@ export default function TabLayout() {
         options={{
           title: "Lists",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <BookOpen color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -46,18 +44,14 @@ export default function TabLayout() {
         options={{
           title: "Reader",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <BookText color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <BookText color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => (
-            <Settings color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
         }}
       />
     </Tabs>

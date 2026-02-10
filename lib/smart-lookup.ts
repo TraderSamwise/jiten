@@ -26,15 +26,9 @@ export async function smartLookup(
     const candidates = deinflect(substr);
 
     for (const candidate of candidates) {
-      const searchResults = await searchDictionary(
-        dictDb,
-        candidate.word,
-        5,
-      );
+      const searchResults = await searchDictionary(dictDb, candidate.word, 5);
 
-      const newEntries = searchResults.japanese.filter(
-        (e) => !seenEntryIds.has(e.id),
-      );
+      const newEntries = searchResults.japanese.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
         for (const e of newEntries) seenEntryIds.add(e.id);

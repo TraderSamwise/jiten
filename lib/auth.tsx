@@ -8,7 +8,7 @@ const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 if (!AUTH_BYPASS && !publishableKey) {
   throw new Error(
-    "Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY — add it to your .env file or set EXPO_PUBLIC_AUTH_BYPASS=true"
+    "Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY — add it to your .env file or set EXPO_PUBLIC_AUTH_BYPASS=true",
   );
 }
 
@@ -26,9 +26,7 @@ function useBypassAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   if (AUTH_BYPASS) {
     return (
-      <BypassAuthContext.Provider
-        value={{ isSignedIn: true, isLoaded: true, userId: "dev-user" }}
-      >
+      <BypassAuthContext.Provider value={{ isSignedIn: true, isLoaded: true, userId: "dev-user" }}>
         {children}
       </BypassAuthContext.Provider>
     );
@@ -41,9 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* eslint-disable react-hooks/rules-of-hooks -- AUTH_BYPASS is a build-time constant */
 export function useAuth() {
   if (AUTH_BYPASS) {
     return useBypassAuth();
   }
   return useClerkAuth();
 }
+/* eslint-enable react-hooks/rules-of-hooks */

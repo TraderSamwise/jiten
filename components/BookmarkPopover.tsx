@@ -19,11 +19,7 @@ interface BookmarkPopoverProps {
   entryId: number;
 }
 
-export function BookmarkPopover({
-  visible,
-  onClose,
-  entryId,
-}: BookmarkPopoverProps) {
+export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverProps) {
   const insets = useSafeAreaInsets();
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
@@ -42,14 +38,12 @@ export function BookmarkPopover({
 
   async function loadData() {
     if (!userDb) return;
-    const allLists = await userDb.getAllAsync<WordList>(
-      "SELECT * FROM lists ORDER BY name"
-    );
+    const allLists = await userDb.getAllAsync<WordList>("SELECT * FROM lists ORDER BY name");
     setLists(allLists.map(parseListRow));
 
     const memberships = await userDb.getAllAsync<{ list_id: string }>(
       "SELECT list_id FROM list_entries WHERE entry_id = ?",
-      [entryId]
+      [entryId],
     );
     setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
   }
@@ -59,14 +53,14 @@ export function BookmarkPopover({
     const now = new Date().toISOString();
 
     if (membershipMap.has(listId)) {
-      await userDb.runAsync(
-        "DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?",
-        [listId, entryId]
-      );
-      await userDb.runAsync(
-        "DELETE FROM srs_cards WHERE entry_id = ? AND list_id = ?",
-        [entryId, listId]
-      );
+      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?", [
+        listId,
+        entryId,
+      ]);
+      await userDb.runAsync("DELETE FROM srs_cards WHERE entry_id = ? AND list_id = ?", [
+        entryId,
+        listId,
+      ]);
       const newMap = new Set(membershipMap);
       newMap.delete(listId);
       setMembershipMap(newMap);
@@ -77,7 +71,7 @@ export function BookmarkPopover({
     } else {
       await userDb.runAsync(
         "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-        [generateId(), listId, entryId, now]
+        [generateId(), listId, entryId, now],
       );
 
       const card = createNewCard();
@@ -103,7 +97,7 @@ export function BookmarkPopover({
           "english",
           now,
           now,
-        ]
+        ],
       );
       setMembershipMap((prev) => new Set(prev).add(listId));
       const cur = useListsStore.getState().lists.find((l) => l.id === listId);
@@ -129,7 +123,7 @@ export function BookmarkPopover({
     };
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      [list.id, list.name, list.description, list.createdAt, list.updatedAt]
+      [list.id, list.name, list.description, list.createdAt, list.updatedAt],
     );
     addListToStore({ ...list, entryCount: 0 });
     setLists((prev) => [...prev, list].sort((a, b) => a.name.localeCompare(b.name)));
@@ -138,12 +132,7 @@ export function BookmarkPopover({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View className="flex-1">
         {/* Backdrop — sibling so it doesn't swallow child presses */}
         <Pressable
@@ -169,9 +158,7 @@ export function BookmarkPopover({
                 autoFocus
               />
               <Pressable onPress={handleCreateList} className="px-2 py-1">
-                <Text className="text-sm font-medium text-primary">
-                  Create
-                </Text>
+                <Text className="text-sm font-medium text-primary">Create</Text>
               </Pressable>
             </View>
           ) : (
@@ -180,9 +167,7 @@ export function BookmarkPopover({
               className="flex-row items-center gap-2 px-3 py-3 border-b border-border"
             >
               <Plus size={16} className="text-primary" />
-              <Text className="text-sm font-medium text-primary">
-                New List...
-              </Text>
+              <Text className="text-sm font-medium text-primary">New List...</Text>
             </Pressable>
           )}
 
@@ -196,24 +181,17 @@ export function BookmarkPopover({
                 className="flex-row items-center gap-2 px-3 py-3"
               >
                 <FolderOpen size={16} className="text-muted-foreground" />
-                <Text
-                  className="flex-1 text-sm text-foreground"
-                  numberOfLines={1}
-                >
+                <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                   {list.name}
                 </Text>
-                {isMember && (
-                  <Check size={16} className="text-primary" />
-                )}
+                {isMember && <Check size={16} className="text-primary" />}
               </Pressable>
             );
           })}
 
           {lists.length === 0 && (
             <View className="px-3 py-4">
-              <Text className="text-sm text-muted-foreground text-center">
-                No lists yet
-              </Text>
+              <Text className="text-sm text-muted-foreground text-center">No lists yet</Text>
             </View>
           )}
         </View>

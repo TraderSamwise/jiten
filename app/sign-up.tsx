@@ -52,9 +52,7 @@ export default function SignUpScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View className="flex-1 justify-center px-8">
-        <Text className="text-3xl font-bold text-foreground text-center mb-8">
-          Create Account
-        </Text>
+        <Text className="text-3xl font-bold text-foreground text-center mb-8">Create Account</Text>
 
         {!pendingVerification ? (
           <>
@@ -79,9 +77,7 @@ export default function SignUpScreen() {
               textContentType="newPassword"
             />
 
-            {error ? (
-              <Text className="text-red-500 text-sm mb-3">{error}</Text>
-            ) : null}
+            {error ? <Text className="text-red-500 text-sm mb-3">{error}</Text> : null}
 
             <Button
               label={loading ? "Creating account..." : "Sign Up"}
@@ -111,9 +107,7 @@ export default function SignUpScreen() {
               keyboardType="number-pad"
             />
 
-            {error ? (
-              <Text className="text-red-500 text-sm mb-3">{error}</Text>
-            ) : null}
+            {error ? <Text className="text-red-500 text-sm mb-3">{error}</Text> : null}
 
             <Button
               label={loading ? "Verifying..." : "Verify Email"}

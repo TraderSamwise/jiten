@@ -6,11 +6,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import {
-  parseAozoraToHtml,
-  plainTextToHtml,
-  hasAozoraMarkup,
-} from "./aozora-parser";
+import { parseAozoraToHtml, plainTextToHtml, hasAozoraMarkup } from "./aozora-parser";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. RUBY ANNOTATIONS (FURIGANA)
@@ -67,18 +63,14 @@ describe("Ruby annotations", () => {
 
 describe("Emphasis dots (bouten)", () => {
   test("basic bouten annotation", () => {
-    const html = parseAozoraToHtml(
-      "これは［＃「重要」に傍点］な事だ",
-    );
+    const html = parseAozoraToHtml("これは［＃「重要」に傍点］な事だ");
     expect(html).toContain('<em class="bouten">重要</em>');
     expect(html).toContain("これは");
     expect(html).toContain("な事だ");
   });
 
   test("multiple bouten in one text", () => {
-    const html = parseAozoraToHtml(
-      "［＃「絶対」に傍点］に［＃「必要」に傍点］です",
-    );
+    const html = parseAozoraToHtml("［＃「絶対」に傍点］に［＃「必要」に傍点］です");
     expect(html).toContain('<em class="bouten">絶対</em>');
     expect(html).toContain('<em class="bouten">必要</em>');
   });
@@ -308,8 +300,7 @@ describe("Realistic Aozora text", () => {
   });
 
   test("parses mixed markup correctly", () => {
-    const text =
-      "｜彼女《かのじょ》は［＃「静か」に傍点］に微笑《ほほえ》んだ。";
+    const text = "｜彼女《かのじょ》は［＃「静か」に傍点］に微笑《ほほえ》んだ。";
     const html = parseAozoraToHtml(text);
     expect(html).toContain("<ruby>彼女<rt>かのじょ</rt></ruby>");
     expect(html).toContain('<em class="bouten">静か</em>');

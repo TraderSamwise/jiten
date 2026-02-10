@@ -54,9 +54,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         const ready = await isDictReady();
 
         if (ready) {
-          const db = Platform.OS === "web"
-            ? await loadWebDictDb()
-            : await SQLite.openDatabaseAsync("dictionary.db");
+          const db =
+            Platform.OS === "web"
+              ? await loadWebDictDb()
+              : await SQLite.openDatabaseAsync("dictionary.db");
           if (!db) throw new Error("Dictionary data missing");
           setDictDb(db);
           setIsDownloaded(true);
@@ -124,9 +125,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDownloadStatus({ state: "downloading", progress });
       });
 
-      const db = Platform.OS === "web"
-        ? await loadWebDictDb()
-        : await SQLite.openDatabaseAsync("dictionary.db");
+      const db =
+        Platform.OS === "web"
+          ? await loadWebDictDb()
+          : await SQLite.openDatabaseAsync("dictionary.db");
       if (!db) throw new Error("Dictionary data missing after download");
       setDictDb(db);
       setIsDownloaded(true);

@@ -21,14 +21,17 @@ async function getJmdictUrl(): Promise<string> {
   console.log("  Resolving latest jmdict-simplified release...");
   const res = await fetch(
     "https://api.github.com/repos/scriptin/jmdict-simplified/releases/latest",
-    { headers: { Accept: "application/vnd.github.v3+json" } }
+    { headers: { Accept: "application/vnd.github.v3+json" } },
   );
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const release = (await res.json()) as {
     assets: { name: string; browser_download_url: string }[];
   };
   const asset = release.assets.find(
-    (a) => a.name.startsWith("jmdict-eng-") && a.name.endsWith(".json.tgz") && !a.name.includes("common")
+    (a) =>
+      a.name.startsWith("jmdict-eng-") &&
+      a.name.endsWith(".json.tgz") &&
+      !a.name.includes("common"),
   );
   if (!asset) throw new Error("Could not find jmdict-eng tgz in latest release");
   console.log(`  Found: ${asset.name}`);
@@ -92,7 +95,9 @@ async function extractTgz(tgzPath: string, outDir: string): Promise<string> {
   fs.mkdirSync(outDir, { recursive: true });
   execSync(`tar -xzf "${tgzPath}" -C "${outDir}"`, { stdio: "inherit" });
   // Find the extracted .json file
-  const files = fs.readdirSync(outDir).filter((f) => f.endsWith(".json") && f.startsWith("jmdict-eng"));
+  const files = fs
+    .readdirSync(outDir)
+    .filter((f) => f.endsWith(".json") && f.startsWith("jmdict-eng"));
   if (files.length === 0) throw new Error("No jmdict JSON found after extraction");
   return path.join(outDir, files[0]);
 }
@@ -101,8 +106,7 @@ function computePriority(word: JMdictWord): number {
   // jmdict-simplified strips frequency tags (ichi1, news1, nf01, etc.)
   // and only exposes a boolean `common` flag. We approximate priority using
   // common status + shortest form length (shorter common words are more basic).
-  const isCommon =
-    word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
+  const isCommon = word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
   if (!isCommon) return 0;
 
   // Shortest kanji or kana form length (1-char kanji = highest priority)
@@ -119,7 +123,7 @@ function computePriority(word: JMdictWord): number {
 }
 
 function loadPitchAccents(
-  filePath: string
+  filePath: string,
 ): Map<string, { reading: string; pitchNumber: number }[]> {
   const map = new Map<string, { reading: string; pitchNumber: number }[]>();
   if (!fs.existsSync(filePath)) return map;
@@ -219,20 +223,18 @@ async function main() {
   `);
 
   // Prepare statements
-  const insertEntry = db.prepare(
-    "INSERT INTO entries (id, common, priority) VALUES (?, ?, ?)"
-  );
+  const insertEntry = db.prepare("INSERT INTO entries (id, common, priority) VALUES (?, ?, ?)");
   const insertKanji = db.prepare(
-    "INSERT INTO kanji (entry_id, text, common, tags) VALUES (?, ?, ?, ?)"
+    "INSERT INTO kanji (entry_id, text, common, tags) VALUES (?, ?, ?, ?)",
   );
   const insertKana = db.prepare(
-    "INSERT INTO kana (entry_id, text, romaji, common, tags) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO kana (entry_id, text, romaji, common, tags) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSense = db.prepare(
-    "INSERT INTO senses (entry_id, part_of_speech, glosses, field, misc, info) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO senses (entry_id, part_of_speech, glosses, field, misc, info) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const insertPitch = db.prepare(
-    "INSERT INTO pitch_accents (entry_id, reading, pitch_number) VALUES (?, ?, ?)"
+    "INSERT INTO pitch_accents (entry_id, reading, pitch_number) VALUES (?, ?, ?)",
   );
 
   // Insert all entries in a transaction
@@ -242,8 +244,7 @@ async function main() {
   const insertAll = db.transaction(() => {
     for (const word of jmdict.words) {
       const entryId = parseInt(word.id, 10);
-      const isCommon =
-        word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
+      const isCommon = word.kanji.some((k) => k.common) || word.kana.some((k) => k.common);
       const priority = computePriority(word);
 
       insertEntry.run(entryId, isCommon ? 1 : 0, priority);
@@ -260,24 +261,19 @@ async function main() {
       }
 
       for (const s of word.sense) {
-        const glosses = JSON.stringify(
-          s.gloss.map((g) => ({ lang: g.lang, text: g.text }))
-        );
+        const glosses = JSON.stringify(s.gloss.map((g) => ({ lang: g.lang, text: g.text })));
         insertSense.run(
           entryId,
           s.partOfSpeech.length > 0 ? JSON.stringify(s.partOfSpeech) : null,
           glosses,
           s.field.length > 0 ? s.field.join(", ") : null,
           s.misc.length > 0 ? s.misc.join(", ") : null,
-          s.info.length > 0 ? s.info.join("; ") : null
+          s.info.length > 0 ? s.info.join("; ") : null,
         );
       }
 
       // Match pitch accent data
-      const lookupKeys = [
-        ...word.kanji.map((k) => k.text),
-        ...word.kana.map((k) => k.text),
-      ];
+      const lookupKeys = [...word.kanji.map((k) => k.text), ...word.kana.map((k) => k.text)];
       const addedPitches = new Set<string>();
       for (const key of lookupKeys) {
         const accents = pitchMap.get(key);
@@ -340,11 +336,7 @@ async function main() {
   console.log("\n8. Building synonym table from WordNet...");
 
   // Step 1: Extract gloss vocabulary — all unique content words from English glosses
-  const glossRows = db
-    .prepare(
-      `SELECT glosses FROM senses`
-    )
-    .all() as { glosses: string }[];
+  const glossRows = db.prepare(`SELECT glosses FROM senses`).all() as { glosses: string }[];
 
   const glossVocab = new Set<string>();
   const wordPattern = /[a-z]{3,}/g; // only words 3+ chars
@@ -370,9 +362,7 @@ async function main() {
     );
   `);
 
-  const insertSynonym = db.prepare(
-    "INSERT INTO synonyms (word, synonym) VALUES (?, ?)"
-  );
+  const insertSynonym = db.prepare("INSERT INTO synonyms (word, synonym) VALUES (?, ?)");
 
   const wn = new WordNet(wordnetDb.path);
   const RELATED_PTRS = new Set(["+", "&", "~"]); // derivational, similar-to, hyponym
@@ -380,13 +370,11 @@ async function main() {
   let wordsDone = 0;
   const vocabArray = [...glossVocab];
 
-  const insertSynonyms = db.transaction(
-    (pairs: { word: string; synonym: string }[]) => {
-      for (const p of pairs) {
-        insertSynonym.run(p.word, p.synonym);
-      }
+  const insertSynonyms = db.transaction((pairs: { word: string; synonym: string }[]) => {
+    for (const p of pairs) {
+      insertSynonym.run(p.word, p.synonym);
     }
-  );
+  });
 
   // Process in batches for memory/performance
   const BATCH_SIZE = 500;
@@ -418,10 +406,7 @@ async function main() {
             for (const ptr of result.ptrs) {
               if (!RELATED_PTRS.has(ptr.pointerSymbol)) continue;
               try {
-                const related = await wn.getAsync(
-                  ptr.synsetOffset,
-                  ptr.pos
-                );
+                const related = await wn.getAsync(ptr.synsetOffset, ptr.pos);
                 for (const syn of related.synonyms) {
                   const normalized = syn.toLowerCase().replace(/_/g, " ");
                   if (
@@ -441,7 +426,7 @@ async function main() {
             pairs.push({ word, synonym: syn });
           }
         } catch {}
-      })
+      }),
     );
 
     insertSynonyms(pairs);
@@ -449,7 +434,7 @@ async function main() {
     wordsDone += batch.length;
     if (wordsDone % 5000 === 0 || wordsDone === vocabArray.length) {
       console.log(
-        `   ${wordsDone}/${vocabArray.length} words processed, ${synCount} synonym pairs so far...`
+        `   ${wordsDone}/${vocabArray.length} words processed, ${synCount} synonym pairs so far...`,
       );
     }
   }
@@ -464,9 +449,7 @@ async function main() {
   db.close();
 
   const stats = fs.statSync(DB_PATH);
-  console.log(
-    `\nDone! Database: ${DB_PATH} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`
-  );
+  console.log(`\nDone! Database: ${DB_PATH} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
 
   // Write manifest JSON for on-demand download
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");

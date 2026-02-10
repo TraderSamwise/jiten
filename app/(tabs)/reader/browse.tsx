@@ -1,21 +1,13 @@
 import React, { useCallback, useState } from "react";
-import { View, FlatList, ActivityIndicator, Alert } from "react-native";
+import { View, FlatList, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import {
-  PressableCard,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { useUserDb } from "@/db/user-provider";
-import {
-  searchBooks,
-  fetchBookContent,
-  getAuthorName,
-  type AozoraBook,
-} from "@/lib/aozora-api";
+import { searchBooks, fetchBookContent, getAuthorName, type AozoraBook } from "@/lib/aozora-api";
 import { parseAozoraToHtml } from "@/lib/aozora-parser";
+import { alert } from "@/lib/confirm";
 import { parseBookRow } from "./index";
 
 function generateId(): string {
@@ -38,10 +30,7 @@ export default function BrowseAozoraScreen() {
       const books = await searchBooks(q);
       setResults(books);
     } catch (err) {
-      Alert.alert(
-        "Search failed",
-        err instanceof Error ? err.message : "Network error",
-      );
+      alert("Search failed", err instanceof Error ? err.message : "Network error");
     } finally {
       setSearching(false);
     }
@@ -52,17 +41,16 @@ export default function BrowseAozoraScreen() {
       if (!userDb) return;
 
       // Check if already downloaded
-      const existing = await userDb.getFirstAsync<any>(
-        "SELECT id FROM books WHERE aozora_id = ?",
-        [aozoraBook.bookId],
-      );
+      const existing = await userDb.getFirstAsync<any>("SELECT id FROM books WHERE aozora_id = ?", [
+        aozoraBook.bookId,
+      ]);
       if (existing) {
         router.push(`/reader/${existing.id}`);
         return;
       }
 
       if (!aozoraBook.textUrl) {
-        Alert.alert("Not available", "This book has no text download URL.");
+        alert("Not available", "This book has no text download URL.");
         return;
       }
 
@@ -77,24 +65,12 @@ export default function BrowseAozoraScreen() {
         await userDb.runAsync(
           `INSERT INTO books (id, title, author, aozora_id, source, raw_content, html_content, created_at, updated_at)
            VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?, ?)`,
-          [
-            id,
-            aozoraBook.title,
-            author,
-            aozoraBook.bookId,
-            rawContent,
-            htmlContent,
-            now,
-            now,
-          ],
+          [id, aozoraBook.title, author, aozoraBook.bookId, rawContent, htmlContent, now, now],
         );
 
         router.push(`/reader/${id}`);
       } catch (err) {
-        Alert.alert(
-          "Download failed",
-          err instanceof Error ? err.message : "Unknown error",
-        );
+        alert("Download failed", err instanceof Error ? err.message : "Unknown error");
       } finally {
         setDownloading(null);
       }
@@ -116,11 +92,7 @@ export default function BrowseAozoraScreen() {
           <View className="flex-row items-center">
             <View className="flex-1">
               <CardTitle numberOfLines={2}>{item.title}</CardTitle>
-              {author ? (
-                <CardDescription numberOfLines={1}>
-                  {author}
-                </CardDescription>
-              ) : null}
+              {author ? <CardDescription numberOfLines={1}>{author}</CardDescription> : null}
             </View>
             {isDownloading && <ActivityIndicator className="ml-2" />}
           </View>

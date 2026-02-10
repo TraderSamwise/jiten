@@ -18,8 +18,7 @@ interface Section {
 
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
-  const { query, results, isSearching, setResults, setIsSearching, setQuery } =
-    useSearchStore();
+  const { query, results, isSearching, setResults, setIsSearching, setQuery } = useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
@@ -82,7 +81,7 @@ export default function SearchScreen() {
       }
       return <EntryCard entry={item as DictEntry} />;
     },
-    []
+    [],
   );
 
   const renderSectionHeader = useCallback(
@@ -90,22 +89,18 @@ export default function SearchScreen() {
       if (!hasBothSections) return null;
       return (
         <View className="pb-1 pt-3 px-1 bg-background">
-          <Text className="text-sm font-medium text-muted-foreground">
-            {section.title}
-          </Text>
+          <Text className="text-sm font-medium text-muted-foreground">{section.title}</Text>
         </View>
       );
     },
-    [hasBothSections]
+    [hasBothSections],
   );
 
   if (!isReady) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="mt-4 text-muted-foreground">
-          Loading dictionary...
-        </Text>
+        <Text className="mt-4 text-muted-foreground">Loading dictionary...</Text>
       </View>
     );
   }
@@ -135,9 +130,7 @@ export default function SearchScreen() {
           ) : !query.trim() ? (
             <View className="items-center pt-10">
               <Text className="text-2xl">辞典</Text>
-              <Text className="mt-2 text-muted-foreground">
-                Type to search the dictionary
-              </Text>
+              <Text className="mt-2 text-muted-foreground">Type to search the dictionary</Text>
             </View>
           ) : null
         }

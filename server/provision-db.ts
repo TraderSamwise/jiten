@@ -38,10 +38,7 @@ interface ClerkWebhookEvent {
   };
 }
 
-export default async function handler(
-  req: IncomingMessage & { body?: any },
-  res: ServerResponse
-) {
+export default async function handler(req: IncomingMessage & { body?: any }, res: ServerResponse) {
   if (req.method !== "POST") {
     res.writeHead(405);
     res.end("Method not allowed");
@@ -68,21 +65,18 @@ export default async function handler(
   try {
     // Create child database in the Turso group
     // It inherits the schema from the parent database
-    const response = await fetch(
-      `https://api.turso.tech/v1/organizations/${org}/databases`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: dbName,
-          group,
-          schema: "user-schema",
-        }),
-      }
-    );
+    const response = await fetch(`https://api.turso.tech/v1/organizations/${org}/databases`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: dbName,
+        group,
+        schema: "user-schema",
+      }),
+    });
 
     if (!response.ok) {
       const body = await response.text();

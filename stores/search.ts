@@ -24,5 +24,6 @@ export const useSearchStore = create<SearchState>((set) => ({
   setResults: (results) => set({ results, isSearching: false }),
   setIsSearching: (isSearching) => set({ isSearching }),
   setSelectedGlossGroup: (selectedGlossGroup) => set({ selectedGlossGroup }),
-  clear: () => set({ query: "", results: EMPTY_RESULTS, isSearching: false, selectedGlossGroup: null }),
+  clear: () =>
+    set({ query: "", results: EMPTY_RESULTS, isSearching: false, selectedGlossGroup: null }),
 }));

@@ -287,9 +287,7 @@ export interface DeinflectCandidate {
 }
 
 export function deinflect(word: string): DeinflectCandidate[] {
-  const results: DeinflectCandidate[] = [
-    { word, typeMask: ANY, reasons: [] },
-  ];
+  const results: DeinflectCandidate[] = [{ word, typeMask: ANY, reasons: [] }];
   const seen = new Set([word]);
 
   for (let i = 0; i < results.length; i++) {
@@ -347,10 +345,7 @@ export interface LookupCandidate {
  *
  * This is a pure function — the actual dictionary lookup is separate.
  */
-export function generateLookupCandidates(
-  text: string,
-  maxLen: number = 15,
-): LookupCandidate[] {
+export function generateLookupCandidates(text: string, maxLen: number = 15): LookupCandidate[] {
   const substrings = generateSubstrings(text, maxLen);
   const candidates: LookupCandidate[] = [];
   const seen = new Set<string>();
