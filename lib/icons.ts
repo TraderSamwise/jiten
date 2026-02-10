@@ -1,4 +1,5 @@
-export {
+import { cssInterop } from "nativewind";
+import {
   Search,
   BookOpen,
   Bookmark,
@@ -24,3 +25,68 @@ export {
   ChevronDown,
   ChevronUp,
 } from "lucide-react-native";
+
+// Map className → style with color extraction so NativeWind
+// classes like text-primary work on native SVG icons.
+const icons = [
+  Search,
+  BookOpen,
+  Bookmark,
+  GraduationCap,
+  Settings,
+  Plus,
+  Trash2,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  Check,
+  Star,
+  Volume2,
+  RotateCcw,
+  ArrowRight,
+  ListPlus,
+  FolderOpen,
+  Pencil,
+  Play,
+  SlidersHorizontal,
+  BookText,
+  Import,
+  ChevronDown,
+  ChevronUp,
+];
+
+for (const icon of icons) {
+  cssInterop(icon, {
+    className: {
+      target: "style",
+      nativeStyleToProp: { color: true },
+    },
+  });
+}
+
+export {
+  Search,
+  BookOpen,
+  Bookmark,
+  GraduationCap,
+  Settings,
+  Plus,
+  Trash2,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  Check,
+  Star,
+  Volume2,
+  RotateCcw,
+  ArrowRight,
+  ListPlus,
+  FolderOpen,
+  Pencil,
+  Play,
+  SlidersHorizontal,
+  BookText,
+  Import,
+  ChevronDown,
+  ChevronUp,
+};
