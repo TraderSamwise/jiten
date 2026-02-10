@@ -62,6 +62,10 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     border-radius: 2px;
   }
 
+  ::selection {
+    background: ${highlightBg};
+  }
+
   .page-break {
     display: none;
   }
@@ -315,11 +319,13 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
 
   contentEl.addEventListener('touchend', function(e) {
     swipeHandled = false;
+    if (isDragging) return; // Don't swipe during drag selection
     var dx = e.changedTouches[0].clientX - touchStartX;
     var dy = e.changedTouches[0].clientY - touchStartY;
     var dt = Date.now() - touchStartTime;
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50 && dt < 500) {
       swipeHandled = true;
+      clearTimeout(longPressTimer); // Cancel any pending long press
       if (dx < 0) nextPage();   // Swipe left = forward
       else prevPage();           // Swipe right = back
     }
@@ -346,40 +352,100 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
         parent.insertBefore(span.firstChild, span);
       }
       parent.removeChild(span);
+      parent.normalize();
     }
   }
 
-  // ── TAP: word lookup ──
-  contentEl.addEventListener('click', function(e) {
-    if (swipeHandled) { swipeHandled = false; return; }
+  // Check if a character is Japanese (CJK, hiragana, katakana)
+  function isJapanese(ch) {
+    if (!ch) return false;
+    var code = ch.charCodeAt(0);
+    return (code >= 0x3040 && code <= 0x309F) || // Hiragana
+           (code >= 0x30A0 && code <= 0x30FF) || // Katakana
+           (code >= 0x4E00 && code <= 0x9FFF) || // CJK Unified
+           (code >= 0x3400 && code <= 0x4DBF) || // CJK Extension A
+           (code >= 0xFF66 && code <= 0xFF9F) || // Half-width katakana
+           (code >= 0x3000 && code <= 0x303F);   // CJK punctuation (々 etc.)
+  }
 
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
+  function isKana(ch) {
+    if (!ch) return false;
+    var code = ch.charCodeAt(0);
+    return (code >= 0x3040 && code <= 0x309F) || (code >= 0x30A0 && code <= 0x30FF);
+  }
 
-    clearHighlight();
+  function isKanji(ch) {
+    if (!ch) return false;
+    var code = ch.charCodeAt(0);
+    return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF);
+  }
 
-    var range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    if (!range) return;
+  // ── Heuristic word boundary detection (instant, no dictionary) ──
+  // Finds approximate word end from a tap position by scanning forward.
+  // Rules: kanji runs together, kana after kanji is okurigana, pure kana
+  // runs together up to a particle boundary.
+  function guessWordLength(text) {
+    if (!text || text.length === 0) return 0;
+    var i = 0;
+    // Leading kanji
+    while (i < text.length && isKanji(text[i])) i++;
+    if (i > 0) {
+      // Okurigana: kana following kanji (e.g. 走って → 走 + って)
+      while (i < text.length && isKana(text[i])) i++;
+      return i;
+    }
+    // Pure kana word: scan until non-Japanese
+    while (i < text.length && isKana(text[i])) i++;
+    return Math.max(i, 1);
+  }
 
-    var node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) return;
+  // Convert a node/offset to an absolute character offset within contentEl
+  var lastTapAbsOffset = 0;
 
-    var offset = range.startOffset;
-    lastTapNode = node;
-    lastTapOffset = offset;
+  function nodeOffsetToAbsolute(targetNode, targetOffset) {
+    var walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null, false);
+    var abs = 0;
+    while (walker.nextNode()) {
+      if (walker.currentNode === targetNode) return abs + targetOffset;
+      abs += walker.currentNode.textContent.length;
+    }
+    return abs + targetOffset;
+  }
 
-    var text = getTextFromPosition(node, offset, 20);
-    if (!text || text.length === 0) return;
+  // Resolve absolute offset to node/offset pair (survives DOM changes)
+  function absoluteToNodeOffset(absOffset) {
+    var walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null, false);
+    var remaining = absOffset;
+    while (walker.nextNode()) {
+      var len = walker.currentNode.textContent.length;
+      if (remaining <= len) return { node: walker.currentNode, offset: remaining };
+      remaining -= len;
+    }
+    return null;
+  }
 
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'tap',
-      text: text,
-      x: e.clientX,
-      y: e.clientY
-    }));
-  });
+  // ── Apply highlight by length from lastTapAbsOffset ──
+  function applyHighlight(len) {
+    if (len <= 0) return;
+    var start = absoluteToNodeOffset(lastTapAbsOffset);
+    var end = absoluteToNodeOffset(lastTapAbsOffset + len);
+    if (!start || !end) return;
+    try {
+      var hlRange = document.createRange();
+      hlRange.setStart(start.node, start.offset);
+      hlRange.setEnd(end.node, end.offset);
+      if (hlRange.collapsed) return;
+      var span = document.createElement('span');
+      span.className = 'highlight';
+      try { hlRange.surroundContents(span); } catch(ex) {
+        var fragment = hlRange.extractContents();
+        span.appendChild(fragment);
+        hlRange.insertNode(span);
+      }
+    } catch(e) {}
+  }
 
-  // ── SELECTION: capture selected text ──
+  // ── SELECTION: capture selected text via native selection ──
   var selectionTimer;
   document.addEventListener('selectionchange', function() {
     clearTimeout(selectionTimer);
@@ -394,6 +460,45 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
         }));
       }
     }, 300);
+  });
+
+  // ── TAP: word lookup (click on text) ──
+  contentEl.addEventListener('click', function(e) {
+    if (swipeHandled) { swipeHandled = false; return; }
+
+    // If there's a native selection, let it be (user is selecting text)
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+
+    clearHighlight();
+
+    var range = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (!range) return;
+    var node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    var offset = range.startOffset;
+
+    // Check we actually tapped on a Japanese character
+    var charAtTap = node.textContent.charAt(offset);
+    if (!charAtTap || !isJapanese(charAtTap)) return;
+
+    lastTapNode = node;
+    lastTapOffset = offset;
+    lastTapAbsOffset = nodeOffsetToAbsolute(node, offset);
+
+    var text = getTextFromPosition(node, offset, 20);
+    if (!text || text.length === 0) return;
+
+    // Instant heuristic highlight
+    var guessLen = guessWordLength(text);
+    applyHighlight(guessLen);
+
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'tap',
+      text: text,
+      x: e.clientX,
+      y: e.clientY
+    }));
   });
 
   // ── Extract text from position forward, walking through text nodes ──
@@ -432,43 +537,9 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
         var page = Math.round(msg.position * (totalPages - 1)) + 1;
         goToPage(page);
       } else if (msg.type === 'highlight') {
-        if (!lastTapNode || !lastTapNode.parentNode) return;
+        // Refine heuristic highlight with actual match length
         clearHighlight();
-        var len = msg.length || 0;
-        if (len <= 0) return;
-        var remaining = len;
-        var hlRange = document.createRange();
-        hlRange.setStart(lastTapNode, lastTapOffset);
-        var walker = document.createTreeWalker(
-          contentEl, NodeFilter.SHOW_TEXT, null, false
-        );
-        walker.currentNode = lastTapNode;
-        var endNode = lastTapNode;
-        var endOffset = lastTapOffset;
-        var available = endNode.textContent.length - lastTapOffset;
-        if (available >= remaining) {
-          endOffset = lastTapOffset + remaining;
-        } else {
-          remaining -= available;
-          while (remaining > 0 && walker.nextNode()) {
-            endNode = walker.currentNode;
-            if (endNode.textContent.length >= remaining) {
-              endOffset = remaining;
-              remaining = 0;
-            } else {
-              remaining -= endNode.textContent.length;
-              endOffset = endNode.textContent.length;
-            }
-          }
-        }
-        hlRange.setEnd(endNode, endOffset);
-        var span = document.createElement('span');
-        span.className = 'highlight';
-        try { hlRange.surroundContents(span); } catch(ex) {
-          var fragment = hlRange.extractContents();
-          span.appendChild(fragment);
-          hlRange.insertNode(span);
-        }
+        applyHighlight(msg.length || 0);
       } else if (msg.type === 'clearHighlight') {
         clearHighlight();
       }
