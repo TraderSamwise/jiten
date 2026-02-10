@@ -20,6 +20,7 @@ export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
   const { query, results, isSearching, setResults, setIsSearching, setQuery } = useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchGenRef = useRef(0);
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const initializedRef = useRef(false);
@@ -43,17 +44,21 @@ export default function SearchScreen() {
     }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const gen = ++searchGenRef.current;
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
         const searchResults = await searchDictionary(dictDb, query);
+        if (gen !== searchGenRef.current) return; // stale
         setResults(searchResults);
       } catch (err) {
+        if (gen !== searchGenRef.current) return;
         console.error("Search error:", err);
         setResults({ japanese: [], english: [] });
       }
+      setIsSearching(false);
       router.setParams(query.trim() ? { q: query.trim() } : { q: "" });
-    }, 350);
+    }, 200);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -108,8 +113,8 @@ export default function SearchScreen() {
   return (
     <View className="flex-1 bg-background">
       {isSearching && (
-        <View className="px-4 py-2">
-          <ActivityIndicator size="small" />
+        <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+          <ActivityIndicator size="large" />
         </View>
       )}
 
@@ -120,7 +125,7 @@ export default function SearchScreen() {
         keyExtractor={(item, index) =>
           "gloss" in item ? `gloss-${item.gloss}-${index}` : `${item.id}-${index}`
         }
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         stickySectionHeadersEnabled={false}
         ListEmptyComponent={
           query.trim() && !isSearching ? (
