@@ -160,7 +160,7 @@ describe("generateReaderHtml", () => {
       isDark: false,
     });
     expect(html).toContain("caretRangeFromPoint");
-    expect(html).toContain("type: 'tap'");
+    expect(html).toContain('type: "tap"');
   });
 
   test("includes selection handler", () => {
@@ -168,8 +168,8 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("selectionchange");
-    expect(html).toContain("type: 'selection'");
+    expect(html).toContain("mousedown");
+    expect(html).toContain('type: "selection"');
   });
 
   test("includes scroll position reporting", () => {
@@ -177,7 +177,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("type: 'scroll'");
+    expect(html).toContain('type: "scroll"');
     expect(html).toContain("reportScroll");
   });
 
@@ -195,7 +195,7 @@ describe("generateReaderHtml", () => {
       isDark: false,
     });
     expect(html).toContain("setFontSize");
-    expect(html).toContain("addEventListener('message'");
+    expect(html).toContain('addEventListener("message"');
   });
 
   test("includes ready notification", () => {
@@ -203,7 +203,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("type: 'ready'");
+    expect(html).toContain('type: "ready"');
   });
 
   test("includes getTextFromPosition helper", () => {
@@ -222,7 +222,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("var savedPos = 0");
+    expect(html).toContain("scrollPosition:0}");
   });
 
   test("restores custom scroll position", () => {
@@ -231,7 +231,7 @@ describe("generateReaderHtml", () => {
       isDark: false,
       scrollPosition: 0.75,
     });
-    expect(html).toContain("var savedPos = 0.75");
+    expect(html).toContain("scrollPosition:0.75}");
   });
 
   // ── Page controls ──
@@ -318,7 +318,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("msg.type === 'highlight'");
+    expect(html).toContain('msg.type === "highlight"');
     expect(html).toContain("lastTapNode");
     expect(html).toContain("lastTapOffset");
   });
@@ -328,7 +328,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("msg.type === 'clearHighlight'");
+    expect(html).toContain('msg.type === "clearHighlight"');
     expect(html).toContain("clearHighlight");
   });
 
@@ -342,7 +342,7 @@ describe("generateReaderHtml", () => {
     expect(html).toContain("updateSizing");
     expect(html).toContain("clientHeight");
     expect(html).toContain("clientWidth");
-    expect(html).toContain("addEventListener('resize'");
+    expect(html).toContain('addEventListener("resize"');
   });
 
   test("resize handler re-paginates and preserves position", () => {

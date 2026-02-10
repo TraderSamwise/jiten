@@ -1,0 +1,108 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: __BG__;
+  color: __FG__;
+  -webkit-text-size-adjust: none;
+  -webkit-touch-callout: none;
+}
+
+#content {
+  writing-mode: vertical-rl;
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  font-size: __FONT_SIZE__px;
+  line-height: 1.8;
+  padding: 16px;
+  width: 100%;
+  height: calc(100vh - 44px);
+  overflow: hidden;
+  touch-action: none;
+  position: relative;
+}
+
+p {
+  margin-block-end: 1em;
+  text-indent: 1em;
+}
+
+ruby rt {
+  font-size: 0.5em;
+  color: __RUBY_COLOR__;
+}
+
+.bouten {
+  font-style: normal;
+  -webkit-text-emphasis: filled dot;
+  text-emphasis: filled dot;
+}
+
+.highlight {
+  background: __HIGHLIGHT_BG__;
+  padding-block: 0.4em;
+  margin-block: -0.4em;
+}
+
+.page-break {
+  display: none;
+}
+
+.buffer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+#page-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  z-index: 100;
+}
+
+#page-controls button {
+  background: none;
+  border: none;
+  color: __FG__;
+  font-size: 28px;
+  padding: 6px 16px;
+  cursor: pointer;
+  opacity: 0.5;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#page-controls button:active {
+  opacity: 0.8;
+}
+
+#page-controls button:disabled {
+  opacity: 0.15;
+  cursor: default;
+}
+
+#page-num {
+  font-size: 13px;
+  font-family: -apple-system, "Helvetica Neue", sans-serif;
+  color: __FG__;
+  opacity: 0.4;
+  user-select: none;
+}
+
+#content::-webkit-scrollbar {
+  display: none;
+}
