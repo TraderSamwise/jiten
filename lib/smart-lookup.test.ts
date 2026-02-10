@@ -149,6 +149,43 @@ function hitsContainGloss(hits: LookupHit[], substring: string): boolean {
   );
 }
 
+/**
+ * Simulates smartLookupWithOffset using better-sqlite3.
+ * Tries substrings containing the tap position, longest first,
+ * preferring starts at/near the tap offset (same as production).
+ */
+function simulateSmartLookupWithOffset(
+  text: string,
+  tapOffset: number,
+  maxLen: number = 15,
+): LookupHit[] {
+  for (let len = Math.min(text.length, maxLen); len >= 1; len--) {
+    const minStart = Math.max(0, tapOffset - len + 1);
+    const maxStart = Math.min(tapOffset, text.length - len);
+
+    for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
+      const substr = text.slice(start, start + len);
+      const candidates = deinflect(substr);
+
+      for (const candidate of candidates) {
+        const results = searchJapaneseSimple(candidate.word, 5);
+        if (results.length > 0) {
+          return [
+            {
+              matchedText: substr,
+              searchWord: candidate.word,
+              reasons: candidate.reasons,
+              results,
+            },
+          ];
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 1. BASIC WORD LOOKUP — tapping on a dictionary-form word
 // ═══════════════════════════════════════════════════════════════════
@@ -446,5 +483,32 @@ describe("Lookup edge cases", () => {
     expect(hits.length).toBeGreaterThan(0);
     // First matched text should not exceed maxLen
     expect(hits[0].matchedText.length).toBeLessThanOrEqual(10);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. TAP-OFFSET GREEDY LOOKUP (smartLookupWithOffset)
+//     Simulates tapping on a character mid-word with backward context
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
+  test("tapping 積 in 蓄積させること → finds 蓄積, not 積もる", () => {
+    // Simulate: text = "蓄積させること", tapOffset = 1 (tapped 積)
+    const text = "蓄積させること";
+    const tapOffset = 1; // index of 積
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    // Should find 蓄積 (accumulation)
+    expect(hitsContainWord(hits, "蓄積")).toBe(true);
+    // Should NOT match 積もる (the false positive from the bug)
+    expect(hitsContainWord(hits, "積もる")).toBe(false);
+  });
+
+  test("tapping 蓄 in 蓄積させること → still finds 蓄積", () => {
+    const text = "蓄積させること";
+    const tapOffset = 0; // index of 蓄
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "蓄積")).toBe(true);
   });
 });

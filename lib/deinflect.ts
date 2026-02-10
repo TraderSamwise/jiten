@@ -217,6 +217,7 @@ const RULES: DeinflectRule[] = [
   { from: "したり", to: "する", typeIn: SURU, typeOut: SURU, reason: "tari" },
   { from: "している", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru" },
   { from: "してる", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru (casual)" },
+  { from: "する", to: "", typeIn: SURU, typeOut: ANY, reason: "suru-verb noun" },
 
   // ── 来る (kuru) irregular ──
   { from: "きた", to: "くる", typeIn: KURU, typeOut: KURU, reason: "past" },
