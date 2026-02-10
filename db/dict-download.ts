@@ -19,8 +19,7 @@ const FORMAT_KEY = "dict-db-format";
 const CURRENT_FORMAT = 5; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags
 const DB_NAME = "dictionary.db";
 
-const MANIFEST_URL =
-  process.env.EXPO_PUBLIC_DICT_MANIFEST_URL ?? "https://your-cdn.com/dict-manifest.json";
+const MANIFEST_URL = process.env.EXPO_PUBLIC_DICT_MANIFEST_URL!;
 
 async function getLocalVersion(): Promise<number | null> {
   const v = await AsyncStorage.getItem(VERSION_KEY);
