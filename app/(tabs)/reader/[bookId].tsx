@@ -52,9 +52,13 @@ export default function BookReaderScreen() {
       setFontSize(b.fontSize);
 
       if (b.rawContent) {
-        const bookHtml = hasAozoraMarkup(b.rawContent)
-          ? parseAozoraToHtml(b.rawContent)
-          : plainTextToHtml(b.rawContent);
+        // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
+        const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
+        const bookHtml = hasRubyTags
+          ? b.rawContent
+          : hasAozoraMarkup(b.rawContent)
+            ? parseAozoraToHtml(b.rawContent)
+            : plainTextToHtml(b.rawContent);
         const readerHtml = generateReaderHtml(bookHtml, {
           fontSize: b.fontSize,
           isDark,
