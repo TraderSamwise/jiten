@@ -63,10 +63,6 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     margin-block: -0.4em;
   }
 
-  ::selection {
-    background: ${highlightBg};
-  }
-
   .page-break {
     display: none;
   }
@@ -307,29 +303,110 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   btnNext.addEventListener('click', function(e) { e.stopPropagation(); nextPage(); });
   btnPrev.addEventListener('click', function(e) { e.stopPropagation(); prevPage(); });
 
-  // ── Touch / swipe ──
+  // ── Touch / swipe / drag-select ──
   var touchStartX = 0;
   var touchStartY = 0;
   var touchStartTime = 0;
+  var isDragSelecting = false;
+  var dragStartAbs = -1;
+  var dragEndAbs = -1;
+  var suppressClick = false;
 
   contentEl.addEventListener('touchstart', function(e) {
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     touchStartTime = Date.now();
+    isDragSelecting = false;
+    dragStartAbs = -1;
+    dragEndAbs = -1;
+    swipeHandled = false;
+
+    // Get caret at touch point for potential drag selection
+    var range = document.caretRangeFromPoint(touchStartX, touchStartY);
+    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+      var ch = range.startContainer.textContent.charAt(range.startOffset);
+      if (isJapanese(ch)) {
+        dragStartAbs = nodeOffsetToAbsolute(range.startContainer, range.startOffset);
+      }
+    }
+  }, { passive: true });
+
+  contentEl.addEventListener('touchmove', function(e) {
+    var cx = e.touches[0].clientX;
+    var cy = e.touches[0].clientY;
+    var dx = Math.abs(cx - touchStartX);
+    var dy = Math.abs(cy - touchStartY);
+
+    // Enter drag-select mode once moved enough, but only if started on text
+    if (!isDragSelecting && dragStartAbs >= 0 && (dx > 10 || dy > 10)) {
+      isDragSelecting = true;
+      suppressClick = true;
+      clearHighlight();
+    }
+
+    if (isDragSelecting) {
+      var endRange = document.caretRangeFromPoint(cx, cy);
+      if (endRange && endRange.startContainer.nodeType === Node.TEXT_NODE) {
+        // Compute end offset BEFORE clearing (node refs survive since abs is just a count)
+        var endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
+        clearHighlight();
+        var lo = Math.min(dragStartAbs, endAbs);
+        var hi = Math.max(dragStartAbs, endAbs);
+        dragEndAbs = endAbs;
+        if (hi > lo) {
+          highlightAbsRange(lo, hi);
+        }
+      }
+    }
   }, { passive: true });
 
   contentEl.addEventListener('touchend', function(e) {
-    swipeHandled = false;
-    if (isDragging) return; // Don't swipe during drag selection
     var dx = e.changedTouches[0].clientX - touchStartX;
     var dy = e.changedTouches[0].clientY - touchStartY;
     var dt = Date.now() - touchStartTime;
+
+    // Check for swipe first — fast horizontal swipe always navigates pages
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50 && dt < 500) {
+      if (isDragSelecting) {
+        clearHighlight();
+        isDragSelecting = false;
+      }
       swipeHandled = true;
-      clearTimeout(longPressTimer); // Cancel any pending long press
-      if (dx < 0) nextPage();   // Swipe left = forward
-      else prevPage();           // Swipe right = back
+      dragStartAbs = -1;
+      dragEndAbs = -1;
+      suppressClick = true;
+      setTimeout(function() { suppressClick = false; }, 50);
+      if (dx < 0) nextPage();
+      else prevPage();
+      return;
     }
+
+    if (isDragSelecting) {
+      isDragSelecting = false;
+      // Send the drag-selected text as a selection message
+      var lo = Math.min(dragStartAbs, dragEndAbs);
+      var hi = Math.max(dragStartAbs, dragEndAbs);
+      if (hi > lo) {
+        var text = getAbsText(lo, hi);
+        if (text.length > 0 && text.length <= 100) {
+          var prefix = getAbsText(Math.max(0, lo - 10), lo);
+          var suffix = getAbsText(hi, hi + 10);
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'selection',
+            text: text,
+            prefix: prefix,
+            suffix: suffix
+          }));
+        }
+      }
+      dragStartAbs = -1;
+      dragEndAbs = -1;
+      setTimeout(function() { suppressClick = false; }, 50);
+      return;
+    }
+
+    dragStartAbs = -1;
+    swipeHandled = false;
   }, { passive: true });
 
   // ── Keyboard ──
@@ -342,6 +419,11 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   contentEl.addEventListener('wheel', function(e) {
     e.preventDefault();
   }, { passive: false });
+
+  // ── Prevent native text selection (but caretRangeFromPoint still works) ──
+  document.addEventListener('selectstart', function(e) {
+    e.preventDefault();
+  });
 
   // ── Clear existing highlights ──
   function clearHighlight() {
@@ -446,11 +528,15 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   // ── Apply highlight by startDelta + length from lastTapAbsOffset ──
   // startDelta is relative to lastTapAbsOffset (negative = match starts before tap)
   function applyHighlight(startDelta, len) {
-    if (len <= 0) return;
-    var absStart = lastTapAbsOffset + (startDelta || 0);
+    highlightAbsRange(lastTapAbsOffset + (startDelta || 0), lastTapAbsOffset + (startDelta || 0) + len);
+  }
+
+  // ── Apply highlight by absolute character offsets ──
+  function highlightAbsRange(absStart, absEnd) {
+    if (absEnd <= absStart) return;
     if (absStart < 0) absStart = 0;
     var start = absoluteToNodeOffset(absStart);
-    var end = absoluteToNodeOffset(absStart + len);
+    var end = absoluteToNodeOffset(absEnd);
     if (!start || !end) return;
     try {
       var hlRange = document.createRange();
@@ -467,36 +553,89 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     } catch(e) {}
   }
 
-  // ── SELECTION: capture selected text via native selection ──
-  var selectionTimer;
-  document.addEventListener('selectionchange', function() {
-    clearTimeout(selectionTimer);
-    selectionTimer = setTimeout(function() {
-      var sel = window.getSelection();
-      if (!sel || sel.isCollapsed) return;
-      var text = sel.toString();
-      if (text.length > 0 && text.length <= 100) {
-        // Grab prefix/suffix context around the selection
-        var range = sel.getRangeAt(0);
-        var prefix = getTextBeforePosition(range.startContainer, range.startOffset, 10);
-        var suffix = getTextFromPosition(range.endContainer, range.endOffset, 10);
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'selection',
-          text: text,
-          prefix: prefix,
-          suffix: suffix
-        }));
+  // ── Extract text between absolute offsets ──
+  function getAbsText(absStart, absEnd) {
+    var walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null, false);
+    var result = '';
+    var pos = 0;
+    while (walker.nextNode()) {
+      var t = walker.currentNode.textContent;
+      var nodeEnd = pos + t.length;
+      if (nodeEnd > absStart && pos < absEnd) {
+        var s = Math.max(0, absStart - pos);
+        var e = Math.min(t.length, absEnd - pos);
+        result += t.slice(s, e);
       }
-    }, 300);
+      pos = nodeEnd;
+      if (pos >= absEnd) break;
+    }
+    return result;
+  }
+
+  // ── MOUSE drag-select (web) ──
+  var mouseStartAbs = -1;
+  var mouseEndAbs = -1;
+  var isMouseDragging = false;
+
+  contentEl.addEventListener('mousedown', function(e) {
+    mouseStartAbs = -1;
+    mouseEndAbs = -1;
+    isMouseDragging = false;
+    var range = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+      var ch = range.startContainer.textContent.charAt(range.startOffset);
+      if (isJapanese(ch)) {
+        mouseStartAbs = nodeOffsetToAbsolute(range.startContainer, range.startOffset);
+      }
+    }
+  });
+
+  contentEl.addEventListener('mousemove', function(e) {
+    if (mouseStartAbs < 0 || !(e.buttons & 1)) return;
+    var endRange = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (!endRange || endRange.startContainer.nodeType !== Node.TEXT_NODE) return;
+    var endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
+    if (endAbs === mouseStartAbs) return;
+    if (!isMouseDragging) {
+      isMouseDragging = true;
+      suppressClick = true;
+      clearHighlight();
+    }
+    clearHighlight();
+    var lo = Math.min(mouseStartAbs, endAbs);
+    var hi = Math.max(mouseStartAbs, endAbs);
+    mouseEndAbs = endAbs;
+    if (hi > lo) highlightAbsRange(lo, hi);
+  });
+
+  contentEl.addEventListener('mouseup', function(e) {
+    if (isMouseDragging && mouseStartAbs >= 0 && mouseEndAbs >= 0) {
+      var lo = Math.min(mouseStartAbs, mouseEndAbs);
+      var hi = Math.max(mouseStartAbs, mouseEndAbs);
+      if (hi > lo) {
+        var text = getAbsText(lo, hi);
+        if (text.length > 0 && text.length <= 100) {
+          var prefix = getAbsText(Math.max(0, lo - 10), lo);
+          var suffix = getAbsText(hi, hi + 10);
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'selection',
+            text: text,
+            prefix: prefix,
+            suffix: suffix
+          }));
+        }
+      }
+    }
+    isMouseDragging = false;
+    mouseStartAbs = -1;
+    mouseEndAbs = -1;
+    setTimeout(function() { suppressClick = false; }, 50);
   });
 
   // ── TAP: word lookup (click on text) ──
   contentEl.addEventListener('click', function(e) {
     if (swipeHandled) { swipeHandled = false; return; }
-
-    // If there's a native selection, let it be (user is selecting text)
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
+    if (suppressClick) return;
 
     clearHighlight();
 
