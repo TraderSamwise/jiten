@@ -1,37 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, View, ScrollView } from "react-native";
+import { Modal, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
+import { EntrySummary } from "@/components/EntrySummary";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
-import { ChevronLeft, ChevronRight, X } from "@/lib/icons";
+import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { LookupResult } from "@/lib/smart-lookup";
-import type { DictEntry } from "@/db/types";
 
 interface DictionaryPopupProps {
   visible: boolean;
   onClose: () => void;
   results: LookupResult[];
+  loading?: boolean;
 }
 
-function formatReading(entry: DictEntry): string {
-  const kanji = entry.kanji[0]?.text ?? "";
-  const kana = entry.kana[0]?.text ?? "";
-  if (kanji && kana) return `${kanji}【${kana}】`;
-  return kanji || kana;
-}
-
-function formatMeaning(entry: DictEntry): string {
-  return entry.senses.map((s) => s.glosses.map((g) => g.text).join("; ")).join(" / ");
-}
-
-function formatPos(entry: DictEntry): string {
-  const pos = entry.senses.flatMap((s) => s.partOfSpeech).filter(Boolean);
-  return [...new Set(pos)].join(", ");
-}
-
-export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupProps) {
+export function DictionaryPopup({ visible, onClose, results, loading }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [bookmarkEntryId, setBookmarkEntryId] = useState<number | null>(null);
 
@@ -50,7 +37,35 @@ export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupPr
 
   const total = flatEntries.length;
 
-  if (total === 0 && visible) {
+  const current = total > 0 ? flatEntries[Math.min(currentIdx, total - 1)] : null;
+  const idx = Math.min(currentIdx, total - 1);
+  const isBookmarked = useBookmarkStore((s) =>
+    current ? s.bookmarkedIds.has(current.entry.id) : false,
+  );
+
+  if (!visible) return null;
+
+  // Loading state
+  if (loading && total === 0) {
+    return (
+      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+        <View className="flex-1 justify-end">
+          <Pressable className="flex-1" onPress={onClose} />
+          <View
+            className="bg-background border-t border-border rounded-t-2xl px-4 pt-4"
+            style={{ paddingBottom: insets.bottom + 16 }}
+          >
+            <View className="items-center py-8">
+              <ActivityIndicator size="large" />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // No results (loading finished)
+  if (total === 0) {
     return (
       <Modal visible transparent animationType="slide" onRequestClose={onClose}>
         <View className="flex-1 justify-end">
@@ -66,11 +81,6 @@ export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupPr
     );
   }
 
-  if (!visible || total === 0) return null;
-
-  const current = flatEntries[Math.min(currentIdx, total - 1)];
-  const idx = Math.min(currentIdx, total - 1);
-
   return (
     <>
       <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -80,13 +90,13 @@ export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupPr
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
             style={{ paddingBottom: insets.bottom + 16 }}
           >
-            {/* Header with close and pagination */}
+            {/* Header with close, bookmark, and pagination */}
             <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center gap-2">
-                {current.reasons.length > 0 && (
+                {current!.reasons.length > 0 && (
                   <View className="bg-muted px-2 py-1 rounded">
                     <Text className="text-xs text-muted-foreground">
-                      {current.reasons.join(" → ")}
+                      {current!.reasons.join(" → ")}
                     </Text>
                   </View>
                 )}
@@ -120,6 +130,13 @@ export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupPr
                     </Pressable>
                   </View>
                 )}
+                <Pressable onPress={() => setBookmarkEntryId(current!.entry.id)} className="p-1">
+                  <Bookmark
+                    size={20}
+                    fill={isBookmarked ? "currentColor" : "none"}
+                    className="text-foreground"
+                  />
+                </Pressable>
                 <Pressable onPress={onClose} className="p-1">
                   <X size={20} className="text-muted-foreground" />
                 </Pressable>
@@ -128,30 +145,20 @@ export function DictionaryPopup({ visible, onClose, results }: DictionaryPopupPr
 
             {/* Matched text */}
             <View className="mb-2">
-              <Text className="text-xs text-muted-foreground">{current.matchedText}</Text>
+              <Text className="text-xs text-muted-foreground">{current!.matchedText}</Text>
             </View>
 
-            {/* Word display */}
-            <ScrollView style={{ maxHeight: 200 }}>
-              <Text className="text-2xl font-bold text-foreground mb-1">
-                {formatReading(current.entry)}
-              </Text>
-
-              {formatPos(current.entry) ? (
-                <Text className="text-xs text-muted-foreground mb-2">
-                  {formatPos(current.entry)}
-                </Text>
-              ) : null}
-
-              <Text className="text-base text-foreground leading-6">
-                {formatMeaning(current.entry)}
-              </Text>
-            </ScrollView>
-
-            {/* Add to list button */}
-            <View className="mt-3">
-              <Button label="Add to list" onPress={() => setBookmarkEntryId(current.entry.id)} />
-            </View>
+            {/* Entry display — tap to navigate to full detail */}
+            <Pressable
+              onPress={() => {
+                onClose();
+                router.push(`/reader/word/${current!.entry.id}`);
+              }}
+            >
+              <ScrollView style={{ maxHeight: 200 }}>
+                <EntrySummary entry={current!.entry} />
+              </ScrollView>
+            </Pressable>
           </View>
         </View>
       </Modal>

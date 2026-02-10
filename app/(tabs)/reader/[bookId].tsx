@@ -11,7 +11,7 @@ import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
 import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
-import { smartLookup, type LookupResult } from "@/lib/smart-lookup";
+import { smartLookup, selectionLookup, type LookupResult } from "@/lib/smart-lookup";
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
@@ -29,6 +29,7 @@ export default function BookReaderScreen() {
   const [html, setHtml] = useState<string | null>(null);
   const [lookupResults, setLookupResults] = useState<LookupResult[]>([]);
   const [showPopup, setShowPopup] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [fontSize, setFontSize] = useState(22);
 
@@ -90,16 +91,26 @@ export default function BookReaderScreen() {
           const text = msg.text as string;
           if (!text || text.length === 0) return;
 
-          const results = await smartLookup(text, dictDb);
-          setLookupResults(results);
+          setLookupResults([]);
+          setLookupLoading(true);
           setShowPopup(true);
 
-          // Highlight matched text in reader (only for taps; selections have native highlight)
-          if (msg.type === "tap" && results.length > 0) {
-            readerRef.current?.postMessage(
-              JSON.stringify({ type: "highlight", length: results[0].matchedText.length }),
-            );
+          if (msg.type === "selection") {
+            await selectionLookup(text, dictDb, (result) => {
+              setLookupResults((prev) => [...prev, result]);
+            });
+          } else {
+            const results = await smartLookup(text, dictDb);
+            setLookupResults(results);
+
+            // Highlight matched text in reader (only for taps; selections have native highlight)
+            if (results.length > 0) {
+              readerRef.current?.postMessage(
+                JSON.stringify({ type: "highlight", length: results[0].matchedText.length }),
+              );
+            }
           }
+          setLookupLoading(false);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.position;
           // Debounced save to DB
@@ -185,9 +196,11 @@ export default function BookReaderScreen() {
       {/* Dictionary popup */}
       <DictionaryPopup
         visible={showPopup}
+        loading={lookupLoading}
         onClose={() => {
           setShowPopup(false);
           setLookupResults([]);
+          setLookupLoading(false);
           readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
         }}
         results={lookupResults}
