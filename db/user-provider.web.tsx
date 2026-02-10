@@ -86,6 +86,7 @@ const USER_DB_MIGRATIONS = [
     updated_at TEXT NOT NULL,
     last_read_at TEXT
   )`,
+  `ALTER TABLE books ADD COLUMN source_id TEXT`,
 ];
 
 export function UserDatabaseProvider({

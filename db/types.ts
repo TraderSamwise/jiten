@@ -78,7 +78,8 @@ export interface Book {
   title: string;
   author: string;
   aozoraId: number | null;
-  source: "aozora" | "import";
+  sourceId: string | null;
+  source: "aozora" | "import" | "syosetu";
   rawContent: string | null;
   htmlContent: string | null;
   scrollPosition: number;

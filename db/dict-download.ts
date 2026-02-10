@@ -117,13 +117,10 @@ async function downloadNative(
   manifest: DictManifest,
   onProgress?: (progress: number) => void,
 ): Promise<void> {
-  const FileSystem = require("expo-file-system");
+  const FileSystem = require("expo-file-system/legacy");
 
   const dbDir = `${FileSystem.documentDirectory}SQLite/`;
-  const dirInfo = await FileSystem.getInfoAsync(dbDir);
-  if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
-  }
+  await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
 
   const destPath = `${dbDir}${DB_NAME}`;
 
