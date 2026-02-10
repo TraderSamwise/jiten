@@ -163,21 +163,21 @@ export default function LibraryScreen() {
 
       <View className="flex-row gap-2 px-4 py-3">
         <Button
-          label="Browse Aozora"
+          label="Aozora"
           variant="outline"
           size="sm"
           onPress={() => router.push("/reader/browse")}
           className="flex-1"
         />
         <Button
-          label="Browse Syosetu"
+          label="Syosetu"
           variant="outline"
           size="sm"
           onPress={() => router.push("/reader/browse-syosetu")}
           className="flex-1"
         />
         <Button
-          label="Import Text"
+          label="Import"
           variant="outline"
           size="sm"
           onPress={handleImport}
