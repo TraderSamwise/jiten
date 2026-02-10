@@ -2,33 +2,28 @@ import React, { createContext, useContext } from "react";
 import { ClerkProvider, useAuth as useClerkAuth } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
 
-export const AUTH_BYPASS = process.env.EXPO_PUBLIC_AUTH_BYPASS === "true";
-
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-if (!AUTH_BYPASS && !publishableKey) {
-  throw new Error(
-    "Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY — add it to your .env file or set EXPO_PUBLIC_AUTH_BYPASS=true",
-  );
-}
+/** true when no Clerk key is configured — app runs fully local */
+const LOCAL_MODE = !publishableKey;
 
-// Bypass context for dev mode without Clerk
-const BypassAuthContext = createContext({
+// Local-mode context: always signed in as "local" user
+const LocalAuthContext = createContext({
   isSignedIn: true,
   isLoaded: true,
-  userId: "dev-user",
+  userId: "local",
 });
 
-function useBypassAuth() {
-  return useContext(BypassAuthContext);
+function useLocalAuth() {
+  return useContext(LocalAuthContext);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  if (AUTH_BYPASS) {
+  if (LOCAL_MODE) {
     return (
-      <BypassAuthContext.Provider value={{ isSignedIn: true, isLoaded: true, userId: "dev-user" }}>
+      <LocalAuthContext.Provider value={{ isSignedIn: true, isLoaded: true, userId: "local" }}>
         {children}
-      </BypassAuthContext.Provider>
+      </LocalAuthContext.Provider>
     );
   }
 
@@ -39,10 +34,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* eslint-disable react-hooks/rules-of-hooks -- AUTH_BYPASS is a build-time constant */
+/* eslint-disable react-hooks/rules-of-hooks -- LOCAL_MODE is a build-time constant */
 export function useAuth() {
-  if (AUTH_BYPASS) {
-    return useBypassAuth();
+  if (LOCAL_MODE) {
+    return useLocalAuth();
   }
   return useClerkAuth();
 }

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { AppState } from "react-native";
-import { openSync } from "@op-engineering/op-sqlite";
+import { open } from "@op-engineering/op-sqlite";
 import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 
@@ -17,17 +16,6 @@ const UserDbContext = createContext<UserDbContextType>({
 export function useUserDb(): WrappedUserDb | null {
   const { userDb } = useContext(UserDbContext);
   return userDb;
-}
-
-/** Simple deterministic hash of userId to produce a valid Turso DB name */
-function hashUserId(userId: string): string {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    const char = userId.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
 }
 
 const USER_DB_MIGRATIONS = [
@@ -115,26 +103,9 @@ export function UserDatabaseProvider({
 
   useEffect(() => {
     let db: DB | null = null;
-    let wrapped: WrappedUserDb | null = null;
 
     async function init() {
-      const org = process.env.EXPO_PUBLIC_TURSO_ORG;
-      const token = process.env.EXPO_PUBLIC_TURSO_GROUP_TOKEN;
-      const dbName = hashUserId(userId);
-
-      if (org && token) {
-        // Synced mode — connect to Turso with local replica
-        db = openSync({
-          name: `user-${dbName}.db`,
-          url: `libsql://${dbName}-${org}.turso.io`,
-          authToken: token,
-          libsqlSyncInterval: 60,
-        });
-      } else {
-        // Local-only fallback (dev without Turso credentials)
-        const { open } = await import("@op-engineering/op-sqlite");
-        db = open({ name: "user.db" });
-      }
+      db = open({ name: "user.db" });
 
       // Run migrations
       for (const sql of USER_DB_MIGRATIONS) {
@@ -145,7 +116,7 @@ export function UserDatabaseProvider({
         }
       }
 
-      wrapped = wrapUserDb(db);
+      const wrapped = wrapUserDb(db);
       setState({ userDb: wrapped, isReady: true });
     }
 
@@ -162,23 +133,6 @@ export function UserDatabaseProvider({
       }
     };
   }, [userId]);
-
-  // Sync on app foreground
-  useEffect(() => {
-    if (!state.userDb) return;
-
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        try {
-          state.userDb!.sync();
-        } catch (err) {
-          console.warn("[UserDB] Foreground sync failed:", err);
-        }
-      }
-    });
-
-    return () => subscription.remove();
-  }, [state.userDb]);
 
   return <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>;
 }
