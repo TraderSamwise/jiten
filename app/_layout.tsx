@@ -1,7 +1,6 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { useColorScheme } from "nativewind";
@@ -78,6 +77,7 @@ export default function RootLayout() {
     if (__DEV__ || Platform.OS === "web") return;
     (async () => {
       try {
+        const Updates = await import("expo-updates");
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
           await Updates.fetchUpdateAsync();
