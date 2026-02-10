@@ -6,9 +6,7 @@ import { Input } from "@/components/ui/input";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { useUserDb } from "@/db/user-provider";
 import { searchBooks, fetchBookContent, getAuthorName, type AozoraBook } from "@/lib/aozora-api";
-import { parseAozoraToHtml } from "@/lib/aozora-parser";
 import { alert } from "@/lib/confirm";
-import { parseBookRow } from "./index";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -57,15 +55,14 @@ export default function BrowseAozoraScreen() {
       setDownloading(aozoraBook.bookId);
       try {
         const rawContent = await fetchBookContent(aozoraBook.textUrl);
-        const htmlContent = parseAozoraToHtml(rawContent);
         const now = new Date().toISOString();
         const id = generateId();
         const author = getAuthorName(aozoraBook);
 
         await userDb.runAsync(
-          `INSERT INTO books (id, title, author, aozora_id, source, raw_content, html_content, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?, ?)`,
-          [id, aozoraBook.title, author, aozoraBook.bookId, rawContent, htmlContent, now, now],
+          `INSERT INTO books (id, title, author, aozora_id, source, raw_content, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?)`,
+          [id, aozoraBook.title, author, aozoraBook.bookId, rawContent, now, now],
         );
 
         router.push(`/reader/${id}`);

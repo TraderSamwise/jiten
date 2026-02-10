@@ -29,28 +29,13 @@ export function parseAozoraToHtml(rawText: string): string {
 
   const lines = text.split(/\r?\n/);
   const htmlParts: string[] = [];
-  let currentParagraph: string[] = [];
-
-  function flushParagraph() {
-    if (currentParagraph.length > 0) {
-      const content = currentParagraph.join("");
-      if (content.trim()) {
-        htmlParts.push(`<p>${content}</p>`);
-      }
-      currentParagraph = [];
-    }
-  }
 
   for (const line of lines) {
-    // Blank line = paragraph break
-    if (line.trim() === "") {
-      flushParagraph();
-      continue;
-    }
+    // Blank line = skip
+    if (line.trim() === "") continue;
 
     // Page break annotation
     if (line.includes("［＃改ページ］") || line.includes("[#改ページ]")) {
-      flushParagraph();
       htmlParts.push('<div class="page-break"></div>');
       continue;
     }
@@ -88,17 +73,8 @@ export function parseAozoraToHtml(rawText: string): string {
     // ── Strip other Aozora annotations we don't handle ──
     processed = processed.replace(/［＃[^］]*］/g, "");
 
-    // Escape any remaining HTML-unsafe chars (but not our inserted tags)
-    // We only need to handle & since < > are from our tags
-    // Actually, be careful: raw text might have < > so handle those first
-    // But Aozora text rarely has literal HTML chars
-    // For safety, only strip truly dangerous stuff
-
-    currentParagraph.push(processed);
-    currentParagraph.push("<br>");
+    htmlParts.push(`<p>${processed}</p>`);
   }
-
-  flushParagraph();
 
   return htmlParts.join("\n");
 }
@@ -108,13 +84,10 @@ export function parseAozoraToHtml(rawText: string): string {
  * Wraps paragraphs in <p> tags.
  */
 export function plainTextToHtml(text: string): string {
-  const paragraphs = text.split(/\n\s*\n/);
-  return paragraphs
-    .map((p) => {
-      const lines = p.trim().split(/\n/);
-      return `<p>${lines.join("<br>")}</p>`;
-    })
-    .filter((p) => p !== "<p></p>")
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "")
+    .map((line) => `<p>${line}</p>`)
     .join("\n");
 }
 

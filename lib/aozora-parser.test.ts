@@ -162,12 +162,12 @@ describe("Paragraph handling", () => {
     expect(pCount).toBe(2);
   });
 
-  test("consecutive lines are in same paragraph", () => {
+  test("consecutive lines are separate paragraphs", () => {
     const html = parseAozoraToHtml("一行目\n二行目");
     const pCount = (html.match(/<p>/g) || []).length;
-    expect(pCount).toBe(1);
-    expect(html).toContain("一行目");
-    expect(html).toContain("二行目");
+    expect(pCount).toBe(2);
+    expect(html).toContain("<p>一行目</p>");
+    expect(html).toContain("<p>二行目</p>");
   });
 
   test("blank lines only do not produce empty paragraphs", () => {
@@ -225,9 +225,10 @@ describe("plainTextToHtml", () => {
     expect(html).toContain("<p>段落二</p>");
   });
 
-  test("joins lines within a paragraph with <br>", () => {
+  test("each line becomes its own paragraph", () => {
     const html = plainTextToHtml("一行目\n二行目");
-    expect(html).toContain("一行目<br>二行目");
+    expect(html).toContain("<p>一行目</p>");
+    expect(html).toContain("<p>二行目</p>");
   });
 
   test("filters out empty paragraphs", () => {

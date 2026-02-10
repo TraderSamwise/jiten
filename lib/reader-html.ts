@@ -194,7 +194,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     measure.style.padding = cs.padding;
     measure.style.width = contentEl.clientWidth + 'px';
     measure.style.height = contentEl.clientHeight + 'px';
-    measure.style.overflow = 'hidden';
+    measure.style.overflow = 'auto';
     measure.style.visibility = 'hidden';
     measure.style.position = 'absolute';
     measure.style.left = '-9999px';
@@ -202,7 +202,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
 
     var pageStart = 0;
     for (var i = 0; i < blockHtmls.length; i++) {
-      measure.innerHTML += blockHtmls[i];
+      measure.insertAdjacentHTML('beforeend', blockHtmls[i]);
       if (measure.scrollWidth > measure.clientWidth) {
         // This block caused overflow
         if (i === pageStart) {

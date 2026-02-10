@@ -10,6 +10,7 @@ import { ChevronLeft, SlidersHorizontal } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
+import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
 import { smartLookup, type LookupResult } from "@/lib/smart-lookup";
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
@@ -44,8 +45,11 @@ export default function BookReaderScreen() {
       setBook(b);
       setFontSize(b.fontSize);
 
-      if (b.htmlContent) {
-        const readerHtml = generateReaderHtml(b.htmlContent, {
+      if (b.rawContent) {
+        const bookHtml = hasAozoraMarkup(b.rawContent)
+          ? parseAozoraToHtml(b.rawContent)
+          : plainTextToHtml(b.rawContent);
+        const readerHtml = generateReaderHtml(bookHtml, {
           fontSize: b.fontSize,
           isDark,
           scrollPosition: b.scrollPosition,

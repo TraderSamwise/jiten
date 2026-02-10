@@ -8,7 +8,6 @@ import { BookCard } from "@/components/BookCard";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
-import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
 import { alert, confirm } from "@/lib/confirm";
 import type { Book } from "@/db/types";
 
@@ -97,20 +96,15 @@ export default function LibraryScreen() {
       }
 
       const title = asset.name?.replace(/\.txt$/i, "") ?? "Imported Book";
-
-      const htmlContent = hasAozoraMarkup(content)
-        ? parseAozoraToHtml(content)
-        : plainTextToHtml(content);
-
       const now = new Date().toISOString();
       const id = generateId();
 
       if (!userDb) return;
 
       await userDb.runAsync(
-        `INSERT INTO books (id, title, author, source, raw_content, html_content, created_at, updated_at)
-         VALUES (?, ?, '', 'import', ?, ?, ?, ?)`,
-        [id, title, content, htmlContent, now, now],
+        `INSERT INTO books (id, title, author, source, raw_content, created_at, updated_at)
+         VALUES (?, ?, '', 'import', ?, ?, ?)`,
+        [id, title, content, now, now],
       );
 
       setLoading(false);
