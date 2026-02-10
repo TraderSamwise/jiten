@@ -59,7 +59,8 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
 
   .highlight {
     background: ${highlightBg};
-    border-radius: 2px;
+    padding-block: 0.4em;
+    margin-block: -0.4em;
   }
 
   ::selection {
