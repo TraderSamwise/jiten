@@ -399,6 +399,24 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     return Math.max(i, 1);
   }
 
+  // ── Heuristic backward word boundary detection ──
+  // Given text and tapOffset within it, scan backward through kanji/kana
+  // to find where the word likely starts.
+  function guessWordStart(text, tapOffset) {
+    var i = tapOffset;
+    // If tapped char is kana, scan back through kana, then kanji
+    // If tapped char is kanji, scan back through kanji only
+    if (isKanji(text[i])) {
+      while (i > 0 && isKanji(text[i - 1])) i--;
+    } else if (isKana(text[i])) {
+      // Scan back through kana
+      while (i > 0 && isKana(text[i - 1])) i--;
+      // Then scan back through kanji (okurigana pattern: kanji + kana)
+      while (i > 0 && isKanji(text[i - 1])) i--;
+    }
+    return i;
+  }
+
   // Convert a node/offset to an absolute character offset within contentEl
   var lastTapAbsOffset = 0;
 
@@ -424,11 +442,14 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     return null;
   }
 
-  // ── Apply highlight by length from lastTapAbsOffset ──
-  function applyHighlight(len) {
+  // ── Apply highlight by startDelta + length from lastTapAbsOffset ──
+  // startDelta is relative to lastTapAbsOffset (negative = match starts before tap)
+  function applyHighlight(startDelta, len) {
     if (len <= 0) return;
-    var start = absoluteToNodeOffset(lastTapAbsOffset);
-    var end = absoluteToNodeOffset(lastTapAbsOffset + len);
+    var absStart = lastTapAbsOffset + (startDelta || 0);
+    if (absStart < 0) absStart = 0;
+    var start = absoluteToNodeOffset(absStart);
+    var end = absoluteToNodeOffset(absStart + len);
     if (!start || !end) return;
     try {
       var hlRange = document.createRange();
@@ -454,9 +475,15 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
       if (!sel || sel.isCollapsed) return;
       var text = sel.toString();
       if (text.length > 0 && text.length <= 100) {
+        // Grab prefix/suffix context around the selection
+        var range = sel.getRangeAt(0);
+        var prefix = getTextBeforePosition(range.startContainer, range.startOffset, 10);
+        var suffix = getTextFromPosition(range.endContainer, range.endOffset, 10);
         window.ReactNativeWebView.postMessage(JSON.stringify({
           type: 'selection',
-          text: text
+          text: text,
+          prefix: prefix,
+          suffix: suffix
         }));
       }
     }, 300);
@@ -486,16 +513,22 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     lastTapOffset = offset;
     lastTapAbsOffset = nodeOffsetToAbsolute(node, offset);
 
-    var text = getTextFromPosition(node, offset, 20);
-    if (!text || text.length === 0) return;
+    var before = getTextBeforePosition(node, offset, 10);
+    var after = getTextFromPosition(node, offset, 20);
+    if (!after || after.length === 0) return;
+
+    var text = before + after;
+    var tapOffset = before.length; // index of tapped char within combined window
 
     // Instant heuristic highlight
-    var guessLen = guessWordLength(text);
-    applyHighlight(guessLen);
+    var wordStart = guessWordStart(text, tapOffset);
+    var guessLen = guessWordLength(text.slice(wordStart));
+    applyHighlight(wordStart - tapOffset, guessLen);
 
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'tap',
       text: text,
+      tapOffset: tapOffset,
       x: e.clientX,
       y: e.clientY
     }));
@@ -519,6 +552,25 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     return text.slice(0, maxChars);
   }
 
+  // ── Extract text backward from position, walking through preceding text nodes ──
+  function getTextBeforePosition(startNode, startOffset, maxChars) {
+    var text = startNode.textContent.slice(0, startOffset);
+    var walker = document.createTreeWalker(
+      contentEl,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    walker.currentNode = startNode;
+    while (text.length < maxChars && walker.previousNode()) {
+      text = walker.currentNode.textContent + text;
+    }
+    if (text.length > maxChars) {
+      text = text.slice(text.length - maxChars);
+    }
+    return text;
+  }
+
   // ── Listen for messages from React Native ──
   window.addEventListener('message', function(e) {
     try {
@@ -539,7 +591,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
       } else if (msg.type === 'highlight') {
         // Refine heuristic highlight with actual match length
         clearHighlight();
-        applyHighlight(msg.length || 0);
+        applyHighlight(msg.start || 0, msg.length || 0);
       } else if (msg.type === 'clearHighlight') {
         clearHighlight();
       }

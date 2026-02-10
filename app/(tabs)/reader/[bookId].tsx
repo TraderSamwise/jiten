@@ -11,7 +11,12 @@ import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
 import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
-import { smartLookup, selectionLookup, type LookupResult } from "@/lib/smart-lookup";
+import {
+  smartLookup,
+  smartLookupWithOffset,
+  selectionLookup,
+  type LookupResult,
+} from "@/lib/smart-lookup";
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
@@ -96,17 +101,35 @@ export default function BookReaderScreen() {
           setShowPopup(true);
 
           if (msg.type === "selection") {
-            await selectionLookup(text, dictDb, (result) => {
-              setLookupResults((prev) => [...prev, result]);
-            });
+            await selectionLookup(
+              text,
+              dictDb,
+              (result) => {
+                setLookupResults((prev) => [...prev, result]);
+              },
+              { prefix: msg.prefix || "", suffix: msg.suffix || "" },
+            );
           } else {
-            const results = await smartLookup(text, dictDb);
+            const tapOffset = msg.tapOffset as number | undefined;
+            let results: LookupResult[];
+
+            if (tapOffset && tapOffset > 0) {
+              results = await smartLookupWithOffset(text, tapOffset, dictDb);
+            } else {
+              results = await smartLookup(text, dictDb);
+            }
             setLookupResults(results);
 
             // Highlight matched text in reader (only for taps; selections have native highlight)
             if (results.length > 0) {
+              const matchStart = results[0].matchStart ?? (tapOffset || 0);
+              const startDelta = matchStart - (tapOffset || 0);
               readerRef.current?.postMessage(
-                JSON.stringify({ type: "highlight", length: results[0].matchedText.length }),
+                JSON.stringify({
+                  type: "highlight",
+                  start: startDelta,
+                  length: results[0].matchedText.length,
+                }),
               );
             }
           }

@@ -910,6 +910,34 @@ export async function searchDictionary(
   };
 }
 
+/**
+ * Fast exact-match Japanese lookup for reader mode.
+ * Only does `WHERE text = ?` on kanji/kana tables — no prefix matching,
+ * no English/romaji search, no synonym expansion, no scoring.
+ */
+export async function lookupExactJapanese(
+  db: SQLite.SQLiteDatabase,
+  text: string,
+): Promise<DictEntry[]> {
+  const hiragana = toHiragana(text);
+
+  const rows = await db.getAllAsync<{ entry_id: number }>(
+    `SELECT DISTINCT entry_id FROM (
+       SELECT entry_id FROM kanji WHERE text = ?
+       UNION
+       SELECT entry_id FROM kana WHERE text = ? OR text = ?
+     )`,
+    [text, hiragana, text],
+  );
+
+  if (rows.length === 0) return [];
+
+  return getEntries(
+    db,
+    rows.map((r) => r.entry_id),
+  );
+}
+
 export async function getEntries(
   db: SQLite.SQLiteDatabase,
   entryIds: number[],
