@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
@@ -19,20 +19,32 @@ export default function BrowseAozoraScreen() {
   const [results, setResults] = useState<AozoraBook[]>([]);
   const [searching, setSearching] = useState(false);
   const [downloading, setDownloading] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSearch = useCallback(async () => {
-    const q = query.trim();
-    if (!q) return;
+  const doSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
     setSearching(true);
     try {
-      const books = await searchBooks(q);
+      const books = await searchBooks(trimmed);
       setResults(books);
     } catch (err) {
       alert("Search failed", err instanceof Error ? err.message : "Network error");
     } finally {
       setSearching(false);
     }
-  }, [query]);
+  }, []);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => doSearch(query), 400);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [query, doSearch]);
 
   const handleDownload = useCallback(
     async (aozoraBook: AozoraBook) => {
@@ -47,22 +59,31 @@ export default function BrowseAozoraScreen() {
         return;
       }
 
-      if (!aozoraBook.textUrl) {
-        alert("Not available", "This book has no text download URL.");
+      if (!aozoraBook.xhtmlUrl) {
+        alert("Not available", "This book has no download URL.");
         return;
       }
 
       setDownloading(aozoraBook.bookId);
       try {
-        const rawContent = await fetchBookContent(aozoraBook.textUrl);
+        const rawContent = await fetchBookContent(aozoraBook.xhtmlUrl);
         const now = new Date().toISOString();
         const id = generateId();
         const author = getAuthorName(aozoraBook);
 
         await userDb.runAsync(
-          `INSERT INTO books (id, title, author, aozora_id, source, raw_content, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?)`,
-          [id, aozoraBook.title, author, aozoraBook.bookId, rawContent, now, now],
+          `INSERT INTO books (id, title, author, aozora_id, source, source_id, raw_content, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?, ?)`,
+          [
+            id,
+            aozoraBook.title,
+            author,
+            aozoraBook.bookId,
+            String(aozoraBook.bookId),
+            rawContent,
+            now,
+            now,
+          ],
         );
 
         router.push(`/reader/${id}`);
@@ -106,7 +127,6 @@ export default function BrowseAozoraScreen() {
           placeholder="Search title or author..."
           value={query}
           onChangeText={setQuery}
-          onSubmitEditing={handleSearch}
           returnKeyType="search"
           autoFocus
         />

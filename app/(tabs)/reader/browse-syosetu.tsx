@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
@@ -12,20 +12,32 @@ export default function BrowseSyosetuScreen() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SyosetuNovel[]>([]);
   const [searching, setSearching] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSearch = useCallback(async () => {
-    const q = query.trim();
-    if (!q) return;
+  const doSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
     setSearching(true);
     try {
-      const novels = await searchNovels(q);
+      const novels = await searchNovels(trimmed);
       setResults(novels);
     } catch (err) {
       alert("Search failed", err instanceof Error ? err.message : "Network error");
     } finally {
       setSearching(false);
     }
-  }, [query]);
+  }, []);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => doSearch(query), 400);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [query, doSearch]);
 
   const handleNovelPress = useCallback(
     (novel: SyosetuNovel) => {
@@ -62,7 +74,6 @@ export default function BrowseSyosetuScreen() {
           placeholder="Search novels..."
           value={query}
           onChangeText={setQuery}
-          onSubmitEditing={handleSearch}
           returnKeyType="search"
           autoFocus
         />

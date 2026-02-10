@@ -1,91 +1,147 @@
-const API_BASE = "https://www.aozorahack.org/api/v0.1";
+import { unzipSync } from "fflate";
+import Encoding from "encoding-japanese";
+
+const CATALOG_ZIP_URL = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
 
 export interface AozoraBook {
   bookId: number;
   title: string;
   authors: { lastName: string; firstName: string }[];
-  textUrl: string | null;
-  cardUrl: string;
+  xhtmlUrl: string | null;
 }
 
-interface AozoraApiBook {
-  book_id: number;
-  title: string;
-  authors: {
-    last_name: string;
-    first_name: string;
-  }[];
-  text_url?: string;
-  card_url?: string;
+let catalogCache: AozoraBook[] | null = null;
+
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < text.length && text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      current.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && i + 1 < text.length && text[i + 1] === "\n") i++;
+      current.push(field);
+      field = "";
+      if (current.length > 1) rows.push(current);
+      current = [];
+    } else {
+      field += ch;
+    }
+  }
+  if (field || current.length > 0) {
+    current.push(field);
+    if (current.length > 1) rows.push(current);
+  }
+  return rows;
 }
 
-function mapBook(raw: AozoraApiBook): AozoraBook {
-  return {
-    bookId: raw.book_id,
-    title: raw.title,
-    authors: (raw.authors ?? []).map((a) => ({
-      lastName: a.last_name ?? "",
-      firstName: a.first_name ?? "",
-    })),
-    textUrl: raw.text_url ?? null,
-    cardUrl: raw.card_url ?? "",
-  };
+async function loadCatalog(): Promise<AozoraBook[]> {
+  if (catalogCache) return catalogCache;
+
+  const resp = await fetch(CATALOG_ZIP_URL);
+  if (!resp.ok) throw new Error(`Failed to download Aozora catalog: ${resp.status}`);
+
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  const unzipped = unzipSync(buf);
+
+  // Find the CSV file in the zip
+  const csvFileName = Object.keys(unzipped).find((name) => name.endsWith(".csv"));
+  if (!csvFileName) throw new Error("No CSV file found in catalog zip");
+
+  const csvText = new TextDecoder("utf-8").decode(unzipped[csvFileName]);
+  const rows = parseCSV(csvText);
+
+  // Skip header row
+  const dataRows = rows.slice(1);
+
+  // Deduplicate by book ID (keep first row per book)
+  const seen = new Set<number>();
+  const books: AozoraBook[] = [];
+
+  for (const cols of dataRows) {
+    const bookId = parseInt(cols[0], 10);
+    if (isNaN(bookId) || seen.has(bookId)) continue;
+    seen.add(bookId);
+
+    const title = cols[1] ?? "";
+    const lastName = cols[15] ?? "";
+    const firstName = cols[16] ?? "";
+    const xhtmlUrl = cols[50]?.trim() || null;
+
+    books.push({
+      bookId,
+      title,
+      authors: [{ lastName, firstName }],
+      xhtmlUrl,
+    });
+  }
+
+  catalogCache = books;
+  return books;
 }
 
 export async function searchBooks(query: string): Promise<AozoraBook[]> {
-  const url = `${API_BASE}/books?title=${encodeURIComponent(query)}&limit=30`;
-  const resp = await fetch(url);
-  if (!resp.ok) {
-    // Try author search as fallback
-    const authorUrl = `${API_BASE}/books?author=${encodeURIComponent(query)}&limit=30`;
-    const authorResp = await fetch(authorUrl);
-    if (!authorResp.ok) throw new Error(`Aozora API error: ${authorResp.status}`);
-    const authorData: AozoraApiBook[] = await authorResp.json();
-    return authorData.map(mapBook);
-  }
-  const data: AozoraApiBook[] = await resp.json();
+  const catalog = await loadCatalog();
+  const q = query.toLowerCase();
 
-  // Also search by author and merge
-  try {
-    const authorUrl = `${API_BASE}/books?author=${encodeURIComponent(query)}&limit=15`;
-    const authorResp = await fetch(authorUrl);
-    if (authorResp.ok) {
-      const authorData: AozoraApiBook[] = await authorResp.json();
-      const existingIds = new Set(data.map((b) => b.book_id));
-      for (const book of authorData) {
-        if (!existingIds.has(book.book_id)) {
-          data.push(book);
-        }
-      }
-    }
-  } catch {}
+  const matches = catalog.filter((book) => {
+    const title = book.title.toLowerCase();
+    const author = book.authors
+      .map((a) => `${a.lastName}${a.firstName}`)
+      .join("")
+      .toLowerCase();
+    return title.includes(q) || author.includes(q);
+  });
 
-  return data.map(mapBook);
+  return matches.slice(0, 50);
 }
 
-export async function fetchBookMetadata(bookId: number): Promise<AozoraBook> {
-  const resp = await fetch(`${API_BASE}/books/${bookId}`);
-  if (!resp.ok) throw new Error(`Aozora API error: ${resp.status}`);
-  const raw: AozoraApiBook = await resp.json();
-  return mapBook(raw);
-}
-
-export async function fetchBookContent(textUrl: string): Promise<string> {
-  // Aozora texts can be Shift-JIS encoded
-  const resp = await fetch(textUrl);
+export async function fetchBookContent(xhtmlUrl: string): Promise<string> {
+  const resp = await fetch(xhtmlUrl);
   if (!resp.ok) throw new Error(`Failed to download book: ${resp.status}`);
 
   const buffer = await resp.arrayBuffer();
+  // Aozora XHTML files are Shift-JIS encoded — use encoding-japanese
+  // since Hermes's TextDecoder doesn't support shift-jis
+  const uint8 = new Uint8Array(buffer);
+  const unicodeArray = Encoding.convert(uint8, { to: "UNICODE", from: "SJIS" });
+  const html = Encoding.codeToString(unicodeArray);
 
-  // Try UTF-8 first
-  try {
-    const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-    return utf8;
-  } catch {
-    // Fallback to Shift-JIS
-    const sjis = new TextDecoder("shift-jis").decode(buffer);
-    return sjis;
+  // Extract <div class="main_text"> content
+  const mainTextMatch = html.match(
+    /<div[^>]+class="main_text"[^>]*>([\s\S]*?)<\/div>\s*<div[^>]+class="bibliographical_information"/,
+  );
+  if (mainTextMatch) {
+    return mainTextMatch[1].trim();
   }
+
+  // Fallback: try to find main_text div without the bibliographical boundary
+  const fallbackMatch = html.match(/<div[^>]+class="main_text"[^>]*>([\s\S]*?)<\/div>\s*$/m);
+  if (fallbackMatch) {
+    return fallbackMatch[1].trim();
+  }
+
+  // Last resort: return the body content
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
+  return bodyMatch ? bodyMatch[1].trim() : html;
 }
 
 export function getAuthorName(book: AozoraBook): string {

@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, FlatList, ActivityIndicator, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
+import Encoding from "encoding-japanese";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BookCard } from "@/components/BookCard";
@@ -21,6 +23,7 @@ function parseBookRow(row: any): Book {
     title: row.title,
     author: row.author ?? "",
     aozoraId: row.aozora_id ?? null,
+    sourceId: row.source_id ?? null,
     source: row.source ?? "import",
     rawContent: row.raw_content ?? null,
     htmlContent: row.html_content ?? null,
@@ -48,9 +51,11 @@ export default function LibraryScreen() {
     setBooks(rows.map(parseBookRow));
   }, [userDb]);
 
-  useEffect(() => {
-    loadBooks();
-  }, [loadBooks]);
+  useFocusEffect(
+    useCallback(() => {
+      loadBooks();
+    }, [loadBooks]),
+  );
 
   async function handleImport() {
     try {
@@ -73,7 +78,9 @@ export default function LibraryScreen() {
         // If content looks garbled (common with SJIS), try SJIS decode
         if (content.includes("\ufffd")) {
           const buffer = await blob.arrayBuffer();
-          content = new TextDecoder("shift-jis").decode(buffer);
+          const uint8 = new Uint8Array(buffer);
+          const unicodeArray = Encoding.convert(uint8, { to: "UNICODE", from: "SJIS" });
+          content = Encoding.codeToString(unicodeArray);
         }
       } else {
         const { readAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
@@ -91,7 +98,8 @@ export default function LibraryScreen() {
           for (let i = 0; i < binary.length; i++) {
             bytes[i] = binary.charCodeAt(i);
           }
-          content = new TextDecoder("shift-jis").decode(bytes);
+          const unicodeArray = Encoding.convert(bytes, { to: "UNICODE", from: "SJIS" });
+          content = Encoding.codeToString(unicodeArray);
         }
       }
 
@@ -159,6 +167,13 @@ export default function LibraryScreen() {
           variant="outline"
           size="sm"
           onPress={() => router.push("/reader/browse")}
+          className="flex-1"
+        />
+        <Button
+          label="Browse Syosetu"
+          variant="outline"
+          size="sm"
+          onPress={() => router.push("/reader/browse-syosetu")}
           className="flex-1"
         />
         <Button
