@@ -46,18 +46,19 @@ export function EntrySummary({ entry, variant = "default" }: EntrySummaryProps) 
 
   return (
     <View className={bookmarkClass}>
-      <View className="flex-row items-baseline gap-3">
+      <View className="flex-row items-center gap-3">
         {primaryKanji && <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>}
-        <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+        {accents.length > 0 ? (
+          <View className="flex-row flex-wrap items-baseline gap-2">
+            {accents.map((pa, i) => (
+              <PitchAccent key={i} accent={pa} />
+            ))}
+          </View>
+        ) : (
+          <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+        )}
         {entry.common && <Badge variant="common" label="common" />}
       </View>
-      {accents.length > 0 && (
-        <View className="flex-row flex-wrap gap-2 mt-1">
-          {accents.map((pa, i) => (
-            <PitchAccent key={i} accent={pa} />
-          ))}
-        </View>
-      )}
       {pos && <Text className="mt-1 text-xs text-muted-foreground italic">{pos}</Text>}
       {primaryGloss && (
         <Text className="mt-1 text-sm text-foreground" numberOfLines={2}>
