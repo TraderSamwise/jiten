@@ -173,9 +173,8 @@ export async function smartLookup(
       }
     }
 
-    // Stop once we have results and we've gone a couple chars shorter
-    const currentLen = substr.length;
-    if (results.length > 0 && currentLen < maxLen - 2) break;
+    // Stop as soon as we find the longest match — no sub-word noise
+    if (results.length > 0) break;
   }
 
   return results;
@@ -193,14 +192,7 @@ export async function smartLookupWithOffset(
   tapOffset: number,
   dictDb: SQLite.SQLiteDatabase,
 ): Promise<LookupResult[]> {
-  const results: LookupResult[] = [];
-  const seenEntryIds = new Set<number>();
-  let foundAtLen = -1;
-
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
-    // Early termination: once results found, continue 2 more lengths then stop
-    if (foundAtLen > 0 && len < foundAtLen - 2) break;
-
     // Valid start positions: substring must contain the tap position
     const minStart = Math.max(0, tapOffset - len + 1);
     const maxStart = Math.min(tapOffset, text.length - len);
@@ -211,22 +203,21 @@ export async function smartLookupWithOffset(
       const candidates = deinflect(substr);
 
       for (const candidate of candidates) {
-        const allEntries = await lookupExactJapanese(dictDb, candidate.word);
-        const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
-
-        if (newEntries.length > 0) {
-          for (const e of newEntries) seenEntryIds.add(e.id);
-          if (foundAtLen < 0) foundAtLen = len;
-          results.push({
-            matchedText: substr,
-            entries: newEntries,
-            deinflectReasons: candidate.reasons,
-            matchStart: start,
-          });
+        const entries = await lookupExactJapanese(dictDb, candidate.word);
+        if (entries.length > 0) {
+          // Return immediately on first (longest) match — no sub-word noise
+          return [
+            {
+              matchedText: substr,
+              entries,
+              deinflectReasons: candidate.reasons,
+              matchStart: start,
+            },
+          ];
         }
       }
     }
   }
 
-  return results;
+  return [];
 }
