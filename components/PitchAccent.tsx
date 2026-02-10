@@ -28,9 +28,8 @@ export function PitchAccent({ accent }: PitchAccentProps) {
                 i > 0 ? getBridgeColor(i - 1, i, pitchNumber, morae.length) : ""
               }`}
             />
-            <View className={isHigh ? "mb-2" : "mt-2"}>
-              <Text className="text-sm text-foreground">{mora}</Text>
-            </View>
+            {/* Vertical shift version: <View className={isHigh ? "mb-2" : "mt-2"}><Text ...>{mora}</Text></View> */}
+            <Text className="text-sm text-foreground">{mora}</Text>
           </View>
         );
       })}
