@@ -1,7 +1,9 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -69,6 +71,22 @@ export default function RootLayout() {
       applyTheme(pref);
       setThemeReady(true);
     });
+  }, []);
+
+  // Check for OTA updates on app launch (native only)
+  useEffect(() => {
+    if (__DEV__ || Platform.OS === "web") return;
+    (async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log("OTA update check failed:", e);
+      }
+    })();
   }, []);
 
   useEffect(() => {

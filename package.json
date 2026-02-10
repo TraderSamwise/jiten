@@ -18,7 +18,16 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build:testflight": "./scripts/build.sh --testflight",
+    "build:production": "./scripts/build.sh --production",
+    "update": "./scripts/update.sh --testflight",
+    "update:production": "./scripts/update.sh --production",
+    "version:current": "./scripts/version-manager.sh current",
+    "version:bump-build": "./scripts/version-manager.sh bump-build",
+    "version:bump-ota": "./scripts/version-manager.sh bump-ota",
+    "version:rollback": "./scripts/version-manager.sh rollback",
+    "version:set": "./scripts/version-manager.sh set"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.22",
@@ -42,6 +51,7 @@
     "expo-splash-screen": "~31.0.13",
     "expo-sqlite": "^16.0.10",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "^29.0.16",
     "expo-web-browser": "~15.0.10",
     "fflate": "^0.8.2",
     "lucide-react-native": "^0.563.0",

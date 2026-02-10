@@ -112,7 +112,7 @@ describe("generateReaderHtml", () => {
       isDark: false,
     });
     expect(html).toContain(".buffer");
-    expect(html).toContain("clip: rect(0,0,0,0)");
+    expect(html).toContain("clip: rect(0, 0, 0, 0)");
     expect(html).toContain("position: absolute");
   });
 
