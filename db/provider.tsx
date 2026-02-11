@@ -82,20 +82,28 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       const ready = await isDictReady();
 
       if (ready) {
+        // Check for updates before opening the DB
+        try {
+          const m = await fetchManifest();
+          const hasUpdate = await checkForUpdate(m);
+          if (hasUpdate) {
+            // Block on update — gate will show download UI
+            setManifest(m);
+            setIsDownloaded(false);
+            setDownloadStatus({ state: "needs-download", manifest: m, isUpdate: true });
+            setIsReady(true);
+            return;
+          }
+        } catch {
+          // Offline — proceed with existing DB
+        }
+
         const db = await openDictDb();
         dictDbRef.current = db;
         setDictDb(db);
         setIsDownloaded(true);
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
-
-        // Check for updates in background
-        fetchManifest()
-          .then(async (m) => {
-            const hasUpdate = await checkForUpdate(m);
-            if (hasUpdate) setManifest(m);
-          })
-          .catch(() => {});
       } else {
         setIsReady(true);
         // Fetch manifest to show download size
@@ -178,10 +186,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     try {
       setDownloadStatus({ state: "downloading", progress: 0 });
 
-      await downloadDictionary(m, (progress) => {
-        setDownloadStatus({ state: "downloading", progress });
-      });
+      await downloadDictionary(
+        m,
+        (progress) => setDownloadStatus({ state: "downloading", progress }),
+        (status) => {
+          if (status === "saving") setDownloadStatus({ state: "preparing" });
+        },
+      );
 
+      setDownloadStatus({ state: "preparing" });
       const db = await openDictDb();
       dictDbRef.current = db;
       setDictDb(db);

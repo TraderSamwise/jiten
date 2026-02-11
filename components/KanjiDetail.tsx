@@ -1,0 +1,147 @@
+import React, { useEffect, useState } from "react";
+import { View, ScrollView, Pressable } from "react-native";
+import { useRouter } from "expo-router";
+import { Text } from "@/components/ui/text";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { useDatabase } from "@/db/provider";
+import { useSearchStore } from "@/stores/search";
+import { getKanjiAsync, getSimilarKanjiAsync, getRadicalsForKanjiAsync } from "@/db/kanji-search";
+import type { KanjiCharacter, SimilarKanji } from "@/db/types";
+
+interface KanjiDetailProps {
+  literal: string;
+}
+
+export function KanjiDetail({ literal }: KanjiDetailProps) {
+  const { dictDb, isReady } = useDatabase();
+  const router = useRouter();
+  const { setSearchMode, setSelectedRadicals } = useSearchStore();
+  const [kanji, setKanji] = useState<KanjiCharacter | null>(null);
+  const [similar, setSimilar] = useState<SimilarKanji[]>([]);
+  const [radicals, setRadicals] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!dictDb || !isReady || !literal) return;
+
+    getKanjiAsync(dictDb, literal)
+      .then(setKanji)
+      .catch(() => {});
+    getSimilarKanjiAsync(dictDb, literal)
+      .then(setSimilar)
+      .catch(() => {});
+    getRadicalsForKanjiAsync(dictDb, literal)
+      .then(setRadicals)
+      .catch(() => {});
+  }, [dictDb, isReady, literal]);
+
+  const handleRadicalPress = (radical: string) => {
+    setSearchMode("radical");
+    setSelectedRadicals([radical]);
+    router.push("/dictionary");
+  };
+
+  const handleSimilarPress = (similarLiteral: string) => {
+    router.push(`/dictionary/kanji/${encodeURIComponent(similarLiteral)}`);
+  };
+
+  if (!kanji) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <Text className="text-muted-foreground">Loading...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
+      {/* Header */}
+      <View className="items-center mb-6">
+        <Text className="text-7xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
+        <View className="flex-row flex-wrap justify-center gap-2 mt-3">
+          {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
+          {kanji.jlptLevel != null && <Badge variant="secondary" label={`N${kanji.jlptLevel}`} />}
+          <Badge variant="outline" label={`${kanji.strokeCount} strokes`} />
+          {kanji.frequencyRank != null && (
+            <Badge variant="outline" label={`#${kanji.frequencyRank}`} />
+          )}
+          {kanji.heisigIndex != null && (
+            <Badge variant="outline" label={`Heisig ${kanji.heisigIndex}`} />
+          )}
+        </View>
+      </View>
+
+      {/* Readings */}
+      <Card className="mb-3">
+        <Text className="text-sm font-medium text-muted-foreground mb-2">Readings</Text>
+        {kanji.readingsOn.length > 0 && (
+          <View className="mb-1.5">
+            <Text className="text-xs text-muted-foreground">ON'yomi</Text>
+            <Text className="text-base text-foreground">{kanji.readingsOn.join("、")}</Text>
+          </View>
+        )}
+        {kanji.readingsKun.length > 0 && (
+          <View className="mb-1.5">
+            <Text className="text-xs text-muted-foreground">KUN'yomi</Text>
+            <Text className="text-base text-foreground">{kanji.readingsKun.join("、")}</Text>
+          </View>
+        )}
+        {kanji.nanori.length > 0 && (
+          <View>
+            <Text className="text-xs text-muted-foreground">Nanori</Text>
+            <Text className="text-base text-foreground">{kanji.nanori.join("、")}</Text>
+          </View>
+        )}
+      </Card>
+
+      {/* Meanings */}
+      {kanji.meanings.length > 0 && (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Meanings</Text>
+          {kanji.meanings.map((m, i) => (
+            <Text key={i} className="text-base text-foreground">
+              {m}
+            </Text>
+          ))}
+        </Card>
+      )}
+
+      {/* Radicals */}
+      {radicals.length > 0 && (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Radicals</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {radicals.map((r) => (
+              <Pressable
+                key={r}
+                onPress={() => handleRadicalPress(r)}
+                className="h-9 w-9 items-center justify-center rounded-lg bg-secondary active:opacity-70"
+              >
+                <Text className="text-lg text-foreground">{r}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
+      )}
+
+      {/* Similar Kanji */}
+      {similar.length > 0 && (
+        <Card className="mb-6">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Kanji</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {similar.map((s) => (
+              <Pressable
+                key={s.literal}
+                onPress={() => handleSimilarPress(s.literal)}
+                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+              >
+                <Text className="text-xl font-bold text-foreground">{s.literal}</Text>
+                <Text className="text-xs text-muted-foreground">{Math.round(s.score * 100)}%</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
+      )}
+    </ScrollView>
+  );
+}
