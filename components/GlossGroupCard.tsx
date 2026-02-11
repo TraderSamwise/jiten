@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { PitchAccent } from "@/components/PitchAccent";
+import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { ChevronRight } from "@/lib/icons";
 import { useSearchStore } from "@/stores/search";
 import type { GlossGroup } from "@/db/types";
@@ -47,6 +48,7 @@ export function GlossGroupCard({ group }: GlossGroupCardProps) {
             ) : (
               <Text className="text-sm text-muted-foreground">{kana.text}</Text>
             ))}
+          <PlayAudioButton entryId={entry.id} size={18} />
         </View>
       </PressableCard>
     );

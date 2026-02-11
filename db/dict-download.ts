@@ -17,7 +17,7 @@ export interface DictManifest {
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
-const CURRENT_FORMAT = 7; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity, v7: chunked IDB storage
+const CURRENT_FORMAT = 9; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity, v7: chunked IDB storage, v8-v9: word audio
 const DB_NAME = "dictionary.db";
 
 import { env } from "@/lib/env";

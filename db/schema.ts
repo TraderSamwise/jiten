@@ -86,6 +86,16 @@ export const kanjiSimilarity = sqliteTable("kanji_similarity", {
   rank: integer("rank").notNull(),
 });
 
+export const wordAudio = sqliteTable("word_audio", {
+  entryId: integer("entry_id")
+    .notNull()
+    .references(() => entries.id),
+  reading: text("reading").notNull(),
+  audio: blob("audio").notNull(),
+  source: text("source").notNull(), // 'kanji_alive', 'tofugu', 'tts'
+  format: text("format").notNull(), // 'mp3'
+});
+
 // FTS virtual table for kanji meaning search (created via raw SQL in build)
 // CREATE VIRTUAL TABLE kanji_meanings_fts USING fts5(meanings, literal UNINDEXED);
 

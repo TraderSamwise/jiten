@@ -98,6 +98,7 @@ const USER_DB_MIGRATIONS = [
     last_read_at TEXT
   )`,
   `ALTER TABLE books ADD COLUMN source_id TEXT`,
+  `ALTER TABLE lists ADD COLUMN auto_play_audio INTEGER NOT NULL DEFAULT 0`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

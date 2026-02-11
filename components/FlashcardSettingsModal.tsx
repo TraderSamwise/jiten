@@ -32,12 +32,14 @@ export function FlashcardSettingsModal({
   const [mode, setMode] = useState<FlashcardMode>("add_order");
   const [frontFaces, setFrontFaces] = useState<CardFace[]>(["kanji"]);
   const [backFaces, setBackFaces] = useState<CardFace[]>(["english"]);
+  const [autoPlayAudio, setAutoPlayAudio] = useState(false);
 
   useEffect(() => {
     if (visible && list) {
       setMode(list.flashcardMode);
       setFrontFaces([...list.frontFaces]);
       setBackFaces([...list.backFaces]);
+      setAutoPlayAudio(list.autoPlayAudio);
     }
   }, [visible, list]);
 
@@ -55,14 +57,22 @@ export function FlashcardSettingsModal({
     if (!userDb) return;
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, configured = 1, updated_at = ? WHERE id = ?",
-      [mode, JSON.stringify(frontFaces), JSON.stringify(backFaces), now, listId],
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, configured = 1, updated_at = ? WHERE id = ?",
+      [
+        mode,
+        JSON.stringify(frontFaces),
+        JSON.stringify(backFaces),
+        autoPlayAudio ? 1 : 0,
+        now,
+        listId,
+      ],
     );
     updateList(listId, {
       configured: true,
       flashcardMode: mode,
       frontFaces,
       backFaces,
+      autoPlayAudio,
       updatedAt: now,
     });
     if (onStartStudy) {
@@ -145,7 +155,7 @@ export function FlashcardSettingsModal({
 
             {/* Back faces */}
             <Text className="text-sm font-medium text-muted-foreground mb-2">Back</Text>
-            <View className="flex-row gap-2 mb-5">
+            <View className="flex-row gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = backFaces.includes(opt.key);
                 return (
@@ -166,6 +176,41 @@ export function FlashcardSettingsModal({
                   </Pressable>
                 );
               })}
+            </View>
+
+            {/* Auto-play audio */}
+            <Text className="text-sm font-medium text-muted-foreground mb-2">
+              Play audio on reveal
+            </Text>
+            <View className="flex-row gap-2 mb-5">
+              <Pressable
+                onPress={() => setAutoPlayAudio(false)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  !autoPlayAudio ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    !autoPlayAudio ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Off
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setAutoPlayAudio(true)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  autoPlayAudio ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    autoPlayAudio ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  On
+                </Text>
+              </Pressable>
             </View>
 
             {/* Actions */}

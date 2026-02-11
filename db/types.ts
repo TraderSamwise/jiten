@@ -99,6 +99,7 @@ export interface WordList {
   backFaces: CardFace[];
   configured: boolean;
   studyPosition: number;
+  autoPlayAudio: boolean;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;

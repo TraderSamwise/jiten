@@ -63,6 +63,12 @@ export default function SettingsScreen() {
         <Text className="mt-2 text-sm text-muted-foreground">
           Pitch accent data from Kanjium. Licensed under CC BY-SA 4.0.
         </Text>
+        <Text className="mt-2 text-sm text-muted-foreground">
+          Word audio from Kanji Alive. Licensed under CC BY 4.0.
+        </Text>
+        <Text className="mt-2 text-sm text-muted-foreground">
+          Word audio from Tofugu. Licensed under CC BY-SA 4.0.
+        </Text>
       </Card>
 
       <Card className="mb-4">

@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PitchAccent } from "@/components/PitchAccent";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
+import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { useDatabase } from "@/db/provider";
 import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
@@ -52,7 +53,8 @@ export function WordDetail({ entryId }: WordDetailProps) {
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
-      <View className="flex-row justify-end mb-1">
+      <View className="flex-row justify-end items-center gap-2 mb-1">
+        <PlayAudioButton entryId={entryId} size={22} />
         <Pressable onPress={() => setPopoverVisible(true)} className="p-1">
           <Bookmark
             size={22}
