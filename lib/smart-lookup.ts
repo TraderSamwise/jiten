@@ -127,12 +127,15 @@ export async function selectionLookup(
     }
 
     const remaining = trimmed.slice(pos);
-    const wordResult = await findFirstWord(remaining, dictDb, seenEntryIds);
+    // Extend with suffix so words at the end of the selection can be
+    // found even when the selection cuts them short (e.g. 姿 → 姿勢)
+    const textToSearch = suffix.length > 0 ? remaining + suffix.slice(0, 10) : remaining;
+    const wordResult = await findFirstWord(textToSearch, dictDb, seenEntryIds);
 
     if (wordResult) {
       for (const e of wordResult.result.entries) seenEntryIds.add(e.id);
       onResult(wordResult.result);
-      pos += wordResult.matchLength;
+      pos += Math.min(wordResult.matchLength, remaining.length);
     } else {
       pos++;
     }
