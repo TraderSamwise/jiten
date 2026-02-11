@@ -3,8 +3,9 @@ import { Platform } from "react-native";
 
 export type DownloadStatus =
   | { state: "checking" }
-  | { state: "needs-download"; manifest: DictManifest }
+  | { state: "needs-download"; manifest: DictManifest; isUpdate?: boolean }
   | { state: "downloading"; progress: number }
+  | { state: "preparing" }
   | { state: "ready" }
   | { state: "error"; message: string };
 
@@ -16,7 +17,7 @@ export interface DictManifest {
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
-const CURRENT_FORMAT = 6; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity
+const CURRENT_FORMAT = 7; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity, v7: chunked IDB storage
 const DB_NAME = "dictionary.db";
 
 import { env } from "@/lib/env";
@@ -74,9 +75,10 @@ export async function checkForUpdate(manifest: DictManifest): Promise<boolean> {
 export async function downloadDictionary(
   manifest: DictManifest,
   onProgress?: (progress: number) => void,
+  onStatusChange?: (status: string) => void,
 ): Promise<void> {
   if (Platform.OS === "web") {
-    await downloadWeb(manifest, onProgress);
+    await downloadWeb(manifest, onProgress, onStatusChange);
   } else {
     await downloadNative(manifest, onProgress);
   }
@@ -105,7 +107,9 @@ async function clearStaleWebData(oldFormat: number): Promise<void> {
     try {
       const db = await openIdb();
       const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).delete(IDB_KEY);
+      const store = tx.objectStore(IDB_STORE);
+      // Clear everything (old single-value key + chunked keys)
+      store.clear();
       await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => {
           db.close();
@@ -153,6 +157,7 @@ async function downloadNative(
 async function downloadWeb(
   manifest: DictManifest,
   onProgress?: (progress: number) => void,
+  onStatusChange?: (status: string) => void,
 ): Promise<void> {
   // 1. Download with progress tracking
   const res = await fetch(manifest.url);
@@ -181,13 +186,15 @@ async function downloadWeb(
     offset += chunk.length;
   }
 
-  // 3. Store raw SQLite bytes in IndexedDB (avoids wa-sqlite VFS pool issues)
+  // 3. Store raw SQLite bytes in IndexedDB (chunked to avoid value-size limits)
+  onStatusChange?.("saving");
   await storeDbBytes(data);
 }
 
 const IDB_NAME = "dict-store";
 const IDB_STORE = "db";
 const IDB_KEY = "dictionary";
+const CHUNK_SIZE = 64 * 1024 * 1024; // 64 MB per chunk (well under IDB limits)
 
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -198,11 +205,29 @@ function openIdb(): Promise<IDBDatabase> {
   });
 }
 
+/** Store DB bytes split into chunks to stay under IDB value-size limits. */
 async function storeDbBytes(data: Uint8Array): Promise<void> {
   const db = await openIdb();
+  const numChunks = Math.ceil(data.byteLength / CHUNK_SIZE);
+  console.log(`[DB] Storing ${data.byteLength} bytes in ${numChunks} chunks...`);
+
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
-    tx.objectStore(IDB_STORE).put(data, IDB_KEY);
+    const store = tx.objectStore(IDB_STORE);
+
+    // Delete old single-value key if it exists (migration from pre-chunk format)
+    store.delete(IDB_KEY);
+
+    // Write metadata
+    store.put({ numChunks, totalBytes: data.byteLength }, `${IDB_KEY}:meta`);
+
+    // Write each chunk
+    for (let i = 0; i < numChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, data.byteLength);
+      store.put(data.slice(start, end), `${IDB_KEY}:chunk:${i}`);
+    }
+
     tx.oncomplete = () => {
       db.close();
       resolve();
@@ -211,24 +236,65 @@ async function storeDbBytes(data: Uint8Array): Promise<void> {
       db.close();
       reject(tx.error);
     };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("Transaction aborted"));
+    };
   });
+}
+
+/** Load chunked DB bytes from IndexedDB, reassembling into a single Uint8Array. */
+async function loadDbBytes(): Promise<Uint8Array | null> {
+  const db = await openIdb();
+
+  // Try chunked format first
+  const meta: { numChunks: number; totalBytes: number } | undefined = await new Promise(
+    (resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(`${IDB_KEY}:meta`);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    },
+  );
+
+  if (meta?.numChunks) {
+    const result = new Uint8Array(meta.totalBytes);
+    let offset = 0;
+
+    for (let i = 0; i < meta.numChunks; i++) {
+      const chunk: Uint8Array | undefined = await new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).get(`${IDB_KEY}:chunk:${i}`);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      if (!chunk) {
+        db.close();
+        return null;
+      }
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    db.close();
+    return result;
+  }
+
+  // Fallback: try old single-value format (migration path)
+  const data: Uint8Array | undefined = await new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
+  db.close();
+  return data ?? null;
 }
 
 /** Load raw bytes and return an in-memory SQLiteDatabase, or null. */
 export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
-  const db = await openIdb();
-  const data: Uint8Array | undefined = await new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
-    req.onsuccess = () => {
-      db.close();
-      resolve(req.result);
-    };
-    req.onerror = () => {
-      db.close();
-      reject(req.error);
-    };
-  });
+  const data = await loadDbBytes();
   if (!data) return null;
 
   // Patch WAL → rollback journal for memdb VFS compatibility.

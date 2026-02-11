@@ -1,14 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { View, SectionList, ActivityIndicator } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View,
+  SectionList,
+  FlatList,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
 import { GlossGroupCard } from "@/components/GlossGroupCard";
+import { KanjiCard } from "@/components/KanjiCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
+import {
+  searchKanjiByMeaningAsync,
+  searchKanjiByReadingAsync,
+  searchByRadicalsAsync,
+  getAllRadicalsAsync,
+  getKanjiAsync,
+} from "@/db/kanji-search";
 import { groupByGloss } from "@/lib/gloss-groups";
-import type { DictEntry, GlossGroup } from "@/db/types";
+import type { DictEntry, GlossGroup, KanjiCharacter } from "@/db/types";
 
 interface Section {
   title: string;
@@ -16,9 +31,127 @@ interface Section {
   data: (DictEntry | GlossGroup)[];
 }
 
+function isSingleKanji(input: string): boolean {
+  if ([...input].length !== 1) return false;
+  const c = input.codePointAt(0)!;
+  return (
+    (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3400 && c <= 0x4dbf) || (c >= 0xf900 && c <= 0xfaff)
+  );
+}
+
+function isAsciiInput(input: string): boolean {
+  for (const ch of input) {
+    const c = ch.codePointAt(0)!;
+    if (c < 0x20 || c > 0x7e) return false;
+  }
+  return true;
+}
+
+// ─── Radical Mode View ───
+
+function RadicalSearchView() {
+  const { dictDb, isReady } = useDatabase();
+  const {
+    selectedRadicals,
+    toggleRadical,
+    kanjiResults,
+    setKanjiResults,
+    isSearching,
+    setIsSearching,
+  } = useSearchStore();
+  const [allRadicals, setAllRadicals] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!dictDb || !isReady) return;
+    getAllRadicalsAsync(dictDb)
+      .then(setAllRadicals)
+      .catch(() => {});
+  }, [dictDb, isReady]);
+
+  useEffect(() => {
+    if (!dictDb || !isReady) return;
+
+    if (selectedRadicals.length === 0) {
+      setKanjiResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    searchByRadicalsAsync(dictDb, selectedRadicals)
+      .then(setKanjiResults)
+      .catch(() => setKanjiResults([]));
+  }, [dictDb, isReady, selectedRadicals]);
+
+  return (
+    <View className="flex-1">
+      {/* Radical grid */}
+      <ScrollView
+        className="max-h-48 border-b border-border"
+        contentContainerStyle={{ padding: 12, flexDirection: "row", flexWrap: "wrap", gap: 6 }}
+      >
+        {allRadicals.map((r) => {
+          const selected = selectedRadicals.includes(r);
+          return (
+            <Pressable
+              key={r}
+              onPress={() => toggleRadical(r)}
+              className={`h-9 w-9 items-center justify-center rounded-lg active:opacity-70 ${
+                selected ? "bg-primary" : "bg-secondary"
+              }`}
+            >
+              <Text
+                className={`text-lg ${selected ? "text-primary-foreground font-bold" : "text-foreground"}`}
+              >
+                {r}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {/* Results */}
+      {isSearching && (
+        <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+          <ActivityIndicator size="large" />
+        </View>
+      )}
+
+      <FlatList
+        data={kanjiResults}
+        keyExtractor={(item) => item.literal}
+        renderItem={({ item }) => <KanjiCard kanji={item} />}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
+        ListEmptyComponent={
+          selectedRadicals.length > 0 && !isSearching ? (
+            <View className="items-center pt-10">
+              <Text className="text-muted-foreground">No kanji found</Text>
+            </View>
+          ) : selectedRadicals.length === 0 ? (
+            <View className="items-center pt-10">
+              <Text className="text-muted-foreground">Select radicals above to search</Text>
+            </View>
+          ) : null
+        }
+      />
+    </View>
+  );
+}
+
+// ─── Main Screen ───
+
 export default function SearchScreen() {
   const { dictDb, isReady } = useDatabase();
-  const { query, results, isSearching, setResults, setIsSearching, setQuery } = useSearchStore();
+  const {
+    query,
+    results,
+    isSearching,
+    setResults,
+    setIsSearching,
+    setQuery,
+    searchMode,
+    kanjiResults,
+    setKanjiResults,
+  } = useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGenRef = useRef(0);
   const router = useRouter();
@@ -33,7 +166,9 @@ export default function SearchScreen() {
     initializedRef.current = true;
   }, []);
 
+  // Normal mode search
   useEffect(() => {
+    if (searchMode !== "normal") return;
     if (!dictDb || !isReady) return;
 
     if (!query.trim()) {
@@ -49,7 +184,7 @@ export default function SearchScreen() {
       setIsSearching(true);
       try {
         const searchResults = await searchDictionary(dictDb, query);
-        if (gen !== searchGenRef.current) return; // stale
+        if (gen !== searchGenRef.current) return;
         setResults(searchResults);
       } catch (err) {
         if (gen !== searchGenRef.current) return;
@@ -63,19 +198,64 @@ export default function SearchScreen() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [dictDb, isReady, query]);
+  }, [dictDb, isReady, query, searchMode]);
+
+  // Kanji mode search
+  useEffect(() => {
+    if (searchMode !== "kanji") return;
+    if (!dictDb || !isReady) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setKanjiResults([]);
+      return;
+    }
+
+    // Single kanji → navigate to detail
+    if (isSingleKanji(trimmed)) {
+      getKanjiAsync(dictDb, trimmed)
+        .then((k) => {
+          if (k) {
+            router.push(`/dictionary/kanji/${encodeURIComponent(trimmed)}`);
+          }
+        })
+        .catch((err) => console.error("Kanji lookup error:", err));
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const gen = ++searchGenRef.current;
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = isAsciiInput(trimmed)
+          ? await searchKanjiByMeaningAsync(dictDb, trimmed)
+          : await searchKanjiByReadingAsync(dictDb, trimmed);
+        if (gen !== searchGenRef.current) return;
+        setKanjiResults(results);
+      } catch (err) {
+        if (gen !== searchGenRef.current) return;
+        console.error("Kanji search error:", err);
+        setKanjiResults([]);
+      }
+    }, 200);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [dictDb, isReady, query, searchMode]);
 
   const sections = useMemo<Section[]>(() => {
+    if (searchMode !== "normal") return [];
     const s: Section[] = [];
     if (results.englishMatches && results.englishMatches.length > 0) {
       const groups = groupByGloss(results.englishMatches);
       s.push({ title: "Definitions", type: "definitions", data: groups });
     } else if (results.japanese.length > 0) {
-      // Japanese/kana input with no English matches — show as entry cards
       s.push({ title: "Words", type: "words", data: results.japanese });
     }
     return s;
-  }, [results]);
+  }, [results, searchMode]);
 
   const hasBothSections = sections.length > 1;
 
@@ -110,6 +290,50 @@ export default function SearchScreen() {
     );
   }
 
+  // Radical mode
+  if (searchMode === "radical") {
+    return (
+      <View className="flex-1 bg-background">
+        <RadicalSearchView />
+      </View>
+    );
+  }
+
+  // Kanji mode
+  if (searchMode === "kanji") {
+    return (
+      <View className="flex-1 bg-background">
+        {isSearching && (
+          <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+            <ActivityIndicator size="large" />
+          </View>
+        )}
+
+        <FlatList
+          data={kanjiResults}
+          keyExtractor={(item) => item.literal}
+          renderItem={({ item }) => <KanjiCard kanji={item} />}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
+          ListEmptyComponent={
+            query.trim() && !isSearching ? (
+              <View className="items-center pt-10">
+                <Text className="text-muted-foreground">No kanji found</Text>
+              </View>
+            ) : !query.trim() ? (
+              <View className="items-center pt-10">
+                <Text className="text-2xl">漢字</Text>
+                <Text className="mt-2 text-muted-foreground">
+                  Search by English meaning or Japanese reading
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+    );
+  }
+
+  // Normal mode
   return (
     <View className="flex-1 bg-background">
       {isSearching && (

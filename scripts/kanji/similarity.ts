@@ -100,7 +100,39 @@ export function buildCombinedVector(
 }
 
 /**
+ * Insert into a bounded min-heap (sorted array kept at max size K).
+ * The array is kept sorted by score ascending so the minimum is at index 0.
+ */
+function insertTopK(
+  heap: { literal: string; score: number }[],
+  entry: { literal: string; score: number },
+  k: number,
+): void {
+  if (heap.length < k) {
+    // Not full yet — insert in sorted position
+    let i = heap.length;
+    heap.push(entry);
+    while (i > 0 && heap[i].score < heap[i - 1].score) {
+      const tmp = heap[i];
+      heap[i] = heap[i - 1];
+      heap[i - 1] = tmp;
+      i--;
+    }
+  } else if (entry.score > heap[0].score) {
+    // Replace the minimum
+    heap[0] = entry;
+    // Bubble up to maintain sorted order
+    for (let i = 0; i < heap.length - 1 && heap[i].score > heap[i + 1].score; i++) {
+      const tmp = heap[i];
+      heap[i] = heap[i + 1];
+      heap[i + 1] = tmp;
+    }
+  }
+}
+
+/**
  * Compute top-K most similar kanji for each kanji with a similarity vector.
+ * Uses bounded heaps to keep memory O(n * topK) instead of O(n²).
  *
  * @param vectors - Map from kanji literal to its combined vector
  * @param topK - Number of similar kanji to store per entry (default 20)
@@ -113,13 +145,10 @@ export function computePairwiseSimilarity(
   const entries = [...vectors.entries()];
   const n = entries.length;
 
-  // For each kanji, maintain a min-heap of top-K results
-  // Simple approach: store all scores, sort, take top K
-  // With ~6K kanji, that's 6K * 6K / 2 = 18M dot products — very fast
-  const results = new Map<string, { literal: string; score: number }[]>();
-
+  // Bounded top-K heaps per kanji — memory stays at O(n * topK)
+  const heaps = new Map<string, { literal: string; score: number }[]>();
   for (let i = 0; i < n; i++) {
-    if (!results.has(entries[i][0])) results.set(entries[i][0], []);
+    heaps.set(entries[i][0], []);
   }
 
   console.log(`  Computing pairwise similarity for ${n} kanji...`);
@@ -127,16 +156,15 @@ export function computePairwiseSimilarity(
 
   for (let i = 0; i < n; i++) {
     const [litA, vecA] = entries[i];
-    const listA = results.get(litA)!;
+    const heapA = heaps.get(litA)!;
 
     for (let j = i + 1; j < n; j++) {
       const [litB, vecB] = entries[j];
       const score = cosineSimilarity(vecA, vecB);
 
-      // Only bother storing if score is non-trivial
       if (score > 0.1) {
-        listA.push({ literal: litB, score });
-        results.get(litB)!.push({ literal: litA, score });
+        insertTopK(heapA, { literal: litB, score }, topK);
+        insertTopK(heaps.get(litB)!, { literal: litA, score }, topK);
       }
     }
 
@@ -148,32 +176,19 @@ export function computePairwiseSimilarity(
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`  Pairwise similarity computed in ${elapsed}s`);
 
-  // Sort and take top K for each kanji
+  // Convert heaps to sorted results (descending by score)
   const topResults = new Map<string, SimilarityResult[]>();
 
-  for (const [lit, sims] of results) {
-    sims.sort((a, b) => b.score - a.score);
-    const top = sims.slice(0, topK).map((s, idx) => ({
-      literal: s.literal,
-      score: s.score,
-      rank: idx + 1,
-    }));
-    topResults.set(lit, top);
-  }
-
-  // Symmetrize: if A is in B's top-K, ensure B→A is also stored
-  for (const [litA, sims] of topResults) {
-    for (const sim of sims) {
-      const bSims = topResults.get(sim.literal);
-      if (bSims && !bSims.find((s) => s.literal === litA)) {
-        // A is in B's list but B doesn't have A — add it
-        bSims.push({
-          literal: litA,
-          score: sim.score,
-          rank: bSims.length + 1,
-        });
-      }
-    }
+  for (const [lit, heap] of heaps) {
+    heap.sort((a, b) => b.score - a.score);
+    topResults.set(
+      lit,
+      heap.map((s, idx) => ({
+        literal: s.literal,
+        score: s.score,
+        rank: idx + 1,
+      })),
+    );
   }
 
   return topResults;

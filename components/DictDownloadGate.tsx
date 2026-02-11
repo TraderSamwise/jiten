@@ -57,10 +57,16 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
         {downloadStatus.state === "needs-download" && (
           <>
             <Text className="text-sm text-muted-foreground text-center mb-4">
-              The dictionary database needs to be downloaded before you can search.
+              {downloadStatus.isUpdate
+                ? "A dictionary update is available with new features and data."
+                : "The dictionary database needs to be downloaded before you can search."}
             </Text>
             <Button
-              label={`Download Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`}
+              label={
+                downloadStatus.isUpdate
+                  ? `Update Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`
+                  : `Download Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`
+              }
               onPress={startDownload}
             />
           </>
@@ -79,6 +85,13 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
             <Text className="text-sm text-muted-foreground">
               Downloading... {Math.round(downloadStatus.progress * 100)}%
             </Text>
+          </>
+        )}
+
+        {downloadStatus.state === "preparing" && (
+          <>
+            <ActivityIndicator size="small" />
+            <Text className="mt-2 text-sm text-muted-foreground">Preparing dictionary...</Text>
           </>
         )}
 
