@@ -6,7 +6,12 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDatabase } from "@/db/provider";
 import { useSearchStore } from "@/stores/search";
-import { getKanjiAsync, getSimilarKanjiAsync, getRadicalsForKanjiAsync } from "@/db/kanji-search";
+import {
+  getKanjiAsync,
+  getSimilarKanjiAsync,
+  getSimilarByMeaningAsync,
+  getRadicalsForKanjiAsync,
+} from "@/db/kanji-search";
 import type { KanjiCharacter, SimilarKanji } from "@/db/types";
 
 interface KanjiDetailProps {
@@ -19,6 +24,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const { setSearchMode, setSelectedRadicals } = useSearchStore();
   const [kanji, setKanji] = useState<KanjiCharacter | null>(null);
   const [similar, setSimilar] = useState<SimilarKanji[]>([]);
+  const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
 
   useEffect(() => {
@@ -30,6 +36,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     getSimilarKanjiAsync(dictDb, literal)
       .then(setSimilar)
       .catch(() => {});
+    getSimilarByMeaningAsync(dictDb, literal)
+      .then(setSimilarMeaning)
+      .catch((e) => console.warn("similarMeaning query failed:", e));
     getRadicalsForKanjiAsync(dictDb, literal)
       .then(setRadicals)
       .catch(() => {});
@@ -124,10 +133,10 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         </Card>
       )}
 
-      {/* Similar Kanji */}
+      {/* Similar Visually */}
       {similar.length > 0 && (
-        <Card className="mb-6">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Kanji</Text>
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Visually</Text>
           <View className="flex-row flex-wrap gap-2">
             {similar.map((s) => (
               <Pressable
@@ -137,6 +146,25 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               >
                 <Text className="text-xl font-bold text-foreground">{s.literal}</Text>
                 <Text className="text-xs text-muted-foreground">{Math.round(s.score * 100)}%</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
+      )}
+
+      {/* Similar Meaning */}
+      {similarMeaning.length > 0 && (
+        <Card className="mb-6">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Meaning</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {similarMeaning.map((k) => (
+              <Pressable
+                key={k.literal}
+                onPress={() => handleSimilarPress(k.literal)}
+                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+              >
+                <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
+                <Text className="text-xs text-muted-foreground">{k.meanings[0] ?? ""}</Text>
               </Pressable>
             ))}
           </View>

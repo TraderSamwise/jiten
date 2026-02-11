@@ -103,6 +103,28 @@ export function searchKanjiByMeaning(db: QueryDB, query: string): KanjiCharacter
   return rows.map(rowToKanjiCharacter);
 }
 
+/** Get kanji with similar English meanings. */
+export function getSimilarByMeaning(
+  db: QueryDB,
+  literal: string,
+  limit: number = 10,
+): KanjiCharacter[] {
+  const kanji = getKanji(db, literal);
+  if (!kanji || kanji.meanings.length === 0) return [];
+
+  const ftsQuery = kanji.meanings.join(" OR ");
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT kc.* FROM kanji_meanings_fts fts
+       JOIN kanji_characters kc ON kc.literal = fts.literal
+       WHERE fts.meanings MATCH ? AND kc.literal != ?
+       ORDER BY kc.frequency_rank IS NULL, kc.frequency_rank
+       LIMIT ${limit}`,
+    )
+    .all(ftsQuery, literal) as Record<string, unknown>[];
+  return rows.map(rowToKanjiCharacter);
+}
+
 /** Get all kanji for a given jouyou grade. */
 export function getKanjiByGrade(db: QueryDB, grade: number): KanjiCharacter[] {
   const rows = db
@@ -238,6 +260,30 @@ export async function getAllRadicalsAsync(db: SQLite.SQLiteDatabase): Promise<st
     "SELECT DISTINCT radical FROM kanji_radicals ORDER BY radical",
   );
   return rows.map((r) => r.radical);
+}
+
+/** Get kanji with similar English meanings (async). */
+export async function getSimilarByMeaningAsync(
+  db: SQLite.SQLiteDatabase,
+  literal: string,
+  limit: number = 10,
+): Promise<KanjiCharacter[]> {
+  const kanji = await getKanjiAsync(db, literal);
+  if (!kanji || kanji.meanings.length === 0) return [];
+
+  // Use LIKE on the JSON meanings column instead of FTS5 —
+  // expo-sqlite's web worker hangs on FTS MATCH queries.
+  const likeClauses = kanji.meanings.map(() => `meanings LIKE ?`).join(" OR ");
+  const likeParams = kanji.meanings.map((m) => `%"${m}"%`);
+
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT * FROM kanji_characters
+     WHERE (${likeClauses}) AND literal != ?
+     ORDER BY frequency_rank IS NULL, frequency_rank
+     LIMIT ${limit}`,
+    [...likeParams, literal],
+  );
+  return rows.map(rowToKanjiCharacter);
 }
 
 /** Get radicals for a specific kanji (async). */
