@@ -782,12 +782,13 @@ function simulateSelectionLookup(
     }
 
     const remaining = trimmed.slice(pos);
-    const wordResult = simulateFindFirstWord(remaining, seenEntryIds);
+    const textToSearch = suffix.length > 0 ? remaining + suffix.slice(0, 10) : remaining;
+    const wordResult = simulateFindFirstWord(textToSearch, seenEntryIds);
 
     if (wordResult) {
       for (const r of wordResult.hit.results) seenEntryIds.add(r.entryId);
       results.push(wordResult.hit);
-      pos += wordResult.matchLength;
+      pos += Math.min(wordResult.matchLength, remaining.length);
     } else {
       pos++;
     }
@@ -827,5 +828,15 @@ describe("Selection lookup with boundary expansion (drag selection)", () => {
     const results = simulateSelectionLookup("若くもないという");
     expect(results.length).toBeGreaterThan(0);
     expect(hitsContainWord(results, "若い")).toBe(true);
+  });
+
+  test("selecting 若くもないというのに姿 with suffix 勢がよく → last word is 姿勢, not 姿", () => {
+    const results = simulateSelectionLookup("若くもないというのに姿", {
+      suffix: "勢がよく",
+    });
+    expect(results.length).toBeGreaterThan(0);
+    const lastResult = results[results.length - 1];
+    // matchedText should be 姿勢 (extending into suffix), not just 姿
+    expect(lastResult.matchedText).toBe("姿勢");
   });
 });
