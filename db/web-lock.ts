@@ -17,7 +17,7 @@
 type Message = "please-release" | "released";
 
 const CHANNEL_NAME = "jiten-db-lock";
-const RELEASE_TIMEOUT_MS = 2000;
+const RELEASE_TIMEOUT_MS = 300;
 
 let channel: BroadcastChannel | null = null;
 
