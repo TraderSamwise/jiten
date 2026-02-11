@@ -388,11 +388,24 @@ export default function StudyScreen() {
             <>
               {/* Front face */}
               <View className="items-center">
-                <Text className="text-3xl font-bold text-foreground">
+                <Text
+                  className={
+                    revealed
+                      ? "text-lg text-muted-foreground"
+                      : "text-3xl font-bold text-foreground"
+                  }
+                >
                   {getFaceText(currentItem.entry, frontFaces[0])}
                 </Text>
                 {frontFaces.slice(1).map((face, i) => (
-                  <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
+                  <Text
+                    key={`front-${i}`}
+                    className={
+                      revealed
+                        ? "mt-1 text-sm text-muted-foreground"
+                        : "mt-1 text-lg text-muted-foreground"
+                    }
+                  >
                     {getFaceText(currentItem.entry, face)}
                   </Text>
                 ))}
@@ -402,11 +415,11 @@ export default function StudyScreen() {
               {revealed && (
                 <View className="mt-6 items-center">
                   <View className="h-px w-32 bg-border mb-4" />
-                  <Text className="text-xl text-foreground">
+                  <Text className="text-3xl font-bold text-foreground">
                     {getFaceText(currentItem.entry, backFaces[0])}
                   </Text>
                   {backFaces.slice(1).map((face, i) => (
-                    <Text key={`back-${i}`} className="mt-1 text-base text-muted-foreground">
+                    <Text key={`back-${i}`} className="mt-2 text-2xl text-muted-foreground">
                       {getFaceText(currentItem.entry, face)}
                     </Text>
                   ))}
