@@ -14,9 +14,16 @@ interface DictionaryPopupProps {
   onClose: () => void;
   results: LookupResult[];
   loading?: boolean;
+  errorMessage?: string | null;
 }
 
-export function DictionaryPopup({ visible, onClose, results, loading }: DictionaryPopupProps) {
+export function DictionaryPopup({
+  visible,
+  onClose,
+  results,
+  loading,
+  errorMessage,
+}: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
@@ -58,6 +65,23 @@ export function DictionaryPopup({ visible, onClose, results, loading }: Dictiona
             <View className="items-center py-8">
               <ActivityIndicator size="large" />
             </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // Error state
+  if (errorMessage) {
+    return (
+      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+        <View className="flex-1 justify-end">
+          <Pressable className="flex-1" onPress={onClose} />
+          <View
+            className="bg-background border-t border-border rounded-t-2xl px-4 pt-4"
+            style={{ paddingBottom: insets.bottom + 16 }}
+          >
+            <Text className="text-center text-muted-foreground py-8">{errorMessage}</Text>
           </View>
         </View>
       </Modal>

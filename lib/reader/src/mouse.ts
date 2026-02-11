@@ -50,7 +50,7 @@ export function setupMouseHandlers(): void {
       const hi = Math.max(mouseStartAbs, mouseEndAbs);
       if (hi > lo) {
         const text = getAbsText(lo, hi);
-        if (text.length > 0 && text.length <= 100) {
+        if (text.length > 0 && text.length <= 1000) {
           const prefix = getAbsText(Math.max(0, lo - 10), lo);
           const suffix = getAbsText(hi, hi + 10);
           window.ReactNativeWebView.postMessage(
@@ -60,6 +60,10 @@ export function setupMouseHandlers(): void {
               prefix: prefix,
               suffix: suffix,
             }),
+          );
+        } else if (text.length > 1000) {
+          window.ReactNativeWebView.postMessage(
+            JSON.stringify({ type: "error", message: "Selection too long" }),
           );
         }
       }
