@@ -35,6 +35,7 @@ export default function BookReaderScreen() {
   const [lookupResults, setLookupResults] = useState<LookupResult[]>([]);
   const [showPopup, setShowPopup] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [fontSize, setFontSize] = useState(22);
 
@@ -102,6 +103,7 @@ export default function BookReaderScreen() {
 
           setLookupResults([]);
           setLookupLoading(true);
+          setLookupError(null);
           setShowPopup(true);
 
           if (msg.type === "selection") {
@@ -138,6 +140,11 @@ export default function BookReaderScreen() {
             }
           }
           setLookupLoading(false);
+        } else if (msg.type === "error") {
+          setLookupResults([]);
+          setLookupLoading(false);
+          setLookupError(msg.message || "An error occurred");
+          setShowPopup(true);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.position;
           // Debounced save to DB
@@ -224,10 +231,12 @@ export default function BookReaderScreen() {
       <DictionaryPopup
         visible={showPopup}
         loading={lookupLoading}
+        errorMessage={lookupError}
         onClose={() => {
           setShowPopup(false);
           setLookupResults([]);
           setLookupLoading(false);
+          setLookupError(null);
           readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
         }}
         results={lookupResults}
