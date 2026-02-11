@@ -13,6 +13,7 @@ import * as path from "path";
 import { toRomaji } from "wanakana";
 import WordNet from "node-wordnet";
 import wordnetDb from "wordnet-db";
+import { buildKanjiTables } from "./kanji/build-kanji-tables";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -442,8 +443,11 @@ async function main() {
   db.exec(`CREATE INDEX idx_synonyms_word ON synonyms(word);`);
   console.log(`   ${synCount} synonym pairs inserted`);
 
+  // Build kanji index
+  await buildKanjiTables(db);
+
   // Optimize
-  console.log("\n9. Optimizing database...");
+  console.log("\n19. Optimizing database...");
   db.exec("PRAGMA optimize");
   db.exec("VACUUM");
   db.close();
@@ -452,13 +456,10 @@ async function main() {
   console.log(`\nDone! Database: ${DB_PATH} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
 
   // Write manifest JSON for on-demand download
+  // DB download URL is derived at runtime from the manifest URL (sibling file)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
-  const dbUrl = process.env.DICT_CDN_URL
-    ? `${process.env.DICT_CDN_URL}/dictionary-v1.db`
-    : "http://localhost:3001/dictionary.db";
   const manifest = {
     version: 1,
-    url: dbUrl,
     sizeBytes: stats.size,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));

@@ -54,6 +54,37 @@ export interface SearchResults {
   englishMatches?: EnglishMatchEntry[];
 }
 
+// ─── Kanji types ───
+
+export interface KanjiCharacter {
+  literal: string;
+  grade: number | null;
+  strokeCount: number;
+  frequencyRank: number | null;
+  jlptOld: number | null;
+  jlptLevel: number | null;
+  readingsOn: string[];
+  readingsKun: string[];
+  meanings: string[];
+  nanori: string[];
+  radicalClassical: number | null;
+  radicalNelson: number | null;
+  heisigIndex: number | null;
+  unicodeCodepoint: string;
+  strokePaths: StrokePath[];
+}
+
+export interface StrokePath {
+  type: string;
+  d: string;
+}
+
+export interface SimilarKanji {
+  literal: string;
+  score: number;
+  rank: number;
+}
+
 // SRS card display modes
 export type CardFace = "kanji" | "kana" | "english";
 

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob } from "drizzle-orm/sqlite-core";
 
 // ─── Dictionary tables (read-only, bundled with app) ───
 
@@ -52,6 +52,42 @@ export const pitchAccents = sqliteTable("pitch_accents", {
 
 // FTS virtual table for English gloss search (created via raw SQL in migrations)
 // CREATE VIRTUAL TABLE glosses_fts USING fts5(glosses, entry_id UNINDEXED);
+
+// ─── Kanji index tables (read-only, bundled with dictionary) ───
+
+export const kanjiCharacters = sqliteTable("kanji_characters", {
+  literal: text("literal").primaryKey(),
+  grade: integer("grade"),
+  strokeCount: integer("stroke_count").notNull(),
+  frequencyRank: integer("frequency_rank"),
+  jlptOld: integer("jlpt_old"),
+  jlptLevel: integer("jlpt_level"),
+  readingsOn: text("readings_on"), // JSON array
+  readingsKun: text("readings_kun"), // JSON array
+  meanings: text("meanings"), // JSON array
+  nanori: text("nanori"), // JSON array
+  radicalClassical: integer("radical_classical"),
+  radicalNelson: integer("radical_nelson"),
+  heisigIndex: integer("heisig_index"),
+  unicodeCodepoint: text("unicode_codepoint").notNull(),
+  strokePaths: text("stroke_paths"), // JSON array of {type, d}
+  similarityVector: blob("similarity_vector"), // Float32Array as blob
+});
+
+export const kanjiRadicals = sqliteTable("kanji_radicals", {
+  literal: text("literal").notNull(),
+  radical: text("radical").notNull(),
+});
+
+export const kanjiSimilarity = sqliteTable("kanji_similarity", {
+  literal: text("literal").notNull(),
+  similar: text("similar").notNull(),
+  score: real("score").notNull(),
+  rank: integer("rank").notNull(),
+});
+
+// FTS virtual table for kanji meaning search (created via raw SQL in build)
+// CREATE VIRTUAL TABLE kanji_meanings_fts USING fts5(meanings, literal UNINDEXED);
 
 // ─── User data tables (separate DB, read-write) ───
 
