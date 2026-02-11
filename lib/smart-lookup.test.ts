@@ -167,19 +167,34 @@ function simulateSmartLookupWithOffset(
       const substr = text.slice(start, start + len);
       const candidates = deinflect(substr);
 
+      // Try all candidates, prefer common entries (matches production logic)
+      let best: LookupHit | null = null;
+      let bestCommon = false;
+
       for (const candidate of candidates) {
         const results = searchJapaneseSimple(candidate.word, 5);
         if (results.length > 0) {
-          return [
-            {
-              matchedText: substr,
-              searchWord: candidate.word,
-              reasons: candidate.reasons,
-              results,
-            },
-          ];
+          const hasCommon = results.some((r) => {
+            const row = db.prepare("SELECT common FROM entries WHERE id = ?").get(r.entryId) as
+              | { common: number }
+              | undefined;
+            return row && row.common === 1;
+          });
+          const hit: LookupHit = {
+            matchedText: substr,
+            searchWord: candidate.word,
+            reasons: candidate.reasons,
+            results,
+          };
+
+          if (!best || (hasCommon && !bestCommon)) {
+            best = hit;
+            bestCommon = hasCommon;
+          }
         }
       }
+
+      if (best) return [best];
     }
   }
 
@@ -510,5 +525,307 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
     const hits = simulateSmartLookupWithOffset(text, tapOffset);
     expect(hits.length).toBeGreaterThan(0);
     expect(hitsContainWord(hits, "蓄積")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. 若くもない DISAMBIGUATION
+//     若く is both a kanji form of 如く (shiku, "to match") and the
+//     adverbial form of 若い (wakai, "young"). The common word should win.
+// ═══════════════════════════════════════════════════════════════════
+
+describe("若くもない disambiguation — prefer common 若い over rare 如く", () => {
+  test("若くもない → finds 若い (young), not 如く (to match)", () => {
+    const hits = simulateSmartLookup("若くもないという");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "若い")).toBe(true);
+    expect(hitsContainWord(hits, "如く")).toBe(false);
+  });
+
+  test("若く as isolated selection → prefers 若い over 如く", () => {
+    const hits = simulateSmartLookup("若く");
+    expect(hits.length).toBeGreaterThan(0);
+    // Should find 若い (common, priority 65) not 如く (uncommon, priority 0)
+    expect(hitsContainWord(hits, "若い")).toBe(true);
+  });
+
+  test("tapping く in 若くもない → finds 若い", () => {
+    // With correct backward context, tapOffset=1 points to く
+    const text = "若くもないという";
+    const tapOffset = 1; // index of く
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "若い")).toBe(true);
+    expect(hitsContainWord(hits, "如く")).toBe(false);
+  });
+
+  test("tapping 若 in 若くもない → finds 若い", () => {
+    const text = "若くもないという";
+    const tapOffset = 0; // index of 若
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "若い")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 13. SELECTION LOOKUP WITH BOUNDARY EXPANSION
+//     Simulates drag-selection where the user's selection starts or
+//     ends mid-word, and prefix/suffix context is used to find the
+//     correct word spanning the boundary.
+// ═══════════════════════════════════════════════════════════════════
+
+function isEntryCommon(entryId: number): boolean {
+  const row = db.prepare("SELECT common FROM entries WHERE id = ?").get(entryId) as
+    | { common: number }
+    | undefined;
+  return row ? row.common === 1 : false;
+}
+
+function simulateFindFirstWord(
+  text: string,
+  seenEntryIds: Set<number>,
+): { hit: LookupHit; matchLength: number } | null {
+  const maxLen = Math.min(text.length, 15);
+  const substrings = generateSubstrings(text, maxLen);
+
+  for (const substr of substrings) {
+    const candidates = deinflect(substr);
+
+    let best: { hit: LookupHit; matchLength: number } | null = null;
+    let bestCommon = false;
+
+    for (const candidate of candidates) {
+      const allResults = searchJapaneseSimple(candidate.word, 5);
+      const newResults = allResults.filter((r) => !seenEntryIds.has(r.entryId));
+
+      if (newResults.length > 0) {
+        const hasCommon = newResults.some((r) => isEntryCommon(r.entryId));
+        const match = {
+          hit: {
+            matchedText: substr,
+            searchWord: candidate.word,
+            reasons: candidate.reasons,
+            results: newResults,
+          },
+          matchLength: substr.length,
+        };
+
+        if (!best || (hasCommon && !bestCommon)) {
+          best = match;
+          bestCommon = hasCommon;
+        }
+      }
+    }
+
+    if (best) return best;
+  }
+
+  return null;
+}
+
+function simulateFindBoundaryWord(
+  prefix: string,
+  selectionStart: string,
+  seenEntryIds: Set<number>,
+): { hit: LookupHit; selectionCharsConsumed: number } | null {
+  const before = prefix.slice(-10);
+  const after = selectionStart.slice(0, 15);
+  const combined = before + after;
+  const boundary = before.length;
+
+  const normalResult = simulateFindFirstWord(selectionStart, seenEntryIds);
+
+  for (let len = Math.min(combined.length, 15); len >= 2; len--) {
+    const minStart = Math.max(0, boundary - len + 1);
+    const maxStart = Math.min(boundary - 1, combined.length - len);
+
+    for (let start = maxStart; start >= minStart; start--) {
+      if (start + len <= boundary) continue;
+
+      const substr = combined.slice(start, start + len);
+      const candidates = deinflect(substr);
+
+      let best: LookupHit | null = null;
+      let bestCommon = false;
+
+      for (const candidate of candidates) {
+        const allResults = searchJapaneseSimple(candidate.word, 5);
+        const newResults = allResults.filter((r) => !seenEntryIds.has(r.entryId));
+
+        if (newResults.length > 0) {
+          const hasCommon = newResults.some((r) => isEntryCommon(r.entryId));
+          if (!best || (hasCommon && !bestCommon)) {
+            best = {
+              matchedText: substr,
+              searchWord: candidate.word,
+              reasons: candidate.reasons,
+              results: newResults,
+            };
+            bestCommon = hasCommon;
+          }
+        }
+      }
+
+      if (best) {
+        const selChars = start + len - boundary;
+        if (normalResult && normalResult.matchLength > selChars) continue;
+        return {
+          hit: best,
+          selectionCharsConsumed: selChars,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function simulateSelectionLookup(
+  text: string,
+  options?: { prefix?: string; suffix?: string },
+): LookupHit[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  const results: LookupHit[] = [];
+  const prefix = options?.prefix || "";
+  const suffix = options?.suffix || "";
+
+  // Expansion step: try substrings of expanded text that fully contain the selection
+  if (prefix.length > 0 || suffix.length > 0) {
+    const expanded = prefix + trimmed + suffix;
+    const selStart = prefix.length;
+    const selEnd = prefix.length + trimmed.length;
+
+    for (let len = Math.min(expanded.length, 20); len > trimmed.length; len--) {
+      const minStart = Math.max(0, selEnd - len);
+      const maxStart = Math.min(selStart, expanded.length - len);
+      for (let start = minStart; start <= maxStart; start++) {
+        const substr = expanded.slice(start, start + len);
+        const candidates = deinflect(substr);
+
+        let best: LookupHit | null = null;
+        let bestCommon = false;
+
+        for (const candidate of candidates) {
+          const res = searchJapaneseSimple(candidate.word, 5);
+          if (res.length > 0) {
+            const hasCommon = res.some((r) => isEntryCommon(r.entryId));
+            const hit: LookupHit = {
+              matchedText: substr,
+              searchWord: candidate.word,
+              reasons: candidate.reasons,
+              results: res,
+            };
+            if (!best || (hasCommon && !bestCommon)) {
+              best = hit;
+              bestCommon = hasCommon;
+            }
+          }
+        }
+
+        if (best) return [best];
+      }
+    }
+  }
+
+  // Try the full selected text exact
+  const fullResults = searchJapaneseSimple(trimmed, 5);
+  if (fullResults.length > 0) {
+    return [
+      {
+        matchedText: trimmed,
+        searchWord: trimmed,
+        reasons: [],
+        results: fullResults,
+      },
+    ];
+  }
+
+  // Try deinflecting the full selected text
+  const fullCandidates = deinflect(trimmed);
+  for (const candidate of fullCandidates) {
+    if (candidate.word === trimmed) continue;
+    const res = searchJapaneseSimple(candidate.word, 5);
+    if (res.length > 0) {
+      return [
+        {
+          matchedText: trimmed,
+          searchWord: candidate.word,
+          reasons: candidate.reasons,
+          results: res,
+        },
+      ];
+    }
+  }
+
+  // Walk through the selection, finding each word and advancing
+  const seenEntryIds = new Set<number>();
+  let pos = 0;
+
+  while (pos < trimmed.length) {
+    if (/[\s、。「」『』（）\u3000]/.test(trimmed[pos])) {
+      pos++;
+      continue;
+    }
+
+    // At the start, try expanding the first word into the prefix
+    if (pos === 0 && prefix.length > 0) {
+      const boundaryResult = simulateFindBoundaryWord(prefix, trimmed.slice(0, 15), seenEntryIds);
+      if (boundaryResult) {
+        for (const r of boundaryResult.hit.results) seenEntryIds.add(r.entryId);
+        results.push(boundaryResult.hit);
+        pos += boundaryResult.selectionCharsConsumed;
+        continue;
+      }
+    }
+
+    const remaining = trimmed.slice(pos);
+    const wordResult = simulateFindFirstWord(remaining, seenEntryIds);
+
+    if (wordResult) {
+      for (const r of wordResult.hit.results) seenEntryIds.add(r.entryId);
+      results.push(wordResult.hit);
+      pos += wordResult.matchLength;
+    } else {
+      pos++;
+    }
+  }
+
+  return results;
+}
+
+describe("Selection lookup with boundary expansion (drag selection)", () => {
+  test("selecting くもないという with prefix 若 → first word is 若い, not 曇る", () => {
+    const results = simulateSelectionLookup("くもないという", { prefix: "若" });
+    expect(results.length).toBeGreaterThan(0);
+    // First result should be 若い (young), found by expanding into prefix
+    expect(hitsContainWord([results[0]], "若い")).toBe(true);
+    expect(hitsContainWord([results[0]], "曇る")).toBe(false);
+  });
+
+  test("selecting 色い with prefix 茶 → expansion step finds 茶色い", () => {
+    const results = simulateSelectionLookup("色い", { prefix: "茶" });
+    expect(results.length).toBeGreaterThan(0);
+    expect(hitsContainWord(results, "茶色い")).toBe(true);
+  });
+
+  test("selecting くもない with prefix 若 → finds 若い", () => {
+    const results = simulateSelectionLookup("くもない", { prefix: "若" });
+    expect(results.length).toBeGreaterThan(0);
+    expect(hitsContainWord(results, "若い")).toBe(true);
+  });
+
+  test("selecting べた with prefix 食 → expansion step finds 食べる", () => {
+    const results = simulateSelectionLookup("べた", { prefix: "食" });
+    expect(results.length).toBeGreaterThan(0);
+    expect(hitsContainWord(results, "食べる")).toBe(true);
+  });
+
+  test("no prefix → normal word walk works", () => {
+    const results = simulateSelectionLookup("若くもないという");
+    expect(results.length).toBeGreaterThan(0);
+    expect(hitsContainWord(results, "若い")).toBe(true);
   });
 });

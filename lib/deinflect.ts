@@ -248,7 +248,9 @@ const RULES: DeinflectRule[] = [
 
   // ── i-adjective ──
   { from: "くない", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "negative" },
+  { from: "くもない", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "negative" },
   { from: "くなかった", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "negative past" },
+  { from: "くもなかった", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "negative past" },
   { from: "かった", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "past" },
   { from: "くて", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "te-form" },
   { from: "く", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "adverbial" },
