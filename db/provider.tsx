@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import * as SQLite from "expo-sqlite";
 import { Platform } from "react-native";
 import {
@@ -10,6 +10,16 @@ import {
   type DownloadStatus,
   type DictManifest,
 } from "./dict-download";
+
+function isOpfsLockError(err: unknown): boolean {
+  const msg = String(err);
+  return (
+    msg.includes("createSyncAccessHandle") ||
+    msg.includes("NoModificationAllowedError") ||
+    msg.includes("Access Handles cannot be created") ||
+    msg.includes("Invalid VFS state")
+  );
+}
 
 interface DatabaseContextType {
   dictDb: SQLite.SQLiteDatabase | null;
@@ -39,6 +49,23 @@ export function useDictDb() {
   return dictDb;
 }
 
+/**
+ * Open the dict DB. On web, proactively asks other tabs to release
+ * their OPFS locks first to prevent VFS corruption.
+ */
+async function openDictDb(): Promise<SQLite.SQLiteDatabase> {
+  if (Platform.OS !== "web") {
+    return SQLite.openDatabaseAsync("dictionary.db");
+  }
+
+  const { ensureLockAvailable } = await import("./web-lock");
+  await ensureLockAvailable();
+
+  const db = await loadWebDictDb();
+  if (!db) throw new Error("Dictionary data missing");
+  return db;
+}
+
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [dictDb, setDictDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -47,57 +74,87 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     state: "checking",
   });
   const [manifest, setManifest] = useState<DictManifest | null>(null);
+  const dictDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+
+  // Full init sequence — used on mount and on visibility reacquire
+  const runInit = useCallback(async () => {
+    try {
+      const ready = await isDictReady();
+
+      if (ready) {
+        const db = await openDictDb();
+        dictDbRef.current = db;
+        setDictDb(db);
+        setIsDownloaded(true);
+        setDownloadStatus({ state: "ready" });
+        setIsReady(true);
+
+        // Check for updates in background
+        fetchManifest()
+          .then(async (m) => {
+            const hasUpdate = await checkForUpdate(m);
+            if (hasUpdate) setManifest(m);
+          })
+          .catch(() => {});
+      } else {
+        setIsReady(true);
+        // Fetch manifest to show download size
+        try {
+          const m = await fetchManifest();
+          setManifest(m);
+          setDownloadStatus({ state: "needs-download", manifest: m });
+        } catch (err) {
+          console.error("[DB] Manifest fetch error:", err);
+          setDownloadStatus({
+            state: "error",
+            message: "Could not reach dictionary server. Check your connection and try again.",
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[DB] Init error:", err);
+      setIsReady(true);
+      setDownloadStatus({
+        state: "error",
+        message: isOpfsLockError(err)
+          ? "opfs-lock"
+          : err instanceof Error
+            ? err.message
+            : "Failed to initialize",
+      });
+    }
+  }, []);
 
   useEffect(() => {
-    async function init() {
-      try {
-        const ready = await isDictReady();
+    runInit();
 
-        if (ready) {
-          const db =
-            Platform.OS === "web"
-              ? await loadWebDictDb()
-              : await SQLite.openDatabaseAsync("dictionary.db");
-          if (!db) throw new Error("Dictionary data missing");
-          setDictDb(db);
-          setIsDownloaded(true);
-          setDownloadStatus({ state: "ready" });
-          setIsReady(true);
+    if (Platform.OS !== "web") return;
 
-          // Check for updates in background
-          fetchManifest()
-            .then(async (m) => {
-              const hasUpdate = await checkForUpdate(m);
-              if (hasUpdate) setManifest(m);
-            })
-            .catch(() => {});
-        } else {
-          setIsReady(true);
-          // Fetch manifest to show download size
-          try {
-            const m = await fetchManifest();
-            setManifest(m);
-            setDownloadStatus({ state: "needs-download", manifest: m });
-          } catch (err) {
-            console.error("[DB] Manifest fetch error:", err);
-            setDownloadStatus({
-              state: "error",
-              message: "Could not reach dictionary server. Check your connection and try again.",
-            });
-          }
-        }
-      } catch (err) {
-        console.error("[DB] Init error:", err);
-        setIsReady(true);
-        setDownloadStatus({
-          state: "error",
-          message: err instanceof Error ? err.message : "Failed to initialize",
-        });
+    // Register pre-release callback to null out refs/state.
+    // The actual VFS close (OPFS handle release) is handled by web-lock.ts.
+    let unsubscribe: (() => void) | undefined;
+    import("./web-lock").then(({ onReleaseRequested }) => {
+      unsubscribe = onReleaseRequested(() => {
+        console.log("[DB] Releasing dict DB for another tab");
+        dictDbRef.current = null;
+        setDictDb(null);
+      });
+    });
+
+    // Reacquire DB when tab becomes visible again
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && !dictDbRef.current) {
+        console.log("[DB] Tab visible, reacquiring dict DB...");
+        runInit();
       }
-    }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
-    init();
-  }, []);
+    return () => {
+      unsubscribe?.();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [runInit]);
 
   const retryManifest = useCallback(async () => {
     setDownloadStatus({ state: "checking" });
@@ -125,11 +182,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDownloadStatus({ state: "downloading", progress });
       });
 
-      const db =
-        Platform.OS === "web"
-          ? await loadWebDictDb()
-          : await SQLite.openDatabaseAsync("dictionary.db");
-      if (!db) throw new Error("Dictionary data missing after download");
+      const db = await openDictDb();
+      dictDbRef.current = db;
       setDictDb(db);
       setIsDownloaded(true);
       setDownloadStatus({ state: "ready" });
@@ -137,7 +191,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       console.error("[DB] Download error:", err);
       setDownloadStatus({
         state: "error",
-        message: err instanceof Error ? err.message : "Download failed",
+        message: isOpfsLockError(err)
+          ? "opfs-lock"
+          : err instanceof Error
+            ? err.message
+            : "Download failed",
       });
     }
   }, [manifest]);

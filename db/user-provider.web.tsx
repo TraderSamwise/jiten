@@ -1,10 +1,21 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
+
+function isOpfsLockError(err: unknown): boolean {
+  const msg = String(err);
+  return (
+    msg.includes("createSyncAccessHandle") ||
+    msg.includes("NoModificationAllowedError") ||
+    msg.includes("Access Handles cannot be created") ||
+    msg.includes("Invalid VFS state")
+  );
+}
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
   isReady: boolean;
+  error?: string;
 }
 
 const UserDbContext = createContext<UserDbContextType>({
@@ -89,6 +100,48 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE books ADD COLUMN source_id TEXT`,
 ];
 
+async function openAndMigrateUserDb(): Promise<{
+  raw: SQLite.SQLiteDatabase;
+  wrapped: WrappedUserDb;
+}> {
+  // Proactively ask other tabs to release OPFS locks before opening.
+  // Shares the same promise as provider.tsx so only one request is sent.
+  const { ensureLockAvailable } = await import("./web-lock");
+  await ensureLockAvailable();
+
+  const db = await SQLite.openDatabaseAsync("user.db");
+  await db.execAsync("PRAGMA journal_mode = MEMORY");
+  await db.execAsync("PRAGMA temp_store = MEMORY");
+
+  for (const sql of USER_DB_MIGRATIONS) {
+    try {
+      await db.execAsync(sql);
+    } catch (err) {
+      if (!String(err).includes("duplicate column")) throw err;
+    }
+  }
+
+  const wrapped: WrappedUserDb = {
+    getAllAsync: <T,>(sql: string, params?: any[]): Promise<T[]> =>
+      db.getAllAsync<T>(sql, params ?? []),
+
+    getFirstAsync: <T,>(sql: string, params?: any[]): Promise<T | null> =>
+      db.getFirstAsync<T>(sql, params ?? []),
+
+    runAsync: async (sql: string, params?: any[]) => {
+      const result = await db.runAsync(sql, params ?? []);
+      return {
+        changes: result.changes,
+        lastInsertRowId: result.lastInsertRowId,
+      };
+    },
+
+    sync: () => {},
+  };
+
+  return { raw: db, wrapped };
+}
+
 export function UserDatabaseProvider({
   userId,
   children,
@@ -100,48 +153,52 @@ export function UserDatabaseProvider({
     userDb: null,
     isReady: false,
   });
+  const rawDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
 
-  useEffect(() => {
-    async function init() {
-      const db = await SQLite.openDatabaseAsync("user.db");
-      await db.execAsync("PRAGMA journal_mode = MEMORY");
-      await db.execAsync("PRAGMA temp_store = MEMORY");
-
-      for (const sql of USER_DB_MIGRATIONS) {
-        try {
-          await db.execAsync(sql);
-        } catch (err) {
-          if (!String(err).includes("duplicate column")) throw err;
-        }
-      }
-
-      const wrapped: WrappedUserDb = {
-        getAllAsync: <T,>(sql: string, params?: any[]): Promise<T[]> =>
-          db.getAllAsync<T>(sql, params ?? []),
-
-        getFirstAsync: <T,>(sql: string, params?: any[]): Promise<T | null> =>
-          db.getFirstAsync<T>(sql, params ?? []),
-
-        runAsync: async (sql: string, params?: any[]) => {
-          const result = await db.runAsync(sql, params ?? []);
-          return {
-            changes: result.changes,
-            lastInsertRowId: result.lastInsertRowId,
-          };
-        },
-
-        sync: () => {},
-      };
-
+  const runInit = useCallback(async () => {
+    try {
+      const { raw, wrapped } = await openAndMigrateUserDb();
+      rawDbRef.current = raw;
       setState({ userDb: wrapped, isReady: true });
       console.log("[UserDB Web] Initialized successfully");
-    }
-
-    init().catch((err) => {
+    } catch (err) {
       console.error("[UserDB Web] Init error:", err);
-      setState({ userDb: null, isReady: true });
+      setState({
+        userDb: null,
+        isReady: true,
+        error: isOpfsLockError(err) ? "opfs-lock" : String(err),
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    runInit();
+
+    // Register pre-release callback to null out refs/state.
+    // The actual VFS close (OPFS handle release) is handled by web-lock.ts.
+    let unsubscribe: (() => void) | undefined;
+    import("./web-lock").then(({ onReleaseRequested }) => {
+      unsubscribe = onReleaseRequested(() => {
+        console.log("[UserDB Web] Releasing user DB for another tab");
+        rawDbRef.current = null;
+        setState({ userDb: null, isReady: true });
+      });
     });
-  }, [userId]);
+
+    // Reacquire DB when tab becomes visible again
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && !rawDbRef.current) {
+        console.log("[UserDB Web] Tab visible, reacquiring user DB...");
+        runInit();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      unsubscribe?.();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [userId, runInit]);
 
   return <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>;
 }
