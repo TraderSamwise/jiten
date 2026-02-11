@@ -10,7 +10,8 @@ function formatBytes(bytes: number): string {
 }
 
 export function DictDownloadGate({ children }: { children: React.ReactNode }) {
-  const { isReady, isDownloaded, downloadStatus, startDownload, retryManifest } = useDatabase();
+  const { dictDb, isReady, isDownloaded, downloadStatus, startDownload, retryManifest } =
+    useDatabase();
 
   if (!isReady) {
     return (
@@ -21,8 +22,18 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isDownloaded) {
+  if (isDownloaded && dictDb) {
     return <>{children}</>;
+  }
+
+  // DB was released to another tab — will reacquire on visibility change
+  if (isDownloaded && !dictDb) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">Reconnecting...</Text>
+      </View>
+    );
   }
 
   return (
@@ -71,7 +82,20 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
           </>
         )}
 
-        {downloadStatus.state === "error" && (
+        {downloadStatus.state === "error" && downloadStatus.message === "opfs-lock" && (
+          <>
+            <Text className="text-sm text-destructive text-center mb-2">
+              The database is locked by another tab.
+            </Text>
+            <Text className="text-sm text-muted-foreground text-center mb-4">
+              Close any other Jiten tabs, then tap Retry. If that doesn't work, close all tabs and
+              reopen.
+            </Text>
+            <Button label="Retry" onPress={() => window.location.reload()} />
+          </>
+        )}
+
+        {downloadStatus.state === "error" && downloadStatus.message !== "opfs-lock" && (
           <>
             <Text className="text-sm text-destructive text-center mb-4">
               {downloadStatus.message}

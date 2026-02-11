@@ -1,0 +1,45 @@
+diff --git a/node_modules/expo-sqlite/web/SQLiteModule.ts b/node_modules/expo-sqlite/web/SQLiteModule.ts
+index 717c987..fff9b57 100644
+--- a/node_modules/expo-sqlite/web/SQLiteModule.ts
++++ b/node_modules/expo-sqlite/web/SQLiteModule.ts
+@@ -456,3 +456,9 @@ export class SQLiteModule extends NativeModule {
+ 
+ const SQLiteModuleInstance = registerWebModule(SQLiteModule, 'SQLiteModule');
+ export default SQLiteModuleInstance;
++
++// Exposed for multi-tab OPFS lock coordination (jiten patch)
++(globalThis as any).__expoSqliteCloseVFS = async () => {
++  if (!worker) return;
++  await invokeWorkerAsync(getWorker(), 'closeVFS' as any, {});
++};
+diff --git a/node_modules/expo-sqlite/web/worker.ts b/node_modules/expo-sqlite/web/worker.ts
+index deaf721..3e88454 100644
+--- a/node_modules/expo-sqlite/web/worker.ts
++++ b/node_modules/expo-sqlite/web/worker.ts
+@@ -227,6 +227,26 @@ async function handleMessageImpl<T extends SQLiteWorkerMessageType>({
+       break;
+     }
+ 
++    case 'closeVFS': {
++      // Close all open databases
++      if (_sqlite3) {
++        for (const [, dbEntity] of databaseIdMap) {
++          try { await _sqlite3.close(dbEntity.pointer); } catch {}
++        }
++      }
++      databaseIdMap.clear();
++      statementIdMap.clear();
++      sessionIdMap.clear();
++      // Release OPFS access handles so another tab can acquire them
++      if (_vfs) {
++        await _vfs.close();
++        _vfs = null;
++      }
++      _vfsMemory = null;
++      _sqlite3 = null;
++      break;
++    }
++
+     default: {
+       throw new Error(`Unknown message type: ${type}`);
+     }
