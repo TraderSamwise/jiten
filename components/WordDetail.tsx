@@ -39,18 +39,8 @@ export function WordDetail({ entryId }: WordDetailProps) {
   }, [dictDb, isReady, entryId]);
 
   useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable onPress={() => setPopoverVisible(true)}>
-          <Bookmark
-            size={22}
-            fill={isBookmarked ? "currentColor" : "none"}
-            className="text-foreground"
-          />
-        </Pressable>
-      ),
-    });
-  }, [navigation, isBookmarked]);
+    navigation.setOptions({ headerRight: () => null });
+  }, [navigation]);
 
   if (!entry) {
     return (
@@ -62,6 +52,16 @@ export function WordDetail({ entryId }: WordDetailProps) {
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
+      <View className="flex-row justify-end mb-1">
+        <Pressable onPress={() => setPopoverVisible(true)} className="p-1">
+          <Bookmark
+            size={22}
+            fill={isBookmarked ? "currentColor" : "none"}
+            className="text-foreground"
+          />
+        </Pressable>
+      </View>
+
       <View
         className={
           isBookmarked ? "mb-4 rounded-lg border-l-4 border-primary bg-primary/5 pl-3 py-2" : "mb-4"
