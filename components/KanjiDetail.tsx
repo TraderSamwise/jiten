@@ -12,7 +12,9 @@ import {
   getSimilarByMeaningAsync,
   getRadicalsForKanjiAsync,
 } from "@/db/kanji-search";
-import type { KanjiCharacter, SimilarKanji } from "@/db/types";
+import { getWordsForKanjiAsync } from "@/db/search";
+import { EntryCard } from "@/components/EntryCard";
+import type { KanjiCharacter, SimilarKanji, DictEntry } from "@/db/types";
 
 interface KanjiDetailProps {
   literal: string;
@@ -26,6 +28,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [similar, setSimilar] = useState<SimilarKanji[]>([]);
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
+  const [words, setWords] = useState<DictEntry[]>([]);
 
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
@@ -41,6 +44,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       .catch((e) => console.warn("similarMeaning query failed:", e));
     getRadicalsForKanjiAsync(dictDb, literal)
       .then(setRadicals)
+      .catch(() => {});
+    getWordsForKanjiAsync(dictDb, literal)
+      .then(setWords)
       .catch(() => {});
   }, [dictDb, isReady, literal]);
 
@@ -154,7 +160,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
 
       {/* Similar Meaning */}
       {similarMeaning.length > 0 && (
-        <Card className="mb-6">
+        <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Meaning</Text>
           <View className="flex-row flex-wrap gap-2">
             {similarMeaning.map((k) => (
@@ -169,6 +175,16 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             ))}
           </View>
         </Card>
+      )}
+
+      {/* Words */}
+      {words.length > 0 && (
+        <View className="mb-6">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Words</Text>
+          {words.map((entry) => (
+            <EntryCard key={entry.id} entry={entry} />
+          ))}
+        </View>
       )}
     </ScrollView>
   );

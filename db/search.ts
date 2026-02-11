@@ -977,6 +977,28 @@ export async function getEntries(
   return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
 }
 
+export async function getWordsForKanjiAsync(
+  db: SQLite.SQLiteDatabase,
+  kanjiChar: string,
+): Promise<DictEntry[]> {
+  const rows = await db.getAllAsync<{ entry_id: number }>(
+    `SELECT DISTINCT k.entry_id
+     FROM kanji k
+     JOIN entries e ON k.entry_id = e.id
+     WHERE k.text LIKE ?
+     ORDER BY e.priority + (e.common * 50) DESC
+     LIMIT 30`,
+    [`%${kanjiChar}%`],
+  );
+
+  if (rows.length === 0) return [];
+
+  return getEntries(
+    db,
+    rows.map((r) => r.entry_id),
+  );
+}
+
 export async function getEntry(
   db: SQLite.SQLiteDatabase,
   entryId: number,
