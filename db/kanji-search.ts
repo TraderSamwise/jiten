@@ -54,6 +54,17 @@ export function getKanji(db: QueryDB, literal: string): KanjiCharacter | null {
   return row ? rowToKanjiCharacter(row) : null;
 }
 
+/** Check if a character is a CJK Unified Ideograph (kanji). */
+function isCJK(ch: string): boolean {
+  const cp = ch.codePointAt(0) ?? 0;
+  return (
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x20000 && cp <= 0x2a6df) ||
+    (cp >= 0xf900 && cp <= 0xfaff)
+  );
+}
+
 /** Get the most visually similar kanji. */
 export function getSimilarKanji(db: QueryDB, literal: string, limit: number = 20): SimilarKanji[] {
   const rows = db
@@ -61,11 +72,13 @@ export function getSimilarKanji(db: QueryDB, literal: string, limit: number = 20
       "SELECT similar, score, rank FROM kanji_similarity WHERE literal = ? ORDER BY rank LIMIT ?",
     )
     .all(literal, limit) as { similar: string; score: number; rank: number }[];
-  return rows.map((r) => ({
-    literal: r.similar,
-    score: r.score,
-    rank: r.rank,
-  }));
+  return rows
+    .filter((r) => isCJK(r.similar))
+    .map((r) => ({
+      literal: r.similar,
+      score: r.score,
+      rank: r.rank,
+    }));
 }
 
 /** Search for kanji that contain ALL specified radicals. */
@@ -192,11 +205,13 @@ export async function getSimilarKanjiAsync(
     "SELECT similar, score, rank FROM kanji_similarity WHERE literal = ? ORDER BY rank LIMIT ?",
     [literal, limit],
   );
-  return rows.map((r) => ({
-    literal: r.similar,
-    score: r.score,
-    rank: r.rank,
-  }));
+  return rows
+    .filter((r) => isCJK(r.similar))
+    .map((r) => ({
+      literal: r.similar,
+      score: r.score,
+      rank: r.rank,
+    }));
 }
 
 /** Search for kanji that contain ALL specified radicals (async). */
