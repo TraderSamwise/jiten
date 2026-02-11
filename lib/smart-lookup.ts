@@ -45,16 +45,29 @@ export async function selectionLookup(
       for (let start = minStart; start <= maxStart; start++) {
         const substr = expanded.slice(start, start + len);
         const candidates = deinflect(substr);
+
+        let best: LookupResult | null = null;
+        let bestCommon = false;
+
         for (const candidate of candidates) {
           const entries = await lookupExactJapanese(dictDb, candidate.word);
           if (entries.length > 0) {
-            onResult({
+            const hasCommon = entries.some((e) => e.common);
+            const result: LookupResult = {
               matchedText: substr,
               entries,
               deinflectReasons: candidate.reasons,
-            });
-            return;
+            };
+            if (!best || (hasCommon && !bestCommon)) {
+              best = result;
+              bestCommon = hasCommon;
+            }
           }
+        }
+
+        if (best) {
+          onResult(best);
+          return;
         }
       }
     }
@@ -97,6 +110,22 @@ export async function selectionLookup(
       continue;
     }
 
+    // At the start, try expanding the first word into the prefix
+    if (pos === 0 && prefix.length > 0) {
+      const boundaryResult = await findBoundaryWord(
+        prefix,
+        trimmed.slice(0, 15),
+        dictDb,
+        seenEntryIds,
+      );
+      if (boundaryResult) {
+        for (const e of boundaryResult.result.entries) seenEntryIds.add(e.id);
+        onResult(boundaryResult.result);
+        pos += boundaryResult.selectionCharsConsumed;
+        continue;
+      }
+    }
+
     const remaining = trimmed.slice(pos);
     const wordResult = await findFirstWord(remaining, dictDb, seenEntryIds);
 
@@ -122,18 +151,95 @@ async function findFirstWord(
   for (const substr of substrings) {
     const candidates = deinflect(substr);
 
+    // Try all candidates for this substring length, prefer common entries
+    let best: { result: LookupResult; matchLength: number } | null = null;
+    let bestCommon = false;
+
     for (const candidate of candidates) {
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
-        return {
+        const hasCommon = newEntries.some((e) => e.common);
+        const match = {
           result: {
             matchedText: substr,
             entries: newEntries,
             deinflectReasons: candidate.reasons,
           },
           matchLength: substr.length,
+        };
+
+        if (!best || (hasCommon && !bestCommon)) {
+          best = match;
+          bestCommon = hasCommon;
+        }
+      }
+    }
+
+    if (best) return best;
+  }
+
+  return null;
+}
+
+/**
+ * Find a word that spans the prefix→selection boundary.
+ * Tries substrings that start in the prefix and extend into the selection,
+ * longest first, preferring common entries.
+ */
+async function findBoundaryWord(
+  prefix: string,
+  selectionStart: string,
+  dictDb: SQLite.SQLiteDatabase,
+  seenEntryIds: Set<number>,
+): Promise<{ result: LookupResult; selectionCharsConsumed: number } | null> {
+  const before = prefix.slice(-10);
+  const after = selectionStart.slice(0, 15);
+  const combined = before + after;
+  const boundary = before.length;
+
+  // Also run the normal findFirstWord on just the selection to compare
+  const normalResult = await findFirstWord(selectionStart, dictDb, seenEntryIds);
+
+  for (let len = Math.min(combined.length, 15); len >= 2; len--) {
+    const minStart = Math.max(0, boundary - len + 1);
+    const maxStart = Math.min(boundary - 1, combined.length - len);
+
+    for (let start = maxStart; start >= minStart; start--) {
+      // Must extend into the selection
+      if (start + len <= boundary) continue;
+
+      const substr = combined.slice(start, start + len);
+      const candidates = deinflect(substr);
+
+      let best: LookupResult | null = null;
+      let bestCommon = false;
+
+      for (const candidate of candidates) {
+        const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+        const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
+
+        if (newEntries.length > 0) {
+          const hasCommon = newEntries.some((e) => e.common);
+          if (!best || (hasCommon && !bestCommon)) {
+            best = {
+              matchedText: substr,
+              entries: newEntries,
+              deinflectReasons: candidate.reasons,
+            };
+            bestCommon = hasCommon;
+          }
+        }
+      }
+
+      if (best) {
+        const selChars = start + len - boundary;
+        // Only use boundary match if it's at least as long overall as the normal match
+        if (normalResult && normalResult.matchLength > selChars) continue;
+        return {
+          result: best,
+          selectionCharsConsumed: selChars,
         };
       }
     }
@@ -202,20 +308,29 @@ export async function smartLookupWithOffset(
       const substr = text.slice(start, start + len);
       const candidates = deinflect(substr);
 
+      // Try all candidates for this position, prefer common entries
+      let best: LookupResult | null = null;
+      let bestCommon = false;
+
       for (const candidate of candidates) {
         const entries = await lookupExactJapanese(dictDb, candidate.word);
         if (entries.length > 0) {
-          // Return immediately on first (longest) match — no sub-word noise
-          return [
-            {
-              matchedText: substr,
-              entries,
-              deinflectReasons: candidate.reasons,
-              matchStart: start,
-            },
-          ];
+          const hasCommon = entries.some((e) => e.common);
+          const result: LookupResult = {
+            matchedText: substr,
+            entries,
+            deinflectReasons: candidate.reasons,
+            matchStart: start,
+          };
+
+          if (!best || (hasCommon && !bestCommon)) {
+            best = result;
+            bestCommon = hasCommon;
+          }
         }
       }
+
+      if (best) return [best];
     }
   }
 
