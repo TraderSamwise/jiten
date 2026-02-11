@@ -118,6 +118,7 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
       frontFaces: ["kanji"],
       backFaces: ["english"],
       studyPosition: 0,
+      autoPlayAudio: false,
       createdAt: now,
       updatedAt: now,
     };

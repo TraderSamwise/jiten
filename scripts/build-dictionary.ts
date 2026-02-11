@@ -14,6 +14,7 @@ import { toRomaji } from "wanakana";
 import WordNet from "node-wordnet";
 import wordnetDb from "wordnet-db";
 import { buildKanjiTables } from "./kanji/build-kanji-tables";
+import { buildAudioTable } from "./audio/build-audio-table";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -154,9 +155,13 @@ async function main() {
 
   // Download data
   console.log("1. Downloading JMdict...");
-  const jmdictUrl = await getJmdictUrl();
   const tgzPath = path.join(CACHE_DIR, "jmdict-eng.json.tgz");
-  await downloadFile(jmdictUrl, tgzPath);
+  if (fs.existsSync(tgzPath)) {
+    console.log(`  Using cached: ${path.basename(tgzPath)}`);
+  } else {
+    const jmdictUrl = await getJmdictUrl();
+    await downloadFile(jmdictUrl, tgzPath);
+  }
 
   const jsonPath = await extractTgz(tgzPath, CACHE_DIR);
 
@@ -446,6 +451,9 @@ async function main() {
   // Build kanji index
   await buildKanjiTables(db);
 
+  // Build word audio
+  await buildAudioTable(db);
+
   // Optimize
   console.log("\n19. Optimizing database...");
   db.exec("PRAGMA optimize");
@@ -459,7 +467,7 @@ async function main() {
   // DB download URL is derived at runtime from the manifest URL (sibling file)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
   const manifest = {
-    version: 1,
+    version: 2,
     sizeBytes: stats.size,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));

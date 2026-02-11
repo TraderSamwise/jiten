@@ -41,6 +41,7 @@
     "drizzle-orm": "^0.45.1",
     "encoding-japanese": "^2.2.0",
     "expo": "~54.0.33",
+    "expo-audio": "^1.1.1",
     "expo-auth-session": "^7.0.10",
     "expo-constants": "~18.0.13",
     "expo-document-picker": "^14.0.8",

@@ -123,19 +123,25 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
 
   // ─── Step 1: Download sources ───
   console.log("10. Downloading kanji sources...");
-  const { kanjidicUrl, kradfileUrl, kanjivgUrl } = await getJmdictSimplifiedUrls();
 
   const kanjidicTgz = path.join(CACHE_DIR, "kanjidic2-en.json.tgz");
   const kradfileTgz = path.join(CACHE_DIR, "kradfile.json.tgz");
   const kanjivgZip = path.join(CACHE_DIR, "kanjivg-main.zip");
   const larsPath = path.join(CACHE_DIR, "jyouyou__strokeEditDistance.csv");
 
-  await Promise.all([
-    downloadFile(kanjidicUrl, kanjidicTgz),
-    downloadFile(kradfileUrl, kradfileTgz),
-    downloadFile(kanjivgUrl, kanjivgZip),
-    downloadFile(LARS_YENCKEN_URL, larsPath),
-  ]);
+  const allCached = [kanjidicTgz, kradfileTgz, kanjivgZip, larsPath].every((f) => fs.existsSync(f));
+
+  if (allCached) {
+    console.log("  All kanji sources cached, skipping download");
+  } else {
+    const { kanjidicUrl, kradfileUrl, kanjivgUrl } = await getJmdictSimplifiedUrls();
+    await Promise.all([
+      downloadFile(kanjidicUrl, kanjidicTgz),
+      downloadFile(kradfileUrl, kradfileTgz),
+      downloadFile(kanjivgUrl, kanjivgZip),
+      downloadFile(LARS_YENCKEN_URL, larsPath),
+    ]);
+  }
 
   // ─── Step 2: Parse KANJIDIC2 ───
   console.log("\n11. Parsing KANJIDIC2...");

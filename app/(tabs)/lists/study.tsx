@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { X, Settings } from "@/lib/icons";
+import { PlayAudioButton } from "@/components/PlayAudioButton";
+import { playEntryAudio } from "@/lib/audio";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
@@ -370,7 +372,17 @@ export default function StudyScreen() {
       </View>
 
       {/* Card */}
-      <Pressable onPress={() => !revealed && setRevealed(true)} className="flex-1 px-4 pt-4">
+      <Pressable
+        onPress={() => {
+          if (!revealed) {
+            setRevealed(true);
+            if (list?.autoPlayAudio && dictDb && currentItem) {
+              playEntryAudio(dictDb, currentItem.entry.id);
+            }
+          }
+        }}
+        className="flex-1 px-4 pt-4"
+      >
         <Card className="flex-1 items-center justify-center max-h-96">
           {currentItem && (
             <>
@@ -398,6 +410,9 @@ export default function StudyScreen() {
                       {getFaceText(currentItem.entry, face)}
                     </Text>
                   ))}
+                  <View className="mt-3">
+                    <PlayAudioButton entryId={currentItem.entry.id} size={22} />
+                  </View>
                 </View>
               )}
 
