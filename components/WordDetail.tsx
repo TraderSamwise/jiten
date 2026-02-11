@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, ScrollView, Pressable } from "react-native";
-import { useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,14 @@ import { shouldDeEmphasize, getTagLabel } from "@/lib/tags";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
 
+function isKanji(code: number): boolean {
+  return (
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0xf900 && code <= 0xfaff)
+  );
+}
+
 interface WordDetailProps {
   entryId: number;
 }
@@ -20,6 +28,7 @@ interface WordDetailProps {
 export function WordDetail({ entryId }: WordDetailProps) {
   const { dictDb, isReady } = useDatabase();
   const navigation = useNavigation();
+  const router = useRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
   const [popoverVisible, setPopoverVisible] = useState(false);
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(entryId));
@@ -67,7 +76,21 @@ export function WordDetail({ entryId }: WordDetailProps) {
                   muted ? "text-2xl text-muted-foreground" : "text-4xl font-bold text-foreground"
                 }
               >
-                {k.text}
+                {muted
+                  ? k.text
+                  : [...k.text].map((ch, ci) =>
+                      isKanji(ch.codePointAt(0)!) ? (
+                        <Text
+                          key={ci}
+                          className="text-4xl font-bold text-foreground"
+                          onPress={() => router.push(`/dictionary/kanji/${encodeURIComponent(ch)}`)}
+                        >
+                          {ch}
+                        </Text>
+                      ) : (
+                        ch
+                      ),
+                    )}
               </Text>
               {k.common && <Badge variant="common" label="common" />}
               {k.tags.map((t, j) => (
