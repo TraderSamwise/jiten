@@ -16,7 +16,7 @@ export interface DictManifest {
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
-const CURRENT_FORMAT = 5; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags
+const CURRENT_FORMAT = 6; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity
 const DB_NAME = "dictionary.db";
 
 import { env } from "@/lib/env";
@@ -41,7 +41,15 @@ async function setLocalVersion(version: number): Promise<void> {
 export async function fetchManifest(): Promise<DictManifest> {
   const res = await fetch(MANIFEST_URL);
   if (!res.ok) throw new Error(`Failed to fetch manifest: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+
+  // Derive DB download URL from manifest URL (sibling file) if not provided
+  if (!data.url) {
+    const base = MANIFEST_URL.replace(/\/[^/]+$/, "");
+    data.url = `${base}/dictionary.db`;
+  }
+
+  return data;
 }
 
 export async function isDictReady(): Promise<boolean> {
