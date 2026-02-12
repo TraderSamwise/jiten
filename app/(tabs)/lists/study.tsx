@@ -6,14 +6,14 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
-import { X, Settings } from "@/lib/icons";
+import { X, Settings, EllipsisVertical } from "@/lib/icons";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { reviewCard, Rating } from "@/stores/srs";
-import { useListsStore } from "@/stores/lists";
+import { useListsStore, parseListRow } from "@/stores/lists";
 import type { DictEntry, CardFace, SrsCardRow } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
@@ -50,8 +50,12 @@ export default function StudyScreen() {
   const insets = useSafeAreaInsets();
   const { dictDb } = useDatabase();
   const userDb = useUserDb();
-  const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
+  const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
+  const setLists = useListsStore((s) => s.setLists);
   const updateList = useListsStore((s) => s.updateList);
+
+  const [localList, setLocalList] = useState<typeof storeList>(undefined);
+  const list = storeList ?? localList;
 
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -65,6 +69,21 @@ export default function StudyScreen() {
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
 
+  // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
+  useEffect(() => {
+    if (storeList || !userDb || !listId) return;
+    userDb
+      .getFirstAsync<any>("SELECT * FROM lists WHERE id = ?", [listId])
+      .then((row) => {
+        if (row) {
+          const parsed = parseListRow(row);
+          setLocalList(parsed);
+          setLists([...useListsStore.getState().lists, parsed]);
+        }
+      })
+      .catch(() => {});
+  }, [userDb, listId, storeList]);
+
   useEffect(() => {
     if (dictDb && userDb && list) loadQueue();
   }, [dictDb, userDb, list?.id]);
@@ -73,90 +92,93 @@ export default function StudyScreen() {
     if (!dictDb || !userDb || !list || !listId) return;
     setLoading(true);
 
-    if (list.flashcardMode === "add_order") {
-      let position = list.studyPosition ?? 0;
-      let rows = await userDb.getAllAsync<{ entry_id: number }>(
-        "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
-        [listId, position],
-      );
-
-      // Wrap around to start if we've passed the end
-      if (rows.length === 0 && position > 0) {
-        position = 0;
-        await userDb.runAsync("UPDATE lists SET study_position = 0, updated_at = ? WHERE id = ?", [
-          new Date().toISOString(),
-          listId,
-        ]);
-        updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
-        rows = await userDb.getAllAsync<{ entry_id: number }>(
-          "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
-          [listId],
+    try {
+      if (list.flashcardMode === "add_order") {
+        let position = list.studyPosition ?? 0;
+        let rows = await userDb.getAllAsync<{ entry_id: number }>(
+          "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
+          [listId, position],
         );
-      }
 
-      if (rows.length === 0) {
-        setQueue([]);
-        setSessionDone(true);
-        setLoading(false);
-        return;
-      }
+        // Wrap around to start if we've passed the end
+        if (rows.length === 0 && position > 0) {
+          position = 0;
+          await userDb.runAsync(
+            "UPDATE lists SET study_position = 0, updated_at = ? WHERE id = ?",
+            [new Date().toISOString(), listId],
+          );
+          updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
+          rows = await userDb.getAllAsync<{ entry_id: number }>(
+            "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
+            [listId],
+          );
+        }
 
-      const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
-      const entries = await getEntries(dictDb, entryIds);
-      const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
-      const items: QueueItem[] = entryIds
-        .map((eid: number) => entryMap.get(eid))
-        .filter((e: DictEntry | undefined): e is DictEntry => e !== undefined)
-        .map((entry: DictEntry) => ({ entry }));
+        if (rows.length === 0) {
+          setQueue([]);
+          setSessionDone(true);
+          setLoading(false);
+          return;
+        }
 
-      setQueue(items);
-      setCurrentIndex(0);
-      setRevealed(false);
-      setSessionDone(items.length === 0);
-    } else {
-      // SRS mode: reviews first, then a batch of new cards
-      const srsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
+        const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
+        const entries = await getEntries(dictDb, entryIds);
+        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
+        const items: QueueItem[] = entryIds
+          .map((eid: number) => entryMap.get(eid))
+          .filter((e: DictEntry | undefined): e is DictEntry => e !== undefined)
+          .map((entry: DictEntry) => ({ entry }));
+
+        setQueue(items);
+        setCurrentIndex(0);
+        setRevealed(false);
+        setSessionDone(items.length === 0);
+      } else {
+        // SRS mode: reviews first, then a batch of new cards
+        const srsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
           stability, difficulty, elapsed_days as elapsedDays,
           scheduled_days as scheduledDays, reps, lapses, state,
           last_review as lastReview, front_mode as frontMode,
           back_mode as backMode, created_at as createdAt,
           updated_at as updatedAt`;
 
-      const reviewRows = await userDb.getAllAsync<SrsCardRow>(
-        `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
-        [listId, new Date().toISOString()],
-      );
+        const reviewRows = await userDb.getAllAsync<SrsCardRow>(
+          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
+          [listId, new Date().toISOString()],
+        );
 
-      const newRows = await userDb.getAllAsync<SrsCardRow>(
-        `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 ORDER BY created_at ASC LIMIT ?`,
-        [listId, NEW_CARD_BATCH_SIZE],
-      );
+        const newRows = await userDb.getAllAsync<SrsCardRow>(
+          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 ORDER BY created_at ASC LIMIT ?`,
+          [listId, NEW_CARD_BATCH_SIZE],
+        );
 
-      const srsRows = [...reviewRows, ...newRows];
+        const srsRows = [...reviewRows, ...newRows];
 
-      if (srsRows.length === 0) {
-        setQueue([]);
-        setSessionDone(true);
-        setLoading(false);
-        return;
+        if (srsRows.length === 0) {
+          setQueue([]);
+          setSessionDone(true);
+          setLoading(false);
+          return;
+        }
+
+        const entryIds = srsRows.map((r: SrsCardRow) => r.entryId);
+        const entries = await getEntries(dictDb, entryIds);
+        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
+        const items: QueueItem[] = srsRows
+          .map((card: SrsCardRow) => {
+            const entry = entryMap.get(card.entryId);
+            return entry ? { entry, srsCard: card } : null;
+          })
+          .filter((item: QueueItem | null): item is QueueItem => item !== null);
+
+        setQueue(items);
+        setCurrentIndex(0);
+        setRevealed(false);
+        setSessionDone(items.length === 0);
       }
-
-      const entryIds = srsRows.map((r: SrsCardRow) => r.entryId);
-      const entries = await getEntries(dictDb, entryIds);
-      const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
-      const items: QueueItem[] = srsRows
-        .map((card: SrsCardRow) => {
-          const entry = entryMap.get(card.entryId);
-          return entry ? { entry, srsCard: card } : null;
-        })
-        .filter((item: QueueItem | null): item is QueueItem => item !== null);
-
-      setQueue(items);
-      setCurrentIndex(0);
-      setRevealed(false);
-      setSessionDone(items.length === 0);
+    } catch (err) {
+      console.error("loadQueue error:", err);
     }
-
     setLoading(false);
   }
 
@@ -361,9 +383,19 @@ export default function StudyScreen() {
         <Text className="text-sm text-muted-foreground">
           {currentIndex + 1} / {total}
         </Text>
-        <Pressable onPress={handleGear} className="p-2">
-          <Settings size={20} className="text-foreground" />
-        </Pressable>
+        <View className="flex-row items-center">
+          <Pressable
+            onPress={() => {
+              if (currentItem) router.push(`/lists/word/${currentItem.entry.id}`);
+            }}
+            className="p-2"
+          >
+            <EllipsisVertical size={20} className="text-foreground" />
+          </Pressable>
+          <Pressable onPress={handleGear} className="p-2">
+            <Settings size={20} className="text-foreground" />
+          </Pressable>
+        </View>
       </View>
 
       {/* Progress bar */}
@@ -419,7 +451,7 @@ export default function StudyScreen() {
                     {getFaceText(currentItem.entry, backFaces[0])}
                   </Text>
                   {backFaces.slice(1).map((face, i) => (
-                    <Text key={`back-${i}`} className="mt-2 text-2xl text-muted-foreground">
+                    <Text key={`back-${i}`} className="mt-2 text-3xl text-muted-foreground">
                       {getFaceText(currentItem.entry, face)}
                     </Text>
                   ))}
