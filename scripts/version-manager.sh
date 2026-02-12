@@ -11,6 +11,8 @@
 set -e
 
 VERSION_FILE="lib/version.ts"
+INFO_PLIST="ios/jiten/Info.plist"
+PBXPROJ="ios/jiten.xcodeproj/project.pbxproj"
 
 read_current_version() {
     if [ ! -f "$VERSION_FILE" ]; then
@@ -69,6 +71,22 @@ EOF
     echo "   Channel: $channel"
 }
 
+update_native_versions() {
+    local new_build=$1
+
+    # Update iOS Info.plist CFBundleVersion
+    if [ -f "$INFO_PLIST" ]; then
+        echo "📱 Updating Info.plist CFBundleVersion → $new_build..."
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $new_build" "$INFO_PLIST"
+    fi
+
+    # Update iOS CURRENT_PROJECT_VERSION in pbxproj (same as tealstreet-mobile)
+    if [ -f "$PBXPROJ" ]; then
+        echo "📱 Updating iOS CURRENT_PROJECT_VERSION → $new_build..."
+        sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $new_build;/g" "$PBXPROJ"
+    fi
+}
+
 rollback_versions() {
     echo "⏪ Rolling back version..."
     if [ -f "$VERSION_FILE.backup" ]; then
@@ -88,6 +106,9 @@ commit_version() {
     local message=$1
     echo "📝 Committing version changes..."
     git add "$VERSION_FILE"
+    # Native files may be gitignored — force-add if they exist
+    [ -f "$INFO_PLIST" ] && git add -f "$INFO_PLIST"
+    [ -f "$PBXPROJ" ] && git add -f "$PBXPROJ"
     git commit -m "$message" --no-verify || {
         echo "⚠️  No changes to commit or commit failed"
         return 1
@@ -107,6 +128,7 @@ case "${1:-}" in
 
         create_backups
         update_versions $NEW_BUILD $NEW_OTA $CHANNEL
+        update_native_versions $NEW_BUILD
         commit_version "chore: release Build $NEW_BUILD ($CHANNEL)"
         cleanup_backups
         ;;
@@ -161,6 +183,7 @@ case "${1:-}" in
 
         create_backups
         update_versions $NEW_BUILD $NEW_OTA $CHANNEL
+        update_native_versions $NEW_BUILD
         commit_version "chore: set version to Build $NEW_BUILD.$NEW_OTA ($CHANNEL)"
         cleanup_backups
         ;;

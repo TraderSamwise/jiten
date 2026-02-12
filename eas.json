@@ -18,7 +18,10 @@
       },
       "distribution": "store",
       "autoIncrement": false,
-      "channel": "testflight"
+      "channel": "testflight",
+      "env": {
+        "EXPO_PUBLIC_DICT_MANIFEST_URL": "https://github.com/TraderSamwise/jiten-data/releases/download/v1/dict-manifest.json"
+      }
     },
     "production": {
       "ios": {
@@ -30,7 +33,10 @@
       },
       "distribution": "store",
       "autoIncrement": false,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_DICT_MANIFEST_URL": "https://github.com/TraderSamwise/jiten-data/releases/download/v1/dict-manifest.json"
+      }
     }
   },
   "submit": {

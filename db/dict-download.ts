@@ -22,8 +22,6 @@ const DB_NAME = "dictionary.db";
 
 import { env } from "@/lib/env";
 
-const MANIFEST_URL = env.DICT_MANIFEST_URL;
-
 async function getLocalVersion(): Promise<number | null> {
   const v = await AsyncStorage.getItem(VERSION_KEY);
   return v ? parseInt(v, 10) : null;
@@ -40,13 +38,14 @@ async function setLocalVersion(version: number): Promise<void> {
 }
 
 export async function fetchManifest(): Promise<DictManifest> {
-  const res = await fetch(MANIFEST_URL);
+  const manifestUrl = env.DICT_MANIFEST_URL;
+  const res = await fetch(manifestUrl);
   if (!res.ok) throw new Error(`Failed to fetch manifest: ${res.status}`);
   const data = await res.json();
 
   // Derive DB download URL from manifest URL (sibling file) if not provided
   if (!data.url) {
-    const base = MANIFEST_URL.replace(/\/[^/]+$/, "");
+    const base = manifestUrl.replace(/\/[^/]+$/, "");
     data.url = `${base}/dictionary.db`;
   }
 
