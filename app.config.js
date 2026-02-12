@@ -1,0 +1,59 @@
+const { APP_VERSION } = require("./lib/version.ts");
+
+module.exports = {
+  expo: {
+    name: "jiten",
+    slug: "jiten",
+    version: APP_VERSION.version || "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "jiten",
+    userInterfaceStyle: "automatic",
+    newArchEnabled: true,
+    splash: {
+      image: "./assets/images/splash-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#ffffff",
+    },
+    ios: {
+      supportsTablet: true,
+      bundleIdentifier: "com.tradersamwise.jiten",
+      buildNumber: String(APP_VERSION.buildNumber),
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+      },
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: "./assets/images/adaptive-icon.png",
+        backgroundColor: "#ffffff",
+      },
+      versionCode: APP_VERSION.buildNumber,
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+    },
+    web: {
+      bundler: "metro",
+      output: "static",
+      favicon: "./assets/images/favicon.png",
+    },
+    runtimeVersion: "1.0.0",
+    updates: {
+      url: "https://u.expo.dev/cfa88854-7b95-457e-a330-fd7a1ea55da1",
+      enabled: true,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 30000,
+    },
+    plugins: ["expo-router", "expo-updates"],
+    experiments: {
+      typedRoutes: true,
+    },
+    extra: {
+      router: {},
+      eas: {
+        projectId: "cfa88854-7b95-457e-a330-fd7a1ea55da1",
+      },
+    },
+    owner: "tradersamwise",
+  },
+};
