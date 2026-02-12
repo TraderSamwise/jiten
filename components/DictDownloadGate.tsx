@@ -4,6 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useDatabase } from "@/db/provider";
+import { getVersionString, getVersionCode } from "@/lib/version";
 
 function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
@@ -114,6 +115,9 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
               {downloadStatus.message}
             </Text>
             <Button label="Retry" onPress={retryManifest} />
+            <Text className="text-xs text-muted-foreground text-center mt-4">
+              {getVersionString()} ({getVersionCode()})
+            </Text>
           </>
         )}
       </Card>
