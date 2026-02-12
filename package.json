@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "postinstall": "patch-package",
     "prepare": "husky",
+    "build": "./scripts/build.sh",
     "build:testflight": "./scripts/build.sh --testflight",
     "build:production": "./scripts/build.sh --production",
     "update": "./scripts/update.sh --testflight",

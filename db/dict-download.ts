@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { DICT_VERSION } from "./dict-version";
 
 export type DownloadStatus =
   | { state: "checking" }
@@ -17,7 +18,6 @@ export interface DictManifest {
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
-const CURRENT_FORMAT = 9; // v1: raw OPFS (broken), v2: VFS import (broken), v3: IndexedDB + deserialize, v4: priority column + clean FTS, v5: kanji/kana tags, v6: kanji index + visual similarity, v7: chunked IDB storage, v8-v9: word audio
 const DB_NAME = "dictionary.db";
 
 import { env } from "@/lib/env";
@@ -36,7 +36,7 @@ async function getLocalFormat(): Promise<number | null> {
 
 async function setLocalVersion(version: number): Promise<void> {
   await AsyncStorage.setItem(VERSION_KEY, String(version));
-  await AsyncStorage.setItem(FORMAT_KEY, String(CURRENT_FORMAT));
+  await AsyncStorage.setItem(FORMAT_KEY, String(DICT_VERSION));
 }
 
 export async function fetchManifest(): Promise<DictManifest> {
@@ -56,20 +56,20 @@ export async function fetchManifest(): Promise<DictManifest> {
 export async function isDictReady(): Promise<boolean> {
   const version = await getLocalVersion();
   const format = await getLocalFormat();
-  if (version !== null && format !== null && format !== CURRENT_FORMAT) {
+  if (version !== null && format !== null && format !== DICT_VERSION) {
     // Stale format detected — clean up old data automatically
     await clearStaleWebData(format);
     await AsyncStorage.removeItem(VERSION_KEY);
     await AsyncStorage.removeItem(FORMAT_KEY);
     return false;
   }
-  return version !== null && format === CURRENT_FORMAT;
+  return version !== null && format === DICT_VERSION;
 }
 
 export async function checkForUpdate(manifest: DictManifest): Promise<boolean> {
   const local = await getLocalVersion();
   const format = await getLocalFormat();
-  return local === null || format !== CURRENT_FORMAT || manifest.version > local;
+  return local === null || format !== DICT_VERSION || manifest.version > local;
 }
 
 export async function downloadDictionary(

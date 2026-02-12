@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
+import { alert } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { loadTheme, saveTheme, applyTheme, type ThemePreference } from "@/lib/theme";
+import { getVersionString } from "@/lib/version";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -14,6 +16,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 
 export default function SettingsScreen() {
   const [activeTheme, setActiveTheme] = useState<ThemePreference>("system");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     loadTheme().then(setActiveTheme);
@@ -25,12 +28,51 @@ export default function SettingsScreen() {
     setActiveTheme(theme);
   }
 
+  async function handleCheckForUpdates() {
+    if (Platform.OS === "web") {
+      alert("Not available", "OTA updates are only available on native builds.");
+      return;
+    }
+    if (__DEV__) {
+      alert("Development mode", "Update checking is disabled in development mode.");
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const Updates = await import("expo-updates");
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        alert("Update found", "Downloading update...");
+        await Updates.fetchUpdateAsync();
+        alert("Update downloaded", "App will restart to apply the update.");
+        setTimeout(async () => {
+          try {
+            await Updates.reloadAsync();
+          } catch {
+            alert("Restart failed", "Please restart the app manually.");
+          }
+        }, 1000);
+      } else {
+        const updateId = Updates.updateId || "embedded";
+        alert(
+          "Up to date",
+          `No updates available.\n\nVersion: ${getVersionString()}\nUpdate ID: ${updateId}`,
+        );
+      }
+    } catch (e: unknown) {
+      alert("Update check failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-background px-4 pt-4">
       <Card className="mb-4">
         <CardTitle>Jiten</CardTitle>
         <CardDescription>Japanese-English Dictionary</CardDescription>
-        <Text className="mt-2 text-xs text-muted-foreground">Version 0.1.0</Text>
       </Card>
 
       <Card className="mb-4">
@@ -51,6 +93,18 @@ export default function SettingsScreen() {
             );
           })}
         </View>
+      </Card>
+
+      <Card className="mb-4">
+        <CardTitle className="text-base">Updates</CardTitle>
+        <Separator className="my-2" />
+        <Button
+          variant="outline"
+          size="sm"
+          label={isUpdating ? "Checking..." : "Check for Updates"}
+          onPress={handleCheckForUpdates}
+          disabled={isUpdating}
+        />
       </Card>
 
       <Card className="mb-4">
@@ -79,6 +133,10 @@ export default function SettingsScreen() {
           scheduling.
         </Text>
       </Card>
+
+      <View className="items-center pt-4 pb-8 border-t border-border mt-auto">
+        <Text className="text-[10px] font-medium text-muted-foreground">{getVersionString()}</Text>
+      </View>
     </View>
   );
 }
