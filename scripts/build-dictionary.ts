@@ -15,6 +15,7 @@ import WordNet from "node-wordnet";
 import wordnetDb from "wordnet-db";
 import { buildKanjiTables } from "./kanji/build-kanji-tables";
 import { buildAudioTable } from "./audio/build-audio-table";
+import { DICT_VERSION } from "../db/dict-version";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -467,7 +468,7 @@ async function main() {
   // DB download URL is derived at runtime from the manifest URL (sibling file)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
   const manifest = {
-    version: 2,
+    version: DICT_VERSION,
     sizeBytes: stats.size,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
