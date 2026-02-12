@@ -1,6 +1,7 @@
 /**
  * Validated environment variables.
- * Throws at startup if required vars are missing.
+ * Uses lazy getters so errors are thrown during rendering
+ * (catchable by error boundaries) rather than at module evaluation time.
  */
 
 function required(key: string): string {
@@ -9,11 +10,11 @@ function required(key: string): string {
   return val;
 }
 
-function optional(key: string): string | undefined {
-  return process.env[key] || undefined;
-}
-
 export const env = {
-  DICT_MANIFEST_URL: required("EXPO_PUBLIC_DICT_MANIFEST_URL"),
-  CLERK_PUBLISHABLE_KEY: optional("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY"),
+  get DICT_MANIFEST_URL(): string {
+    return required("EXPO_PUBLIC_DICT_MANIFEST_URL");
+  },
+  get CLERK_PUBLISHABLE_KEY(): string | undefined {
+    return process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || undefined;
+  },
 };

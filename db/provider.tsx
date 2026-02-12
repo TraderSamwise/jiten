@@ -113,9 +113,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setDownloadStatus({ state: "needs-download", manifest: m });
         } catch (err) {
           console.error("[DB] Manifest fetch error:", err);
+          const detail = err instanceof Error ? err.message : String(err);
           setDownloadStatus({
             state: "error",
-            message: "Could not reach dictionary server. Check your connection and try again.",
+            message: `Could not reach dictionary server: ${detail}`,
           });
         }
       }
@@ -172,9 +173,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       setDownloadStatus({ state: "needs-download", manifest: m });
     } catch (err) {
       console.error("[DB] Manifest fetch error:", err);
+      const detail = err instanceof Error ? err.message : String(err);
       setDownloadStatus({
         state: "error",
-        message: "Could not reach dictionary server. Check your connection and try again.",
+        message: `Could not reach dictionary server: ${detail}`,
       });
     }
   }, []);

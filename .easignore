@@ -1,0 +1,35 @@
+# EAS Build ignore file
+# When .easignore exists, it completely overrides .gitignore
+# We need to copy all .gitignore entries and then use ! to include what we want
+
+# Ignore common development files
+.git
+.env*.local
+
+# Ignore iOS build artifacts
+ios/build/
+ios/Pods/
+ios/.xcode.env.local
+
+# Ignore Android build artifacts
+android/build/
+android/app/build/
+android/.gradle/
+
+# Ignore node_modules (will be installed fresh)
+node_modules/
+
+# Ignore expo cache
+.expo/
+.expo-shared/
+
+# Ignore debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Ignore macOS files
+.DS_Store
+
+# Ignore build cache
+.cache/

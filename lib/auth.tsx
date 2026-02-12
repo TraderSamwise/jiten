@@ -4,10 +4,8 @@ import { tokenCache } from "@clerk/clerk-expo/token-cache";
 
 import { env } from "@/lib/env";
 
-const publishableKey = env.CLERK_PUBLISHABLE_KEY;
-
 /** true when no Clerk key is configured — app runs fully local */
-const LOCAL_MODE = !publishableKey;
+const LOCAL_MODE = !env.CLERK_PUBLISHABLE_KEY;
 
 // Local-mode context: always signed in as "local" user
 const LocalAuthContext = createContext({
@@ -30,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey!} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={env.CLERK_PUBLISHABLE_KEY!} tokenCache={tokenCache}>
       {children}
     </ClerkProvider>
   );

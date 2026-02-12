@@ -13,7 +13,7 @@ import { UserDatabaseProvider } from "@/db/user-provider";
 import { loadTheme, applyTheme } from "@/lib/theme";
 import "../global.css";
 
-export { ErrorBoundary } from "expo-router";
+export { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
