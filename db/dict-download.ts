@@ -39,8 +39,13 @@ async function setLocalVersion(version: number): Promise<void> {
 
 export async function fetchManifest(): Promise<DictManifest> {
   const manifestUrl = env.DICT_MANIFEST_URL;
-  const res = await fetch(manifestUrl);
-  if (!res.ok) throw new Error(`Failed to fetch manifest: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(manifestUrl);
+  } catch (err) {
+    throw new Error(`Fetch failed for ${manifestUrl}: ${err instanceof Error ? err.message : err}`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${manifestUrl}`);
   const data = await res.json();
 
   // Derive DB download URL from manifest URL (sibling file) if not provided
