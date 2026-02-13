@@ -10,6 +10,11 @@ export const state = {
   suppressClick: false,
   dragMode: "idle" as "idle" | "undecided" | "swiping" | "selecting",
 
+  // Highlight-scroll: extra blocks appended beyond current page
+  extraBlocks: 0,
+  shiftOffset: 0,
+  lastShiftTime: 0,
+
   // DOM element refs — set during init
   rawEl: null as HTMLElement | null,
   contentEl: null as HTMLElement | null,

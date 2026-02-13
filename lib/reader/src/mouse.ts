@@ -2,7 +2,7 @@ import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
-import { nextPage, prevPage } from "./pagination";
+import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
 
 declare const window: Window & {
   __READER_CONFIG__: { scrollPosition: number };
@@ -20,6 +20,7 @@ export function setupMouseHandlers(): void {
   state.contentEl!.addEventListener("mousedown", function (e: MouseEvent) {
     // Don't start a new gesture if touch already claimed it
     if (state.dragMode !== "idle" && state.dragMode !== "undecided") return;
+    resetPageShift();
     mouseStartX = e.clientX;
     mouseStartY = e.clientY;
     mouseStartAbs = -1;
@@ -57,6 +58,14 @@ export function setupMouseHandlers(): void {
     }
 
     if (state.dragMode === "selecting" && mouseStartAbs >= 0) {
+      // Expand page if cursor is near the left edge (end of page in vertical-rl)
+      const rect = state.contentEl!.getBoundingClientRect();
+      const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+      const edgeZone = rect.left + 16 + fontSize * 1.5;
+      if (e.clientX < edgeZone) {
+        expandPageForHighlight();
+      }
+
       const endRange = document.caretRangeFromPoint(e.clientX, e.clientY);
       if (!endRange || endRange.startContainer.nodeType !== Node.TEXT_NODE) return;
       const endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);

@@ -1,4 +1,5 @@
 import { state } from "./state";
+import { animateResetShift } from "./pagination";
 
 function isInsideRt(node: Node): boolean {
   let parent = node.parentNode;
@@ -20,6 +21,11 @@ export function clearHighlight(): void {
     }
     parent.removeChild(span);
     parent.normalize();
+  }
+
+  // Animate page back to normal if shifted, but not during an active selection
+  if (state.dragMode !== "selecting") {
+    animateResetShift();
   }
 }
 
