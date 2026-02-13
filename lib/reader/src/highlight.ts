@@ -1,5 +1,13 @@
 import { state } from "./state";
-import { absoluteToNodeOffset } from "./text";
+
+function isInsideRt(node: Node): boolean {
+  let parent = node.parentNode;
+  while (parent && parent !== state.contentEl) {
+    if ((parent as Element).tagName === "RT") return true;
+    parent = parent.parentNode;
+  }
+  return false;
+}
 
 // Clear existing highlights
 export function clearHighlight(): void {
@@ -24,26 +32,46 @@ export function applyHighlight(startDelta: number, len: number): void {
   );
 }
 
-// Apply highlight by absolute character offsets
+// Apply highlight by absolute character offsets.
+// Wraps each text node individually to avoid cross-element Range operations
+// that destroy DOM structure when spanning multiple paragraphs.
 export function highlightAbsRange(absStart: number, absEnd: number): void {
   if (absEnd <= absStart) return;
   if (absStart < 0) absStart = 0;
-  const start = absoluteToNodeOffset(absStart);
-  const end = absoluteToNodeOffset(absEnd);
-  if (!start || !end) return;
-  try {
-    const hlRange = document.createRange();
-    hlRange.setStart(start.node, start.offset);
-    hlRange.setEnd(end.node, end.offset);
-    if (hlRange.collapsed) return;
+
+  const walker = document.createTreeWalker(state.contentEl!, NodeFilter.SHOW_TEXT, {
+    acceptNode(node: Node) {
+      return isInsideRt(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  // Collect overlapping text nodes first (don't modify DOM while walking)
+  const nodes: { node: Text; start: number }[] = [];
+  let pos = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const len = node.textContent!.length;
+    if (pos + len > absStart && pos < absEnd) {
+      nodes.push({ node, start: pos });
+    }
+    pos += len;
+    if (pos >= absEnd) break;
+  }
+
+  for (const { node, start } of nodes) {
+    const sliceStart = Math.max(0, absStart - start);
+    const sliceEnd = Math.min(node.textContent!.length, absEnd - start);
+
+    let target: Text = node;
+    if (sliceStart > 0) {
+      target = target.splitText(sliceStart);
+    }
+    if (sliceEnd - sliceStart < target.textContent!.length) {
+      target.splitText(sliceEnd - sliceStart);
+    }
     const span = document.createElement("span");
     span.className = "highlight";
-    try {
-      hlRange.surroundContents(span);
-    } catch {
-      const fragment = hlRange.extractContents();
-      span.appendChild(fragment);
-      hlRange.insertNode(span);
-    }
-  } catch {}
+    target.parentNode!.insertBefore(span, target);
+    span.appendChild(target);
+  }
 }

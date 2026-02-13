@@ -13,9 +13,10 @@ export function setupTouchHandlers(): void {
   let touchStartX = 0;
   let touchStartY = 0;
   let touchStartTime = 0;
-  let isDragSelecting = false;
   let dragStartAbs = -1;
   let dragEndAbs = -1;
+
+  const DECIDE_THRESHOLD = 15;
 
   state.contentEl!.addEventListener(
     "touchstart",
@@ -23,10 +24,10 @@ export function setupTouchHandlers(): void {
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       touchStartTime = Date.now();
-      isDragSelecting = false;
       dragStartAbs = -1;
       dragEndAbs = -1;
       state.swipeHandled = false;
+      state.dragMode = "undecided";
 
       // Get caret at touch point for potential drag selection
       const range = document.caretRangeFromPoint(touchStartX, touchStartY);
@@ -48,17 +49,23 @@ export function setupTouchHandlers(): void {
       const dx = Math.abs(cx - touchStartX);
       const dy = Math.abs(cy - touchStartY);
 
-      // Enter drag-select mode once moved enough, but only if started on text
-      if (!isDragSelecting && dragStartAbs >= 0 && (dx > 10 || dy > 10)) {
-        isDragSelecting = true;
-        state.suppressClick = true;
-        clearHighlight();
+      // Decide mode once finger has moved enough
+      if (state.dragMode === "undecided" && (dx > DECIDE_THRESHOLD || dy > DECIDE_THRESHOLD)) {
+        if (dx > dy * 1.5) {
+          state.dragMode = "swiping";
+          dragStartAbs = -1;
+        } else if (dragStartAbs >= 0) {
+          state.dragMode = "selecting";
+          state.suppressClick = true;
+          clearHighlight();
+        } else {
+          state.dragMode = "swiping";
+        }
       }
 
-      if (isDragSelecting) {
+      if (state.dragMode === "selecting") {
         const endRange = document.caretRangeFromPoint(cx, cy);
         if (endRange && endRange.startContainer.nodeType === Node.TEXT_NODE) {
-          // Compute end offset BEFORE clearing (node refs survive since abs is just a count)
           const endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
           clearHighlight();
           const lo = Math.min(dragStartAbs, endAbs);
@@ -77,19 +84,15 @@ export function setupTouchHandlers(): void {
     "touchend",
     function (e: TouchEvent) {
       const dx = e.changedTouches[0].clientX - touchStartX;
-      const dy = e.changedTouches[0].clientY - touchStartY;
       const dt = Date.now() - touchStartTime;
 
-      // Check for swipe first — fast horizontal swipe always navigates pages
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50 && dt < 500) {
-        if (isDragSelecting) {
-          clearHighlight();
-          isDragSelecting = false;
-        }
+      // Page swipe — only if not selecting
+      if (state.dragMode !== "selecting" && Math.abs(dx) > 50 && dt < 500) {
         state.swipeHandled = true;
         dragStartAbs = -1;
         dragEndAbs = -1;
         state.suppressClick = true;
+        state.dragMode = "idle";
         setTimeout(function () {
           state.suppressClick = false;
         }, 50);
@@ -98,9 +101,7 @@ export function setupTouchHandlers(): void {
         return;
       }
 
-      if (isDragSelecting) {
-        isDragSelecting = false;
-        // Send the drag-selected text as a selection message
+      if (state.dragMode === "selecting") {
         const lo = Math.min(dragStartAbs, dragEndAbs);
         const hi = Math.max(dragStartAbs, dragEndAbs);
         if (hi > lo) {
@@ -124,6 +125,7 @@ export function setupTouchHandlers(): void {
         }
         dragStartAbs = -1;
         dragEndAbs = -1;
+        state.dragMode = "idle";
         setTimeout(function () {
           state.suppressClick = false;
         }, 50);
@@ -132,6 +134,7 @@ export function setupTouchHandlers(): void {
 
       dragStartAbs = -1;
       state.swipeHandled = false;
+      state.dragMode = "idle";
     },
     { passive: true },
   );

@@ -8,6 +8,7 @@ export const state = {
   lastTapAbsOffset: 0,
   swipeHandled: false,
   suppressClick: false,
+  dragMode: "idle" as "idle" | "undecided" | "swiping" | "selecting",
 
   // DOM element refs — set during init
   rawEl: null as HTMLElement | null,
