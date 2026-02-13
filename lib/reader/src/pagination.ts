@@ -146,6 +146,79 @@ export function prevPage(): void {
   goToPage(state.currentPage - 1);
 }
 
+// Append one more block from the next page and shift content right by one column,
+// so the user can continue highlighting across the page boundary.
+export function expandPageForHighlight(): boolean {
+  const now = Date.now();
+  if (now - state.lastShiftTime < 300) return false;
+
+  const page = state.pages[state.currentPage - 1];
+  const nextIdx = page.end + 1 + state.extraBlocks;
+  if (nextIdx >= state.blockHtmls.length) return false;
+
+  state.pageEl!.insertAdjacentHTML("beforeend", state.blockHtmls[nextIdx]);
+  state.extraBlocks++;
+
+  const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+  const colWidth = fontSize * 1.5; // line-height is 1.5
+  state.shiftOffset += colWidth;
+  state.lastShiftTime = now;
+
+  state.pageEl!.style.transition = "transform 0.25s ease-out";
+  state.pageEl!.style.transform = "translateX(" + state.shiftOffset + "px)";
+  return true;
+}
+
+let shiftResetTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Animate back to normal page position after a highlight-scroll selection ends.
+// Preserves highlight spans on the original page content.
+export function animateResetShift(): void {
+  if (state.extraBlocks === 0) return;
+
+  const extraCount = state.extraBlocks;
+  state.extraBlocks = 0;
+  state.shiftOffset = 0;
+
+  state.pageEl!.style.transition = "transform 0.25s ease-out";
+  state.pageEl!.style.transform = "translateX(0)";
+
+  shiftResetTimeout = setTimeout(function () {
+    shiftResetTimeout = null;
+    state.pageEl!.style.transition = "";
+    state.pageEl!.style.transform = "";
+    // Remove only the extra appended blocks, preserving highlights in original content
+    for (let i = 0; i < extraCount; i++) {
+      if (state.pageEl!.lastChild) {
+        state.pageEl!.removeChild(state.pageEl!.lastChild);
+      }
+    }
+  }, 260);
+}
+
+// Immediately reset any highlight-scroll shift (safety net for new gestures).
+export function resetPageShift(): void {
+  if (state.extraBlocks === 0 && !shiftResetTimeout) return;
+
+  if (shiftResetTimeout) {
+    clearTimeout(shiftResetTimeout);
+    shiftResetTimeout = null;
+  }
+
+  state.extraBlocks = 0;
+  state.shiftOffset = 0;
+  state.pageEl!.style.transition = "";
+  state.pageEl!.style.transform = "";
+
+  // Re-render just #page to remove extra blocks
+  const p = state.pages[state.currentPage - 1];
+  let html = "";
+  for (let i = p.start; i <= p.end; i++) {
+    html += state.blockHtmls[i];
+  }
+  state.pageEl!.innerHTML = html;
+}
+
 export function reportScroll(): void {
   const pos = state.totalPages > 1 ? (state.currentPage - 1) / (state.totalPages - 1) : 0;
   window.ReactNativeWebView.postMessage(

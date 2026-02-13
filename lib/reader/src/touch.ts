@@ -2,7 +2,7 @@ import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
-import { nextPage, prevPage } from "./pagination";
+import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
 
 declare const window: Window & {
   __READER_CONFIG__: { scrollPosition: number };
@@ -21,6 +21,7 @@ export function setupTouchHandlers(): void {
   state.contentEl!.addEventListener(
     "touchstart",
     function (e: TouchEvent) {
+      resetPageShift();
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       touchStartTime = Date.now();
@@ -64,6 +65,14 @@ export function setupTouchHandlers(): void {
       }
 
       if (state.dragMode === "selecting") {
+        // Expand page if finger is near the left edge (end of page in vertical-rl)
+        const rect = state.contentEl!.getBoundingClientRect();
+        const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+        const edgeZone = rect.left + 16 + fontSize * 1.5;
+        if (cx < edgeZone) {
+          expandPageForHighlight();
+        }
+
         const endRange = document.caretRangeFromPoint(cx, cy);
         if (endRange && endRange.startContainer.nodeType === Node.TEXT_NODE) {
           const endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
