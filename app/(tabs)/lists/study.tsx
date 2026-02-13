@@ -37,8 +37,16 @@ import {
   dateToSrsEpochDays,
 } from "@/stores/simple-srs";
 import { useListsStore, parseListRow } from "@/stores/lists";
+import {
+  shouldCheckConfusion,
+  findConfusedWords,
+  type ConfusedWordResult,
+} from "@/lib/confused-words";
+import { getSimilarKanjiAsync } from "@/db/kanji-search";
 import type { DictEntry, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
+
+const CONFUSION_COOLDOWN_HOURS = 24;
 
 const NEW_CARD_BATCH_SIZE = 5;
 const CARD_PEEK = 40;
@@ -85,6 +93,7 @@ interface SrsSnapshot {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  lastConfusionCheck: string | null;
 }
 
 interface HistoryEntry {
@@ -110,6 +119,7 @@ function captureSnapshot(card: SrsCardRow): SrsSnapshot {
     simpleStage: card.simpleStage,
     simpleN: card.simpleN,
     simpleInterval: card.simpleInterval,
+    lastConfusionCheck: card.lastConfusionCheck,
   };
 }
 
@@ -163,6 +173,11 @@ export default function StudyScreen() {
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
+
+  // Confused words detection
+  const [confusedWordsVisible, setConfusedWordsVisible] = useState(false);
+  const [confusedResults, setConfusedResults] = useState<ConfusedWordResult[]>([]);
+  const [confusedFailedEntry, setConfusedFailedEntry] = useState<DictEntry | null>(null);
 
   // History for swipe-back
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -253,7 +268,8 @@ export default function StudyScreen() {
           back_mode as backMode, created_at as createdAt,
           updated_at as updatedAt,
           simple_stage as simpleStage, simple_n as simpleN,
-          simple_interval as simpleInterval`;
+          simple_interval as simpleInterval,
+          last_confusion_check as lastConfusionCheck`;
 
         // Ensure srs_cards exist for all list entries (auto-create if missing)
         const cardCount = await userDb.getFirstAsync<{ c: number }>(
@@ -337,7 +353,8 @@ export default function StudyScreen() {
           back_mode as backMode, created_at as createdAt,
           updated_at as updatedAt,
           simple_stage as simpleStage, simple_n as simpleN,
-          simple_interval as simpleInterval`;
+          simple_interval as simpleInterval,
+          last_confusion_check as lastConfusionCheck`;
 
         const reviewRows = await userDb.getAllAsync<SrsCardRow>(
           `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
@@ -409,6 +426,11 @@ export default function StudyScreen() {
         wasNewSimpleSrs: card ? card.simpleStage == null : false,
       },
     ]);
+
+    // Check for confused words (fire-and-forget, modal appears async)
+    if (card && list?.flashcardMode !== "add_order") {
+      checkForConfusedWords(item.entry, card);
+    }
 
     // Push failed card to end of queue for re-review
     const failedItem = queue[currentIndex];
@@ -550,12 +572,88 @@ export default function StudyScreen() {
     }
 
     await userDb.runAsync(
-      `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?, updated_at = ? WHERE id = ?`,
-      [updates.simpleStage, updates.simpleN, updates.simpleInterval, now, card.id],
+      `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
+        reps = reps + 1, lapses = lapses + ?, updated_at = ? WHERE id = ?`,
+      [updates.simpleStage, updates.simpleN, updates.simpleInterval, pass ? 0 : 1, now, card.id],
     );
 
     if (isNew) {
       setSimpleSrsLearned((c) => c + 1);
+    }
+  }
+
+  async function checkForConfusedWords(entry: DictEntry, card: SrsCardRow) {
+    if (!userDb || !dictDb || !listId) return;
+    if (list?.confusionDetection === false) return;
+    if (list?.flashcardMode === "add_order") return;
+
+    // Check cooldown: skip if we checked this card recently
+    if (card.lastConfusionCheck) {
+      const lastCheck = new Date(card.lastConfusionCheck).getTime();
+      const cooldownMs = CONFUSION_COOLDOWN_HOURS * 60 * 60 * 1000;
+      if (Date.now() - lastCheck < cooldownMs) return;
+    }
+
+    // Use post-review reps/lapses (the +1 hasn't been written to the card object yet)
+    if (!shouldCheckConfusion(card.reps + 1, card.lapses + 1)) return;
+
+    // Get all entry_ids in the list (excluding the failed one)
+    const rows = await userDb.getAllAsync<{ entry_id: number }>(
+      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ?",
+      [listId, entry.id],
+    );
+    const entryIds = rows.map((r) => r.entry_id);
+    if (entryIds.length === 0) return;
+
+    const results = await findConfusedWords(
+      entry,
+      entryIds,
+      (literal, limit) => getSimilarKanjiAsync(dictDb, literal, limit),
+      (ids) => getEntries(dictDb, ids),
+    );
+
+    // Record the check timestamp regardless of results
+    const now = new Date().toISOString();
+    await userDb.runAsync("UPDATE srs_cards SET last_confusion_check = ? WHERE id = ?", [
+      now,
+      card.id,
+    ]);
+
+    if (results.length > 0) {
+      setConfusedFailedEntry(entry);
+      setConfusedResults(results);
+      setConfusedWordsVisible(true);
+    }
+  }
+
+  async function handleAddConfusedToReview(result: ConfusedWordResult) {
+    if (!userDb || !listId) return;
+
+    // Find the srs_card for this confused entry
+    const cardRow = await userDb.getFirstAsync<SrsCardRow>(
+      `SELECT id, entry_id as entryId, list_id as listId, due,
+        stability, difficulty, elapsed_days as elapsedDays,
+        scheduled_days as scheduledDays, reps, lapses, state,
+        last_review as lastReview, front_mode as frontMode,
+        back_mode as backMode, created_at as createdAt,
+        updated_at as updatedAt,
+        simple_stage as simpleStage, simple_n as simpleN,
+        simple_interval as simpleInterval,
+        last_confusion_check as lastConfusionCheck
+       FROM srs_cards WHERE list_id = ? AND entry_id = ?`,
+      [listId, result.entry.id],
+    );
+
+    if (cardRow) {
+      // Fail it so it comes up soon
+      if (list?.flashcardMode === "simple_srs") {
+        await rateSimpleSrsCard(cardRow, false);
+      } else if (list?.flashcardMode === "srs") {
+        await rateSrsCard(cardRow, Rating.Again);
+      }
+
+      // Push to end of current session queue
+      setQueue((q) => [...q, { entry: result.entry as DictEntry, srsCard: cardRow }]);
     }
   }
 
@@ -634,8 +732,18 @@ export default function StudyScreen() {
     } else if (list?.flashcardMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
       await userDb.runAsync(
-        `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?, updated_at = ? WHERE id = ?`,
-        [snap.simpleStage, snap.simpleN, snap.simpleInterval, now, card.id],
+        `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
+          reps = ?, lapses = ?, last_confusion_check = ?, updated_at = ? WHERE id = ?`,
+        [
+          snap.simpleStage,
+          snap.simpleN,
+          snap.simpleInterval,
+          snap.reps,
+          snap.lapses,
+          snap.lastConfusionCheck,
+          now,
+          card.id,
+        ],
       );
       if (entry.wasNewSimpleSrs) {
         setSimpleSrsLearned((c) => Math.max(0, c - 1));
@@ -1232,6 +1340,124 @@ export default function StudyScreen() {
             </Pressable>
           </View>
         </Pressable>
+      </Modal>
+
+      {/* Confused words modal */}
+      <Modal
+        visible={confusedWordsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfusedWordsVisible(false)}
+      >
+        <View className="flex-1">
+          <Pressable
+            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+            className="bg-black/50"
+            onPress={() => setConfusedWordsVisible(false)}
+          />
+          <View className="flex-1 justify-center px-6">
+            <View className="rounded-2xl border border-border bg-background p-5">
+              <Text className="text-lg font-semibold text-foreground mb-1">
+                Similar words in your list
+              </Text>
+              <Text className="text-sm text-muted-foreground mb-4">
+                You might be confusing these words
+              </Text>
+
+              {confusedFailedEntry &&
+                confusedResults.map((result, ri) => {
+                  const failedKanji = confusedFailedEntry.kanji[0]?.text ?? "";
+                  const confusedKanji = result.entry.kanji[0]?.text ?? "";
+                  const matchPositions = new Set(result.matches.map((m) => m.position));
+
+                  return (
+                    <View key={ri} className="mb-4">
+                      {/* Side-by-side comparison */}
+                      <View className="flex-row items-center justify-center gap-4 mb-2">
+                        {/* Failed word */}
+                        <View className="items-center flex-1">
+                          <View className="flex-row">
+                            {[...failedKanji].map((ch, ci) => (
+                              <Text
+                                key={ci}
+                                className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-red-500" : "text-foreground"}`}
+                              >
+                                {ch}
+                              </Text>
+                            ))}
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {confusedFailedEntry.kana[0]?.text ?? ""}
+                          </Text>
+                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                            {getFaceText(confusedFailedEntry, "english")}
+                          </Text>
+                        </View>
+
+                        <Text className="text-muted-foreground">vs</Text>
+
+                        {/* Confused word */}
+                        <View className="items-center flex-1">
+                          <View className="flex-row">
+                            {[...confusedKanji].map((ch, ci) => (
+                              <Text
+                                key={ci}
+                                className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-orange-500" : "text-foreground"}`}
+                              >
+                                {ch}
+                              </Text>
+                            ))}
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {(result.entry as DictEntry).kana?.[0]?.text ?? ""}
+                          </Text>
+                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                            {getFaceText(result.entry as DictEntry, "english")}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Match details */}
+                      <View className="flex-row flex-wrap justify-center gap-2 mb-2">
+                        {result.matches.map((m, mi) => (
+                          <View
+                            key={mi}
+                            className="flex-row items-center bg-muted rounded px-2 py-1"
+                          >
+                            <Text className="text-sm text-red-500 font-bold">{m.failedKanji}</Text>
+                            <Text className="text-xs text-muted-foreground mx-1">≈</Text>
+                            <Text className="text-sm text-orange-500 font-bold">
+                              {m.candidateKanji}
+                            </Text>
+                            <Text className="text-xs text-muted-foreground ml-1">
+                              {Math.round(m.similarity * 100)}%
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      <Button
+                        variant="outline"
+                        label="Add to review"
+                        onPress={() => {
+                          handleAddConfusedToReview(result);
+                          setConfusedResults((prev) => prev.filter((_, i) => i !== ri));
+                          if (confusedResults.length <= 1) setConfusedWordsVisible(false);
+                        }}
+                      />
+                    </View>
+                  );
+                })}
+
+              <Button
+                className="mt-1"
+                variant="outline"
+                label="Dismiss"
+                onPress={() => setConfusedWordsVisible(false)}
+              />
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <FlashcardSettingsModal

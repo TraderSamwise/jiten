@@ -119,6 +119,7 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
       backFaces: ["english"],
       studyPosition: 0,
       autoPlayAudio: false,
+      confusionDetection: true,
       createdAt: now,
       updatedAt: now,
     };

@@ -100,6 +100,7 @@ export interface WordList {
   configured: boolean;
   studyPosition: number;
   autoPlayAudio: boolean;
+  confusionDetection: boolean;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;
@@ -142,4 +143,6 @@ export interface SrsCardRow {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  // Confusion detection cooldown
+  lastConfusionCheck: string | null;
 }

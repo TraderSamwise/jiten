@@ -58,6 +58,7 @@ export default function ListsIndexScreen() {
       backFaces: ["english"],
       studyPosition: 0,
       autoPlayAudio: false,
+      confusionDetection: true,
       createdAt: now,
       updatedAt: now,
     };
