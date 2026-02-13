@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { ListEntryCard } from "@/components/ListEntryCard";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
-import { Trash2, SlidersHorizontal } from "@/lib/icons";
+import { Trash2, EllipsisVertical } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow } from "@/stores/lists";
+import { ExportListModal } from "@/components/ExportListModal";
 import type { DictEntry } from "@/db/types";
 
 export default function ListDetailScreen() {
@@ -23,6 +24,8 @@ export default function ListDetailScreen() {
   const [entries, setEntries] = useState<DictEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
   const [reviewCount, setReviewCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
@@ -55,8 +58,8 @@ export default function ListDetailScreen() {
       navigation.setOptions({
         title: list.name,
         headerRight: () => (
-          <Pressable onPress={() => setSettingsVisible(true)} className="mr-2 p-2">
-            <SlidersHorizontal size={20} className="text-foreground" />
+          <Pressable onPress={() => setMenuVisible((v) => !v)} className="mr-2 p-2">
+            <EllipsisVertical size={20} className="text-foreground" />
           </Pressable>
         ),
       });
@@ -242,6 +245,36 @@ export default function ListDetailScreen() {
         />
       </View>
 
+      {/* Dropdown menu */}
+      {menuVisible && (
+        <>
+          <Pressable
+            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+            onPress={() => setMenuVisible(false)}
+          />
+          <View className="absolute top-0 right-4 z-10 mt-1 rounded-lg border border-border bg-background shadow-lg min-w-[180px]">
+            <Pressable
+              className="px-4 py-3 border-b border-border"
+              onPress={() => {
+                setMenuVisible(false);
+                setSettingsVisible(true);
+              }}
+            >
+              <Text className="text-sm text-foreground">Flashcard Settings</Text>
+            </Pressable>
+            <Pressable
+              className="px-4 py-3"
+              onPress={() => {
+                setMenuVisible(false);
+                setExportModalVisible(true);
+              }}
+            >
+              <Text className="text-sm text-foreground">Export List</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
       <FlashcardSettingsModal
         visible={settingsVisible}
         onClose={() => {
@@ -258,6 +291,13 @@ export default function ListDetailScreen() {
               }
             : undefined
         }
+      />
+
+      <ExportListModal
+        visible={exportModalVisible}
+        onClose={() => setExportModalVisible(false)}
+        listId={id!}
+        listName={list?.name ?? ""}
       />
     </View>
   );

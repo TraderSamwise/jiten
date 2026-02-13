@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, TextInput } from "react-native";
+import { View, FlatList, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Pencil, Trash2 } from "@/lib/icons";
-import { confirm } from "@/lib/confirm";
+import { confirm, alert } from "@/lib/confirm";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { parseListImport, importListToDb } from "@/lib/list-transfer";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
@@ -106,6 +108,59 @@ export default function ListsIndexScreen() {
     await doDeleteList(id);
   }
 
+  async function handleImportList() {
+    if (!userDb) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/json", "*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+
+      let content: string;
+      if (Platform.OS === "web") {
+        const response = await fetch(asset.uri);
+        content = await response.text();
+      } else {
+        const { readAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
+        content = await readAsStringAsync(asset.uri, {
+          encoding: EncodingType.UTF8,
+        });
+      }
+
+      const data = parseListImport(content);
+
+      const hasStudyHistory = !!data.studyHistory?.srsCards?.length;
+      let importStudy = false;
+
+      const wordCount = data.entries.length;
+      let message = `"${data.list.name}" — ${wordCount} word${wordCount !== 1 ? "s" : ""}`;
+      if (hasStudyHistory) {
+        message += `\n\nThis file includes study progress. Import it?`;
+      }
+
+      const ok = await confirm("Import List", message);
+      if (!ok) return;
+
+      if (hasStudyHistory) {
+        importStudy = await confirm("Study Progress", "Include SRS cards and review history?");
+      }
+
+      const newListId = await importListToDb(userDb, data, importStudy);
+
+      // Refresh stores
+      await loadLists();
+      await useBookmarkStore.getState().load(userDb);
+
+      router.push(`/lists/${newListId}`);
+    } catch (err) {
+      alert("Import Error", String(err instanceof Error ? err.message : err));
+    }
+  }
+
   const renderItem = useCallback(
     ({ item }: { item: WordList }) => {
       const actions: SwipeAction[] = [
@@ -152,12 +207,15 @@ export default function ListsIndexScreen() {
     <View className="flex-1 bg-background">
       <View className="flex-row items-center justify-between px-4 pt-2 pb-2">
         <Text className="text-lg font-semibold text-foreground">My Lists</Text>
-        <Button
-          variant="outline"
-          size="sm"
-          label={showCreate ? "Cancel" : "New List"}
-          onPress={() => setShowCreate(!showCreate)}
-        />
+        <View className="flex-row gap-2">
+          <Button variant="outline" size="sm" label="Import" onPress={handleImportList} />
+          <Button
+            variant="outline"
+            size="sm"
+            label={showCreate ? "Cancel" : "New List"}
+            onPress={() => setShowCreate(!showCreate)}
+          />
+        </View>
       </View>
 
       {showCreate && (
