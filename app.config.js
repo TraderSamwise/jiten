@@ -44,7 +44,19 @@ module.exports = {
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 30000,
     },
-    plugins: ["expo-router", "expo-updates"],
+    plugins: [
+      "expo-router",
+      "expo-updates",
+      [
+        "@jamsch/expo-speech-recognition",
+        {
+          microphonePermission:
+            "Allow $(PRODUCT_NAME) to use the microphone for voice-controlled flashcards.",
+          speechRecognitionPermission:
+            "Allow $(PRODUCT_NAME) to use speech recognition for voice-controlled flashcards.",
+        },
+      ],
+    ],
     experiments: {
       typedRoutes: true,
     },

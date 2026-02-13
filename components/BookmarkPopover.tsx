@@ -120,6 +120,7 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
       studyPosition: 0,
       autoPlayAudio: false,
       confusionDetection: true,
+      voiceMode: false,
       createdAt: now,
       updatedAt: now,
     };

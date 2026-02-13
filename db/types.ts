@@ -101,6 +101,7 @@ export interface WordList {
   studyPosition: number;
   autoPlayAudio: boolean;
   confusionDetection: boolean;
+  voiceMode: boolean;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;

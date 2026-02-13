@@ -104,6 +104,7 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE srs_cards ADD COLUMN simple_interval REAL DEFAULT NULL`,
   `ALTER TABLE lists ADD COLUMN confusion_detection INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE srs_cards ADD COLUMN last_confusion_check TEXT DEFAULT NULL`,
+  `ALTER TABLE lists ADD COLUMN voice_mode INTEGER NOT NULL DEFAULT 0`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

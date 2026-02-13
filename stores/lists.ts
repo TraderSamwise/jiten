@@ -23,6 +23,7 @@ export function parseListRow(row: any): WordList {
     studyPosition: row.studyPosition ?? row.study_position ?? 0,
     autoPlayAudio: Boolean(row.autoPlayAudio ?? row.auto_play_audio ?? 0),
     confusionDetection: (row.confusionDetection ?? row.confusion_detection ?? 1) !== 0,
+    voiceMode: Boolean(row.voiceMode ?? row.voice_mode ?? 0),
   };
 }
 
