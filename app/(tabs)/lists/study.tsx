@@ -13,6 +13,12 @@ import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { reviewCard, Rating } from "@/stores/srs";
+import {
+  simpleReviewPass,
+  simpleReviewFail,
+  simpleInitCard,
+  dateToSrsEpochDays,
+} from "@/stores/simple-srs";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import type { DictEntry, CardFace, SrsCardRow } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
@@ -68,6 +74,9 @@ export default function StudyScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
+  // Simple SRS progress: learned/total (only increments on new cards)
+  const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
+  const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
 
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
   useEffect(() => {
@@ -133,14 +142,100 @@ export default function StudyScreen() {
         setCurrentIndex(0);
         setRevealed(false);
         setSessionDone(items.length === 0);
+      } else if (list.flashcardMode === "simple_srs") {
+        // Simple SRS mode: due review cards first, then new cards
+        const simpleSrsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
+          stability, difficulty, elapsed_days as elapsedDays,
+          scheduled_days as scheduledDays, reps, lapses, state,
+          last_review as lastReview, front_mode as frontMode,
+          back_mode as backMode, created_at as createdAt,
+          updated_at as updatedAt,
+          simple_stage as simpleStage, simple_n as simpleN,
+          simple_interval as simpleInterval`;
+
+        // Ensure srs_cards exist for all list entries (auto-create if missing)
+        const cardCount = await userDb.getFirstAsync<{ c: number }>(
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ?",
+          [listId],
+        );
+        if (!cardCount || cardCount.c === 0) {
+          const entryRows = await userDb.getAllAsync<{ entry_id: number }>(
+            "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+            [listId],
+          );
+          const now = new Date().toISOString();
+          for (const row of entryRows) {
+            await userDb.runAsync(
+              `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
+              [generateId(), row.entry_id, listId, now, now, now],
+            );
+          }
+        }
+
+        // Load learned/total counts for progress display
+        const totalRow = await userDb.getFirstAsync<{ c: number }>(
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ?",
+          [listId],
+        );
+        const learnedRow = await userDb.getFirstAsync<{ c: number }>(
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
+          [listId],
+        );
+        setSimpleSrsTotal(totalRow?.c ?? 0);
+        setSimpleSrsLearned(learnedRow?.c ?? 0);
+
+        const nowDays = dateToSrsEpochDays();
+
+        // Due cards: have SRS data and n + interval <= now
+        const dueRows = await userDb.getAllAsync<SrsCardRow>(
+          `${simpleSrsSelect} FROM srs_cards
+           WHERE list_id = ? AND simple_stage IS NOT NULL AND (simple_n + simple_interval) <= ?
+           ORDER BY (simple_n + simple_interval) ASC`,
+          [listId, nowDays],
+        );
+
+        // New cards: no SRS data yet (simpleStage IS NULL)
+        const newRows = await userDb.getAllAsync<SrsCardRow>(
+          `${simpleSrsSelect} FROM srs_cards
+           WHERE list_id = ? AND simple_stage IS NULL
+           ORDER BY created_at ASC LIMIT ?`,
+          [listId, NEW_CARD_BATCH_SIZE],
+        );
+
+        const srsRows = [...dueRows, ...newRows];
+
+        if (srsRows.length === 0) {
+          setQueue([]);
+          setSessionDone(true);
+          setLoading(false);
+          return;
+        }
+
+        const entryIds = srsRows.map((r: SrsCardRow) => r.entryId);
+        const entries = await getEntries(dictDb, entryIds);
+        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
+        const items: QueueItem[] = srsRows
+          .map((card: SrsCardRow) => {
+            const entry = entryMap.get(card.entryId);
+            return entry ? { entry, srsCard: card } : null;
+          })
+          .filter((item: QueueItem | null): item is QueueItem => item !== null);
+
+        setQueue(items);
+        setCurrentIndex(0);
+        setRevealed(false);
+        setSessionDone(items.length === 0);
       } else {
-        // SRS mode: reviews first, then a batch of new cards
+        // FSRS mode: reviews first, then a batch of new cards
         const srsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
           stability, difficulty, elapsed_days as elapsedDays,
           scheduled_days as scheduledDays, reps, lapses, state,
           last_review as lastReview, front_mode as frontMode,
           back_mode as backMode, created_at as createdAt,
-          updated_at as updatedAt`;
+          updated_at as updatedAt,
+          simple_stage as simpleStage, simple_n as simpleN,
+          simple_interval as simpleInterval`;
 
         const reviewRows = await userDb.getAllAsync<SrsCardRow>(
           `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
@@ -185,8 +280,11 @@ export default function StudyScreen() {
   async function handleFail() {
     if (currentIndex >= queue.length) return;
 
-    if (list?.flashcardMode === "srs" && queue[currentIndex].srsCard) {
-      await rateSrsCard(queue[currentIndex].srsCard!, Rating.Again);
+    const card = queue[currentIndex].srsCard;
+    if (list?.flashcardMode === "simple_srs" && card) {
+      await rateSimpleSrsCard(card, false);
+    } else if (list?.flashcardMode === "srs" && card) {
+      await rateSrsCard(card, Rating.Again);
     }
 
     // Push failed card to end of queue for re-review
@@ -213,6 +311,8 @@ export default function StudyScreen() {
           updatedAt: new Date().toISOString(),
         });
       }
+    } else if (list?.flashcardMode === "simple_srs" && queue[currentIndex].srsCard) {
+      await rateSimpleSrsCard(queue[currentIndex].srsCard!, true);
     } else if (queue[currentIndex].srsCard) {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
       await rateSrsCard(queue[currentIndex].srsCard!, rating);
@@ -280,6 +380,36 @@ export default function StudyScreen() {
         now,
       ],
     );
+  }
+
+  async function rateSimpleSrsCard(card: SrsCardRow, pass: boolean) {
+    if (!userDb) return;
+    const now = new Date().toISOString();
+
+    // If card has never been reviewed (simpleStage is null), initialize it
+    const isNew = card.simpleStage == null;
+    let updates: { simpleStage: number; simpleN: number; simpleInterval: number };
+
+    if (isNew && pass) {
+      updates = simpleInitCard();
+      // Initialize then immediately graduate
+      updates = simpleReviewPass({ ...card, ...updates });
+    } else if (isNew) {
+      updates = simpleInitCard();
+    } else if (pass) {
+      updates = simpleReviewPass(card);
+    } else {
+      updates = simpleReviewFail(card);
+    }
+
+    await userDb.runAsync(
+      `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?, updated_at = ? WHERE id = ?`,
+      [updates.simpleStage, updates.simpleN, updates.simpleInterval, now, card.id],
+    );
+
+    if (isNew) {
+      setSimpleSrsLearned((c) => c + 1);
+    }
   }
 
   function advance(currentQueue: QueueItem[]) {
@@ -370,8 +500,15 @@ export default function StudyScreen() {
   const currentItem = queue[currentIndex];
   const frontFaces = list?.frontFaces ?? ["kanji"];
   const backFaces = list?.backFaces ?? ["english"];
+  const isSimpleSrs = list?.flashcardMode === "simple_srs";
   const total = queue.length;
-  const progress = total > 0 ? (currentIndex / total) * 100 : 0;
+  const progress = isSimpleSrs
+    ? simpleSrsTotal > 0
+      ? (simpleSrsLearned / simpleSrsTotal) * 100
+      : 0
+    : total > 0
+      ? (currentIndex / total) * 100
+      : 0;
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
@@ -381,7 +518,9 @@ export default function StudyScreen() {
           <X size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-sm text-muted-foreground">
-          {currentIndex + 1} / {total}
+          {isSimpleSrs
+            ? `${simpleSrsLearned} / ${simpleSrsTotal}`
+            : `${currentIndex + 1} / ${total}`}
         </Text>
         <View className="flex-row items-center">
           <Pressable

@@ -113,6 +113,20 @@ export function FlashcardSettingsModal({
                 </Text>
               </Pressable>
               <Pressable
+                onPress={() => setMode("simple_srs")}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  mode === "simple_srs" ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    mode === "simple_srs" ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Simple SRS
+                </Text>
+              </Pressable>
+              <Pressable
                 onPress={() => setMode("srs")}
                 className={`flex-1 items-center rounded-lg border py-2 ${
                   mode === "srs" ? "border-primary bg-primary/10" : "border-border"
@@ -123,7 +137,7 @@ export function FlashcardSettingsModal({
                     mode === "srs" ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  Spaced Rep
+                  FSRS
                 </Text>
               </Pressable>
             </View>

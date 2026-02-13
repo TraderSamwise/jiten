@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, TextInput, Platform } from "react-native";
+import { View, FlatList, TextInput, Platform, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/components/ui/text";
@@ -28,6 +28,7 @@ export default function ListsIndexScreen() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<TextInput>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (!userDb) return;
@@ -112,7 +113,7 @@ export default function ListsIndexScreen() {
     if (!userDb) return;
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/json", "*/*"],
+        type: ["application/json", ".jiten", "*/*"],
         copyToCacheDirectory: true,
       });
 
@@ -133,7 +134,8 @@ export default function ListsIndexScreen() {
 
       const data = parseListImport(content);
 
-      const hasStudyHistory = !!data.studyHistory?.srsCards?.length;
+      const hasStudyHistory =
+        !!data.studyHistory?.srsCards?.length || !!data.simpleSrsData?.cards?.length;
       let importStudy = false;
 
       const wordCount = data.entries.length;
@@ -149,13 +151,18 @@ export default function ListsIndexScreen() {
         importStudy = await confirm("Study Progress", "Include SRS cards and review history?");
       }
 
-      const newListId = await importListToDb(userDb, data, importStudy);
+      setImporting(true);
+      try {
+        const newListId = await importListToDb(userDb, data, importStudy);
 
-      // Refresh stores
-      await loadLists();
-      await useBookmarkStore.getState().load(userDb);
+        // Refresh stores
+        await loadLists();
+        await useBookmarkStore.getState().load(userDb);
 
-      router.push(`/lists/${newListId}`);
+        router.push(`/lists/${newListId}`);
+      } finally {
+        setImporting(false);
+      }
     } catch (err) {
       alert("Import Error", String(err instanceof Error ? err.message : err));
     }
@@ -251,6 +258,18 @@ export default function ListsIndexScreen() {
           </View>
         }
       />
+
+      {importing && (
+        <View
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+          className="items-center justify-center bg-black/50"
+        >
+          <View className="rounded-2xl bg-background p-6 items-center">
+            <ActivityIndicator size="large" />
+            <Text className="mt-3 text-foreground font-medium">Importing...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

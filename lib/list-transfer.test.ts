@@ -114,6 +114,58 @@ describe("parseListImport", () => {
       const result = parseListImport(JSON.stringify(data));
       expect(result.studyHistory).toBeUndefined();
     });
+
+    test("parses export with simple SRS data", () => {
+      const data = validExport({
+        list: {
+          name: "Common2",
+          description: null,
+          flashcardMode: "simple_srs",
+          frontFaces: ["kanji"],
+          backFaces: ["english"],
+          autoPlayAudio: false,
+        },
+        simpleSrsData: {
+          studyPosition: 100,
+          cards: [
+            { entryId: 1000, stage: 1, n: 8951.5938, interval: 365 },
+            { entryId: 2000, stage: 0, n: 8866.4814, interval: 0.3333 },
+          ],
+        },
+      });
+      const result = parseListImport(JSON.stringify(data));
+      expect(result.list.flashcardMode).toBe("simple_srs");
+      expect(result.simpleSrsData).toBeDefined();
+      expect(result.simpleSrsData!.studyPosition).toBe(100);
+      expect(result.simpleSrsData!.cards).toHaveLength(2);
+      expect(result.simpleSrsData!.cards[0]).toEqual({
+        entryId: 1000,
+        stage: 1,
+        n: 8951.5938,
+        interval: 365,
+      });
+    });
+
+    test("accepts simple SRS export without studyHistory", () => {
+      const data = validExport({
+        list: {
+          name: "Test",
+          description: null,
+          flashcardMode: "simple_srs",
+          frontFaces: ["kanji"],
+          backFaces: ["english"],
+          autoPlayAudio: false,
+        },
+        simpleSrsData: {
+          studyPosition: 0,
+          cards: [],
+        },
+      });
+      const result = parseListImport(JSON.stringify(data));
+      expect(result.simpleSrsData).toBeDefined();
+      expect(result.simpleSrsData!.cards).toHaveLength(0);
+      expect(result.studyHistory).toBeUndefined();
+    });
   });
 
   describe("invalid input", () => {

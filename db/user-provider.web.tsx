@@ -99,6 +99,9 @@ const USER_DB_MIGRATIONS = [
   )`,
   `ALTER TABLE books ADD COLUMN source_id TEXT`,
   `ALTER TABLE lists ADD COLUMN auto_play_audio INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE srs_cards ADD COLUMN simple_stage INTEGER DEFAULT NULL`,
+  `ALTER TABLE srs_cards ADD COLUMN simple_n REAL DEFAULT NULL`,
+  `ALTER TABLE srs_cards ADD COLUMN simple_interval REAL DEFAULT NULL`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

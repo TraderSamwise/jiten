@@ -50,6 +50,16 @@ export interface JitenExportFile {
       }[];
     }[];
   };
+
+  simpleSrsData?: {
+    studyPosition: number;
+    cards: {
+      entryId: number;
+      stage: number;
+      n: number;
+      interval: number;
+    }[];
+  };
 }
 
 // ─── Export ───
@@ -69,10 +79,7 @@ export async function buildListExport(
   const backFaces: CardFace[] =
     typeof rawBack === "string" ? JSON.parse(rawBack) : (rawBack ?? ["english"]);
 
-  const entryRows = await userDb.getAllAsync<{ entry_id: number; added_at: string }>(
-    "SELECT entry_id, added_at FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
-    [listId],
-  );
+  const flashcardMode = listRow.flashcard_mode ?? listRow.flashcardMode ?? "add_order";
 
   const result: JitenExportFile = {
     format: "jiten-list-v1",
@@ -80,60 +87,85 @@ export async function buildListExport(
     list: {
       name: listRow.name,
       description: listRow.description ?? null,
-      flashcardMode: listRow.flashcard_mode ?? listRow.flashcardMode ?? "add_order",
+      flashcardMode,
       frontFaces,
       backFaces,
       autoPlayAudio: Boolean(listRow.auto_play_audio ?? listRow.autoPlayAudio ?? 0),
     },
-    entries: entryRows.map((r) => ({
-      entryId: r.entry_id,
-      addedAt: r.added_at,
-    })),
+    entries: [],
   };
+
+  const entryRows = await userDb.getAllAsync<{ entry_id: number; added_at: string }>(
+    "SELECT entry_id, added_at FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+    [listId],
+  );
+  result.entries = entryRows.map((r) => ({
+    entryId: r.entry_id,
+    addedAt: r.added_at,
+  }));
 
   if (includeStudyHistory) {
     const studyPosition = listRow.study_position ?? listRow.studyPosition ?? 0;
 
-    const srsRows = await userDb.getAllAsync<any>("SELECT * FROM srs_cards WHERE list_id = ?", [
-      listId,
-    ]);
-
-    const srsCards = [];
-    for (const card of srsRows) {
-      const logRows = await userDb.getAllAsync<any>(
-        "SELECT * FROM review_logs WHERE card_id = ? ORDER BY reviewed_at ASC",
-        [card.id],
+    if (flashcardMode === "simple_srs") {
+      // Export simple SRS data
+      const srsRows = await userDb.getAllAsync<any>(
+        "SELECT entry_id, simple_stage, simple_n, simple_interval FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
+        [listId],
       );
 
-      srsCards.push({
-        entryId: card.entry_id,
-        due: card.due,
-        stability: card.stability,
-        difficulty: card.difficulty,
-        elapsedDays: card.elapsed_days,
-        scheduledDays: card.scheduled_days,
-        reps: card.reps,
-        lapses: card.lapses,
-        state: card.state,
-        lastReview: card.last_review ?? null,
-        frontMode: card.front_mode,
-        backMode: card.back_mode,
-        createdAt: card.created_at,
-        updatedAt: card.updated_at,
-        reviewLogs: logRows.map((log: any) => ({
-          rating: log.rating,
-          state: log.state,
-          due: log.due,
-          stability: log.stability,
-          difficulty: log.difficulty,
-          elapsedDays: log.elapsed_days,
-          scheduledDays: log.scheduled_days,
-          reviewedAt: log.reviewed_at,
+      result.simpleSrsData = {
+        studyPosition,
+        cards: srsRows.map((card: any) => ({
+          entryId: card.entry_id,
+          stage: card.simple_stage,
+          n: card.simple_n,
+          interval: card.simple_interval,
         })),
-      });
-    }
+      };
+    } else {
+      // Export FSRS data
+      const srsRows = await userDb.getAllAsync<any>("SELECT * FROM srs_cards WHERE list_id = ?", [
+        listId,
+      ]);
 
-    result.studyHistory = { studyPosition, srsCards };
+      const srsCards = [];
+      for (const card of srsRows) {
+        const logRows = await userDb.getAllAsync<any>(
+          "SELECT * FROM review_logs WHERE card_id = ? ORDER BY reviewed_at ASC",
+          [card.id],
+        );
+
+        srsCards.push({
+          entryId: card.entry_id,
+          due: card.due,
+          stability: card.stability,
+          difficulty: card.difficulty,
+          elapsedDays: card.elapsed_days,
+          scheduledDays: card.scheduled_days,
+          reps: card.reps,
+          lapses: card.lapses,
+          state: card.state,
+          lastReview: card.last_review ?? null,
+          frontMode: card.front_mode,
+          backMode: card.back_mode,
+          createdAt: card.created_at,
+          updatedAt: card.updated_at,
+          reviewLogs: logRows.map((log: any) => ({
+            rating: log.rating,
+            state: log.state,
+            due: log.due,
+            stability: log.stability,
+            difficulty: log.difficulty,
+            elapsedDays: log.elapsed_days,
+            scheduledDays: log.scheduled_days,
+            reviewedAt: log.reviewed_at,
+          })),
+        });
+      }
+
+      result.studyHistory = { studyPosition, srsCards };
+    }
   }
 
   return result;
@@ -187,9 +219,11 @@ export async function importListToDb(
   }
 
   // Create list
-  const studyPosition =
-    importStudyHistory && data.studyHistory ? data.studyHistory.studyPosition : 0;
-  const configured = importStudyHistory && data.studyHistory ? 1 : 0;
+  const hasStudyData = importStudyHistory && (data.studyHistory || data.simpleSrsData);
+  const studyPosition = hasStudyData
+    ? (data.simpleSrsData?.studyPosition ?? data.studyHistory?.studyPosition ?? 0)
+    : 0;
+  const configured = hasStudyData ? 1 : 0;
 
   await userDb.runAsync(
     `INSERT INTO lists (id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, created_at, updated_at)
@@ -217,7 +251,66 @@ export async function importListToDb(
     );
   }
 
-  // Import SRS data if requested
+  // Import simple SRS data
+  if (importStudyHistory && data.simpleSrsData?.cards) {
+    for (const card of data.simpleSrsData.cards) {
+      const cardId = generateId();
+      await userDb.runAsync(
+        `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          cardId,
+          card.entryId,
+          listId,
+          now, // due (placeholder for FSRS, not used in simple mode)
+          0, // stability
+          0, // difficulty
+          0, // elapsed_days
+          0, // scheduled_days
+          0, // reps
+          0, // lapses
+          0, // state
+          "kanji", // front_mode
+          "english", // back_mode
+          card.stage,
+          card.n,
+          card.interval,
+          now,
+          now,
+        ],
+      );
+    }
+
+    // Also create srs_cards for entries without SRS data (unseen cards)
+    const srsEntryIds = new Set(data.simpleSrsData.cards.map((c) => c.entryId));
+    for (const entry of data.entries) {
+      if (!srsEntryIds.has(entry.entryId)) {
+        await userDb.runAsync(
+          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            generateId(),
+            entry.entryId,
+            listId,
+            now,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "kanji",
+            "english",
+            now,
+            now,
+          ],
+        );
+      }
+    }
+  }
+
+  // Import FSRS SRS data
   if (importStudyHistory && data.studyHistory?.srsCards) {
     for (const card of data.studyHistory.srsCards) {
       const cardId = generateId();

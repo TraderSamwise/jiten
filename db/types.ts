@@ -88,7 +88,7 @@ export interface SimilarKanji {
 // SRS card display modes
 export type CardFace = "kanji" | "kana" | "english";
 
-export type FlashcardMode = "add_order" | "srs";
+export type FlashcardMode = "add_order" | "simple_srs" | "srs";
 
 export interface WordList {
   id: string;
@@ -138,4 +138,8 @@ export interface SrsCardRow {
   backMode: CardFace;
   createdAt: string;
   updatedAt: string;
+  // Simple SRS fields (nullable, only used in simple_srs mode)
+  simpleStage: number | null;
+  simpleN: number | null;
+  simpleInterval: number | null;
 }
