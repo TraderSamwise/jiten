@@ -105,7 +105,7 @@ export function setupTouchHandlers(): void {
         setTimeout(function () {
           state.suppressClick = false;
         }, 50);
-        if (dx < 0) nextPage();
+        if (dx > 0) nextPage();
         else prevPage();
         return;
       }
