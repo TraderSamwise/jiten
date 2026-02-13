@@ -92,6 +92,8 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE srs_cards ADD COLUMN simple_stage INTEGER DEFAULT NULL`,
   `ALTER TABLE srs_cards ADD COLUMN simple_n REAL DEFAULT NULL`,
   `ALTER TABLE srs_cards ADD COLUMN simple_interval REAL DEFAULT NULL`,
+  `ALTER TABLE lists ADD COLUMN confusion_detection INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE srs_cards ADD COLUMN last_confusion_check TEXT DEFAULT NULL`,
 ];
 
 export function UserDatabaseProvider({

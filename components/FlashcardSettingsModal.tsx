@@ -33,6 +33,7 @@ export function FlashcardSettingsModal({
   const [frontFaces, setFrontFaces] = useState<CardFace[]>(["kanji"]);
   const [backFaces, setBackFaces] = useState<CardFace[]>(["english"]);
   const [autoPlayAudio, setAutoPlayAudio] = useState(false);
+  const [confusionDetection, setConfusionDetection] = useState(true);
 
   useEffect(() => {
     if (visible && list) {
@@ -40,6 +41,7 @@ export function FlashcardSettingsModal({
       setFrontFaces([...list.frontFaces]);
       setBackFaces([...list.backFaces]);
       setAutoPlayAudio(list.autoPlayAudio);
+      setConfusionDetection(list.confusionDetection !== false);
     }
   }, [visible, list]);
 
@@ -57,12 +59,13 @@ export function FlashcardSettingsModal({
     if (!userDb) return;
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
         JSON.stringify(backFaces),
         autoPlayAudio ? 1 : 0,
+        confusionDetection ? 1 : 0,
         now,
         listId,
       ],
@@ -73,6 +76,7 @@ export function FlashcardSettingsModal({
       frontFaces,
       backFaces,
       autoPlayAudio,
+      confusionDetection,
       updatedAt: now,
     });
     if (onStartStudy) {
@@ -226,6 +230,45 @@ export function FlashcardSettingsModal({
                 </Text>
               </Pressable>
             </View>
+
+            {/* Confusion detection (only for SRS modes) */}
+            {mode !== "add_order" && (
+              <>
+                <Text className="text-sm font-medium text-muted-foreground mb-2">
+                  Similar word detection
+                </Text>
+                <View className="flex-row gap-2 mb-5">
+                  <Pressable
+                    onPress={() => setConfusionDetection(false)}
+                    className={`flex-1 items-center rounded-lg border py-2 ${
+                      !confusionDetection ? "border-primary bg-primary/10" : "border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-sm font-medium ${
+                        !confusionDetection ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      Off
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setConfusionDetection(true)}
+                    className={`flex-1 items-center rounded-lg border py-2 ${
+                      confusionDetection ? "border-primary bg-primary/10" : "border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-sm font-medium ${
+                        confusionDetection ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      On
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
 
             {/* Actions */}
             <View className="flex-row gap-2">
