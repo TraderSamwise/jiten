@@ -159,6 +159,7 @@ export default function StudyScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
+  const [isFlipping, setIsFlipping] = useState(false);
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
@@ -170,6 +171,7 @@ export default function StudyScreen() {
   // Carousel animation shared values
   const translateX = useSharedValue(0);
   const flipProgress = useSharedValue(0);
+  const gestureStartX = useSharedValue(0);
   const { width: screenWidth } = useWindowDimensions();
 
   const isBrowsingHistory = historyIndex !== null;
@@ -199,7 +201,7 @@ export default function StudyScreen() {
     setLoading(true);
     setHistory([]);
     setHistoryIndex(null);
-    flipProgress.value = 0;
+    translateX.value = 0;
 
     try {
       if (list.flashcardMode === "add_order") {
@@ -560,43 +562,37 @@ export default function StudyScreen() {
   function advance(currentQueue: QueueItem[]) {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= currentQueue.length) {
-      // Both modes: reload queue for next batch
-      // SRS: picks up learning cards that became due + next batch of new cards
-      // add_order: wraps around at end
       loadQueue();
     } else {
-      flipProgress.value = 0;
-      // Slide new card in from the right (positive = row shifted right = center slot at next position)
-      translateX.value = slideDistance;
+      // Animate row left to reveal the next card (already pre-rendered in allCards)
+      translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
       setCurrentIndex(nextIndex);
       setRevealed(false);
-      translateX.value = withTiming(0, slideConfig);
+      setIsFlipping(false);
     }
   }
 
+  // Navigation: only update state. translateX is handled by callers (gesture/button animations).
   function goBack() {
+    setIsFlipping(false);
     if (isBrowsingHistory) {
-      if (historyIndex > 0) {
-        flipProgress.value = 1;
-        setHistoryIndex(historyIndex - 1);
+      if (historyIndex! > 0) {
+        setHistoryIndex(historyIndex! - 1);
         setRevealed(true);
       }
     } else if (history.length > 0) {
-      flipProgress.value = 1;
       setHistoryIndex(history.length - 1);
       setRevealed(true);
     }
   }
 
   function goForward() {
+    setIsFlipping(false);
     if (!isBrowsingHistory) return;
-    if (historyIndex < history.length - 1) {
-      flipProgress.value = 1;
-      setHistoryIndex(historyIndex + 1);
+    if (historyIndex! < history.length - 1) {
+      setHistoryIndex(historyIndex! + 1);
       setRevealed(true);
     } else {
-      // Back to live head
-      flipProgress.value = 0;
       setHistoryIndex(null);
       setRevealed(false);
     }
@@ -766,11 +762,10 @@ export default function StudyScreen() {
     if (nextIndex >= currentQueue.length) {
       loadQueue();
     } else {
-      flipProgress.value = 0;
-      translateX.value = slideDistance;
+      translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
       setCurrentIndex(nextIndex);
       setRevealed(false);
-      translateX.value = withTiming(0, slideConfig);
+      setIsFlipping(false);
     }
   }
 
@@ -815,39 +810,39 @@ export default function StudyScreen() {
   const slideDistance = cardWidth + CARD_GAP;
   const slideConfig = { duration: SLIDE_DURATION, easing: Easing.out(Easing.ease) };
 
-  // --- Slot items (prev / current / next) ---
-  const slotItems = useMemo(() => {
-    let prev: QueueItem | null = null;
-    let current: QueueItem | null = null;
-    let next: QueueItem | null = null;
-
-    if (isBrowsingHistory && historyIndex !== null) {
-      prev = historyIndex > 0 ? history[historyIndex - 1].queueItem : null;
-      current = history[historyIndex]?.queueItem ?? null;
-      next =
-        historyIndex < history.length - 1
-          ? history[historyIndex + 1].queueItem
-          : (queue[currentIndex] ?? null);
-    } else {
-      prev = history.length > 0 ? history[history.length - 1].queueItem : null;
-      current = queue[currentIndex] ?? null;
-      next = null; // nothing beyond live card
+  // --- All cards in a single row (no content swapping — eliminates flash) ---
+  const allCards = useMemo(() => {
+    const cards: Array<{ item: QueueItem; isRevealed: boolean }> = [];
+    history.forEach((h) => {
+      cards.push({ item: h.queueItem, isRevealed: true });
+    });
+    if (!sessionDone && queue[currentIndex]) {
+      cards.push({ item: queue[currentIndex], isRevealed: revealed });
     }
+    // Pre-render next card so advance animation has something to slide to
+    if (!sessionDone && currentIndex + 1 < queue.length) {
+      cards.push({ item: queue[currentIndex + 1], isRevealed: false });
+    }
+    return cards;
+  }, [history, queue, currentIndex, revealed, sessionDone]);
 
-    return { prev, current, next };
-  }, [isBrowsingHistory, historyIndex, history, queue, currentIndex]);
-
-  const hasPrev = slotItems.prev !== null;
-  const hasNext = slotItems.next !== null;
+  const focusedCardIndex = isBrowsingHistory ? historyIndex! : history.length;
+  const hasPrev = focusedCardIndex > 0;
+  const hasNext = focusedCardIndex < history.length; // can only navigate forward within history
 
   // --- Handle reveal with flip ---
   function handleReveal() {
     if (revealed) return;
     setRevealed(true);
-    flipProgress.value = withTiming(1, {
-      duration: FLIP_DURATION,
-      easing: Easing.inOut(Easing.ease),
-    });
+    setIsFlipping(true);
+    flipProgress.value = 0;
+    flipProgress.value = withTiming(
+      1,
+      { duration: FLIP_DURATION, easing: Easing.inOut(Easing.ease) },
+      (finished) => {
+        if (finished) runOnJS(setIsFlipping)(false);
+      },
+    );
     if (list?.autoPlayAudio && dictDb && displayItem) {
       playEntryAudio(dictDb, displayItem.entry.id);
     }
@@ -856,17 +851,15 @@ export default function StudyScreen() {
   // --- Animated navigation wrappers ---
   function goBackAnimated() {
     if (!hasPrev) return;
-    translateX.value = withTiming(slideDistance, slideConfig, () => {
+    translateX.value = withTiming(translateX.value + slideDistance, slideConfig, () => {
       runOnJS(goBack)();
-      translateX.value = 0;
     });
   }
 
   function goForwardAnimated() {
     if (!hasNext) return;
-    translateX.value = withTiming(-slideDistance, slideConfig, () => {
+    translateX.value = withTiming(translateX.value - slideDistance, slideConfig, () => {
       runOnJS(goForward)();
-      translateX.value = 0;
     });
   }
 
@@ -876,30 +869,32 @@ export default function StudyScreen() {
       Gesture.Pan()
         .activeOffsetX([-15, 15])
         .failOffsetY([-15, 15])
+        .onStart(() => {
+          gestureStartX.value = translateX.value;
+        })
         .onUpdate((e) => {
-          // Rubber-band effect if no prev/next
           const tx = e.translationX;
           if (tx > 0 && !hasPrev) {
-            translateX.value = tx * 0.3;
+            translateX.value = gestureStartX.value + tx * 0.3;
           } else if (tx < 0 && !hasNext) {
-            translateX.value = tx * 0.3;
+            translateX.value = gestureStartX.value + tx * 0.3;
           } else {
-            translateX.value = tx;
+            translateX.value = gestureStartX.value + tx;
           }
         })
         .onEnd((e) => {
           if (e.translationX > SWIPE_THRESHOLD && hasPrev) {
-            translateX.value = withTiming(slideDistance, slideConfig, () => {
+            // Animate to show prev card, then update state
+            translateX.value = withTiming(gestureStartX.value + slideDistance, slideConfig, () => {
               runOnJS(goBack)();
-              translateX.value = 0;
             });
           } else if (e.translationX < -SWIPE_THRESHOLD && hasNext) {
-            translateX.value = withTiming(-slideDistance, slideConfig, () => {
+            // Animate to show next card, then update state
+            translateX.value = withTiming(gestureStartX.value - slideDistance, slideConfig, () => {
               runOnJS(goForward)();
-              translateX.value = 0;
             });
           } else {
-            translateX.value = withTiming(0, slideConfig);
+            translateX.value = withTiming(gestureStartX.value, slideConfig);
           }
         }),
     [hasPrev, hasNext, slideDistance],
@@ -1073,109 +1068,102 @@ export default function StudyScreen() {
         <View className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
       </View>
 
-      {/* Carousel */}
+      {/* Carousel — all cards rendered in one row, scroll via translateX */}
       <GestureDetector gesture={composedGesture}>
         <View className="flex-1 pt-4" style={{ overflow: "hidden", paddingHorizontal: 16 }}>
           <Animated.View
             style={[
               rowStyle,
               {
-                // Position the row so the center card is visible with CARD_PEEK of prev/next showing
-                // Row layout: [prev: cardWidth] [gap] [center: cardWidth] [gap] [next: cardWidth]
-                // Center card left edge should be at CARD_PEEK + CARD_GAP from container left
-                // Center starts at cardWidth + CARD_GAP in the row
-                // So offset = CARD_PEEK - cardWidth
-                marginLeft: CARD_PEEK - cardWidth,
-                width: 3 * cardWidth + 2 * CARD_GAP,
+                marginLeft: CARD_PEEK + CARD_GAP,
+                width: allCards.length * cardWidth + Math.max(0, allCards.length - 1) * CARD_GAP,
                 flex: 1,
                 maxHeight: 384,
               },
             ]}
           >
-            {/* Prev card (full width, mostly clipped — peek visible on left edge) */}
-            <View style={{ width: cardWidth, marginRight: CARD_GAP }}>
-              {slotItems.prev ? (
-                <Card className="flex-1 items-center justify-center" style={{ opacity: 0.6 }}>
-                  {renderCardRevealed(slotItems.prev)}
-                </Card>
-              ) : (
-                <View style={{ flex: 1 }} />
-              )}
-            </View>
-
-            {/* Center card */}
-            <View style={{ width: cardWidth }}>
-              <Card className="flex-1 items-center justify-center" style={{ position: "relative" }}>
-                {currentItem && (
-                  <>
-                    {/* Check marks + Info icon */}
-                    <View
-                      style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-                      className="flex-row items-center gap-1"
-                    >
-                      {Array.from(
-                        {
-                          length: getCheckCount(
-                            currentItem.srsCard,
-                            list?.flashcardMode ?? "add_order",
-                          ),
-                        },
-                        (_, i) => (
-                          <Check
-                            key={i}
-                            size={14}
-                            className={
-                              getCheckCount(
-                                currentItem.srsCard,
-                                list?.flashcardMode ?? "add_order",
-                              ) === 3
-                                ? "text-green-500"
-                                : "text-muted-foreground"
-                            }
-                          />
-                        ),
-                      )}
-                      <Pressable
-                        onPress={() => router.push(`/lists/word/${currentItem.entry.id}`)}
-                        hitSlop={8}
+            {allCards.map((card, i) => {
+              const isFocused = i === focusedCardIndex;
+              return (
+                <View
+                  key={i}
+                  style={{
+                    width: cardWidth,
+                    marginRight: i < allCards.length - 1 ? CARD_GAP : 0,
+                  }}
+                >
+                  <Card
+                    className="flex-1 items-center justify-center"
+                    style={{ opacity: isFocused ? 1 : 0.6, position: "relative" }}
+                  >
+                    {isFocused && currentItem && (
+                      <View
+                        style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+                        className="flex-row items-center gap-1"
                       >
-                        <Info size={18} className="text-muted-foreground" />
-                      </Pressable>
-                    </View>
-
-                    {/* Front face (flips away) */}
-                    <Animated.View
-                      style={[
-                        frontFaceStyle,
-                        { flex: 1, width: "100%", alignItems: "center", justifyContent: "center" },
-                      ]}
-                    >
-                      {renderCardFront(currentItem)}
-                    </Animated.View>
-
-                    {/* Back face (flips in) */}
-                    <Animated.View
-                      style={[
-                        backFaceStyle,
-                        { alignItems: "center", justifyContent: "center", padding: 16 },
-                      ]}
-                    >
-                      {renderCardRevealed(currentItem)}
-                    </Animated.View>
-                  </>
-                )}
-              </Card>
-            </View>
-
-            {/* Next card (full width, mostly clipped — peek visible on right edge) */}
-            <View style={{ width: cardWidth, marginLeft: CARD_GAP }}>
-              <Card className="flex-1 items-center justify-center" style={{ opacity: 0.6 }}>
-                {slotItems.next &&
-                  (!isBrowsingHistory || historyIndex === history.length - 1
-                    ? renderCardFront(slotItems.next)
-                    : renderCardRevealed(slotItems.next))}
-              </Card>
-            </View>
+                        {Array.from(
+                          {
+                            length: getCheckCount(
+                              currentItem.srsCard,
+                              list?.flashcardMode ?? "add_order",
+                            ),
+                          },
+                          (_, ci) => (
+                            <Check
+                              key={ci}
+                              size={14}
+                              className={
+                                getCheckCount(
+                                  currentItem.srsCard,
+                                  list?.flashcardMode ?? "add_order",
+                                ) === 3
+                                  ? "text-green-500"
+                                  : "text-muted-foreground"
+                              }
+                            />
+                          ),
+                        )}
+                        <Pressable
+                          onPress={() => router.push(`/lists/word/${currentItem.entry.id}`)}
+                          hitSlop={8}
+                        >
+                          <Info size={18} className="text-muted-foreground" />
+                        </Pressable>
+                      </View>
+                    )}
+                    {isFocused && isFlipping ? (
+                      <>
+                        <Animated.View
+                          style={[
+                            frontFaceStyle,
+                            {
+                              flex: 1,
+                              width: "100%",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            },
+                          ]}
+                        >
+                          {renderCardFront(card.item)}
+                        </Animated.View>
+                        <Animated.View
+                          style={[
+                            backFaceStyle,
+                            { alignItems: "center", justifyContent: "center", padding: 16 },
+                          ]}
+                        >
+                          {renderCardRevealed(card.item)}
+                        </Animated.View>
+                      </>
+                    ) : card.isRevealed ? (
+                      renderCardRevealed(card.item)
+                    ) : (
+                      renderCardFront(card.item)
+                    )}
+                  </Card>
+                </View>
+              );
+            })}
           </Animated.View>
         </View>
       </GestureDetector>
