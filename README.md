@@ -54,3 +54,29 @@ The ebook reader uses **JS-measured virtualized pagination** (not CSS columns):
 5. Hidden buffer divs (`#buf-prev`, `#buf-next`) hold adjacent page text for word lookup at boundaries
 
 No scrolling is involved — page navigation directly swaps DOM content.
+
+## Scripts
+
+### Dictionary Database
+
+```bash
+yarn build:db    # Rebuild dictionary.db from JMDict sources
+```
+
+### Midori Import
+
+Migrate bookmarks and SRS progress from [Midori](https://apps.apple.com/app/midori-japanese-dictionary/id385231773) into jiten. Midori must be installed on the same Mac — the script reads its local SQLite database directly.
+
+```bash
+# Export all Midori folders
+npx tsx scripts/midori-import.ts --output /tmp/midori-export
+
+# Export a specific folder (1-4)
+npx tsx scripts/midori-import.ts --folder 1 --output /tmp/midori-export
+
+# With dictionary ID verification
+npx tsx scripts/midori-import.ts --output /tmp/midori-export --verify
+```
+
+This produces `.jiten` files that can be imported via the "Import" button on the Lists screen. SRS progress is preserved — set the list to "Simple SRS" mode to continue studying with the same algorithm.
+
