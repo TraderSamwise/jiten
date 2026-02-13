@@ -6,7 +6,8 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
-import { X, Settings, EllipsisVertical } from "@/lib/icons";
+import { StudyStatisticsModal } from "@/components/StudyStatisticsModal";
+import { X, Settings, EllipsisVertical, Info, Check } from "@/lib/icons";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
 import { useDatabase } from "@/db/provider";
@@ -20,7 +21,7 @@ import {
   dateToSrsEpochDays,
 } from "@/stores/simple-srs";
 import { useListsStore, parseListRow } from "@/stores/lists";
-import type { DictEntry, CardFace, SrsCardRow } from "@/db/types";
+import type { DictEntry, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
 const NEW_CARD_BATCH_SIZE = 5;
@@ -50,6 +51,27 @@ interface QueueItem {
   srsCard?: SrsCardRow;
 }
 
+function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): number {
+  if (!srsCard) return 0;
+
+  if (mode === "simple_srs") {
+    if (srsCard.simpleStage == null) return 0;
+    if (srsCard.simpleStage === 1) return 3; // graduated
+    // stage 0 (learning): 1 check after init, 2 if interval has grown
+    return srsCard.simpleInterval != null && srsCard.simpleInterval > 0.5 ? 2 : 1;
+  }
+
+  if (mode === "srs") {
+    if (srsCard.state === 0) return 0; // new
+    if (srsCard.state === 2) return 3; // review (graduated)
+    if (srsCard.state === 3) return 1; // relearning
+    // state 1 (learning): use reps count
+    return Math.min(srsCard.reps, 2) || 1;
+  }
+
+  return 0; // add_order — no SRS checks
+}
+
 export default function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
@@ -70,6 +92,7 @@ export default function StudyScreen() {
   const [sessionDone, setSessionDone] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [statsVisible, setStatsVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
@@ -523,12 +546,7 @@ export default function StudyScreen() {
             : `${currentIndex + 1} / ${total}`}
         </Text>
         <View className="flex-row items-center">
-          <Pressable
-            onPress={() => {
-              if (currentItem) router.push(`/lists/word/${currentItem.entry.id}`);
-            }}
-            className="p-2"
-          >
+          <Pressable onPress={() => setStatsVisible(true)} className="p-2">
             <EllipsisVertical size={20} className="text-foreground" />
           </Pressable>
           <Pressable onPress={handleGear} className="p-2">
@@ -557,6 +575,35 @@ export default function StudyScreen() {
         <Card className="flex-1 items-center justify-center max-h-96">
           {currentItem && (
             <>
+              {/* Check marks + Info icon */}
+              <View
+                style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+                className="flex-row items-center gap-1"
+              >
+                {Array.from(
+                  {
+                    length: getCheckCount(currentItem.srsCard, list?.flashcardMode ?? "add_order"),
+                  },
+                  (_, i) => (
+                    <Check
+                      key={i}
+                      size={14}
+                      className={
+                        getCheckCount(currentItem.srsCard, list?.flashcardMode ?? "add_order") === 3
+                          ? "text-green-500"
+                          : "text-muted-foreground"
+                      }
+                    />
+                  ),
+                )}
+                <Pressable
+                  onPress={() => router.push(`/lists/word/${currentItem.entry.id}`)}
+                  hitSlop={8}
+                >
+                  <Info size={18} className="text-muted-foreground" />
+                </Pressable>
+              </View>
+
               {/* Front face */}
               <View className="items-center">
                 <Text
@@ -654,6 +701,14 @@ export default function StudyScreen() {
           loadQueue();
         }}
         listId={listId!}
+      />
+
+      <StudyStatisticsModal
+        visible={statsVisible}
+        onClose={() => setStatsVisible(false)}
+        listId={listId!}
+        flashcardMode={list?.flashcardMode ?? "add_order"}
+        onClearStatistics={loadQueue}
       />
     </View>
   );

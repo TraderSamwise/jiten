@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   EllipsisVertical,
+  Info,
 } from "lucide-react-native";
 
 // Map className → style with color extraction so NativeWind
@@ -55,6 +56,7 @@ const icons = [
   ChevronDown,
   ChevronUp,
   EllipsisVertical,
+  Info,
 ];
 
 for (const icon of icons) {
@@ -92,4 +94,5 @@ export {
   ChevronDown,
   ChevronUp,
   EllipsisVertical,
+  Info,
 };
