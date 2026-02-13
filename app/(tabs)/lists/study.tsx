@@ -23,7 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { StudyStatisticsModal } from "@/components/StudyStatisticsModal";
-import { X, Settings, Info, Check, ChevronLeft, ChevronRight } from "@/lib/icons";
+import { X, Settings, Info, Check, ChevronLeft, ChevronRight, Mic } from "@/lib/icons";
+import { useVoiceRecognition } from "@/lib/voice-recognition";
+import { toHiragana } from "wanakana";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
 import { useDatabase } from "@/db/provider";
@@ -179,6 +181,12 @@ export default function StudyScreen() {
   const [confusedResults, setConfusedResults] = useState<ConfusedWordResult[]>([]);
   const [confusedFailedEntry, setConfusedFailedEntry] = useState<DictEntry | null>(null);
 
+  // Voice recognition state
+  const [voiceHeard, setVoiceHeard] = useState<string | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<"idle" | "correct" | "wrong">("idle");
+  const voiceAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceWrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // History for swipe-back
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -191,6 +199,39 @@ export default function StudyScreen() {
 
   const isBrowsingHistory = historyIndex !== null;
   const displayItem = isBrowsingHistory ? history[historyIndex]?.queueItem : queue[currentIndex];
+
+  // Voice recognition: enabled when voice mode is on, card is not revealed, not browsing history
+  const voiceEnabled =
+    !!list?.voiceMode && !revealed && !isBrowsingHistory && !sessionDone && !loading;
+
+  const voiceCallbackRef = useRef<(transcript: string) => void>(() => {});
+
+  const { isListening } = useVoiceRecognition({
+    enabled: voiceEnabled,
+    onResult: (transcript: string) => voiceCallbackRef.current(transcript),
+  });
+
+  // Clean up voice timers on unmount
+  useEffect(() => {
+    return () => {
+      if (voiceAutoAdvanceRef.current) clearTimeout(voiceAutoAdvanceRef.current);
+      if (voiceWrongTimerRef.current) clearTimeout(voiceWrongTimerRef.current);
+    };
+  }, []);
+
+  // Reset voice state when card changes
+  useEffect(() => {
+    setVoiceStatus("idle");
+    setVoiceHeard(null);
+    if (voiceAutoAdvanceRef.current) {
+      clearTimeout(voiceAutoAdvanceRef.current);
+      voiceAutoAdvanceRef.current = null;
+    }
+    if (voiceWrongTimerRef.current) {
+      clearTimeout(voiceWrongTimerRef.current);
+      voiceWrongTimerRef.current = null;
+    }
+  }, [currentIndex]);
 
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
   useEffect(() => {
@@ -397,6 +438,11 @@ export default function StudyScreen() {
   }
 
   async function handleFail() {
+    // Cancel voice auto-advance if pending
+    if (voiceAutoAdvanceRef.current) {
+      clearTimeout(voiceAutoAdvanceRef.current);
+      voiceAutoAdvanceRef.current = null;
+    }
     if (isBrowsingHistory) {
       await reRateFromHistory("fail", false);
       return;
@@ -440,6 +486,11 @@ export default function StudyScreen() {
   }
 
   async function handlePass(isLongPress: boolean) {
+    // Cancel voice auto-advance if pending
+    if (voiceAutoAdvanceRef.current) {
+      clearTimeout(voiceAutoAdvanceRef.current);
+      voiceAutoAdvanceRef.current = null;
+    }
     if (isBrowsingHistory) {
       await reRateFromHistory(isLongPress ? "easy" : "pass", isLongPress);
       return;
@@ -957,6 +1008,32 @@ export default function StudyScreen() {
     }
   }
 
+  // --- Voice recognition callback (needs handleReveal + handlePass) ---
+  voiceCallbackRef.current = (transcript: string) => {
+    if (revealed || !displayItem) return;
+
+    const heard = toHiragana(transcript, { passRomaji: true });
+    const readings = displayItem.entry.kana.map((k) => k.text);
+    const isCorrect = readings.some((r) => r === heard);
+
+    if (isCorrect) {
+      setVoiceStatus("correct");
+      setVoiceHeard(null);
+      handleReveal();
+      voiceAutoAdvanceRef.current = setTimeout(() => {
+        handlePass(false);
+        setVoiceStatus("idle");
+      }, 2000);
+    } else {
+      setVoiceStatus("wrong");
+      setVoiceHeard(transcript);
+      voiceWrongTimerRef.current = setTimeout(() => {
+        setVoiceStatus("idle");
+        setVoiceHeard(null);
+      }, 1500);
+    }
+  };
+
   // --- Animated navigation wrappers ---
   function goBackAnimated() {
     if (!hasPrev) return;
@@ -1066,7 +1143,32 @@ export default function StudyScreen() {
             {getFaceText(item.entry, face)}
           </Text>
         ))}
-        <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
+        {list?.voiceMode ? (
+          <View className="mt-6 items-center">
+            {voiceStatus === "correct" ? (
+              <Text className="text-lg font-bold text-green-500">Correct!</Text>
+            ) : voiceStatus === "wrong" ? (
+              <>
+                <Text className="text-lg font-bold text-red-500">Try again</Text>
+                {voiceHeard && (
+                  <Text className="text-sm text-muted-foreground mt-1">
+                    Heard: {voiceHeard}
+                  </Text>
+                )}
+              </>
+            ) : (
+              <>
+                <Mic
+                  size={24}
+                  className={isListening ? "text-primary" : "text-muted-foreground"}
+                />
+                <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
+              </>
+            )}
+          </View>
+        ) : (
+          <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
+        )}
       </View>
     );
   }

@@ -1888,6 +1888,11 @@
   resolved "https://registry.yarnpkg.com/@istanbuljs/schema/-/schema-0.1.3.tgz#e45e384e4b8ec16bce2fd903af78450f6bf7ec98"
   integrity sha512-ZXRY4jNvVgSVQ8DL3LTcakaAtXwTVUxE81hslsyD2AtoXW/wVob10HkOJ1X/pAlcI7D+2YoZKg5do8G/w6RYgA==
 
+"@jamsch/expo-speech-recognition@^0.2.15":
+  version "0.2.15"
+  resolved "https://registry.yarnpkg.com/@jamsch/expo-speech-recognition/-/expo-speech-recognition-0.2.15.tgz#f17aeb96aede67991276ba381d8d17050a18051c"
+  integrity sha512-VzhR6a1bYnh8Yl704sBbvCmPqkZWzEggzl504myy6GKqQ90Ib+FQsz9FKI8RQbBXf8KHfhJVT3t0AxP6lYyyYw==
+
 "@jest/create-cache-key-function@^29.7.0":
   version "29.7.0"
   resolved "https://registry.yarnpkg.com/@jest/create-cache-key-function/-/create-cache-key-function-29.7.0.tgz#793be38148fab78e65f40ae30c36785f4ad859f0"

@@ -34,6 +34,7 @@
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.22",
     "@expo/vector-icons": "^15.0.3",
+    "@jamsch/expo-speech-recognition": "^0.2.15",
     "@op-engineering/op-sqlite": "^15.2.5",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/native": "^7.1.8",

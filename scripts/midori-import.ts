@@ -7,9 +7,10 @@
  * Usage: npx tsx scripts/midori-import.ts [--folder <number>] [--output <dir>]
  *
  * Options:
- *   --folder <n>   Only export a specific folder (1-4). Default: all folders.
+ *   [path]          Path to bookmark3 database. Default: Midori's container path.
+ *   --folder <n>    Only export a specific folder (1-4). Default: all folders.
  *   --output <dir>  Output directory. Default: current directory.
- *   --verify       Verify entry IDs exist in jiten's dictionary.db
+ *   --verify        Verify entry IDs exist in jiten's dictionary.db
  */
 
 import Database from "better-sqlite3";
@@ -19,7 +20,7 @@ import fs from "fs";
 
 import type { JitenExportFile } from "../lib/list-transfer";
 
-const BOOKMARK_DB = path.join(
+const DEFAULT_BOOKMARK_DB = path.join(
   os.homedir(),
   "Library/Containers/101C13F5-F64C-44F0-99A6-D12850F4D343/Data/Documents/bookmark3",
 );
@@ -39,6 +40,7 @@ function parseMidoriJson(raw: string): { s: number; n: number; l: number } | nul
 // ─── Parse CLI args ───
 
 const args = process.argv.slice(2);
+let bookmarkDbPath: string | null = null;
 let folderFilter: number | null = null;
 let outputDir = ".";
 let verify = false;
@@ -50,8 +52,12 @@ for (let i = 0; i < args.length; i++) {
     outputDir = args[++i];
   } else if (args[i] === "--verify") {
     verify = true;
+  } else if (!args[i].startsWith("--")) {
+    bookmarkDbPath = args[i];
   }
 }
+
+const BOOKMARK_DB = bookmarkDbPath ?? DEFAULT_BOOKMARK_DB;
 
 // ─── Main ───
 

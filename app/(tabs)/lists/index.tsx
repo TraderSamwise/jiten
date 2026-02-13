@@ -59,6 +59,7 @@ export default function ListsIndexScreen() {
       studyPosition: 0,
       autoPlayAudio: false,
       confusionDetection: true,
+      voiceMode: false,
       createdAt: now,
       updatedAt: now,
     };
