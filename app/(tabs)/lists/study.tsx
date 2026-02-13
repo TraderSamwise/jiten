@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { StudyStatisticsModal } from "@/components/StudyStatisticsModal";
-import { X, Settings, EllipsisVertical, Info, Check, ChevronLeft, ChevronRight } from "@/lib/icons";
+import { X, Settings, Info, Check, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
 import { useDatabase } from "@/db/provider";
@@ -792,11 +792,12 @@ export default function StudyScreen() {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ["Options", "Cancel"],
-          cancelButtonIndex: 1,
+          options: ["Options", "Statistics", "Cancel"],
+          cancelButtonIndex: 2,
         },
         (index) => {
           if (index === 0) setSettingsVisible(true);
+          if (index === 1) setStatsVisible(true);
         },
       );
     } else {
@@ -1053,14 +1054,9 @@ export default function StudyScreen() {
               ? `${simpleSrsLearned} / ${simpleSrsTotal}`
               : `${currentIndex + 1} / ${total}`}
         </Text>
-        <View className="flex-row items-center">
-          <Pressable onPress={() => setStatsVisible(true)} className="p-2">
-            <EllipsisVertical size={20} className="text-foreground" />
-          </Pressable>
-          <Pressable onPress={handleGear} className="p-2">
-            <Settings size={20} className="text-foreground" />
-          </Pressable>
-        </View>
+        <Pressable onPress={handleGear} className="p-2">
+          <Settings size={20} className="text-foreground" />
+        </Pressable>
       </View>
 
       {/* Progress bar */}
@@ -1221,6 +1217,15 @@ export default function StudyScreen() {
               className="items-center py-4 border-b border-border"
             >
               <Text className="text-base text-foreground">Options</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setMenuVisible(false);
+                setStatsVisible(true);
+              }}
+              className="items-center py-4 border-b border-border"
+            >
+              <Text className="text-base text-foreground">Statistics</Text>
             </Pressable>
             <Pressable onPress={() => setMenuVisible(false)} className="items-center py-4">
               <Text className="text-base text-muted-foreground">Cancel</Text>
