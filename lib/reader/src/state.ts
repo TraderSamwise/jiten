@@ -1,6 +1,6 @@
 export const state = {
   blockHtmls: [] as string[],
-  pages: [] as { start: number; end: number }[],
+  pages: [] as { start: number; end: number; scrollOffset?: number }[],
   currentPage: 1,
   totalPages: 1,
   lastTapNode: null as Node | null,
