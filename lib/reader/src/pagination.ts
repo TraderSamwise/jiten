@@ -5,6 +5,18 @@ declare const window: Window & {
   ReactNativeWebView: { postMessage(msg: string): void };
 };
 
+// Compute the translateX value for the current page's scroll offset (multi-page blocks).
+function getPageScrollTransform(): string {
+  const p = state.pages[state.currentPage - 1];
+  if (!p || !p.scrollOffset) return "";
+  const cs = getComputedStyle(state.contentEl!);
+  const cW =
+    state.contentEl!.clientWidth -
+    (parseFloat(cs.paddingLeft) || 0) -
+    (parseFloat(cs.paddingRight) || 0);
+  return "translateX(" + p.scrollOffset * cW + "px)";
+}
+
 // Parse blocks from raw content
 export function parseBlocks(): void {
   const children = state.rawEl!.children;
@@ -45,7 +57,10 @@ export function paginate(): void {
   measure.style.padding = cs.padding;
   measure.style.width = state.contentEl!.clientWidth + "px";
   measure.style.height = state.contentEl!.clientHeight + "px";
-  measure.style.overflow = "auto";
+  measure.style.overflow = "hidden";
+  var padL = parseFloat(cs.paddingLeft) || 0;
+  var padR = parseFloat(cs.paddingRight) || 0;
+  var contentW = state.contentEl!.clientWidth - padL - padR;
   measure.style.visibility = "hidden";
   measure.style.position = "absolute";
   measure.style.left = "-9999px";
@@ -57,8 +72,11 @@ export function paginate(): void {
     if (measure.scrollWidth > measure.clientWidth) {
       // This block caused overflow
       if (i === pageStart) {
-        // Single block overflows — give it its own page
-        state.pages.push({ start: pageStart, end: i });
+        // Single block overflows — split across scrolled pages
+        var np = 1 + Math.ceil((measure.scrollWidth - measure.clientWidth) / contentW);
+        for (var pi = 0; pi < np; pi++) {
+          state.pages.push({ start: pageStart, end: i, scrollOffset: pi });
+        }
         pageStart = i + 1;
         measure.innerHTML = "";
       } else {
@@ -68,7 +86,10 @@ export function paginate(): void {
         measure.innerHTML = state.blockHtmls[i];
         // Check if this single block also overflows on its own
         if (measure.scrollWidth > measure.clientWidth) {
-          state.pages.push({ start: i, end: i });
+          var np2 = 1 + Math.ceil((measure.scrollWidth - measure.clientWidth) / contentW);
+          for (var pi2 = 0; pi2 < np2; pi2++) {
+            state.pages.push({ start: i, end: i, scrollOffset: pi2 });
+          }
           pageStart = i + 1;
           measure.innerHTML = "";
         }
@@ -93,6 +114,9 @@ export function renderPage(pageNum: number): void {
     html += state.blockHtmls[i];
   }
   state.pageEl!.innerHTML = html;
+
+  // Apply scroll transform for multi-page blocks
+  state.pageEl!.style.transform = getPageScrollTransform();
 
   // Buffer: previous page's last 2 blocks
   if (pageNum > 1) {
@@ -153,6 +177,7 @@ export function expandPageForHighlight(): boolean {
   if (now - state.lastShiftTime < 300) return false;
 
   const page = state.pages[state.currentPage - 1];
+  if (page.scrollOffset) return false; // No expansion on continuation pages
   const nextIdx = page.end + 1 + state.extraBlocks;
   if (nextIdx >= state.blockHtmls.length) return false;
 
@@ -186,7 +211,7 @@ export function animateResetShift(): void {
   shiftResetTimeout = setTimeout(function () {
     shiftResetTimeout = null;
     state.pageEl!.style.transition = "";
-    state.pageEl!.style.transform = "";
+    state.pageEl!.style.transform = getPageScrollTransform();
     // Remove only the extra appended blocks, preserving highlights in original content
     for (let i = 0; i < extraCount; i++) {
       if (state.pageEl!.lastChild) {
@@ -208,7 +233,7 @@ export function resetPageShift(): void {
   state.extraBlocks = 0;
   state.shiftOffset = 0;
   state.pageEl!.style.transition = "";
-  state.pageEl!.style.transform = "";
+  state.pageEl!.style.transform = getPageScrollTransform();
 
   // Re-render just #page to remove extra blocks
   const p = state.pages[state.currentPage - 1];
