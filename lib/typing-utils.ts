@@ -96,3 +96,37 @@ export function isValidPrefix(typedKana: string, entry: DictEntry): boolean {
   const readings = entry.kana.map((k) => k.text);
   return readings.some((r) => toHira(norm(r)).startsWith(normalizedTyped));
 }
+
+export type KanjiColor = "green" | "red" | "pending" | "default";
+
+/**
+ * Map kana typing progress to a color for a specific kanji/display character.
+ * Proportionally maps kana statuses to display chars using ceil-biased thresholds.
+ */
+export function getKanjiColor(
+  displayChars: string[],
+  charStatuses: CharStatus[],
+  totalKana: number,
+  charIndex: number,
+): KanjiColor {
+  // Count consecutive correct kana from start
+  let correctKana = 0;
+  for (const status of charStatuses) {
+    if (status === "correct") correctKana++;
+    else break;
+  }
+
+  // A display char at index i is "covered" when correctKana >= ceil((i+1) * totalKana / totalDisplay)
+  const totalDisplay = displayChars.length;
+  const kanaNeeded = Math.ceil(((charIndex + 1) * totalKana) / totalDisplay);
+
+  if (correctKana >= kanaNeeded) return "green";
+  // Check if we're in the "current" zone — some kana for this kanji are correct but not all
+  const prevKanaNeeded = charIndex > 0 ? Math.ceil((charIndex * totalKana) / totalDisplay) : 0;
+  if (correctKana > 0 && correctKana >= prevKanaNeeded) {
+    if (correctKana < charStatuses.length && charStatuses[correctKana] === "wrong") return "red";
+    // Partially covered — show as in-progress (pending/untyped kana remaining)
+    return "pending";
+  }
+  return "default";
+}
