@@ -47,6 +47,7 @@ const BATCH_TRANSITION_DELAY = 1500;
 
 type Phase = "select" | "playing" | "done";
 type GameMode = "review" | "learn" | "all";
+type FuriganaMode = "off" | "auto" | "on";
 
 interface WordState {
   entry: DictEntry;
@@ -92,20 +93,32 @@ function WordBlock({
   word,
   isCurrent,
   typedKana,
-  furiganaVisible,
+  furiganaMode,
+  autoRevealed,
   pitchVisible,
 }: {
   word: WordState;
   isCurrent: boolean;
   typedKana: string;
-  furiganaVisible: boolean;
+  furiganaMode: FuriganaMode;
+  autoRevealed: boolean;
   pitchVisible: boolean;
 }) {
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
   const hasKanji = entry.kanji.length > 0;
-  const showFurigana = hasKanji && furiganaVisible;
+
+  // Determine furigana visibility per-word:
+  // "on" → always show, "off" → never show,
+  // "auto" → show only for current word when autoRevealed, or for completed words
+  const showFurigana =
+    hasKanji &&
+    (furiganaMode === "on" ||
+      (furiganaMode === "auto" && ((isCurrent && autoRevealed) || completed)));
+
+  // In auto mode, always reserve space for furigana so layout doesn't shift
+  const reserveSpace = hasKanji && furiganaMode !== "off";
 
   // Find matching pitch accent for this reading
   const pitch = pitchVisible
@@ -174,7 +187,7 @@ function WordBlock({
     >
       {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
-      {/* Furigana: pitch accent with colored text, or plain colored text, or pitch only */}
+      {/* Furigana: pitch accent with colored text, plain colored text, or invisible placeholder */}
       {showFurigana && pitch ? (
         <PitchAccent accent={pitch} renderMora={coloredMoraRenderer} />
       ) : showFurigana ? (
@@ -196,8 +209,13 @@ function WordBlock({
             </Text>
           ))}
         </View>
-      ) : pitch ? (
-        <PitchAccent accent={pitch} />
+      ) : reserveSpace && pitch ? (
+        <PitchAccent
+          accent={pitch}
+          renderMora={(mora) => <Text className="text-sm text-transparent">{mora}</Text>}
+        />
+      ) : reserveSpace ? (
+        <Text className="text-base text-transparent">{targetReading}</Text>
       ) : null}
 
       {/* Display text (kanji or kana) — per-char coloring when current */}
@@ -283,8 +301,9 @@ export default function TypingGameScreen() {
   const { dictDb } = useDatabase();
 
   const [phase, setPhase] = useState<Phase>("select");
-  const [showFuriganaOpt, setShowFuriganaOpt] = useState(true);
+  const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>("auto");
   const [showPitchOpt, setShowPitchOpt] = useState(true);
+  const [autoFuriganaRevealed, setAutoFuriganaRevealed] = useState(false);
   const [words, setWords] = useState<WordState[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [typedRomaji, setTypedRomaji] = useState("");
@@ -306,6 +325,7 @@ export default function TypingGameScreen() {
 
   // Per-word romaji answers for backspace-to-previous (reset each batch)
   const answers = useRef<string[]>([]);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const inputRef = useRef<TextInput>(null);
 
@@ -319,6 +339,27 @@ export default function TypingGameScreen() {
     const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
     return Math.max(4, rows * wordsPerRow);
   })();
+
+  // ─── Auto-furigana idle timer ───
+
+  function startIdleTimer() {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (furiganaMode !== "auto" || phase !== "playing") return;
+    idleTimerRef.current = setTimeout(() => {
+      setAutoFuriganaRevealed(true);
+    }, 2000);
+  }
+
+  // Reset auto-reveal and start idle timer when current word changes
+
+  useEffect(() => {
+    if (phase !== "playing") return;
+    setAutoFuriganaRevealed(false);
+    startIdleTimer();
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [currentWordIndex, phase, furiganaMode]);
 
   // ─── Load counts ───
 
@@ -355,10 +396,11 @@ export default function TypingGameScreen() {
     loadCounts();
   }, [loadCounts]);
 
-  // Clean up timer on unmount
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (batchTransitionTimer.current) clearTimeout(batchTransitionTimer.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, []);
 
@@ -486,6 +528,17 @@ export default function TypingGameScreen() {
     const converted = romajiToKana(raw);
     setTypedKana(converted);
 
+    // Auto-furigana: restart idle timer on input, reveal on mistype
+    if (furiganaMode === "auto") {
+      startIdleTimer();
+      if (!autoFuriganaRevealed) {
+        const statuses = compareChars(converted, getTargetReading(words[currentWordIndex].entry));
+        if (statuses.some((s) => s === "wrong")) {
+          setAutoFuriganaRevealed(true);
+        }
+      }
+    }
+
     const currentEntry = words[currentWordIndex].entry;
     const isCorrect =
       isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry);
@@ -572,8 +625,22 @@ export default function TypingGameScreen() {
           {/* Options */}
           <View className="mt-6 gap-3">
             <View className="flex-row items-center justify-between">
-              <Text className="text-base text-foreground">Show furigana</Text>
-              <Switch value={showFuriganaOpt} onValueChange={setShowFuriganaOpt} />
+              <Text className="text-base text-foreground">Furigana</Text>
+              <View className="flex-row rounded-lg border border-border overflow-hidden">
+                {(["off", "auto", "on"] as const).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    className={`px-3 py-1.5 ${furiganaMode === mode ? "bg-primary" : ""}`}
+                    onPress={() => setFuriganaMode(mode)}
+                  >
+                    <Text
+                      className={`text-sm capitalize ${furiganaMode === mode ? "text-primary-foreground" : "text-foreground"}`}
+                    >
+                      {mode}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="text-base text-foreground">Show pitch accent</Text>
@@ -601,7 +668,8 @@ export default function TypingGameScreen() {
                   word={word}
                   isCurrent={i === currentWordIndex}
                   typedKana={i === currentWordIndex ? typedKana : ""}
-                  furiganaVisible={showFuriganaOpt}
+                  furiganaMode={furiganaMode}
+                  autoRevealed={autoFuriganaRevealed}
                   pitchVisible={showPitchOpt}
                 />
               ))}
