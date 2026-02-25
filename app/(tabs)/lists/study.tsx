@@ -258,6 +258,7 @@ export default function StudyScreen() {
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
+  const revealedRef = useRef(false);
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
@@ -324,19 +325,23 @@ export default function StudyScreen() {
     if (Platform.OS !== "web") return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Enter") return;
-      // Don't intercept Enter while typing in an input
+      const isRevealed = revealedRef.current;
+      // Skip Enter in text inputs unless card is already revealed (typing mode fast-advance)
       const tag = (document.activeElement as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if ((tag === "INPUT" || tag === "TEXTAREA") && !isRevealed) return;
       e.preventDefault();
+      e.stopPropagation();
       if (isBrowsingHistory) return;
-      if (revealed) {
+      if (isRevealed) {
+        flipProgress.value = 1;
+        setIsFlipping(false);
         handlePass(false);
       } else {
         handleReveal();
       }
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   });
 
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
@@ -822,6 +827,7 @@ export default function StudyScreen() {
       // Animate row left to reveal the next card (already pre-rendered in allCards)
       translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
       setCurrentIndex(nextIndex);
+      revealedRef.current = false;
       setRevealed(false);
       setIsFlipping(false);
     }
@@ -1099,6 +1105,7 @@ export default function StudyScreen() {
   // --- Handle reveal with flip ---
   function handleReveal() {
     if (revealed) return;
+    revealedRef.current = true;
     setRevealed(true);
     setIsFlipping(true);
     flipProgress.value = 0;
