@@ -309,8 +309,6 @@ export default function TypingGameScreen() {
 
   // Per-word romaji answers for backspace-to-previous (reset each batch)
   const answers = useRef<string[]>([]);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const inputRef = useRef<TextInput>(null);
 
   // ─── Dynamic batch size from screen dimensions ───
@@ -323,27 +321,6 @@ export default function TypingGameScreen() {
     const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
     return Math.max(4, rows * wordsPerRow);
   })();
-
-  // ─── Auto-furigana idle timer ───
-
-  function startIdleTimer() {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    if (furiganaMode !== "auto" || phase !== "playing") return;
-    idleTimerRef.current = setTimeout(() => {
-      setAutoFuriganaRevealed(true);
-    }, 2000);
-  }
-
-  // Start idle timer when current word changes
-  // (autoFuriganaRevealed is reset synchronously in advanceWord/handleKeyPress)
-
-  useEffect(() => {
-    if (phase !== "playing") return;
-    startIdleTimer();
-    return () => {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    };
-  }, [currentWordIndex, phase, furiganaMode]);
 
   // ─── Load counts ───
 
@@ -384,7 +361,6 @@ export default function TypingGameScreen() {
   useEffect(() => {
     return () => {
       if (batchTransitionTimer.current) clearTimeout(batchTransitionTimer.current);
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, []);
 
@@ -513,14 +489,11 @@ export default function TypingGameScreen() {
     const converted = romajiToKana(raw);
     setTypedKana(converted);
 
-    // Auto-furigana: restart idle timer on input, reveal on mistype
-    if (furiganaMode === "auto") {
-      startIdleTimer();
-      if (!autoFuriganaRevealed) {
-        const statuses = compareChars(converted, getTargetReading(words[currentWordIndex].entry));
-        if (statuses.some((s) => s === "wrong")) {
-          setAutoFuriganaRevealed(true);
-        }
+    // Auto-furigana: reveal on mistype
+    if (furiganaMode === "auto" && !autoFuriganaRevealed) {
+      const statuses = compareChars(converted, getTargetReading(words[currentWordIndex].entry));
+      if (statuses.some((s) => s === "wrong")) {
+        setAutoFuriganaRevealed(true);
       }
     }
 
