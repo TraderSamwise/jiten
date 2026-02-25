@@ -3,6 +3,7 @@ import {
   View,
   TextInput,
   Pressable,
+  Switch,
   useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
@@ -30,6 +31,7 @@ import {
   isReadingComplete,
   type CharStatus,
 } from "@/lib/typing-utils";
+import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -90,16 +92,25 @@ function WordBlock({
   word,
   isCurrent,
   typedKana,
+  furiganaVisible,
+  pitchVisible,
 }: {
   word: WordState;
   isCurrent: boolean;
   typedKana: string;
+  furiganaVisible: boolean;
+  pitchVisible: boolean;
 }) {
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
   const hasKanji = entry.kanji.length > 0;
-  const showFurigana = hasKanji;
+  const showFurigana = hasKanji && furiganaVisible;
+
+  // Find matching pitch accent for this reading
+  const pitch = pitchVisible
+    ? entry.pitchAccents.find((pa) => pa.reading === targetReading)
+    : undefined;
 
   const targetChars = [...targetReading];
   const displayChars = [...displayText];
@@ -115,6 +126,45 @@ function WordBlock({
 
   const completedColor = correct ? "text-green-500" : "text-red-400";
 
+  // Build mora → char offset mapping for pitch+furigana integration
+  const morae = pitch ? splitMorae(targetReading) : [];
+  const moraCharOffsets: number[] = [];
+  if (pitch) {
+    let offset = 0;
+    for (const mora of morae) {
+      moraCharOffsets.push(offset);
+      offset += mora.length;
+    }
+  }
+
+  // Render each mora's characters with typing-feedback colors
+  const coloredMoraRenderer = (mora: string, moraIndex: number) => {
+    const start = moraCharOffsets[moraIndex] ?? 0;
+    return (
+      <View className="flex-row">
+        {[...mora].map((char, ci) => {
+          const charIdx = start + ci;
+          return (
+            <Text
+              key={ci}
+              className={`text-sm ${
+                charStatuses[charIdx] === "correct"
+                  ? "text-green-500"
+                  : charStatuses[charIdx] === "wrong"
+                    ? "text-red-500"
+                    : charStatuses[charIdx] === "pending"
+                      ? "text-yellow-500"
+                      : "text-muted-foreground"
+              }`}
+            >
+              {char}
+            </Text>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <View
       className="items-center mx-2 mb-3"
@@ -122,8 +172,10 @@ function WordBlock({
     >
       {completed && correct && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
-      {/* Furigana reading */}
-      {showFurigana && (
+      {/* Furigana: pitch accent with colored text, or plain colored text, or pitch only */}
+      {showFurigana && pitch ? (
+        <PitchAccent accent={pitch} renderMora={coloredMoraRenderer} />
+      ) : showFurigana ? (
         <View className="flex-row">
           {targetChars.map((char, i) => (
             <Text
@@ -142,7 +194,9 @@ function WordBlock({
             </Text>
           ))}
         </View>
-      )}
+      ) : pitch ? (
+        <PitchAccent accent={pitch} />
+      ) : null}
 
       {/* Display text (kanji or kana) */}
       {showFurigana && isCurrent ? (
@@ -179,7 +233,7 @@ function WordBlock({
       )}
 
       {/* Kana-only entries: character coloring overlay */}
-      {!showFurigana && isCurrent && (
+      {!hasKanji && isCurrent && (
         <View className="flex-row absolute top-0 left-0 right-0 items-center justify-center">
           <View className="flex-row">
             {targetChars.map((char, i) => (
@@ -244,6 +298,8 @@ export default function TypingGameScreen() {
   const { dictDb } = useDatabase();
 
   const [phase, setPhase] = useState<Phase>("select");
+  const [showFuriganaOpt, setShowFuriganaOpt] = useState(true);
+  const [showPitchOpt, setShowPitchOpt] = useState(true);
   const [words, setWords] = useState<WordState[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [typedRomaji, setTypedRomaji] = useState("");
@@ -527,6 +583,18 @@ export default function TypingGameScreen() {
               disabled={allCount === 0}
             />
           </View>
+
+          {/* Options */}
+          <View className="mt-6 gap-3">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-base text-foreground">Show furigana</Text>
+              <Switch value={showFuriganaOpt} onValueChange={setShowFuriganaOpt} />
+            </View>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-base text-foreground">Show pitch accent</Text>
+              <Switch value={showPitchOpt} onValueChange={setShowPitchOpt} />
+            </View>
+          </View>
         </View>
       )}
 
@@ -548,6 +616,8 @@ export default function TypingGameScreen() {
                   word={word}
                   isCurrent={i === currentWordIndex}
                   typedKana={i === currentWordIndex ? typedKana : ""}
+                  furiganaVisible={showFuriganaOpt}
+                  pitchVisible={showPitchOpt}
                 />
               ))}
             </View>

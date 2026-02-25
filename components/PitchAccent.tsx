@@ -5,6 +5,8 @@ import type { PitchAccent as PitchAccentType } from "@/db/types";
 
 interface PitchAccentProps {
   accent: PitchAccentType;
+  /** Custom renderer for each mora's text. Receives (mora, moraIndex). */
+  renderMora?: (mora: string, moraIndex: number) => React.ReactNode;
 }
 
 /**
@@ -13,7 +15,7 @@ interface PitchAccentProps {
  * 1 = atamadaka (HLLL...)
  * N = drops after Nth mora
  */
-export function PitchAccent({ accent }: PitchAccentProps) {
+export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
   const { reading, pitchNumber } = accent;
   const morae = splitMorae(reading);
 
@@ -28,8 +30,11 @@ export function PitchAccent({ accent }: PitchAccentProps) {
                 i > 0 ? getBridgeColor(i - 1, i, pitchNumber, morae.length) : ""
               }`}
             />
-            {/* Vertical shift version: <View className={isHigh ? "mb-2" : "mt-2"}><Text ...>{mora}</Text></View> */}
-            <Text className="text-sm text-foreground">{mora}</Text>
+            {renderMora ? (
+              renderMora(mora, i)
+            ) : (
+              <Text className="text-sm text-foreground">{mora}</Text>
+            )}
           </View>
         );
       })}
@@ -38,7 +43,7 @@ export function PitchAccent({ accent }: PitchAccentProps) {
   );
 }
 
-function getMoraPitch(index: number, downstep: number, _totalMorae: number): boolean {
+export function getMoraPitch(index: number, downstep: number, _totalMorae: number): boolean {
   if (downstep === 0) {
     // Heiban: first mora low, rest high
     return index > 0;
@@ -51,7 +56,7 @@ function getMoraPitch(index: number, downstep: number, _totalMorae: number): boo
   return index > 0 && index < downstep;
 }
 
-function getBridgeColor(
+export function getBridgeColor(
   prevIndex: number,
   _currIndex: number,
   downstep: number,
@@ -65,7 +70,7 @@ function getBridgeColor(
 }
 
 /** Split Japanese text into morae (treating digraphs like きょ as one mora) */
-function splitMorae(text: string): string[] {
+export function splitMorae(text: string): string[] {
   const smallKana = new Set([
     "ゃ",
     "ゅ",
