@@ -11,6 +11,11 @@ export function norm(s: string): string {
   return s.normalize("NFC");
 }
 
+/** Normalize katakana to hiragana for comparison (offset 0x60 between ranges) */
+export function toHira(s: string): string {
+  return s.replace(/[\u30A0-\u30FF]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+
 export function getTargetReading(entry: DictEntry): string {
   return entry.kana[0]?.text ?? "";
 }
@@ -54,7 +59,10 @@ export function compareChars(typedKana: string, target: string): CharStatus[] {
   for (let i = 0; i < maxLen; i++) {
     if (i >= typedChars.length) {
       result.push("untyped");
-    } else if (i < targetChars.length && norm(typedChars[i]) === norm(targetChars[i])) {
+    } else if (
+      i < targetChars.length &&
+      toHira(norm(typedChars[i])) === toHira(norm(targetChars[i]))
+    ) {
       result.push("correct");
     } else if (i >= trailingAsciiStart && trailingIsPending) {
       result.push("pending");
@@ -67,18 +75,18 @@ export function compareChars(typedKana: string, target: string): CharStatus[] {
 }
 
 export function isReadingComplete(typedKana: string, entry: DictEntry): boolean {
-  const normalizedTyped = norm(typedKana);
+  const normalizedTyped = toHira(norm(typedKana));
   const readings = entry.kana.map((k) => k.text);
   const kanjiTexts = entry.kanji.map((k) => k.text);
   return (
-    readings.some((r) => norm(r) === normalizedTyped) ||
-    kanjiTexts.some((k) => norm(k) === normalizedTyped)
+    readings.some((r) => toHira(norm(r)) === normalizedTyped) ||
+    kanjiTexts.some((k) => toHira(norm(k)) === normalizedTyped)
   );
 }
 
 export function isValidPrefix(typedKana: string, entry: DictEntry): boolean {
   if (typedKana.length === 0) return true;
-  const normalizedTyped = norm(typedKana);
+  const normalizedTyped = toHira(norm(typedKana));
   const readings = entry.kana.map((k) => k.text);
-  return readings.some((r) => norm(r).startsWith(normalizedTyped));
+  return readings.some((r) => toHira(norm(r)).startsWith(normalizedTyped));
 }

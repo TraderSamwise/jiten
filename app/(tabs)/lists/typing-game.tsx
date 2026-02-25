@@ -118,8 +118,10 @@ function WordBlock({
   let charStatuses: CharStatus[] = [];
   if (isCurrent) {
     charStatuses = compareChars(typedKana, targetReading);
-  } else if (completed) {
+  } else if (completed && correct) {
     charStatuses = targetChars.map(() => "correct" as CharStatus);
+  } else if (completed) {
+    charStatuses = targetChars.map(() => "wrong" as CharStatus);
   } else {
     charStatuses = targetChars.map(() => "untyped" as CharStatus);
   }
@@ -153,7 +155,7 @@ function WordBlock({
                   : charStatuses[charIdx] === "wrong"
                     ? "text-red-500"
                     : charStatuses[charIdx] === "pending"
-                      ? "text-yellow-500"
+                      ? "text-green-300"
                       : "text-muted-foreground"
               }`}
             >
@@ -170,7 +172,7 @@ function WordBlock({
       className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
     >
-      {completed && correct && <CoinAnimation gloss={getEnglishGloss(entry)} />}
+      {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
       {/* Furigana: pitch accent with colored text, or plain colored text, or pitch only */}
       {showFurigana && pitch ? (
@@ -186,7 +188,7 @@ function WordBlock({
                   : charStatuses[i] === "wrong"
                     ? "text-red-500"
                     : charStatuses[i] === "pending"
-                      ? "text-yellow-500"
+                      ? "text-green-300"
                       : "text-muted-foreground"
               }`}
             >
@@ -213,7 +215,7 @@ function WordBlock({
                     : color === "red"
                       ? "text-red-500"
                       : color === "pending"
-                        ? "text-yellow-500"
+                        ? "text-green-300"
                         : "text-foreground"
                 }`}
               >
@@ -245,7 +247,7 @@ function WordBlock({
                     : charStatuses[i] === "wrong"
                       ? "text-red-500"
                       : charStatuses[i] === "pending"
-                        ? "text-yellow-500"
+                        ? "text-green-300"
                         : "text-foreground"
                 }`}
               >
