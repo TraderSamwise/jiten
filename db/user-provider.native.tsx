@@ -95,6 +95,7 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN confusion_detection INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE srs_cards ADD COLUMN last_confusion_check TEXT DEFAULT NULL`,
   `ALTER TABLE lists ADD COLUMN voice_mode INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lists ADD COLUMN typing_mode INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export function UserDatabaseProvider({

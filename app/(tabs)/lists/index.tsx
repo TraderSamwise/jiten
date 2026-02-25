@@ -60,6 +60,7 @@ export default function ListsIndexScreen() {
       autoPlayAudio: false,
       confusionDetection: true,
       voiceMode: false,
+      typingMode: false,
       createdAt: now,
       updatedAt: now,
     };
