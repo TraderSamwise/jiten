@@ -29,6 +29,7 @@ import {
   getEnglishGloss,
   compareChars,
   isReadingComplete,
+  getKanjiColor,
   type CharStatus,
 } from "@/lib/typing-utils";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
@@ -53,39 +54,6 @@ interface WordState {
   entry: DictEntry;
   completed: boolean;
   correct: boolean;
-}
-
-// ─── Kanji coloring helper ───
-
-function getKanjiColor(
-  displayChars: string[],
-  charStatuses: CharStatus[],
-  totalKana: number,
-  charIndex: number,
-): "green" | "red" | "pending" | "default" {
-  // Count consecutive correct kana from start
-  let correctKana = 0;
-  for (const status of charStatuses) {
-    if (status === "correct") correctKana++;
-    else break;
-  }
-
-  // Map kana progress to display chars proportionally.
-  // Use Math.round so partial progress shows earlier (e.g. 1/3 kana → 1/2 kanji rounds to 0,
-  // but 2/3 kana → 1 kanji). For better feel, use ceil-biased mapping:
-  // a display char at index i is "covered" when correctKana >= ceil((i+1) * totalKana / totalDisplay)
-  const totalDisplay = displayChars.length;
-  const kanaNeeded = Math.ceil(((charIndex + 1) * totalKana) / totalDisplay);
-
-  if (correctKana >= kanaNeeded) return "green";
-  // Check if we're in the "current" zone — some kana for this kanji are correct but not all
-  const prevKanaNeeded = charIndex > 0 ? Math.ceil((charIndex * totalKana) / totalDisplay) : 0;
-  if (correctKana > 0 && correctKana >= prevKanaNeeded) {
-    if (correctKana < charStatuses.length && charStatuses[correctKana] === "wrong") return "red";
-    // Partially covered — show as in-progress (pending/untyped kana remaining)
-    return "pending";
-  }
-  return "default";
 }
 
 // ─── WordBlock Component ───
