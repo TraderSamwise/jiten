@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { ListEntryCard } from "@/components/ListEntryCard";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
+import { GamesModal } from "@/components/GamesModal";
 import { Trash2, EllipsisVertical } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
@@ -25,6 +26,7 @@ export default function ListDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [gamesModalVisible, setGamesModalVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
   const [reviewCount, setReviewCount] = useState(0);
@@ -234,15 +236,25 @@ export default function ListDetailScreen() {
 
       {/* Sticky study footer */}
       <View className="absolute bottom-0 left-0 right-0 border-t border-border bg-background px-4 py-3">
-        <Button
-          label={studyLabel}
-          onPress={handleStudy}
-          disabled={
-            list?.flashcardMode === "srs"
-              ? reviewCount === 0 && newCount === 0
-              : entries.length === 0
-          }
-        />
+        <View className="flex-row gap-2">
+          <Button
+            className="flex-1"
+            label={studyLabel}
+            onPress={handleStudy}
+            disabled={
+              list?.flashcardMode === "srs"
+                ? reviewCount === 0 && newCount === 0
+                : entries.length === 0
+            }
+          />
+          <Button
+            className="flex-1"
+            variant="outline"
+            label="Games"
+            onPress={() => setGamesModalVisible(true)}
+            disabled={entries.length === 0}
+          />
+        </View>
       </View>
 
       {/* Dropdown menu */}
@@ -298,6 +310,12 @@ export default function ListDetailScreen() {
         onClose={() => setExportModalVisible(false)}
         listId={id!}
         listName={list?.name ?? ""}
+      />
+
+      <GamesModal
+        visible={gamesModalVisible}
+        onClose={() => setGamesModalVisible(false)}
+        listId={id!}
       />
     </View>
   );
