@@ -59,7 +59,7 @@ function getKanjiColor(
   charStatuses: CharStatus[],
   totalKana: number,
   charIndex: number,
-): "green" | "red" | "default" {
+): "green" | "red" | "pending" | "default" {
   // Count consecutive correct kana from start
   let correctKana = 0;
   for (const status of charStatuses) {
@@ -75,10 +75,11 @@ function getKanjiColor(
   const kanaNeeded = Math.ceil(((charIndex + 1) * totalKana) / totalDisplay);
 
   if (correctKana >= kanaNeeded) return "green";
-  // Check if we're in the "current" zone and there's a wrong char
+  // Check if we're in the "current" zone and there's a wrong/pending char
   const prevKanaNeeded = charIndex > 0 ? Math.ceil((charIndex * totalKana) / totalDisplay) : 0;
-  if (correctKana >= prevKanaNeeded && correctKana < totalKana) {
+  if (correctKana >= prevKanaNeeded && correctKana < charStatuses.length) {
     if (charStatuses[correctKana] === "wrong") return "red";
+    if (charStatuses[correctKana] === "pending") return "pending";
   }
   return "default";
 }
@@ -132,7 +133,9 @@ function WordBlock({
                   ? "text-green-500"
                   : charStatuses[i] === "wrong"
                     ? "text-red-500"
-                    : "text-muted-foreground"
+                    : charStatuses[i] === "pending"
+                      ? "text-yellow-500"
+                      : "text-muted-foreground"
               }`}
             >
               {char}
@@ -155,7 +158,9 @@ function WordBlock({
                     ? "text-green-500"
                     : color === "red"
                       ? "text-red-500"
-                      : "text-foreground"
+                      : color === "pending"
+                        ? "text-yellow-500"
+                        : "text-foreground"
                 }`}
               >
                 {char}
@@ -185,7 +190,9 @@ function WordBlock({
                     ? "text-green-500"
                     : charStatuses[i] === "wrong"
                       ? "text-red-500"
-                      : "text-foreground"
+                      : charStatuses[i] === "pending"
+                        ? "text-yellow-500"
+                        : "text-foreground"
                 }`}
               >
                 {char}
