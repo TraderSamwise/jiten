@@ -200,25 +200,34 @@ function WordBlock({
         <PitchAccent accent={pitch} />
       ) : null}
 
-      {/* Display text (kanji or kana) */}
-      {showFurigana && isCurrent ? (
-        // Per-character kanji coloring while typing
+      {/* Display text (kanji or kana) — per-char coloring when current */}
+      {isCurrent ? (
         <View className="flex-row">
           {displayChars.map((char, i) => {
-            const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+            let colorClass: string;
+            if (hasKanji) {
+              const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+              colorClass =
+                color === "green"
+                  ? "text-green-500"
+                  : color === "red"
+                    ? "text-red-500"
+                    : color === "pending"
+                      ? "text-green-300"
+                      : "text-foreground";
+            } else {
+              const status = charStatuses[i];
+              colorClass =
+                status === "correct"
+                  ? "text-green-500"
+                  : status === "wrong"
+                    ? "text-red-500"
+                    : status === "pending"
+                      ? "text-green-300"
+                      : "text-foreground";
+            }
             return (
-              <Text
-                key={i}
-                className={`text-2xl font-bold ${
-                  color === "green"
-                    ? "text-green-500"
-                    : color === "red"
-                      ? "text-red-500"
-                      : color === "pending"
-                        ? "text-green-300"
-                        : "text-foreground"
-                }`}
-              >
+              <Text key={i} className={`text-2xl font-bold ${colorClass}`}>
                 {char}
               </Text>
             );
@@ -226,36 +235,10 @@ function WordBlock({
         </View>
       ) : (
         <Text
-          className={`text-2xl font-bold ${
-            completed ? completedColor : isCurrent ? "text-foreground" : "text-muted-foreground"
-          }`}
+          className={`text-2xl font-bold ${completed ? completedColor : "text-muted-foreground"}`}
         >
           {displayText}
         </Text>
-      )}
-
-      {/* Kana-only entries: character coloring overlay */}
-      {!hasKanji && isCurrent && (
-        <View className="flex-row absolute top-0 left-0 right-0 items-center justify-center">
-          <View className="flex-row">
-            {targetChars.map((char, i) => (
-              <Text
-                key={i}
-                className={`text-2xl font-bold ${
-                  charStatuses[i] === "correct"
-                    ? "text-green-500"
-                    : charStatuses[i] === "wrong"
-                      ? "text-red-500"
-                      : charStatuses[i] === "pending"
-                        ? "text-green-300"
-                        : "text-foreground"
-                }`}
-              >
-                {char}
-              </Text>
-            ))}
-          </View>
-        </View>
       )}
     </View>
   );
