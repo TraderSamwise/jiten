@@ -327,6 +327,26 @@ export default function StudyScreen() {
     }
   }, [currentIndex]);
 
+  // Web: Enter key to reveal / advance
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Enter") return;
+      // Don't intercept Enter while typing in an input
+      const tag = (document.activeElement as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      if (isBrowsingHistory) return;
+      if (revealed) {
+        handlePass(false);
+      } else {
+        handleReveal();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  });
+
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
   useEffect(() => {
     if (storeList || !userDb || !listId) return;
