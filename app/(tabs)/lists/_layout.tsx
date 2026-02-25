@@ -7,6 +7,7 @@ export default function ListsLayout() {
       <Stack.Screen name="[id]" options={{ title: "List" }} />
       <Stack.Screen name="word/[id]" options={{ title: "Word" }} />
       <Stack.Screen name="study" options={{ title: "Study", headerShown: false }} />
+      <Stack.Screen name="typing-game" options={{ title: "Typing Game", headerShown: false }} />
     </Stack>
   );
 }
