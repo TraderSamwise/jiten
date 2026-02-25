@@ -499,11 +499,9 @@ export default function TypingGameScreen() {
       setCurrentWordIndex(nextIndex);
     }
 
-    setTimeout(() => {
-      setTypedRomaji("");
-      setTypedKana("");
-      inputRef.current?.focus();
-    }, 50);
+    setTypedRomaji("");
+    setTypedKana("");
+    setTimeout(() => inputRef.current?.focus(), 50);
   }
 
   // ─── Handle Typing ───
