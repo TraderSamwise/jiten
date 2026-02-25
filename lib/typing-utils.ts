@@ -1,4 +1,4 @@
-import { toHiragana, toRomaji } from "wanakana";
+import { toHiragana } from "wanakana";
 import type { DictEntry } from "@/db/types";
 
 export type CharStatus = "correct" | "wrong" | "pending" | "untyped";
@@ -47,13 +47,19 @@ export function compareChars(typedKana: string, target: string): CharStatus[] {
     }
   }
 
-  // Check if trailing ASCII is a valid romaji prefix for the remaining target kana
+  // Trailing unconverted ASCII is "pending" if all converted kana so far matches the
+  // target prefix. This handles all romanization variants generically (e.g., "c" for
+  // っち where toRomaji would give "tchi" — the single-romaji check would fail).
   let trailingIsPending = false;
-  if (trailingAsciiStart < typedChars.length && trailingAsciiStart < targetChars.length) {
-    const trailingAscii = typedChars.slice(trailingAsciiStart).join("");
-    const remainingTarget = targetChars.slice(trailingAsciiStart).join("");
-    const remainingRomaji = toRomaji(remainingTarget).toLowerCase();
-    trailingIsPending = remainingRomaji.startsWith(trailingAscii.toLowerCase());
+  if (trailingAsciiStart < typedChars.length && trailingAsciiStart <= targetChars.length) {
+    let allConvertedCorrect = true;
+    for (let i = 0; i < trailingAsciiStart; i++) {
+      if (i >= targetChars.length || toHira(norm(typedChars[i])) !== toHira(norm(targetChars[i]))) {
+        allConvertedCorrect = false;
+        break;
+      }
+    }
+    trailingIsPending = allConvertedCorrect;
   }
 
   for (let i = 0; i < maxLen; i++) {
