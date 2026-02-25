@@ -22,12 +22,8 @@ export function getDisplayText(entry: DictEntry): string {
 export function getEnglishGloss(entry: DictEntry): string {
   const sense = entry.senses[0];
   if (!sense) return "";
-  return (
-    sense.glosses
-      .filter((g) => g.lang === "eng")
-      .map((g) => g.text)
-      .join("; ") ?? ""
-  );
+  const first = sense.glosses.find((g) => g.lang === "eng");
+  return first?.text ?? "";
 }
 
 export function compareChars(typedKana: string, target: string): CharStatus[] {
