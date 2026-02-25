@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, TextInput, Pressable, useWindowDimensions } from "react-native";
+import {
+  View,
+  TextInput,
+  Pressable,
+  useWindowDimensions,
+  type NativeSyntheticEvent,
+  type TextInputKeyPressEventData,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -27,15 +34,11 @@ import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
 
-// Approximate height of one word row (furigana + kanji + margin)
 const ROW_HEIGHT = 80;
-// Approximate average width of a word block (characters + horizontal margin)
 const AVG_WORD_WIDTH = 110;
-// Fixed chrome heights
 const HEADER_HEIGHT = 52;
 const PROGRESS_HEIGHT = 32;
 const INPUT_HEIGHT = 80;
-// Delay before loading next batch (lets last-word animation play)
 const BATCH_TRANSITION_DELAY = 1500;
 
 // ─── Types ───
@@ -46,6 +49,38 @@ type GameMode = "review" | "learn" | "all";
 interface WordState {
   entry: DictEntry;
   completed: boolean;
+  correct: boolean;
+}
+
+// ─── Kanji coloring helper ───
+
+function getKanjiColor(
+  displayChars: string[],
+  charStatuses: CharStatus[],
+  totalKana: number,
+  charIndex: number,
+): "green" | "red" | "default" {
+  // Count consecutive correct kana from start
+  let correctKana = 0;
+  for (const status of charStatuses) {
+    if (status === "correct") correctKana++;
+    else break;
+  }
+
+  // Map kana progress to display chars proportionally.
+  // Use Math.round so partial progress shows earlier (e.g. 1/3 kana → 1/2 kanji rounds to 0,
+  // but 2/3 kana → 1 kanji). For better feel, use ceil-biased mapping:
+  // a display char at index i is "covered" when correctKana >= ceil((i+1) * totalKana / totalDisplay)
+  const totalDisplay = displayChars.length;
+  const kanaNeeded = Math.ceil(((charIndex + 1) * totalKana) / totalDisplay);
+
+  if (correctKana >= kanaNeeded) return "green";
+  // Check if we're in the "current" zone and there's a wrong char
+  const prevKanaNeeded = charIndex > 0 ? Math.ceil((charIndex * totalKana) / totalDisplay) : 0;
+  if (correctKana >= prevKanaNeeded && correctKana < totalKana) {
+    if (charStatuses[correctKana] === "wrong") return "red";
+  }
+  return "default";
 }
 
 // ─── WordBlock Component ───
@@ -59,13 +94,14 @@ function WordBlock({
   isCurrent: boolean;
   typedKana: string;
 }) {
-  const { entry, completed } = word;
+  const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
   const hasKanji = entry.kanji.length > 0;
   const showFurigana = hasKanji;
 
   const targetChars = [...targetReading];
+  const displayChars = [...displayText];
 
   let charStatuses: CharStatus[] = [];
   if (isCurrent) {
@@ -76,13 +112,16 @@ function WordBlock({
     charStatuses = targetChars.map(() => "untyped" as CharStatus);
   }
 
+  const completedColor = correct ? "text-green-500" : "text-red-400";
+
   return (
     <View
       className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
     >
-      {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
+      {completed && correct && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
+      {/* Furigana reading */}
       {showFurigana && (
         <View className="flex-row">
           {targetChars.map((char, i) => (
@@ -102,14 +141,39 @@ function WordBlock({
         </View>
       )}
 
-      <Text
-        className={`text-2xl font-bold ${
-          completed ? "text-green-500" : isCurrent ? "text-foreground" : "text-muted-foreground"
-        }`}
-      >
-        {displayText}
-      </Text>
+      {/* Display text (kanji or kana) */}
+      {showFurigana && isCurrent ? (
+        // Per-character kanji coloring while typing
+        <View className="flex-row">
+          {displayChars.map((char, i) => {
+            const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+            return (
+              <Text
+                key={i}
+                className={`text-2xl font-bold ${
+                  color === "green"
+                    ? "text-green-500"
+                    : color === "red"
+                      ? "text-red-500"
+                      : "text-foreground"
+                }`}
+              >
+                {char}
+              </Text>
+            );
+          })}
+        </View>
+      ) : (
+        <Text
+          className={`text-2xl font-bold ${
+            completed ? completedColor : isCurrent ? "text-foreground" : "text-muted-foreground"
+          }`}
+        >
+          {displayText}
+        </Text>
+      )}
 
+      {/* Kana-only entries: character coloring overlay */}
       {!showFurigana && isCurrent && (
         <View className="flex-row absolute top-0 left-0 right-0 items-center justify-center">
           <View className="flex-row">
@@ -192,6 +256,9 @@ export default function TypingGameScreen() {
   const shuffledQueue = useRef<number[]>([]);
   const batchTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Per-word romaji answers for backspace-to-previous (reset each batch)
+  const answers = useRef<string[]>([]);
+
   const inputRef = useRef<TextInput>(null);
 
   // ─── Dynamic batch size from screen dimensions ───
@@ -199,7 +266,7 @@ export default function TypingGameScreen() {
   const batchSize = (() => {
     const availableHeight =
       screenHeight - insets.top - HEADER_HEIGHT - PROGRESS_HEIGHT - INPUT_HEIGHT - insets.bottom;
-    const availableWidth = screenWidth - 32; // 16px padding each side
+    const availableWidth = screenWidth - 32;
     const rows = Math.max(1, Math.floor(availableHeight / ROW_HEIGHT));
     const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
     return Math.max(4, rows * wordsPerRow);
@@ -256,7 +323,7 @@ export default function TypingGameScreen() {
     return ids
       .map((id) => entryMap.get(id))
       .filter((e): e is DictEntry => e !== undefined)
-      .map((entry) => ({ entry, completed: false }));
+      .map((entry) => ({ entry, completed: false, correct: false }));
   }
 
   async function startGame(mode: GameMode) {
@@ -300,6 +367,7 @@ export default function TypingGameScreen() {
     shuffledQueue.current = entryIds.slice(batchSize);
 
     const batch = await loadBatch(firstBatchIds);
+    answers.current = new Array(batch.length).fill("");
     setWords(batch);
     setCurrentWordIndex(0);
     setTypedRomaji("");
@@ -316,6 +384,7 @@ export default function TypingGameScreen() {
     shuffledQueue.current = shuffledQueue.current.slice(batchSize);
 
     const batch = await loadBatch(nextBatchIds);
+    answers.current = new Array(batch.length).fill("");
     setWords(batch);
     setCurrentWordIndex(0);
     setTypedRomaji("");
@@ -323,6 +392,41 @@ export default function TypingGameScreen() {
     setCompletedTotal(prevCompleted);
 
     setTimeout(() => inputRef.current?.focus(), 100);
+  }
+
+  // ─── Advance to next word (or next batch / done) ───
+
+  function advanceWord(raw: string, isCorrect: boolean) {
+    answers.current[currentWordIndex] = raw;
+
+    setWords((prev) =>
+      prev.map((w, i) =>
+        i === currentWordIndex ? { ...w, completed: true, correct: isCorrect } : w,
+      ),
+    );
+
+    const newCompletedTotal = completedTotal + currentWordIndex + 1;
+    const nextIndex = currentWordIndex + 1;
+
+    if (nextIndex >= words.length) {
+      if (shuffledQueue.current.length > 0) {
+        batchTransitionTimer.current = setTimeout(() => {
+          advanceToNextBatch(newCompletedTotal);
+        }, BATCH_TRANSITION_DELAY);
+      } else {
+        setCompletedTotal(newCompletedTotal);
+        setEndTime(Date.now());
+        setPhase("done");
+      }
+    } else {
+      setCurrentWordIndex(nextIndex);
+    }
+
+    setTimeout(() => {
+      setTypedRomaji("");
+      setTypedKana("");
+      inputRef.current?.focus();
+    }, 50);
   }
 
   // ─── Handle Typing ───
@@ -335,38 +439,44 @@ export default function TypingGameScreen() {
     setTypedKana(converted);
 
     const currentEntry = words[currentWordIndex].entry;
+    const isCorrect =
+      isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry);
 
-    if (isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry)) {
-      setWords((prev) =>
-        prev.map((w, i) => (i === currentWordIndex ? { ...w, completed: true } : w)),
-      );
-
-      const newCompletedTotal = completedTotal + currentWordIndex + 1;
-      const nextIndex = currentWordIndex + 1;
-
-      if (nextIndex >= words.length) {
-        // End of batch — delay transition so last animation can play
-        if (shuffledQueue.current.length > 0) {
-          batchTransitionTimer.current = setTimeout(() => {
-            advanceToNextBatch(newCompletedTotal);
-          }, BATCH_TRANSITION_DELAY);
-        } else {
-          setCompletedTotal(newCompletedTotal);
-          setEndTime(Date.now());
-          setPhase("done");
-        }
-      } else {
-        setCurrentWordIndex(nextIndex);
-        setTypedRomaji("");
-        setTypedKana("");
-      }
-
-      setTimeout(() => {
-        setTypedRomaji("");
-        setTypedKana("");
-        inputRef.current?.focus();
-      }, 50);
+    if (isCorrect) {
+      advanceWord(raw, true);
+      return;
     }
+
+    // If fully-converted kana count >= target reading length, move on even if wrong.
+    // Only count actual kana chars — exclude unconverted ASCII romaji (e.g. trailing "d" in "いd")
+    const targetLen = [...getTargetReading(currentEntry)].length;
+    const kanaCount = [...converted].filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x3040 && code <= 0x30ff;
+    }).length;
+    if (kanaCount >= targetLen && targetLen > 0) {
+      advanceWord(raw, false);
+    }
+  }
+
+  // ─── Backspace on empty → go to previous word ───
+
+  function handleKeyPress(e: NativeSyntheticEvent<TextInputKeyPressEventData>) {
+    if (e.nativeEvent.key !== "Backspace") return;
+    if (typedRomaji !== "" || currentWordIndex === 0) return;
+    if (phase !== "playing") return;
+
+    const prevIndex = currentWordIndex - 1;
+    const prevRomaji = answers.current[prevIndex] || "";
+
+    // Unmark the previous word
+    setWords((prev) =>
+      prev.map((w, i) => (i === prevIndex ? { ...w, completed: false, correct: false } : w)),
+    );
+
+    setCurrentWordIndex(prevIndex);
+    setTypedRomaji(prevRomaji);
+    setTypedKana(romajiToKana(prevRomaji));
   }
 
   // ─── Stats ───
@@ -446,6 +556,7 @@ export default function TypingGameScreen() {
               className="h-12 rounded-lg border border-border bg-background px-4 text-foreground text-lg"
               value={typedRomaji}
               onChangeText={handleInput}
+              onKeyPress={handleKeyPress}
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="off"
