@@ -5,6 +5,7 @@ import {
   ActionSheetIOS,
   Platform,
   Modal,
+  TextInput,
   useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -187,6 +188,13 @@ export default function StudyScreen() {
   const voiceAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceWrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Typing mode state
+  const [typedRomaji, setTypedRomaji] = useState("");
+  const [typedKana, setTypedKana] = useState("");
+  const [typingStatus, setTypingStatus] = useState<"idle" | "correct" | "wrong">("idle");
+  const typingInputRef = useRef<TextInput>(null);
+  const typingAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // History for swipe-back
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -211,15 +219,16 @@ export default function StudyScreen() {
     onResult: (transcript: string) => voiceCallbackRef.current(transcript),
   });
 
-  // Clean up voice timers on unmount
+  // Clean up voice/typing timers on unmount
   useEffect(() => {
     return () => {
       if (voiceAutoAdvanceRef.current) clearTimeout(voiceAutoAdvanceRef.current);
       if (voiceWrongTimerRef.current) clearTimeout(voiceWrongTimerRef.current);
+      if (typingAutoAdvanceRef.current) clearTimeout(typingAutoAdvanceRef.current);
     };
   }, []);
 
-  // Reset voice state when card changes
+  // Reset voice/typing state when card changes
   useEffect(() => {
     setVoiceStatus("idle");
     setVoiceHeard(null);
@@ -231,7 +240,19 @@ export default function StudyScreen() {
       clearTimeout(voiceWrongTimerRef.current);
       voiceWrongTimerRef.current = null;
     }
-  }, [currentIndex]);
+    // Reset typing state
+    setTypedRomaji("");
+    setTypedKana("");
+    setTypingStatus("idle");
+    if (typingAutoAdvanceRef.current) {
+      clearTimeout(typingAutoAdvanceRef.current);
+      typingAutoAdvanceRef.current = null;
+    }
+    // Auto-focus typing input after card transition
+    if (list?.typingMode) {
+      setTimeout(() => typingInputRef.current?.focus(), 100);
+    }
+  }, [currentIndex, list?.typingMode]);
 
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
   useEffect(() => {
@@ -438,10 +459,14 @@ export default function StudyScreen() {
   }
 
   async function handleFail() {
-    // Cancel voice auto-advance if pending
+    // Cancel voice/typing auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
+    }
+    if (typingAutoAdvanceRef.current) {
+      clearTimeout(typingAutoAdvanceRef.current);
+      typingAutoAdvanceRef.current = null;
     }
     if (isBrowsingHistory) {
       await reRateFromHistory("fail", false);
@@ -486,10 +511,14 @@ export default function StudyScreen() {
   }
 
   async function handlePass(isLongPress: boolean) {
-    // Cancel voice auto-advance if pending
+    // Cancel voice/typing auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
+    }
+    if (typingAutoAdvanceRef.current) {
+      clearTimeout(typingAutoAdvanceRef.current);
+      typingAutoAdvanceRef.current = null;
     }
     if (isBrowsingHistory) {
       await reRateFromHistory(isLongPress ? "easy" : "pass", isLongPress);
@@ -1034,6 +1063,30 @@ export default function StudyScreen() {
     }
   };
 
+  // --- Typing mode handler ---
+  function handleTypingInput(raw: string) {
+    if (revealed || !displayItem) return;
+    setTypedRomaji(raw);
+    const converted = toHiragana(raw, { IMEMode: true });
+    setTypedKana(converted);
+
+    const readings = displayItem.entry.kana.map((k) => k.text);
+    const isCorrect = readings.some((r) => r === converted);
+
+    if (isCorrect) {
+      setTypingStatus("correct");
+      handleReveal();
+      typingAutoAdvanceRef.current = setTimeout(() => {
+        handlePass(false);
+        setTypingStatus("idle");
+      }, 2000);
+    } else {
+      // Check if any reading still starts with what's typed
+      const anyMatch = readings.some((r) => r.startsWith(converted));
+      setTypingStatus(anyMatch || converted.length === 0 ? "idle" : "wrong");
+    }
+  }
+
   // --- Animated navigation wrappers ---
   function goBackAnimated() {
     if (!hasPrev) return;
@@ -1087,8 +1140,11 @@ export default function StudyScreen() {
   );
 
   const tapGesture = useMemo(
-    () => Gesture.Tap().onEnd(() => runOnJS(handleReveal)()),
-    [revealed, list?.autoPlayAudio, dictDb, displayItem],
+    () =>
+      Gesture.Tap().onEnd(() => {
+        if (!list?.typingMode) runOnJS(handleReveal)();
+      }),
+    [revealed, list?.autoPlayAudio, list?.typingMode, dictDb, displayItem],
   );
 
   const composedGesture = useMemo(
@@ -1143,7 +1199,53 @@ export default function StudyScreen() {
             {getFaceText(item.entry, face)}
           </Text>
         ))}
-        {list?.voiceMode ? (
+        {list?.typingMode ? (
+          <View className="mt-6 items-center w-full px-4">
+            {typingStatus === "correct" ? (
+              <Text className="text-lg font-bold text-green-500">Correct!</Text>
+            ) : (
+              <>
+                {/* Character feedback row */}
+                <View className="flex-row justify-center mb-3">
+                  {(() => {
+                    const readings = item.entry.kana.map((k) => k.text);
+                    const maxLen = Math.max(...readings.map((r) => r.length));
+                    const chars = [...typedKana];
+                    return Array.from({ length: maxLen }, (_, i) => {
+                      if (i < chars.length) {
+                        const matchesAny = readings.some((r) => i < r.length && r[i] === chars[i]);
+                        return (
+                          <Text
+                            key={i}
+                            className={`text-2xl font-bold ${matchesAny ? "text-green-500" : "text-red-500"}`}
+                          >
+                            {chars[i]}
+                          </Text>
+                        );
+                      }
+                      return (
+                        <Text key={i} className="text-2xl text-muted-foreground/30">
+                          ＿
+                        </Text>
+                      );
+                    });
+                  })()}
+                </View>
+                <TextInput
+                  ref={typingInputRef}
+                  className="w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
+                  value={typedRomaji}
+                  onChangeText={handleTypingInput}
+                  autoFocus
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Type reading..."
+                  placeholderTextColor="#999"
+                />
+              </>
+            )}
+          </View>
+        ) : list?.voiceMode ? (
           <View className="mt-6 items-center">
             {voiceStatus === "correct" ? (
               <Text className="text-lg font-bold text-green-500">Correct!</Text>
@@ -1151,17 +1253,12 @@ export default function StudyScreen() {
               <>
                 <Text className="text-lg font-bold text-red-500">Try again</Text>
                 {voiceHeard && (
-                  <Text className="text-sm text-muted-foreground mt-1">
-                    Heard: {voiceHeard}
-                  </Text>
+                  <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
                 )}
               </>
             ) : (
               <>
-                <Mic
-                  size={24}
-                  className={isListening ? "text-primary" : "text-muted-foreground"}
-                />
+                <Mic size={24} className={isListening ? "text-primary" : "text-muted-foreground"} />
                 <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
               </>
             )}

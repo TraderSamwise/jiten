@@ -24,6 +24,7 @@ export function parseListRow(row: any): WordList {
     autoPlayAudio: Boolean(row.autoPlayAudio ?? row.auto_play_audio ?? 0),
     confusionDetection: (row.confusionDetection ?? row.confusion_detection ?? 1) !== 0,
     voiceMode: Boolean(row.voiceMode ?? row.voice_mode ?? 0),
+    typingMode: Boolean(row.typingMode ?? row.typing_mode ?? 0),
   };
 }
 

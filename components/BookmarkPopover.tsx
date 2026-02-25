@@ -121,6 +121,7 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
       autoPlayAudio: false,
       confusionDetection: true,
       voiceMode: false,
+      typingMode: false,
       createdAt: now,
       updatedAt: now,
     };

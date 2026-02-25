@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore } from "@/stores/lists";
+import { alert } from "@/lib/confirm";
 import { requestVoicePermissions } from "@/lib/voice-recognition";
 import type { CardFace, FlashcardMode } from "@/db/types";
 
@@ -36,6 +37,22 @@ export function FlashcardSettingsModal({
   const [autoPlayAudio, setAutoPlayAudio] = useState(false);
   const [confusionDetection, setConfusionDetection] = useState(true);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [typingMode, setTypingMode] = useState(false);
+
+  const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
+
+  function setInputMode(m: "normal" | "voice" | "typing") {
+    if (m === "normal") {
+      setVoiceMode(false);
+      setTypingMode(false);
+    } else if (m === "voice") {
+      setTypingMode(false);
+      // voice permission handled in the onPress
+    } else {
+      setVoiceMode(false);
+      setTypingMode(true);
+    }
+  }
 
   useEffect(() => {
     if (visible && list) {
@@ -45,6 +62,7 @@ export function FlashcardSettingsModal({
       setAutoPlayAudio(list.autoPlayAudio);
       setConfusionDetection(list.confusionDetection !== false);
       setVoiceMode(list.voiceMode ?? false);
+      setTypingMode(list.typingMode ?? false);
     }
   }, [visible, list]);
 
@@ -62,7 +80,7 @@ export function FlashcardSettingsModal({
     if (!userDb) return;
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -70,6 +88,7 @@ export function FlashcardSettingsModal({
         autoPlayAudio ? 1 : 0,
         confusionDetection ? 1 : 0,
         voiceMode ? 1 : 0,
+        typingMode ? 1 : 0,
         now,
         listId,
       ],
@@ -82,6 +101,7 @@ export function FlashcardSettingsModal({
       autoPlayAudio,
       confusionDetection,
       voiceMode,
+      typingMode,
       updatedAt: now,
     });
     if (onStartStudy) {
@@ -275,21 +295,21 @@ export function FlashcardSettingsModal({
               </>
             )}
 
-            {/* Voice mode */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">Voice mode</Text>
+            {/* Input mode */}
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Input mode</Text>
             <View className="flex-row gap-2 mb-5">
               <Pressable
-                onPress={() => setVoiceMode(false)}
+                onPress={() => setInputMode("normal")}
                 className={`flex-1 items-center rounded-lg border py-2 ${
-                  !voiceMode ? "border-primary bg-primary/10" : "border-border"
+                  inputMode === "normal" ? "border-primary bg-primary/10" : "border-border"
                 }`}
               >
                 <Text
                   className={`text-sm font-medium ${
-                    !voiceMode ? "text-primary" : "text-muted-foreground"
+                    inputMode === "normal" ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  Off
+                  Normal
                 </Text>
               </Pressable>
               <Pressable
@@ -297,23 +317,38 @@ export function FlashcardSettingsModal({
                   const granted = await requestVoicePermissions();
                   if (granted) {
                     setVoiceMode(true);
+                    setTypingMode(false);
                   } else {
-                    Alert.alert(
+                    alert(
                       "Permission Required",
                       "Microphone and speech recognition permissions are needed for voice mode.",
                     );
                   }
                 }}
                 className={`flex-1 items-center rounded-lg border py-2 ${
-                  voiceMode ? "border-primary bg-primary/10" : "border-border"
+                  inputMode === "voice" ? "border-primary bg-primary/10" : "border-border"
                 }`}
               >
                 <Text
                   className={`text-sm font-medium ${
-                    voiceMode ? "text-primary" : "text-muted-foreground"
+                    inputMode === "voice" ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  On
+                  Voice
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setInputMode("typing")}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  inputMode === "typing" ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    inputMode === "typing" ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Typing
                 </Text>
               </Pressable>
             </View>
