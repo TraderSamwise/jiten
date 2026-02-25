@@ -334,11 +334,11 @@ export default function TypingGameScreen() {
     }, 2000);
   }
 
-  // Reset auto-reveal and start idle timer when current word changes
+  // Start idle timer when current word changes
+  // (autoFuriganaRevealed is reset synchronously in advanceWord/handleKeyPress)
 
   useEffect(() => {
     if (phase !== "playing") return;
-    setAutoFuriganaRevealed(false);
     startIdleTimer();
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -473,6 +473,9 @@ export default function TypingGameScreen() {
   function advanceWord(raw: string, isCorrect: boolean) {
     answers.current[currentWordIndex] = raw;
 
+    // Reset auto-furigana before advancing so the next word doesn't flash
+    setAutoFuriganaRevealed(false);
+
     setWords((prev) =>
       prev.map((w, i) =>
         i === currentWordIndex ? { ...w, completed: true, correct: isCorrect } : w,
@@ -559,6 +562,7 @@ export default function TypingGameScreen() {
       prev.map((w, i) => (i === prevIndex ? { ...w, completed: false, correct: false } : w)),
     );
 
+    setAutoFuriganaRevealed(false);
     setCurrentWordIndex(prevIndex);
     setTypedRomaji(prevRomaji);
     setTypedKana(romajiToKana(prevRomaji));
