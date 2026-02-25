@@ -43,7 +43,12 @@ const AVG_WORD_WIDTH = 110;
 const HEADER_HEIGHT = 52;
 const PROGRESS_HEIGHT = 32;
 const INPUT_HEIGHT = 80;
-const BATCH_TRANSITION_DELAY = 1500;
+// ─── Floating coin types ───
+
+interface FloatingCoin {
+  id: number;
+  gloss: string;
+}
 
 // ─── Types ───
 
@@ -251,13 +256,19 @@ function GlowOverlay() {
 
 // ─── Coin Animation ───
 
-function CoinAnimation({ gloss }: { gloss: string }) {
+function CoinAnimation({ gloss, onDone }: { gloss: string; onDone?: () => void }) {
   const coinY = useSharedValue(0);
   const coinOpacity = useSharedValue(1);
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   useEffect(() => {
     coinY.value = withTiming(-60, { duration: 3000, easing: Easing.out(Easing.quad) });
     coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
+    const timer = setTimeout(() => onDoneRef.current?.(), 3000);
+    return () => clearTimeout(timer);
   }, [coinY, coinOpacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -308,7 +319,10 @@ export default function TypingGameScreen() {
 
   // Full shuffled queue (entry IDs) — batches are pulled from front
   const shuffledQueue = useRef<number[]>([]);
-  const batchTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Floating coin animations that persist across batch transitions
+  const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
+  const coinIdCounter = useRef(0);
 
   // Per-word romaji answers for backspace-to-previous (reset each batch)
   const answers = useRef<string[]>([]);
@@ -359,13 +373,6 @@ export default function TypingGameScreen() {
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
-
-  // Clean up timers on unmount
-  useEffect(() => {
-    return () => {
-      if (batchTransitionTimer.current) clearTimeout(batchTransitionTimer.current);
-    };
-  }, []);
 
   // ─── Start Game ───
 
@@ -455,20 +462,28 @@ export default function TypingGameScreen() {
     // Reset auto-furigana before advancing so the next word doesn't flash
     setAutoFuriganaRevealed(false);
 
+    const newCompletedTotal = completedTotal + currentWordIndex + 1;
+    const nextIndex = currentWordIndex + 1;
+    const isBatchEnd = nextIndex >= words.length;
+
+    // Spawn a floating coin for the last word in a batch (it would unmount with the batch)
+    if (isBatchEnd) {
+      const gloss = getEnglishGloss(words[currentWordIndex].entry);
+      if (gloss) {
+        const coinId = coinIdCounter.current++;
+        setFloatingCoins((prev) => [...prev, { id: coinId, gloss }]);
+      }
+    }
+
     setWords((prev) =>
       prev.map((w, i) =>
         i === currentWordIndex ? { ...w, completed: true, correct: isCorrect } : w,
       ),
     );
 
-    const newCompletedTotal = completedTotal + currentWordIndex + 1;
-    const nextIndex = currentWordIndex + 1;
-
-    if (nextIndex >= words.length) {
+    if (isBatchEnd) {
       if (shuffledQueue.current.length > 0) {
-        batchTransitionTimer.current = setTimeout(() => {
-          advanceToNextBatch(newCompletedTotal);
-        }, BATCH_TRANSITION_DELAY);
+        advanceToNextBatch(newCompletedTotal);
       } else {
         setCompletedTotal(newCompletedTotal);
         setEndTime(Date.now());
@@ -656,6 +671,15 @@ export default function TypingGameScreen() {
               placeholderTextColor="#999"
             />
           </View>
+
+          {/* Floating coins that persist across batch transitions */}
+          {floatingCoins.map((coin) => (
+            <CoinAnimation
+              key={coin.id}
+              gloss={coin.gloss}
+              onDone={() => setFloatingCoins((prev) => prev.filter((c) => c.id !== coin.id))}
+            />
+          ))}
         </View>
       )}
 
