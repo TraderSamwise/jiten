@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, TextInput, Pressable } from "react-native";
+import { View, TextInput, Pressable, useWindowDimensions } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
-  withDelay,
   withTiming,
+  Easing,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -26,9 +25,18 @@ import {
 } from "@/lib/typing-utils";
 import type { DictEntry } from "@/db/types";
 
-// ─── Constants ───
+// ─── Layout estimation constants ───
 
-const BATCH_SIZE = 10;
+// Approximate height of one word row (furigana + kanji + margin)
+const ROW_HEIGHT = 80;
+// Approximate average width of a word block (characters + horizontal margin)
+const AVG_WORD_WIDTH = 110;
+// Fixed chrome heights
+const HEADER_HEIGHT = 52;
+const PROGRESS_HEIGHT = 32;
+const INPUT_HEIGHT = 80;
+// Delay before loading next batch (lets last-word animation play)
+const BATCH_TRANSITION_DELAY = 1500;
 
 // ─── Types ───
 
@@ -59,7 +67,6 @@ function WordBlock({
 
   const targetChars = [...targetReading];
 
-  // Character statuses for furigana
   let charStatuses: CharStatus[] = [];
   if (isCurrent) {
     charStatuses = compareChars(typedKana, targetReading);
@@ -71,19 +78,17 @@ function WordBlock({
 
   return (
     <View
-      className="items-center mx-1 mb-2"
+      className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
     >
-      {/* Coin animation overlay */}
       {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
-      {/* Furigana reading */}
       {showFurigana && (
         <View className="flex-row">
           {targetChars.map((char, i) => (
             <Text
               key={i}
-              className={`text-xs ${
+              className={`text-base ${
                 charStatuses[i] === "correct"
                   ? "text-green-500"
                   : charStatuses[i] === "wrong"
@@ -97,23 +102,21 @@ function WordBlock({
         </View>
       )}
 
-      {/* Display text (kanji or kana) */}
       <Text
-        className={`text-lg font-bold ${
+        className={`text-2xl font-bold ${
           completed ? "text-green-500" : isCurrent ? "text-foreground" : "text-muted-foreground"
         }`}
       >
         {displayText}
       </Text>
 
-      {/* For kana-only entries, show character coloring on the main text instead */}
       {!showFurigana && isCurrent && (
         <View className="flex-row absolute top-0 left-0 right-0 items-center justify-center">
           <View className="flex-row">
             {targetChars.map((char, i) => (
               <Text
                 key={i}
-                className={`text-lg font-bold ${
+                className={`text-2xl font-bold ${
                   charStatuses[i] === "correct"
                     ? "text-green-500"
                     : charStatuses[i] === "wrong"
@@ -138,8 +141,8 @@ function CoinAnimation({ gloss }: { gloss: string }) {
   const coinOpacity = useSharedValue(1);
 
   useEffect(() => {
-    coinY.value = withSpring(-44, { damping: 10, stiffness: 120, mass: 0.6 });
-    coinOpacity.value = withDelay(1200, withTiming(0, { duration: 1000 }));
+    coinY.value = withTiming(-60, { duration: 3000, easing: Easing.out(Easing.quad) });
+    coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
   }, [coinY, coinOpacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -149,10 +152,10 @@ function CoinAnimation({ gloss }: { gloss: string }) {
 
   return (
     <Animated.View
-      style={[{ position: "absolute", top: -10, zIndex: 10 }, animatedStyle]}
+      style={[{ position: "absolute", top: -12, zIndex: 10 }, animatedStyle]}
       pointerEvents="none"
     >
-      <Text className="text-xs font-medium text-primary text-center" numberOfLines={1}>
+      <Text className="text-sm font-medium text-primary text-center" numberOfLines={1}>
         {gloss}
       </Text>
     </Animated.View>
@@ -165,6 +168,7 @@ export default function TypingGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
 
@@ -186,8 +190,20 @@ export default function TypingGameScreen() {
 
   // Full shuffled queue (entry IDs) — batches are pulled from front
   const shuffledQueue = useRef<number[]>([]);
+  const batchTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const inputRef = useRef<TextInput>(null);
+
+  // ─── Dynamic batch size from screen dimensions ───
+
+  const batchSize = (() => {
+    const availableHeight =
+      screenHeight - insets.top - HEADER_HEIGHT - PROGRESS_HEIGHT - INPUT_HEIGHT - insets.bottom;
+    const availableWidth = screenWidth - 32; // 16px padding each side
+    const rows = Math.max(1, Math.floor(availableHeight / ROW_HEIGHT));
+    const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
+    return Math.max(4, rows * wordsPerRow);
+  })();
 
   // ─── Load counts ───
 
@@ -210,7 +226,6 @@ export default function TypingGameScreen() {
 
     const placeholders = entryIds.map(() => "?").join(",");
 
-    // Learned: has srs_card with (simple_stage IS NOT NULL OR state != 0)
     const reviewRows = await userDb.getAllAsync<{ entry_id: number }>(
       `SELECT DISTINCT s.entry_id FROM srs_cards s
        WHERE s.list_id = ? AND s.entry_id IN (${placeholders})
@@ -218,14 +233,19 @@ export default function TypingGameScreen() {
       [listId, ...entryIds],
     );
     setReviewCount(reviewRows.length);
-
-    // remaining = all - learned → "new/unseen"
     setLearnCount(entryIds.length - reviewRows.length);
   }, [userDb, listId]);
 
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (batchTransitionTimer.current) clearTimeout(batchTransitionTimer.current);
+    };
+  }, []);
 
   // ─── Start Game ───
 
@@ -256,7 +276,6 @@ export default function TypingGameScreen() {
       );
       entryIds = rows.map((r) => r.entry_id);
     } else {
-      // learn — unseen cards
       const placeholders = allEntryIds.map(() => "?").join(",");
       const reviewRows = await userDb.getAllAsync<{ entry_id: number }>(
         `SELECT DISTINCT s.entry_id FROM srs_cards s
@@ -277,9 +296,8 @@ export default function TypingGameScreen() {
     setTotalWordCount(entryIds.length);
     setCompletedTotal(0);
 
-    // Take first batch, store rest in queue
-    const firstBatchIds = entryIds.slice(0, BATCH_SIZE);
-    shuffledQueue.current = entryIds.slice(BATCH_SIZE);
+    const firstBatchIds = entryIds.slice(0, batchSize);
+    shuffledQueue.current = entryIds.slice(batchSize);
 
     const batch = await loadBatch(firstBatchIds);
     setWords(batch);
@@ -294,8 +312,8 @@ export default function TypingGameScreen() {
   }
 
   async function advanceToNextBatch(prevCompleted: number) {
-    const nextBatchIds = shuffledQueue.current.slice(0, BATCH_SIZE);
-    shuffledQueue.current = shuffledQueue.current.slice(BATCH_SIZE);
+    const nextBatchIds = shuffledQueue.current.slice(0, batchSize);
+    shuffledQueue.current = shuffledQueue.current.slice(batchSize);
 
     const batch = await loadBatch(nextBatchIds);
     setWords(batch);
@@ -319,7 +337,6 @@ export default function TypingGameScreen() {
     const currentEntry = words[currentWordIndex].entry;
 
     if (isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry)) {
-      // Mark current word completed
       setWords((prev) =>
         prev.map((w, i) => (i === currentWordIndex ? { ...w, completed: true } : w)),
       );
@@ -328,9 +345,11 @@ export default function TypingGameScreen() {
       const nextIndex = currentWordIndex + 1;
 
       if (nextIndex >= words.length) {
-        // End of batch — check if more words remain
+        // End of batch — delay transition so last animation can play
         if (shuffledQueue.current.length > 0) {
-          advanceToNextBatch(newCompletedTotal);
+          batchTransitionTimer.current = setTimeout(() => {
+            advanceToNextBatch(newCompletedTotal);
+          }, BATCH_TRANSITION_DELAY);
         } else {
           setCompletedTotal(newCompletedTotal);
           setEndTime(Date.now());
@@ -342,7 +361,6 @@ export default function TypingGameScreen() {
         setTypedKana("");
       }
 
-      // Clear input after a short delay so state updates first
       setTimeout(() => {
         setTypedRomaji("");
         setTypedKana("");
@@ -399,7 +417,7 @@ export default function TypingGameScreen() {
         <View className="flex-1">
           {/* Progress */}
           <View className="px-4 py-2">
-            <Text className="text-xs text-muted-foreground text-right">
+            <Text className="text-sm text-muted-foreground text-right">
               {completedTotal + currentWordIndex}/{totalWordCount}
             </Text>
           </View>
@@ -425,7 +443,7 @@ export default function TypingGameScreen() {
           >
             <TextInput
               ref={inputRef}
-              className="h-11 rounded-lg border border-border bg-background px-4 text-foreground text-base"
+              className="h-12 rounded-lg border border-border bg-background px-4 text-foreground text-lg"
               value={typedRomaji}
               onChangeText={handleInput}
               autoCapitalize="none"
