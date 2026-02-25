@@ -273,9 +273,6 @@ export default function StudyScreen() {
   const voiceAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceWrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Typing mode auto-advance timer (typing state is in TypingInput component)
-  const typingAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // History for swipe-back
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -305,7 +302,6 @@ export default function StudyScreen() {
     return () => {
       if (voiceAutoAdvanceRef.current) clearTimeout(voiceAutoAdvanceRef.current);
       if (voiceWrongTimerRef.current) clearTimeout(voiceWrongTimerRef.current);
-      if (typingAutoAdvanceRef.current) clearTimeout(typingAutoAdvanceRef.current);
     };
   }, []);
 
@@ -320,10 +316,6 @@ export default function StudyScreen() {
     if (voiceWrongTimerRef.current) {
       clearTimeout(voiceWrongTimerRef.current);
       voiceWrongTimerRef.current = null;
-    }
-    if (typingAutoAdvanceRef.current) {
-      clearTimeout(typingAutoAdvanceRef.current);
-      typingAutoAdvanceRef.current = null;
     }
   }, [currentIndex]);
 
@@ -552,14 +544,10 @@ export default function StudyScreen() {
   }
 
   async function handleFail() {
-    // Cancel voice/typing auto-advance if pending
+    // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
-    }
-    if (typingAutoAdvanceRef.current) {
-      clearTimeout(typingAutoAdvanceRef.current);
-      typingAutoAdvanceRef.current = null;
     }
     if (isBrowsingHistory) {
       await reRateFromHistory("fail", false);
@@ -604,14 +592,10 @@ export default function StudyScreen() {
   }
 
   async function handlePass(isLongPress: boolean) {
-    // Cancel voice/typing auto-advance if pending
+    // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
-    }
-    if (typingAutoAdvanceRef.current) {
-      clearTimeout(typingAutoAdvanceRef.current);
-      typingAutoAdvanceRef.current = null;
     }
     if (isBrowsingHistory) {
       await reRateFromHistory(isLongPress ? "easy" : "pass", isLongPress);
@@ -1272,9 +1256,6 @@ export default function StudyScreen() {
               entry={item.entry}
               onCorrect={() => {
                 handleReveal();
-                typingAutoAdvanceRef.current = setTimeout(() => {
-                  handlePass(false);
-                }, 2000);
               }}
             />
           </View>
