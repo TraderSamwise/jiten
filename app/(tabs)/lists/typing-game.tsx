@@ -107,21 +107,19 @@ function WordBlock({
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
-  const hasKanji = entry.kanji.length > 0;
 
-  // Determine furigana visibility per-word:
-  // "on" → always show, "off" → never show,
-  // "auto" → show only for current word when autoRevealed, or for completed words
+  // Furigana always shows on completion; otherwise depends on mode
   const showFurigana =
-    hasKanji &&
-    (furiganaMode === "on" ||
-      (furiganaMode === "auto" && ((isCurrent && autoRevealed) || completed)));
+    completed || furiganaMode === "on" || (furiganaMode === "auto" && isCurrent && autoRevealed);
 
-  // In auto mode, always reserve space for furigana so layout doesn't shift
-  const reserveSpace = hasKanji && furiganaMode !== "off";
+  // Pitch accent only renders alongside furigana
+  const pitch =
+    pitchVisible && showFurigana
+      ? entry.pitchAccents.find((pa) => pa.reading === targetReading)
+      : undefined;
 
-  // Find matching pitch accent for this reading
-  const pitch = pitchVisible
+  // For reserving placeholder height when furigana is hidden
+  const pitchForReserve = pitchVisible
     ? entry.pitchAccents.find((pa) => pa.reading === targetReading)
     : undefined;
 
@@ -209,41 +207,27 @@ function WordBlock({
             </Text>
           ))}
         </View>
-      ) : reserveSpace && pitch ? (
-        <PitchAccent
-          accent={pitch}
-          renderMora={(mora) => <Text className="text-sm text-transparent">{mora}</Text>}
-        />
-      ) : reserveSpace ? (
+      ) : pitchForReserve ? (
+        <View style={{ opacity: 0 }} pointerEvents="none">
+          <PitchAccent accent={pitchForReserve} />
+        </View>
+      ) : (
         <Text className="text-base text-transparent">{targetReading}</Text>
-      ) : null}
+      )}
 
-      {/* Display text (kanji or kana) — per-char coloring when current */}
+      {/* Display text — per-char coloring when current */}
       {isCurrent ? (
         <View className="flex-row">
           {displayChars.map((char, i) => {
-            let colorClass: string;
-            if (hasKanji) {
-              const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
-              colorClass =
-                color === "green"
-                  ? "text-green-500"
-                  : color === "red"
-                    ? "text-red-500"
-                    : color === "pending"
-                      ? "text-green-300"
-                      : "text-foreground";
-            } else {
-              const status = charStatuses[i];
-              colorClass =
-                status === "correct"
-                  ? "text-green-500"
-                  : status === "wrong"
-                    ? "text-red-500"
-                    : status === "pending"
-                      ? "text-green-300"
-                      : "text-foreground";
-            }
+            const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+            const colorClass =
+              color === "green"
+                ? "text-green-500"
+                : color === "red"
+                  ? "text-red-500"
+                  : color === "pending"
+                    ? "text-green-300"
+                    : "text-foreground";
             return (
               <Text key={i} className={`text-2xl font-bold ${colorClass}`}>
                 {char}
