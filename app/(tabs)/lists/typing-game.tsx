@@ -78,11 +78,12 @@ function getKanjiColor(
   const kanaNeeded = Math.ceil(((charIndex + 1) * totalKana) / totalDisplay);
 
   if (correctKana >= kanaNeeded) return "green";
-  // Check if we're in the "current" zone and there's a wrong/pending char
+  // Check if we're in the "current" zone — some kana for this kanji are correct but not all
   const prevKanaNeeded = charIndex > 0 ? Math.ceil((charIndex * totalKana) / totalDisplay) : 0;
-  if (correctKana >= prevKanaNeeded && correctKana < charStatuses.length) {
-    if (charStatuses[correctKana] === "wrong") return "red";
-    if (charStatuses[correctKana] === "pending") return "pending";
+  if (correctKana > 0 && correctKana >= prevKanaNeeded) {
+    if (correctKana < charStatuses.length && charStatuses[correctKana] === "wrong") return "red";
+    // Partially covered — show as in-progress (pending/untyped kana remaining)
+    return "pending";
   }
   return "default";
 }
