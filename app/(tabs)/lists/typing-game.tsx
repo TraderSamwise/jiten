@@ -14,6 +14,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSequence,
   Easing,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
@@ -184,34 +185,67 @@ function WordBlock({
         <Text className="text-base text-transparent">{targetReading}</Text>
       )}
 
-      {/* Display text — per-char coloring when current */}
-      {isCurrent ? (
-        <View className="flex-row">
-          {displayChars.map((char, i) => {
-            const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
-            const colorClass =
-              color === "green"
-                ? "text-green-500"
-                : color === "red"
-                  ? "text-red-500"
-                  : color === "pending"
-                    ? "text-green-300"
-                    : "text-foreground";
-            return (
-              <Text key={i} className={`text-2xl font-bold ${colorClass}`}>
-                {char}
-              </Text>
-            );
-          })}
-        </View>
-      ) : (
-        <Text
-          className={`text-2xl font-bold ${completed ? completedColor : "text-muted-foreground"}`}
-        >
-          {displayText}
-        </Text>
-      )}
+      {/* Display text — with glow on correct completion */}
+      <View>
+        {completed && correct && <GlowOverlay />}
+        {isCurrent ? (
+          <View className="flex-row">
+            {displayChars.map((char, i) => {
+              const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+              const colorClass =
+                color === "green"
+                  ? "text-green-500"
+                  : color === "red"
+                    ? "text-red-500"
+                    : color === "pending"
+                      ? "text-green-300"
+                      : "text-foreground";
+              return (
+                <Text key={i} className={`text-2xl font-bold ${colorClass}`}>
+                  {char}
+                </Text>
+              );
+            })}
+          </View>
+        ) : (
+          <Text
+            className={`text-2xl font-bold ${completed ? completedColor : "text-muted-foreground"}`}
+          >
+            {displayText}
+          </Text>
+        )}
+      </View>
     </View>
+  );
+}
+
+// ─── Glow Overlay (correct completion) ───
+
+function GlowOverlay() {
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    opacity.value = withSequence(withTiming(1, { duration: 80 }), withTiming(0, { duration: 500 }));
+  }, [opacity]);
+
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          top: -20,
+          left: -24,
+          right: -24,
+          bottom: -20,
+          background:
+            "radial-gradient(circle, rgba(34,197,94,0.5) 0%, rgba(34,197,94,0.15) 40%, transparent 70%)",
+        },
+        style,
+      ]}
+      pointerEvents="none"
+    />
   );
 }
 
