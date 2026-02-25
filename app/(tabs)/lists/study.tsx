@@ -62,6 +62,91 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+// --- Self-contained typing input component ---
+function TypingInput({ entry, onCorrect }: { entry: DictEntry; onCorrect: () => void }) {
+  const [typedRomaji, setTypedRomaji] = useState("");
+  const [typedKana, setTypedKana] = useState("");
+  const [status, setStatus] = useState<"idle" | "correct" | "wrong">("idle");
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(t);
+  }, []);
+
+  function handleInput(raw: string) {
+    if (status === "correct") return;
+    setTypedRomaji(raw);
+    const converted = toHiragana(raw, { IMEMode: true });
+    setTypedKana(converted);
+
+    const readings = entry.kana.map((k) => k.text);
+    const kanjiTexts = entry.kanji.map((k) => k.text);
+    const norm = (s: string) => s.normalize("NFC");
+    const isCorrect =
+      readings.some((r) => norm(r) === norm(converted)) ||
+      readings.some((r) => norm(r) === norm(raw)) ||
+      kanjiTexts.some((k) => norm(k) === norm(raw));
+
+    if (isCorrect) {
+      setStatus("correct");
+      onCorrect();
+    } else {
+      const anyMatch =
+        readings.some((r) => norm(r).startsWith(norm(converted))) ||
+        readings.some((r) => norm(r).startsWith(norm(raw)));
+      setStatus(anyMatch || converted.length === 0 ? "idle" : "wrong");
+    }
+  }
+
+  if (status === "correct") {
+    return <Text className="text-lg font-bold text-green-500">Correct!</Text>;
+  }
+
+  const readings = entry.kana.map((k) => k.text);
+  const kanjiTexts = entry.kanji.map((k) => k.text);
+  const targets = kanjiTexts.some((k) => [...typedKana].some((c) => [...k].includes(c)))
+    ? [...readings, ...kanjiTexts]
+    : readings;
+  const maxLen = Math.max(...readings.map((r) => r.length));
+  const chars = [...typedKana];
+
+  return (
+    <>
+      <View className="flex-row justify-center mb-3">
+        {Array.from({ length: maxLen }, (_, i) => {
+          if (i < chars.length) {
+            const matchesAny = targets.some((r) => i < [...r].length && [...r][i] === chars[i]);
+            return (
+              <Text
+                key={i}
+                className={`text-2xl font-bold ${matchesAny ? "text-green-500" : "text-red-500"}`}
+              >
+                {chars[i]}
+              </Text>
+            );
+          }
+          return (
+            <Text key={i} className="text-2xl text-muted-foreground/30">
+              ＿
+            </Text>
+          );
+        })}
+      </View>
+      <TextInput
+        ref={inputRef}
+        className="w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
+        value={typedRomaji}
+        onChangeText={handleInput}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder="Type reading..."
+        placeholderTextColor="#999"
+      />
+    </>
+  );
+}
+
 function getFaceText(entry: DictEntry, face: CardFace): string {
   switch (face) {
     case "kanji":
@@ -188,11 +273,7 @@ export default function StudyScreen() {
   const voiceAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceWrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Typing mode state
-  const [typedRomaji, setTypedRomaji] = useState("");
-  const [typedKana, setTypedKana] = useState("");
-  const [typingStatus, setTypingStatus] = useState<"idle" | "correct" | "wrong">("idle");
-  const typingInputRef = useRef<TextInput>(null);
+  // Typing mode auto-advance timer (typing state is in TypingInput component)
   const typingAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // History for swipe-back
@@ -228,7 +309,7 @@ export default function StudyScreen() {
     };
   }, []);
 
-  // Reset voice/typing state when card changes
+  // Reset voice state when card changes (typing state resets via TypingInput remount)
   useEffect(() => {
     setVoiceStatus("idle");
     setVoiceHeard(null);
@@ -240,19 +321,11 @@ export default function StudyScreen() {
       clearTimeout(voiceWrongTimerRef.current);
       voiceWrongTimerRef.current = null;
     }
-    // Reset typing state
-    setTypedRomaji("");
-    setTypedKana("");
-    setTypingStatus("idle");
     if (typingAutoAdvanceRef.current) {
       clearTimeout(typingAutoAdvanceRef.current);
       typingAutoAdvanceRef.current = null;
     }
-    // Auto-focus typing input after card transition
-    if (list?.typingMode) {
-      setTimeout(() => typingInputRef.current?.focus(), 100);
-    }
-  }, [currentIndex, list?.typingMode]);
+  }, [currentIndex]);
 
   // Fetch list from DB if not in store (e.g. direct navigation, hot-reload)
   useEffect(() => {
@@ -1001,16 +1074,16 @@ export default function StudyScreen() {
 
   // --- All cards in a single row (no content swapping — eliminates flash) ---
   const allCards = useMemo(() => {
-    const cards: Array<{ item: QueueItem; isRevealed: boolean }> = [];
+    const cards: Array<{ item: QueueItem; isRevealed: boolean; isCurrent: boolean }> = [];
     history.forEach((h) => {
-      cards.push({ item: h.queueItem, isRevealed: true });
+      cards.push({ item: h.queueItem, isRevealed: true, isCurrent: false });
     });
     if (!sessionDone && queue[currentIndex]) {
-      cards.push({ item: queue[currentIndex], isRevealed: revealed });
+      cards.push({ item: queue[currentIndex], isRevealed: revealed, isCurrent: true });
     }
     // Pre-render next card so advance animation has something to slide to
     if (!sessionDone && currentIndex + 1 < queue.length) {
-      cards.push({ item: queue[currentIndex + 1], isRevealed: false });
+      cards.push({ item: queue[currentIndex + 1], isRevealed: false, isCurrent: false });
     }
     return cards;
   }, [history, queue, currentIndex, revealed, sessionDone]);
@@ -1062,30 +1135,6 @@ export default function StudyScreen() {
       }, 1500);
     }
   };
-
-  // --- Typing mode handler ---
-  function handleTypingInput(raw: string) {
-    if (revealed || !displayItem) return;
-    setTypedRomaji(raw);
-    const converted = toHiragana(raw, { IMEMode: true });
-    setTypedKana(converted);
-
-    const readings = displayItem.entry.kana.map((k) => k.text);
-    const isCorrect = readings.some((r) => r === converted);
-
-    if (isCorrect) {
-      setTypingStatus("correct");
-      handleReveal();
-      typingAutoAdvanceRef.current = setTimeout(() => {
-        handlePass(false);
-        setTypingStatus("idle");
-      }, 2000);
-    } else {
-      // Check if any reading still starts with what's typed
-      const anyMatch = readings.some((r) => r.startsWith(converted));
-      setTypingStatus(anyMatch || converted.length === 0 ? "idle" : "wrong");
-    }
-  }
 
   // --- Animated navigation wrappers ---
   function goBackAnimated() {
@@ -1140,11 +1189,8 @@ export default function StudyScreen() {
   );
 
   const tapGesture = useMemo(
-    () =>
-      Gesture.Tap().onEnd(() => {
-        if (!list?.typingMode) runOnJS(handleReveal)();
-      }),
-    [revealed, list?.autoPlayAudio, list?.typingMode, dictDb, displayItem],
+    () => Gesture.Tap().onEnd(() => runOnJS(handleReveal)()),
+    [revealed, list?.autoPlayAudio, dictDb, displayItem],
   );
 
   const composedGesture = useMemo(
@@ -1188,7 +1234,7 @@ export default function StudyScreen() {
   const frontFaces = list?.frontFaces ?? ["kanji"];
   const backFaces = list?.backFaces ?? ["english"];
 
-  function renderCardFront(item: QueueItem) {
+  function renderCardFront(item: QueueItem, isCurrent: boolean) {
     return (
       <View className="items-center justify-center flex-1">
         <Text className="text-3xl font-bold text-foreground">
@@ -1199,51 +1245,18 @@ export default function StudyScreen() {
             {getFaceText(item.entry, face)}
           </Text>
         ))}
-        {list?.typingMode ? (
+        {list?.typingMode && isCurrent && !isBrowsingHistory ? (
           <View className="mt-6 items-center w-full px-4">
-            {typingStatus === "correct" ? (
-              <Text className="text-lg font-bold text-green-500">Correct!</Text>
-            ) : (
-              <>
-                {/* Character feedback row */}
-                <View className="flex-row justify-center mb-3">
-                  {(() => {
-                    const readings = item.entry.kana.map((k) => k.text);
-                    const maxLen = Math.max(...readings.map((r) => r.length));
-                    const chars = [...typedKana];
-                    return Array.from({ length: maxLen }, (_, i) => {
-                      if (i < chars.length) {
-                        const matchesAny = readings.some((r) => i < r.length && r[i] === chars[i]);
-                        return (
-                          <Text
-                            key={i}
-                            className={`text-2xl font-bold ${matchesAny ? "text-green-500" : "text-red-500"}`}
-                          >
-                            {chars[i]}
-                          </Text>
-                        );
-                      }
-                      return (
-                        <Text key={i} className="text-2xl text-muted-foreground/30">
-                          ＿
-                        </Text>
-                      );
-                    });
-                  })()}
-                </View>
-                <TextInput
-                  ref={typingInputRef}
-                  className="w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
-                  value={typedRomaji}
-                  onChangeText={handleTypingInput}
-                  autoFocus
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="Type reading..."
-                  placeholderTextColor="#999"
-                />
-              </>
-            )}
+            <TypingInput
+              key={item.entry.id}
+              entry={item.entry}
+              onCorrect={() => {
+                handleReveal();
+                typingAutoAdvanceRef.current = setTimeout(() => {
+                  handlePass(false);
+                }, 2000);
+              }}
+            />
           </View>
         ) : list?.voiceMode ? (
           <View className="mt-6 items-center">
@@ -1447,7 +1460,7 @@ export default function StudyScreen() {
                             },
                           ]}
                         >
-                          {renderCardFront(card.item)}
+                          {renderCardFront(card.item, card.isCurrent)}
                         </Animated.View>
                         <Animated.View
                           style={[
@@ -1461,7 +1474,7 @@ export default function StudyScreen() {
                     ) : card.isRevealed ? (
                       renderCardRevealed(card.item)
                     ) : (
-                      renderCardFront(card.item)
+                      renderCardFront(card.item, card.isCurrent)
                     )}
                   </Card>
                 </View>
