@@ -540,6 +540,19 @@ export default function TypingGameScreen() {
     }).length;
     if (kanaCount >= targetLen && targetLen > 0) {
       advanceWord(raw, false);
+      return;
+    }
+
+    // Diagnostic: log when input isn't matching so we can debug the rare stuck state
+    if (__DEV__ && converted.length >= 3) {
+      console.warn("[TypingGame] no match", {
+        typed: converted,
+        target: getTargetReading(currentEntry),
+        display: getDisplayText(currentEntry),
+        index: currentWordIndex,
+        wordsLen: words.length,
+        completed: words[currentWordIndex].completed,
+      });
     }
   }
 
