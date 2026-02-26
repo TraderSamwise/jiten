@@ -253,7 +253,15 @@ function GlowOverlay() {
 
 // ─── Coin Animation ───
 
+const COIN_MAX_W = 200;
+const SCREEN_PAD = 16;
+
 function CoinAnimation({ gloss }: { gloss: string }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const viewRef = useRef<View>(null);
+  const [nudge, setNudge] = useState(0);
+  const measured = useRef(false);
+
   const coinY = useSharedValue(0);
   const coinOpacity = useSharedValue(1);
 
@@ -268,14 +276,38 @@ function CoinAnimation({ gloss }: { gloss: string }) {
   }));
 
   return (
-    <Animated.View
-      style={[{ position: "absolute", top: -12, zIndex: 10 }, animatedStyle]}
+    <View
+      ref={viewRef}
+      style={{
+        position: "absolute",
+        top: -12,
+        zIndex: 10,
+        transform: [{ translateX: nudge }],
+      }}
+      onLayout={() => {
+        if (measured.current) return;
+        viewRef.current?.measureInWindow((x, _y, width) => {
+          if (measured.current || width === 0) return;
+          measured.current = true;
+          let shift = 0;
+          if (x < SCREEN_PAD) shift = SCREEN_PAD - x;
+          else if (x + width > screenWidth - SCREEN_PAD)
+            shift = screenWidth - SCREEN_PAD - x - width;
+          if (shift !== 0) setNudge(shift);
+        });
+      }}
       pointerEvents="none"
     >
-      <Text className="text-sm font-medium text-primary text-center" numberOfLines={1}>
-        {gloss}
-      </Text>
-    </Animated.View>
+      <Animated.View style={animatedStyle}>
+        <Text
+          className="text-sm font-medium text-primary text-center"
+          numberOfLines={1}
+          style={{ maxWidth: COIN_MAX_W }}
+        >
+          {gloss}
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 
