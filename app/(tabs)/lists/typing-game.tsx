@@ -19,7 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { X } from "@/lib/icons";
+import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
@@ -34,6 +34,7 @@ import {
   type CharStatus,
 } from "@/lib/typing-utils";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
+import { playEntryAudio } from "@/lib/audio";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -301,6 +302,8 @@ export default function TypingGameScreen() {
   const [phase, setPhase] = useState<Phase>("select");
   const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>("auto");
   const [showPitchOpt, setShowPitchOpt] = useState(true);
+  const [playAudioOpt, setPlayAudioOpt] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoFuriganaRevealed, setAutoFuriganaRevealed] = useState(false);
   const [words, setWords] = useState<WordState[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
@@ -462,6 +465,11 @@ export default function TypingGameScreen() {
     // Reset auto-furigana before advancing so the next word doesn't flash
     setAutoFuriganaRevealed(false);
 
+    // Play audio for the completed word
+    if (playAudioOpt && dictDb) {
+      playEntryAudio(dictDb, words[currentWordIndex].entry.id);
+    }
+
     const newCompletedTotal = completedTotal + currentWordIndex + 1;
     const nextIndex = currentWordIndex + 1;
     const isBatchEnd = nextIndex >= words.length;
@@ -572,8 +580,54 @@ export default function TypingGameScreen() {
         <Pressable onPress={() => router.back()} className="p-1 mr-3">
           <X size={24} className="text-foreground" />
         </Pressable>
-        <Text className="text-lg font-semibold text-foreground">Typing Game</Text>
+        <Text className="text-lg font-semibold text-foreground flex-1">Typing Game</Text>
+        {phase === "playing" && (
+          <Pressable onPress={() => setSettingsOpen((v) => !v)} className="p-1">
+            <Settings size={20} className="text-foreground" />
+          </Pressable>
+        )}
       </View>
+
+      {/* Settings dropdown */}
+      {settingsOpen && (
+        <>
+          <Pressable
+            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 19 }}
+            onPress={() => setSettingsOpen(false)}
+          />
+          <View
+            className="absolute right-4 z-20 rounded-lg border border-border bg-background shadow-lg p-4 gap-4"
+            style={{ top: insets.top + HEADER_HEIGHT }}
+          >
+            <View className="flex-row items-center justify-between gap-6">
+              <Text className="text-sm text-foreground">Furigana</Text>
+              <View className="flex-row rounded-lg border border-border overflow-hidden">
+                {(["off", "auto", "on"] as const).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    className={`px-2.5 py-1 ${furiganaMode === mode ? "bg-primary" : ""}`}
+                    onPress={() => setFuriganaMode(mode)}
+                  >
+                    <Text
+                      className={`text-xs capitalize ${furiganaMode === mode ? "text-primary-foreground" : "text-foreground"}`}
+                    >
+                      {mode}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            <View className="flex-row items-center justify-between gap-6">
+              <Text className="text-sm text-foreground">Pitch accent</Text>
+              <Switch value={showPitchOpt} onValueChange={setShowPitchOpt} />
+            </View>
+            <View className="flex-row items-center justify-between gap-6">
+              <Text className="text-sm text-foreground">Audio on complete</Text>
+              <Switch value={playAudioOpt} onValueChange={setPlayAudioOpt} />
+            </View>
+          </View>
+        </>
+      )}
 
       {phase === "select" && (
         <View className="flex-1 justify-center px-6">
@@ -622,6 +676,10 @@ export default function TypingGameScreen() {
             <View className="flex-row items-center justify-between">
               <Text className="text-base text-foreground">Show pitch accent</Text>
               <Switch value={showPitchOpt} onValueChange={setShowPitchOpt} />
+            </View>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-base text-foreground">Audio on complete</Text>
+              <Switch value={playAudioOpt} onValueChange={setPlayAudioOpt} />
             </View>
           </View>
         </View>

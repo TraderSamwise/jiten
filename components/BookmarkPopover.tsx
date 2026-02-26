@@ -137,15 +137,10 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1">
-        {/* Backdrop — sibling so it doesn't swallow child presses */}
-        <Pressable
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-          onPress={onClose}
-        />
-
+      <Pressable className="flex-1" onPress={onClose}>
         {/* Popover content */}
-        <View
+        <Pressable
+          onPress={() => {}}
           style={{ top: insets.top + 44, right: 8 }}
           className="absolute w-64 rounded-xl border border-border bg-background shadow-lg"
         >
@@ -198,8 +193,8 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
               <Text className="text-sm text-muted-foreground text-center">No lists yet</Text>
             </View>
           )}
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
