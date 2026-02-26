@@ -12,7 +12,7 @@ import {
   type TextInputKeyPressEventData,
   type LayoutChangeEvent,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -82,6 +82,7 @@ function WordBlock({
   pitchVisible: boolean;
   onLayout?: (event: LayoutChangeEvent) => void;
 }) {
+  const router = useRouter();
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
@@ -157,10 +158,11 @@ function WordBlock({
   };
 
   return (
-    <View
+    <Pressable
       className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
       onLayout={onLayout}
+      onPress={() => router.push(`/lists/word/${entry.id}`)}
     >
       {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
@@ -224,7 +226,7 @@ function WordBlock({
           </Text>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -378,6 +380,7 @@ export default function TypingGameScreen() {
   const answers = useRef<string[]>([]);
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const gameRef = useRef<View>(null);
   const wordYPositions = useRef<Map<number, number>>(new Map());
 
   // ─── Dynamic batch size from screen dimensions ───
@@ -425,6 +428,31 @@ export default function TypingGameScreen() {
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
+
+  // ─── Keep input focused during gameplay (web) ───
+
+  useEffect(() => {
+    if (phase !== "playing") return;
+    const node = gameRef.current as unknown as HTMLElement | null;
+    if (!node?.addEventListener) return;
+    const handler = (e: Event) => {
+      if ((e.target as HTMLElement)?.tagName !== "INPUT") {
+        e.preventDefault();
+      }
+    };
+    node.addEventListener("mousedown", handler);
+    return () => node.removeEventListener("mousedown", handler);
+  }, [phase]);
+
+  // ─── Refocus input when returning from word detail ───
+
+  useFocusEffect(
+    useCallback(() => {
+      if (phase === "playing") {
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
+    }, [phase]),
+  );
 
   // ─── Auto-scroll to current word ───
 
@@ -640,7 +668,14 @@ export default function TypingGameScreen() {
   // ─── Render ───
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <View
+      ref={gameRef}
+      className="flex-1 bg-background"
+      style={{ paddingTop: insets.top }}
+      onTouchStart={() => {
+        if (phase === "playing") inputRef.current?.focus();
+      }}
+    >
       {/* Header */}
       <View className="flex-row items-center px-4 py-3 border-b border-border">
         <Pressable onPress={() => goBack()} className="p-1 mr-3">
