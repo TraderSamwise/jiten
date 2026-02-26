@@ -8,7 +8,8 @@ import {
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -294,7 +295,7 @@ function CoinAnimation({ gloss, onDone }: { gloss: string; onDone?: () => void }
 
 export default function TypingGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
-  const router = useRouter();
+  const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const userDb = useUserDb();
@@ -600,7 +601,7 @@ export default function TypingGameScreen() {
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {/* Header */}
       <View className="flex-row items-center px-4 py-3 border-b border-border">
-        <Pressable onPress={() => router.back()} className="p-1 mr-3">
+        <Pressable onPress={() => goBack()} className="p-1 mr-3">
           <X size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-lg font-semibold text-foreground flex-1">Typing Game</Text>
@@ -785,7 +786,7 @@ export default function TypingGameScreen() {
                 loadCounts();
               }}
             />
-            <Button label="Return to List" variant="outline" onPress={() => router.back()} />
+            <Button label="Return to List" variant="outline" onPress={() => goBack()} />
           </View>
         </View>
       )}

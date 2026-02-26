@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Pressable, Platform } from "react-native";
-import { useRouter } from "expo-router";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Input } from "@/components/ui/input";
@@ -28,18 +28,12 @@ const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
 
 export function DictionaryHeader({ back, options, route }: NativeStackHeaderProps) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const goBack = useSafeGoBack("/dictionary");
   const { query, setQuery, searchMode, setSearchMode } = useSearchStore();
   const isWordDetail = route.name === "word/[id]" || route.name === "gloss-group";
   const isKanjiDetail = route.name === "kanji/[literal]";
 
-  const navigateToSearch = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/dictionary");
-    }
-  };
+  const navigateToSearch = () => goBack();
 
   const handleSubmit = () => {
     if ((isWordDetail || isKanjiDetail) && query.trim()) {
