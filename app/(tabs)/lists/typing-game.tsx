@@ -735,7 +735,13 @@ export default function TypingGameScreen() {
               onChangeText={handleInput}
               onKeyPress={handleKeyPress}
               blurOnSubmit={false}
-              onSubmitEditing={() => setAutoFuriganaRevealed(true)}
+              onSubmitEditing={() => {
+                if (autoFuriganaRevealed) {
+                  advanceWord(typedRomaji, false);
+                } else {
+                  setAutoFuriganaRevealed(true);
+                }
+              }}
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="off"
