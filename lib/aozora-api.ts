@@ -1,5 +1,6 @@
 import { unzipSync } from "fflate";
 import Encoding from "encoding-japanese";
+import { proxyUrl } from "./proxy";
 
 const CATALOG_ZIP_URL = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
 
@@ -56,7 +57,7 @@ function parseCSV(text: string): string[][] {
 async function loadCatalog(): Promise<AozoraBook[]> {
   if (catalogCache) return catalogCache;
 
-  const resp = await fetch(CATALOG_ZIP_URL);
+  const resp = await fetch(proxyUrl(CATALOG_ZIP_URL));
   if (!resp.ok) throw new Error(`Failed to download Aozora catalog: ${resp.status}`);
 
   const buf = new Uint8Array(await resp.arrayBuffer());
@@ -115,7 +116,7 @@ export async function searchBooks(query: string): Promise<AozoraBook[]> {
 }
 
 export async function fetchBookContent(xhtmlUrl: string): Promise<string> {
-  const resp = await fetch(xhtmlUrl);
+  const resp = await fetch(proxyUrl(xhtmlUrl));
   if (!resp.ok) throw new Error(`Failed to download book: ${resp.status}`);
 
   const buffer = await resp.arrayBuffer();
