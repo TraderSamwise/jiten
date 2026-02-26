@@ -14,11 +14,15 @@ export interface DictManifest {
   version: number;
   url: string;
   sizeBytes: number;
+  audioSizeBytes?: number;
+  audioUrl?: string;
 }
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
 const DB_NAME = "dictionary.db";
+const AUDIO_VERSION_KEY = "dict-audio-version";
+const AUDIO_DB_NAME = "dictionary-audio.db";
 
 import { env } from "@/lib/env";
 
@@ -48,10 +52,13 @@ export async function fetchManifest(): Promise<DictManifest> {
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${manifestUrl}`);
   const data = await res.json();
 
-  // Derive DB download URL from manifest URL (sibling file) if not provided
+  // Derive DB download URLs from manifest URL (sibling files) if not provided
+  const base = manifestUrl.replace(/\/[^/]+$/, "");
   if (!data.url) {
-    const base = manifestUrl.replace(/\/[^/]+$/, "");
     data.url = `${base}/dictionary.db`;
+  }
+  if (!data.audioUrl && data.audioSizeBytes) {
+    data.audioUrl = `${base}/dictionary-audio.db`;
   }
 
   return data;
@@ -210,26 +217,26 @@ function openIdb(): Promise<IDBDatabase> {
 }
 
 /** Store DB bytes split into chunks to stay under IDB value-size limits. */
-async function storeDbBytes(data: Uint8Array): Promise<void> {
+async function storeDbBytes(data: Uint8Array, keyPrefix: string = IDB_KEY): Promise<void> {
   const db = await openIdb();
   const numChunks = Math.ceil(data.byteLength / CHUNK_SIZE);
-  console.log(`[DB] Storing ${data.byteLength} bytes in ${numChunks} chunks...`);
+  console.log(`[DB] Storing ${data.byteLength} bytes (${keyPrefix}) in ${numChunks} chunks...`);
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
     const store = tx.objectStore(IDB_STORE);
 
     // Delete old single-value key if it exists (migration from pre-chunk format)
-    store.delete(IDB_KEY);
+    store.delete(keyPrefix);
 
     // Write metadata
-    store.put({ numChunks, totalBytes: data.byteLength }, `${IDB_KEY}:meta`);
+    store.put({ numChunks, totalBytes: data.byteLength }, `${keyPrefix}:meta`);
 
     // Write each chunk
     for (let i = 0; i < numChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, data.byteLength);
-      store.put(data.slice(start, end), `${IDB_KEY}:chunk:${i}`);
+      store.put(data.slice(start, end), `${keyPrefix}:chunk:${i}`);
     }
 
     tx.oncomplete = () => {
@@ -248,14 +255,14 @@ async function storeDbBytes(data: Uint8Array): Promise<void> {
 }
 
 /** Load chunked DB bytes from IndexedDB, reassembling into a single Uint8Array. */
-async function loadDbBytes(): Promise<Uint8Array | null> {
+async function loadDbBytes(keyPrefix: string = IDB_KEY): Promise<Uint8Array | null> {
   const db = await openIdb();
 
   // Try chunked format first
   const meta: { numChunks: number; totalBytes: number } | undefined = await new Promise(
     (resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readonly");
-      const req = tx.objectStore(IDB_STORE).get(`${IDB_KEY}:meta`);
+      const req = tx.objectStore(IDB_STORE).get(`${keyPrefix}:meta`);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     },
@@ -268,7 +275,7 @@ async function loadDbBytes(): Promise<Uint8Array | null> {
     for (let i = 0; i < meta.numChunks; i++) {
       const chunk: Uint8Array | undefined = await new Promise((resolve, reject) => {
         const tx = db.transaction(IDB_STORE, "readonly");
-        const req = tx.objectStore(IDB_STORE).get(`${IDB_KEY}:chunk:${i}`);
+        const req = tx.objectStore(IDB_STORE).get(`${keyPrefix}:chunk:${i}`);
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
@@ -287,7 +294,7 @@ async function loadDbBytes(): Promise<Uint8Array | null> {
   // Fallback: try old single-value format (migration path)
   const data: Uint8Array | undefined = await new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+    const req = tx.objectStore(IDB_STORE).get(keyPrefix);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -296,22 +303,22 @@ async function loadDbBytes(): Promise<Uint8Array | null> {
   return data ?? null;
 }
 
-/** Load raw bytes and return an in-memory SQLiteDatabase, or null. */
-export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
-  const data = await loadDbBytes();
-  if (!data) return null;
-
+/** Deserialize raw SQLite bytes into an in-memory database. */
+async function deserializeWebDb(
+  data: Uint8Array,
+  label: string,
+): Promise<import("expo-sqlite").SQLiteDatabase> {
   // Patch WAL → rollback journal for memdb VFS compatibility.
   // SQLite header bytes 18-19: 1=rollback, 2=WAL.
   // The memdb VFS used by deserializeDatabaseAsync lacks SHM support
   // required for WAL mode, causing SQLITE_CANTOPEN on any operation.
   if (data[18] === 2) {
-    console.log("[DB] Patching WAL mode → rollback journal for memdb compatibility");
+    console.log(`[DB] Patching WAL mode → rollback journal for ${label}`);
     data[18] = 1;
     data[19] = 1;
   }
 
-  console.log("[DB] Deserializing", data.byteLength, "bytes...");
+  console.log(`[DB] Deserializing ${label}:`, data.byteLength, "bytes...");
   const SQLite = require("expo-sqlite");
   const sqlDb: import("expo-sqlite").SQLiteDatabase = await SQLite.deserializeDatabaseAsync(data);
   // Force in-memory journal and temp storage to avoid AccessHandlePoolVFS issues
@@ -321,6 +328,89 @@ export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatab
   const test = await sqlDb.getFirstAsync<{ cnt: number }>(
     "SELECT count(*) as cnt FROM sqlite_master",
   );
-  console.log("[DB] Deserialized OK, tables:", test?.cnt);
+  console.log(`[DB] Deserialized ${label} OK, tables:`, test?.cnt);
   return sqlDb;
+}
+
+/** Load raw bytes and return an in-memory SQLiteDatabase, or null. */
+export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
+  const data = await loadDbBytes();
+  if (!data) return null;
+  return deserializeWebDb(data, "dict");
+}
+
+// ─── Audio DB support ───
+
+export async function isAudioReady(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(AUDIO_VERSION_KEY);
+  return v !== null && parseInt(v, 10) === DICT_VERSION;
+}
+
+export async function downloadAudio(
+  manifest: DictManifest,
+  onProgress?: (progress: number) => void,
+): Promise<void> {
+  const audioUrl = manifest.audioUrl;
+  if (!audioUrl) throw new Error("No audio URL in manifest");
+
+  if (Platform.OS === "web") {
+    const res = await fetch(audioUrl);
+    if (!res.ok) throw new Error(`Audio download failed: ${res.status}`);
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("ReadableStream not supported");
+
+    const contentLength = manifest.audioSizeBytes ?? 0;
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      onProgress?.(contentLength > 0 ? received / contentLength : 0);
+    }
+
+    const data = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    await storeDbBytes(data, "dictionary-audio");
+  } else {
+    const FileSystem = require("expo-file-system/legacy");
+
+    const dbDir = `${FileSystem.documentDirectory}SQLite/`;
+    await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
+
+    const destPath = `${dbDir}${AUDIO_DB_NAME}`;
+
+    const download = FileSystem.createDownloadResumable(
+      audioUrl,
+      destPath,
+      {},
+      (downloadProgress: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
+        const progress =
+          downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+        onProgress?.(progress);
+      },
+    );
+
+    const result = await download.downloadAsync();
+    if (!result || result.status !== 200) {
+      throw new Error(`Audio download failed with status ${result?.status}`);
+    }
+  }
+
+  await AsyncStorage.setItem(AUDIO_VERSION_KEY, String(DICT_VERSION));
+}
+
+/** Load audio DB bytes from IndexedDB and return an in-memory SQLiteDatabase. */
+export async function loadWebAudioDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
+  const data = await loadDbBytes("dictionary-audio");
+  if (!data) return null;
+  return deserializeWebDb(data, "audio");
 }

@@ -238,7 +238,7 @@ export default function StudyScreen() {
   const router = useRouter();
   const navigateBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
-  const { dictDb } = useDatabase();
+  const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const setLists = useListsStore((s) => s.setLists);
@@ -1118,8 +1118,8 @@ export default function StudyScreen() {
         if (finished) runOnJS(setIsFlipping)(false);
       },
     );
-    if (list?.autoPlayAudio && dictDb && displayItem) {
-      playEntryAudio(dictDb, displayItem.entry.id);
+    if (list?.autoPlayAudio && audioDb && displayItem) {
+      playEntryAudio(audioDb, displayItem.entry.id);
     }
   }
 
@@ -1203,7 +1203,7 @@ export default function StudyScreen() {
 
   const tapGesture = useMemo(
     () => Gesture.Tap().onEnd(() => runOnJS(handleReveal)()),
-    [revealed, list?.autoPlayAudio, dictDb, displayItem],
+    [revealed, list?.autoPlayAudio, audioDb, displayItem],
   );
 
   const composedGesture = useMemo(

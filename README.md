@@ -60,8 +60,18 @@ No scrolling is involved — page navigation directly swaps DOM content.
 ### Dictionary Database
 
 ```bash
-yarn build:db    # Rebuild dictionary.db from JMDict sources
+yarn build:db      # Build dictionary from JMDict sources + audio
+yarn serve:dict    # Serve dictionary files locally (localhost:3001)
+yarn publish:dict  # Upload dictionary assets to GitHub release
 ```
+
+`build:db` downloads JMdict and pitch accent data, generates Google Cloud TTS audio for common entries (`GOOGLE_TTS_API_KEY` env var, cached in `.cache/tts-audio/`), and outputs three files to `assets/`:
+
+- `dictionary.db` — core dictionary (~170MB): entries, kanji, kana, senses, pitch accents, FTS index, synonyms
+- `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
+- `dict-manifest.json` — version and file sizes for the download client
+
+`publish:dict` uploads all three to the [jiten-data](https://github.com/TraderSamwise/jiten-data) GitHub release (requires `gh` CLI). The app downloads core first (blocking), then audio silently in the background.
 
 ### Midori Import
 

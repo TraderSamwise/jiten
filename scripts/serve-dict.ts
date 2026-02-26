@@ -51,4 +51,5 @@ server.listen(PORT, () => {
   console.log(`Dict server running at http://localhost:${PORT}`);
   console.log(`  Manifest: http://localhost:${PORT}/dict-manifest.json`);
   console.log(`  Database: http://localhost:${PORT}/dictionary.db`);
+  console.log(`  Audio:    http://localhost:${PORT}/dictionary-audio.db`);
 });
