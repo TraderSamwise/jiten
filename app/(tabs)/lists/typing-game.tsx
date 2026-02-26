@@ -490,7 +490,7 @@ export default function TypingGameScreen() {
 
     if (isBatchEnd) {
       if (shuffledQueue.current.length > 0) {
-        setTimeout(() => advanceToNextBatch(newCompletedTotal), 3000);
+        setTimeout(() => advanceToNextBatch(newCompletedTotal), 1500);
       } else {
         setCompletedTotal(newCompletedTotal);
         setEndTime(Date.now());
