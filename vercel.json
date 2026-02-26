@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/proxy/aozora/:path*",
+      "destination": "https://www.aozora.gr.jp/:path*"
+    },
+    {
+      "source": "/proxy/syosetu-api/:path*",
+      "destination": "https://api.syosetu.com/:path*"
+    },
+    {
+      "source": "/proxy/syosetu/:path*",
+      "destination": "https://ncode.syosetu.com/:path*"
+    },
+    {
+      "source": "/((?!_next|assets|proxy).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

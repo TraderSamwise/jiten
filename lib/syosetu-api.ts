@@ -1,3 +1,5 @@
+import { proxyUrl } from "./proxy";
+
 export interface SyosetuNovel {
   ncode: string;
   title: string;
@@ -26,7 +28,7 @@ export async function searchNovels(query: string): Promise<SyosetuNovel[]> {
     of: "t-n-w-s-ga-l-e",
   });
 
-  const resp = await fetch(`https://api.syosetu.com/novelapi/api/?${params}`);
+  const resp = await fetch(proxyUrl(`https://api.syosetu.com/novelapi/api/?${params}`));
   if (!resp.ok) throw new Error(`Syosetu API error: ${resp.status}`);
 
   const data = await resp.json();
@@ -47,7 +49,7 @@ export async function searchNovels(query: string): Promise<SyosetuNovel[]> {
 
 export async function fetchChapterText(ncode: string, chapter: number): Promise<string> {
   const url = `https://ncode.syosetu.com/${ncode}/${chapter}/`;
-  const resp = await fetch(url);
+  const resp = await fetch(proxyUrl(url));
   if (!resp.ok) throw new Error(`Failed to fetch chapter ${chapter}: ${resp.status}`);
 
   const html = await resp.text();
@@ -80,7 +82,7 @@ export async function fetchTableOfContents(ncode: string): Promise<SyosetuTocSec
         ? `https://ncode.syosetu.com/${ncode}/`
         : `https://ncode.syosetu.com/${ncode}/?p=${page}`;
 
-    const resp = await fetch(url);
+    const resp = await fetch(proxyUrl(url));
     if (!resp.ok) throw new Error(`Failed to fetch ToC page ${page}: ${resp.status}`);
 
     const html = await resp.text();
