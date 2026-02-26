@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Pressable, ActivityIndicator } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
@@ -22,7 +23,7 @@ import type { Book } from "@/db/types";
 
 export default function BookReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
-  const router = useRouter();
+  const goBack = useSafeGoBack("/reader");
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -192,7 +193,7 @@ export default function BookReaderScreen() {
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
         style={{ paddingTop: insets.top }}
       >
-        <Pressable onPress={() => router.back()} className="p-2">
+        <Pressable onPress={() => goBack()} className="p-2">
           <ChevronLeft size={24} className="text-foreground" />
         </Pressable>
         <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>

@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -235,6 +236,7 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
 export default function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
+  const navigateBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { dictDb } = useDatabase();
   const userDb = useUserDb();
@@ -1351,7 +1353,7 @@ export default function StudyScreen() {
           className="mt-4"
           label="Return to List"
           variant="outline"
-          onPress={() => router.back()}
+          onPress={() => navigateBack()}
         />
       </View>
     );
@@ -1372,7 +1374,7 @@ export default function StudyScreen() {
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-2">
-        <Pressable onPress={() => router.back()} className="p-2">
+        <Pressable onPress={() => navigateBack()} className="p-2">
           <X size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-sm text-muted-foreground">
