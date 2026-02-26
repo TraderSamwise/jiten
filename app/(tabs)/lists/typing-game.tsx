@@ -4,9 +4,13 @@ import {
   TextInput,
   Pressable,
   Switch,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
+  type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
@@ -68,6 +72,7 @@ function WordBlock({
   furiganaMode,
   autoRevealed,
   pitchVisible,
+  onLayout,
 }: {
   word: WordState;
   isCurrent: boolean;
@@ -75,6 +80,7 @@ function WordBlock({
   furiganaMode: FuriganaMode;
   autoRevealed: boolean;
   pitchVisible: boolean;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
@@ -154,6 +160,7 @@ function WordBlock({
     <View
       className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
+      onLayout={onLayout}
     >
       {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
 
@@ -266,7 +273,7 @@ function CoinAnimation({ gloss }: { gloss: string }) {
   const coinOpacity = useSharedValue(1);
 
   useEffect(() => {
-    coinY.value = withTiming(-60, { duration: 3000, easing: Easing.out(Easing.quad) });
+    coinY.value = withTiming(-48, { duration: 3000, easing: Easing.out(Easing.quad) });
     coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
   }, [coinY, coinOpacity]);
 
@@ -370,6 +377,8 @@ export default function TypingGameScreen() {
   // Per-word romaji answers for backspace-to-previous (reset each batch)
   const answers = useRef<string[]>([]);
   const inputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const wordYPositions = useRef<Map<number, number>>(new Map());
 
   // ─── Dynamic batch size from screen dimensions ───
 
@@ -416,6 +425,16 @@ export default function TypingGameScreen() {
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
+
+  // ─── Auto-scroll to current word ───
+
+  useEffect(() => {
+    if (phase !== "playing") return;
+    const y = wordYPositions.current.get(currentWordIndex);
+    if (y != null) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y + 60 - 8), animated: true });
+    }
+  }, [currentWordIndex, phase]);
 
   // ─── Start Game ───
 
@@ -483,6 +502,9 @@ export default function TypingGameScreen() {
   }
 
   async function advanceToNextBatch(prevCompleted: number) {
+    wordYPositions.current.clear();
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+
     const nextBatchIds = shuffledQueue.current.slice(0, batchSize);
     shuffledQueue.current = shuffledQueue.current.slice(batchSize);
 
@@ -730,7 +752,11 @@ export default function TypingGameScreen() {
       )}
 
       {phase === "playing" && (
-        <View className="flex-1">
+        <KeyboardAvoidingView
+          className="flex-1"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
+        >
           {/* Progress */}
           <View className="px-4 py-2">
             <Text className="text-sm text-muted-foreground text-right">
@@ -738,22 +764,32 @@ export default function TypingGameScreen() {
             </Text>
           </View>
 
-          {/* Word area - tapping refocuses input */}
-          <Pressable className="flex-1 px-4" onPress={() => inputRef.current?.focus()}>
-            <View className="flex-row flex-wrap">
-              {words.map((word, i) => (
-                <WordBlock
-                  key={word.entry.id}
-                  word={word}
-                  isCurrent={i === currentWordIndex}
-                  typedKana={i === currentWordIndex ? typedKana : ""}
-                  furiganaMode={furiganaMode}
-                  autoRevealed={autoFuriganaRevealed}
-                  pitchVisible={showPitchOpt}
-                />
-              ))}
-            </View>
-          </Pressable>
+          {/* Word area - scrollable, tapping refocuses input */}
+          <ScrollView
+            ref={scrollRef}
+            className="flex-1"
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 60 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable onPress={() => inputRef.current?.focus()}>
+              <View className="flex-row flex-wrap">
+                {words.map((word, i) => (
+                  <WordBlock
+                    key={word.entry.id}
+                    word={word}
+                    isCurrent={i === currentWordIndex}
+                    typedKana={i === currentWordIndex ? typedKana : ""}
+                    furiganaMode={furiganaMode}
+                    autoRevealed={autoFuriganaRevealed}
+                    pitchVisible={showPitchOpt}
+                    onLayout={(e) => {
+                      wordYPositions.current.set(i, e.nativeEvent.layout.y);
+                    }}
+                  />
+                ))}
+              </View>
+            </Pressable>
+          </ScrollView>
 
           {/* Input bar */}
           <View
@@ -781,7 +817,7 @@ export default function TypingGameScreen() {
               placeholderTextColor="#999"
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       )}
 
       {phase === "done" && (
