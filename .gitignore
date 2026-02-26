@@ -46,8 +46,11 @@ yarn-error.*
 # Dictionary build cache
 .cache/
 
-# Dictionary database (built from source data, large binary)
+# Dictionary databases (built from source data, large binaries)
 # Run `yarn build:db` to regenerate
 assets/dictionary.db
 assets/dictionary.db-shm
 assets/dictionary.db-wal
+assets/dictionary-audio.db
+assets/dictionary-audio.db-shm
+assets/dictionary-audio.db-wal

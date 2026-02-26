@@ -328,7 +328,7 @@ export default function TypingGameScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const userDb = useUserDb();
-  const { dictDb } = useDatabase();
+  const { dictDb, audioDb } = useDatabase();
 
   const [phase, setPhase] = useState<Phase>("select");
   const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>("auto");
@@ -556,8 +556,8 @@ export default function TypingGameScreen() {
     setAutoFuriganaRevealed(false);
 
     // Play audio for the completed word
-    if (playAudioOpt && dictDb) {
-      playEntryAudio(dictDb, words[currentWordIndex].entry.id);
+    if (playAudioOpt && audioDb) {
+      playEntryAudio(audioDb, words[currentWordIndex].entry.id);
     }
 
     const newCompletedTotal = completedTotal + currentWordIndex + 1;

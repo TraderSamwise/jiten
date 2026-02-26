@@ -10,27 +10,27 @@ interface PlayAudioButtonProps {
 }
 
 export function PlayAudioButton({ entryId, size = 20 }: PlayAudioButtonProps) {
-  const { dictDb } = useDatabase();
+  const { audioDb } = useDatabase();
   const [hasAudio, setHasAudio] = useState(false);
   const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
-    if (!dictDb) return;
+    if (!audioDb) return;
     // Check if audio exists for this entry
-    dictDb
+    audioDb
       .getFirstAsync<{ c: number }>("SELECT 1 as c FROM word_audio WHERE entry_id = ? LIMIT 1", [
         entryId,
       ])
       .then((row) => setHasAudio(!!row))
       .catch(() => setHasAudio(false));
-  }, [dictDb, entryId]);
+  }, [audioDb, entryId]);
 
-  if (!hasAudio || !dictDb) return null;
+  if (!hasAudio || !audioDb) return null;
 
   async function handlePress() {
-    if (!dictDb) return;
+    if (!audioDb) return;
     setPlaying(true);
-    await playEntryAudio(dictDb, entryId);
+    await playEntryAudio(audioDb, entryId);
     // Brief highlight then reset
     setTimeout(() => setPlaying(false), 600);
   }

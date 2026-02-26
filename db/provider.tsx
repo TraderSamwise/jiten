@@ -3,10 +3,13 @@ import * as SQLite from "expo-sqlite";
 import { Platform } from "react-native";
 import {
   isDictReady,
+  isAudioReady,
   fetchManifest,
   downloadDictionary,
+  downloadAudio,
   checkForUpdate,
   loadWebDictDb,
+  loadWebAudioDb,
   type DownloadStatus,
   type DictManifest,
 } from "./dict-download";
@@ -23,6 +26,7 @@ function isOpfsLockError(err: unknown): boolean {
 
 interface DatabaseContextType {
   dictDb: SQLite.SQLiteDatabase | null;
+  audioDb: SQLite.SQLiteDatabase | null;
   isReady: boolean;
   isDownloaded: boolean;
   downloadStatus: DownloadStatus;
@@ -32,6 +36,7 @@ interface DatabaseContextType {
 
 const DatabaseContext = createContext<DatabaseContextType>({
   dictDb: null,
+  audioDb: null,
   isReady: false,
   isDownloaded: false,
   downloadStatus: { state: "checking" },
@@ -66,8 +71,19 @@ async function openDictDb(): Promise<SQLite.SQLiteDatabase> {
   return db;
 }
 
+/** Open the audio DB (separate file with just word_audio table). */
+async function openAudioDb(): Promise<SQLite.SQLiteDatabase> {
+  if (Platform.OS !== "web") {
+    return SQLite.openDatabaseAsync("dictionary-audio.db");
+  }
+  const db = await loadWebAudioDb();
+  if (!db) throw new Error("Audio data missing");
+  return db;
+}
+
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [dictDb, setDictDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [audioDb, setAudioDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({
@@ -75,6 +91,28 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   });
   const [manifest, setManifest] = useState<DictManifest | null>(null);
   const dictDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const audioDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+
+  // Background audio init — downloads if needed, then opens audio DB
+  const initAudio = useCallback(async (m?: DictManifest) => {
+    try {
+      const ready = await isAudioReady();
+      if (!ready) {
+        if (m?.audioUrl) {
+          console.log("[DB] Downloading audio DB in background...");
+          await downloadAudio(m);
+        } else {
+          return; // Can't download without manifest/audioUrl
+        }
+      }
+      const db = await openAudioDb();
+      audioDbRef.current = db;
+      setAudioDb(db);
+      console.log("[DB] Audio DB ready");
+    } catch (err) {
+      console.warn("[DB] Audio init failed (non-blocking):", err);
+    }
+  }, []);
 
   // Full init sequence — used on mount and on visibility reacquire
   const runInit = useCallback(async () => {
@@ -83,8 +121,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
       if (ready) {
         // Check for updates before opening the DB
+        let fetchedManifest: DictManifest | undefined;
         try {
           const m = await fetchManifest();
+          fetchedManifest = m;
           const hasUpdate = await checkForUpdate(m);
           if (hasUpdate) {
             // Block on update — gate will show download UI
@@ -104,6 +144,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setIsDownloaded(true);
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
+
+        // Fire-and-forget audio init (downloads in background if needed)
+        initAudio(fetchedManifest);
       } else {
         setIsReady(true);
         // Fetch manifest to show download size
@@ -132,7 +175,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Failed to initialize",
       });
     }
-  }, []);
+  }, [initAudio]);
 
   useEffect(() => {
     runInit();
@@ -147,6 +190,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         console.log("[DB] Releasing dict DB for another tab");
         dictDbRef.current = null;
         setDictDb(null);
+        audioDbRef.current = null;
+        setAudioDb(null);
       });
     });
 
@@ -202,6 +247,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       setDictDb(db);
       setIsDownloaded(true);
       setDownloadStatus({ state: "ready" });
+
+      // Fire-and-forget audio init after fresh core download
+      initAudio(m);
     } catch (err) {
       console.error("[DB] Download error:", err);
       setDownloadStatus({
@@ -213,11 +261,19 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Download failed",
       });
     }
-  }, [manifest]);
+  }, [manifest, initAudio]);
 
   return (
     <DatabaseContext.Provider
-      value={{ dictDb, isReady, isDownloaded, downloadStatus, startDownload, retryManifest }}
+      value={{
+        dictDb,
+        audioDb,
+        isReady,
+        isDownloaded,
+        downloadStatus,
+        startDownload,
+        retryManifest,
+      }}
     >
       {children}
     </DatabaseContext.Provider>

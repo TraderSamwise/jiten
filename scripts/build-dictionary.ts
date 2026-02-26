@@ -461,15 +461,77 @@ async function main() {
   db.exec("VACUUM");
   db.close();
 
-  const stats = fs.statSync(DB_PATH);
-  console.log(`\nDone! Database: ${DB_PATH} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
+  const fullStats = fs.statSync(DB_PATH);
+  console.log(`\nFull database: ${DB_PATH} (${(fullStats.size / 1024 / 1024).toFixed(1)} MB)`);
+
+  // ─── Split audio into separate DB ───
+  console.log("\n20. Splitting audio into separate database...");
+  const AUDIO_DB_PATH = path.join(OUT_DIR, "dictionary-audio.db");
+  if (fs.existsSync(AUDIO_DB_PATH)) fs.unlinkSync(AUDIO_DB_PATH);
+
+  // Reopen the main DB to extract audio
+  const mainDb = new Database(DB_PATH);
+  const audioDb = new Database(AUDIO_DB_PATH);
+  audioDb.pragma("journal_mode = WAL");
+
+  // Create word_audio table in audio DB
+  audioDb.exec(`
+    CREATE TABLE word_audio (
+      entry_id INTEGER NOT NULL,
+      reading TEXT NOT NULL,
+      audio BLOB NOT NULL,
+      source TEXT NOT NULL,
+      format TEXT NOT NULL,
+      PRIMARY KEY (entry_id, reading)
+    );
+  `);
+
+  // Copy all rows from main DB's word_audio into audio DB
+  const audioRows = mainDb
+    .prepare("SELECT entry_id, reading, audio, source, format FROM word_audio")
+    .all() as {
+    entry_id: number;
+    reading: string;
+    audio: Buffer;
+    source: string;
+    format: string;
+  }[];
+
+  const insertAudioRow = audioDb.prepare(
+    "INSERT INTO word_audio (entry_id, reading, audio, source, format) VALUES (?, ?, ?, ?, ?)",
+  );
+
+  const insertAllAudio = audioDb.transaction(() => {
+    for (const row of audioRows) {
+      insertAudioRow.run(row.entry_id, row.reading, row.audio, row.source, row.format);
+    }
+  });
+  insertAllAudio();
+  console.log(`  ${audioRows.length} audio entries copied to audio DB`);
+
+  // Create index in audio DB
+  audioDb.exec("CREATE INDEX idx_word_audio_entry ON word_audio(entry_id)");
+
+  audioDb.exec("VACUUM");
+  audioDb.close();
+
+  // Drop word_audio from main DB and re-VACUUM
+  mainDb.exec("DROP TABLE word_audio");
+  mainDb.exec("VACUUM");
+  mainDb.close();
+
+  const coreStats = fs.statSync(DB_PATH);
+  const audioStats = fs.statSync(AUDIO_DB_PATH);
+  console.log(`  Core DB: ${(coreStats.size / 1024 / 1024).toFixed(1)} MB`);
+  console.log(`  Audio DB: ${(audioStats.size / 1024 / 1024).toFixed(1)} MB`);
 
   // Write manifest JSON for on-demand download
-  // DB download URL is derived at runtime from the manifest URL (sibling file)
+  // DB download URLs are derived at runtime from the manifest URL (sibling files)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
   const manifest = {
     version: DICT_VERSION,
-    sizeBytes: stats.size,
+    sizeBytes: coreStats.size,
+    audioSizeBytes: audioStats.size,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(`Manifest: ${manifestPath}`);
