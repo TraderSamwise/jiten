@@ -1,8 +1,1 @@
-{
-  "rewrites": [
-    {
-      "source": "/((?!_next|assets|api).*)",
-      "destination": "/index.html"
-    }
-  ]
-}
+{}
