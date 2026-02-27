@@ -66,6 +66,13 @@ interface WordState {
 
 // ─── WordBlock Component ───
 
+interface FloatingCoin {
+  key: number;
+  gloss: string;
+  screenX: number;
+  screenY: number;
+}
+
 function WordBlock({
   word,
   isCurrent,
@@ -75,6 +82,7 @@ function WordBlock({
   pitchVisible,
   flickPending,
   onLayout,
+  onCoinSpawn,
 }: {
   word: WordState;
   isCurrent: boolean;
@@ -84,8 +92,11 @@ function WordBlock({
   pitchVisible: boolean;
   flickPending?: boolean;
   onLayout?: (event: LayoutChangeEvent) => void;
+  onCoinSpawn?: (coin: FloatingCoin) => void;
 }) {
   const router = useRouter();
+  const blockRef = useRef<View>(null);
+  const hasFired = useRef(false);
   const { entry, completed, correct } = word;
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
@@ -168,15 +179,29 @@ function WordBlock({
     );
   };
 
+  // Measure position and spawn floating coin when word completes
+  useEffect(() => {
+    if (completed && !hasFired.current && onCoinSpawn) {
+      hasFired.current = true;
+      blockRef.current?.measureInWindow((x, y, w) => {
+        onCoinSpawn({
+          key: entry.id,
+          gloss: getEnglishGloss(entry),
+          screenX: x + w / 2,
+          screenY: y,
+        });
+      });
+    }
+  }, [completed, entry, onCoinSpawn]);
+
   return (
     <Pressable
+      ref={blockRef}
       className="items-center mx-2 mb-3"
       style={{ opacity: completed ? 0.4 : isCurrent ? 1 : 0.5 }}
       onLayout={onLayout}
       onPress={() => router.push(`/lists/word/${entry.id}`)}
     >
-      {completed && <CoinAnimation gloss={getEnglishGloss(entry)} />}
-
       {/* Furigana: pitch accent with colored text, plain colored text, or invisible placeholder */}
       {showFurigana && pitch ? (
         <PitchAccent accent={pitch} renderMora={coloredMoraRenderer} />
@@ -276,19 +301,26 @@ function GlowOverlay() {
 const COIN_MAX_W = 200;
 const SCREEN_PAD = 16;
 
-function CoinAnimation({ gloss }: { gloss: string }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const viewRef = useRef<View>(null);
-  const [nudge, setNudge] = useState(0);
-  const measured = useRef(false);
-
+function CoinAnimation({
+  gloss,
+  screenX,
+  screenY,
+  onDone,
+}: {
+  gloss: string;
+  screenX: number;
+  screenY: number;
+  onDone: () => void;
+}) {
   const coinY = useSharedValue(0);
   const coinOpacity = useSharedValue(1);
 
   useEffect(() => {
     coinY.value = withTiming(-48, { duration: 3000, easing: Easing.out(Easing.quad) });
     coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
-  }, [coinY, coinOpacity]);
+    const timer = setTimeout(onDone, 3100);
+    return () => clearTimeout(timer);
+  }, [coinY, coinOpacity, onDone]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: coinY.value }],
@@ -296,38 +328,23 @@ function CoinAnimation({ gloss }: { gloss: string }) {
   }));
 
   return (
-    <View
-      ref={viewRef}
-      style={{
-        position: "absolute",
-        top: -12,
-        zIndex: 10,
-        transform: [{ translateX: nudge }],
-      }}
-      onLayout={() => {
-        if (measured.current) return;
-        viewRef.current?.measureInWindow((x, _y, width) => {
-          if (measured.current || width === 0) return;
-          measured.current = true;
-          let shift = 0;
-          if (x < SCREEN_PAD) shift = SCREEN_PAD - x;
-          else if (x + width > screenWidth - SCREEN_PAD)
-            shift = screenWidth - SCREEN_PAD - x - width;
-          if (shift !== 0) setNudge(shift);
-        });
-      }}
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          top: screenY - 12,
+          left: screenX - COIN_MAX_W / 2,
+          width: COIN_MAX_W,
+          zIndex: 50,
+        },
+        animatedStyle,
+      ]}
       pointerEvents="none"
     >
-      <Animated.View style={animatedStyle}>
-        <Text
-          className="text-sm font-medium text-primary text-center"
-          numberOfLines={1}
-          style={{ maxWidth: COIN_MAX_W }}
-        >
-          {gloss}
-        </Text>
-      </Animated.View>
-    </View>
+      <Text className="text-sm font-medium text-primary text-center" numberOfLines={1}>
+        {gloss}
+      </Text>
+    </Animated.View>
   );
 }
 
@@ -396,6 +413,17 @@ export default function TypingGameScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const gameRef = useRef<View>(null);
   const wordYPositions = useRef<Map<number, number>>(new Map());
+
+  // Floating coins rendered outside ScrollView to avoid clipping
+  const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
+  const coinKeyRef = useRef(0);
+  const spawnCoin = useCallback((coin: FloatingCoin) => {
+    const key = ++coinKeyRef.current;
+    setFloatingCoins((prev) => [...prev, { ...coin, key }]);
+  }, []);
+  const removeCoin = useCallback((key: number) => {
+    setFloatingCoins((prev) => prev.filter((c) => c.key !== key));
+  }, []);
 
   // ─── Dynamic batch size from screen dimensions ───
 
@@ -847,6 +875,7 @@ export default function TypingGameScreen() {
                     autoRevealed={autoFuriganaRevealed}
                     pitchVisible={showPitchOpt}
                     flickPending={i === currentWordIndex ? flickPendingState : false}
+                    onCoinSpawn={spawnCoin}
                     onLayout={(e) => {
                       wordYPositions.current.set(i, e.nativeEvent.layout.y);
                     }}
@@ -884,6 +913,17 @@ export default function TypingGameScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
+
+      {/* Floating coins — rendered outside ScrollView to avoid clipping */}
+      {floatingCoins.map((coin) => (
+        <CoinAnimation
+          key={coin.key}
+          gloss={coin.gloss}
+          screenX={coin.screenX}
+          screenY={coin.screenY}
+          onDone={() => removeCoin(coin.key)}
+        />
+      ))}
 
       {phase === "done" && (
         <View className="flex-1 justify-center px-6">
