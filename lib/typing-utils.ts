@@ -130,3 +130,96 @@ export function getKanjiColor(
   }
   return "default";
 }
+
+// ─── Flick keyboard support ───
+
+/**
+ * Flick keyboard transitions: maps each kana to the set of kana it could
+ * become via dakuten (゛), handakuten (゜), or small kana toggle.
+ *
+ * On a flick keyboard, composing が from か goes through か as an intermediate
+ * state. This table lets us treat that intermediate as "pending" rather than "wrong".
+ */
+const FLICK_PAIRS: [string, string][] = [
+  // Dakuten
+  ...("かがきぎくぐけげこご" + "さざしじすずせぜそぞ" + "ただちぢつづてでとど" + "うゔ")
+    .match(/../g)!
+    .map((p) => [p[0], p[1]] as [string, string]),
+  // Ha-row dakuten + handakuten (cycle: は→ば→ぱ→は)
+  ["は", "ば"],
+  ["ば", "ぱ"],
+  ["ぱ", "は"],
+  ["ひ", "び"],
+  ["び", "ぴ"],
+  ["ぴ", "ひ"],
+  ["ふ", "ぶ"],
+  ["ぶ", "ぷ"],
+  ["ぷ", "ふ"],
+  ["へ", "べ"],
+  ["べ", "ぺ"],
+  ["ぺ", "へ"],
+  ["ほ", "ぼ"],
+  ["ぼ", "ぽ"],
+  ["ぽ", "ほ"],
+  // Small kana toggle
+  ["あ", "ぁ"],
+  ["ぁ", "あ"],
+  ["い", "ぃ"],
+  ["ぃ", "い"],
+  ["う", "ぅ"],
+  ["ぅ", "う"],
+  ["え", "ぇ"],
+  ["ぇ", "え"],
+  ["お", "ぉ"],
+  ["ぉ", "お"],
+  ["つ", "っ"],
+  ["っ", "つ"],
+  ["や", "ゃ"],
+  ["ゃ", "や"],
+  ["ゆ", "ゅ"],
+  ["ゅ", "ゆ"],
+  ["よ", "ょ"],
+  ["ょ", "よ"],
+  ["わ", "ゎ"],
+  ["ゎ", "わ"],
+];
+
+const flickMap = new Map<string, Set<string>>();
+for (const [from, to] of FLICK_PAIRS) {
+  let set = flickMap.get(from);
+  if (!set) {
+    set = new Set();
+    flickMap.set(from, set);
+  }
+  set.add(to);
+}
+
+/** Check if `typed` could become `target` via a valid flick keyboard transition. */
+export function isFlickTransition(typed: string, target: string): boolean {
+  const t = toHira(norm(typed));
+  const g = toHira(norm(target));
+  return flickMap.get(t)?.has(g) ?? false;
+}
+
+/**
+ * Check if the last character of typedKana is in a flick-pending state —
+ * all preceding characters match and the last could become correct via flick.
+ */
+export function hasFlickPending(typedKana: string, target: string): boolean {
+  const typed = [...typedKana];
+  const tgt = [...target];
+  if (typed.length === 0 || typed.length > tgt.length) return false;
+
+  // All characters except the last must match
+  for (let i = 0; i < typed.length - 1; i++) {
+    if (toHira(norm(typed[i])) !== toHira(norm(tgt[i]))) return false;
+  }
+
+  const lastTyped = typed[typed.length - 1];
+  const lastTarget = tgt[typed.length - 1];
+
+  // Last char already matches — not a flick pending state
+  if (toHira(norm(lastTyped)) === toHira(norm(lastTarget))) return false;
+
+  return isFlickTransition(lastTyped, lastTarget);
+}

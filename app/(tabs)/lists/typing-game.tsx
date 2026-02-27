@@ -36,6 +36,7 @@ import {
   compareChars,
   isReadingComplete,
   getKanjiColor,
+  hasFlickPending,
   type CharStatus,
 } from "@/lib/typing-utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -72,6 +73,7 @@ function WordBlock({
   furiganaMode,
   autoRevealed,
   pitchVisible,
+  flickPending,
   onLayout,
 }: {
   word: WordState;
@@ -80,6 +82,7 @@ function WordBlock({
   furiganaMode: FuriganaMode;
   autoRevealed: boolean;
   pitchVisible: boolean;
+  flickPending?: boolean;
   onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const router = useRouter();
@@ -108,6 +111,14 @@ function WordBlock({
   let charStatuses: CharStatus[] = [];
   if (isCurrent) {
     charStatuses = compareChars(typedKana, targetReading);
+    // Flick keyboard: show last char as "pending" instead of "wrong"
+    if (flickPending && charStatuses.length > 0) {
+      const lastIdx = [...typedKana].length - 1;
+      if (lastIdx >= 0 && lastIdx < charStatuses.length && charStatuses[lastIdx] === "wrong") {
+        charStatuses = [...charStatuses];
+        charStatuses[lastIdx] = "pending";
+      }
+    }
   } else if (completed && correct) {
     charStatuses = targetChars.map(() => "correct" as CharStatus);
   } else if (completed) {
@@ -378,6 +389,9 @@ export default function TypingGameScreen() {
 
   // Per-word romaji answers for backspace-to-previous (reset each batch)
   const answers = useRef<string[]>([]);
+  // Flick keyboard detection: true when user is typing kana directly (not romaji)
+  const isKanaInput = useRef(false);
+  const [flickPendingState, setFlickPendingState] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const gameRef = useRef<View>(null);
@@ -552,8 +566,9 @@ export default function TypingGameScreen() {
   function advanceWord(raw: string, isCorrect: boolean) {
     answers.current[currentWordIndex] = raw;
 
-    // Reset auto-furigana before advancing so the next word doesn't flash
+    // Reset state before advancing so the next word doesn't flash
     setAutoFuriganaRevealed(false);
+    setFlickPendingState(false);
 
     // Play audio for the completed word
     if (playAudioOpt && audioDb) {
@@ -592,19 +607,31 @@ export default function TypingGameScreen() {
   function handleInput(raw: string) {
     if (phase !== "playing" || currentWordIndex >= words.length) return;
 
+    // Detect kana keyboard: if raw text ends with kana, user is on a kana/flick keyboard
+    if (raw.length > 0) {
+      const lastCode = raw.charCodeAt(raw.length - 1);
+      isKanaInput.current = lastCode >= 0x3040 && lastCode <= 0x30ff;
+    }
+
     setTypedRomaji(raw);
     const converted = romajiToKana(raw);
     setTypedKana(converted);
 
-    // Auto-furigana: reveal on mistype
+    const currentEntry = words[currentWordIndex].entry;
+    const target = getTargetReading(currentEntry);
+
+    // Check if last character is in a flick-pending state (e.g. か composing to が)
+    const flickPending = isKanaInput.current && hasFlickPending(converted, target);
+    setFlickPendingState(flickPending);
+
+    // Auto-furigana: reveal on mistype (but not if flick-pending)
     if (furiganaMode === "auto" && !autoFuriganaRevealed) {
-      const statuses = compareChars(converted, getTargetReading(words[currentWordIndex].entry));
-      if (statuses.some((s) => s === "wrong")) {
+      const statuses = compareChars(converted, target);
+      if (statuses.some((s) => s === "wrong") && !flickPending) {
         setAutoFuriganaRevealed(true);
       }
     }
 
-    const currentEntry = words[currentWordIndex].entry;
     const isCorrect =
       isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry);
 
@@ -615,12 +642,14 @@ export default function TypingGameScreen() {
 
     // If fully-converted kana count >= target reading length, move on even if wrong.
     // Only count actual kana chars — exclude unconverted ASCII romaji (e.g. trailing "d" in "いd")
-    const targetLen = [...getTargetReading(currentEntry)].length;
+    const targetLen = [...target].length;
     const kanaCount = [...converted].filter((ch) => {
       const code = ch.charCodeAt(0);
       return code >= 0x3040 && code <= 0x30ff;
     }).length;
     if (kanaCount >= targetLen && targetLen > 0) {
+      // Don't auto-advance if the last char is a flick intermediate (e.g. か → が)
+      if (flickPending) return;
       advanceWord(raw, false);
       return;
     }
@@ -817,6 +846,7 @@ export default function TypingGameScreen() {
                     furiganaMode={furiganaMode}
                     autoRevealed={autoFuriganaRevealed}
                     pitchVisible={showPitchOpt}
+                    flickPending={i === currentWordIndex ? flickPendingState : false}
                     onLayout={(e) => {
                       wordYPositions.current.set(i, e.nativeEvent.layout.y);
                     }}

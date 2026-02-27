@@ -10,6 +10,8 @@ import {
   isReadingComplete,
   isValidPrefix,
   getKanjiColor,
+  isFlickTransition,
+  hasFlickPending,
   type CharStatus,
 } from "./typing-utils";
 import type { DictEntry } from "@/db/types";
@@ -557,6 +559,32 @@ describe("integration: romaji input → char statuses", () => {
     expect(typingStatuses("zasshi", "ざっし")).toEqual(["correct", "correct", "correct"]);
   });
 
+  test("typing 'hyouga' for ひょうが step by step", () => {
+    expect(typingStatuses("h", "ひょうが")).toEqual(["pending", "untyped", "untyped", "untyped"]);
+    expect(typingStatuses("hy", "ひょうが")).toEqual(["pending", "pending", "untyped", "untyped"]);
+    // "hyo" → "ひょ" (2 kana chars: ひ + ょ)
+    expect(typingStatuses("hyo", "ひょうが")).toEqual(["correct", "correct", "untyped", "untyped"]);
+    // "hyou" → "ひょう" (3 kana chars)
+    expect(typingStatuses("hyou", "ひょうが")).toEqual([
+      "correct",
+      "correct",
+      "correct",
+      "untyped",
+    ]);
+    expect(typingStatuses("hyoug", "ひょうが")).toEqual([
+      "correct",
+      "correct",
+      "correct",
+      "pending",
+    ]);
+    expect(typingStatuses("hyouga", "ひょうが")).toEqual([
+      "correct",
+      "correct",
+      "correct",
+      "correct",
+    ]);
+  });
+
   test("typing 'nippon' for にっぽん (geminate p)", () => {
     expect(typingStatuses("ni", "にっぽん")).toEqual(["correct", "untyped", "untyped", "untyped"]);
     expect(typingStatuses("nip", "にっぽん")).toEqual(["correct", "pending", "untyped", "untyped"]);
@@ -587,5 +615,113 @@ describe("integration: romaji input → char statuses", () => {
       "correct",
       "correct",
     ]);
+  });
+});
+
+// ─── Flick keyboard support ───
+
+describe("isFlickTransition", () => {
+  test("dakuten: か → が", () => {
+    expect(isFlickTransition("か", "が")).toBe(true);
+  });
+
+  test("dakuten: き → ぎ", () => {
+    expect(isFlickTransition("き", "ぎ")).toBe(true);
+  });
+
+  test("dakuten: た → だ", () => {
+    expect(isFlickTransition("た", "だ")).toBe(true);
+  });
+
+  test("dakuten: う → ゔ", () => {
+    expect(isFlickTransition("う", "ゔ")).toBe(true);
+  });
+
+  test("ha-row cycle: は → ば → ぱ → は", () => {
+    expect(isFlickTransition("は", "ば")).toBe(true);
+    expect(isFlickTransition("ば", "ぱ")).toBe(true);
+    expect(isFlickTransition("ぱ", "は")).toBe(true);
+  });
+
+  test("ha-row cycle: ひ → び → ぴ → ひ", () => {
+    expect(isFlickTransition("ひ", "び")).toBe(true);
+    expect(isFlickTransition("び", "ぴ")).toBe(true);
+    expect(isFlickTransition("ぴ", "ひ")).toBe(true);
+  });
+
+  test("small kana: よ → ょ", () => {
+    expect(isFlickTransition("よ", "ょ")).toBe(true);
+    expect(isFlickTransition("ょ", "よ")).toBe(true);
+  });
+
+  test("small kana: つ → っ", () => {
+    expect(isFlickTransition("つ", "っ")).toBe(true);
+    expect(isFlickTransition("っ", "つ")).toBe(true);
+  });
+
+  test("small kana: や → ゃ", () => {
+    expect(isFlickTransition("や", "ゃ")).toBe(true);
+  });
+
+  test("small kana: あ → ぁ", () => {
+    expect(isFlickTransition("あ", "ぁ")).toBe(true);
+    expect(isFlickTransition("ぁ", "あ")).toBe(true);
+  });
+
+  test("katakana normalized: カ → ガ", () => {
+    expect(isFlickTransition("カ", "ガ")).toBe(true);
+  });
+
+  test("negative: different row (か → さ)", () => {
+    expect(isFlickTransition("か", "さ")).toBe(false);
+  });
+
+  test("negative: same character", () => {
+    expect(isFlickTransition("か", "か")).toBe(false);
+  });
+
+  test("negative: unrelated characters", () => {
+    expect(isFlickTransition("あ", "か")).toBe(false);
+  });
+});
+
+describe("hasFlickPending", () => {
+  test("single char flick pending: か for target が", () => {
+    expect(hasFlickPending("か", "がっこう")).toBe(true);
+  });
+
+  test("last char flick pending: ひよ for target ひょうが (よ → ょ)", () => {
+    expect(hasFlickPending("ひよ", "ひょうが")).toBe(true);
+  });
+
+  test("last char flick pending: ひょうか for target ひょうが (か → が)", () => {
+    expect(hasFlickPending("ひょうか", "ひょうが")).toBe(true);
+  });
+
+  test("not pending when last char already matches", () => {
+    expect(hasFlickPending("ひ", "ひょうが")).toBe(false);
+  });
+
+  test("not pending when preceding chars don't match", () => {
+    expect(hasFlickPending("かよ", "ひょうが")).toBe(false);
+  });
+
+  test("not pending when typed is longer than target", () => {
+    expect(hasFlickPending("ひょうがあ", "ひょうが")).toBe(false);
+  });
+
+  test("not pending for empty input", () => {
+    expect(hasFlickPending("", "ひょうが")).toBe(false);
+  });
+
+  test("not pending when transition is invalid (wrong row)", () => {
+    expect(hasFlickPending("ひさ", "ひょうが")).toBe(false);
+  });
+
+  test("ha-row pending: は for target ぱ (two transitions away)", () => {
+    // は → ば (one step), but は → ぱ requires two steps, so not a direct transition
+    expect(hasFlickPending("は", "ぱん")).toBe(false);
+    // ば → ぱ is valid
+    expect(hasFlickPending("ば", "ぱん")).toBe(true);
   });
 });
