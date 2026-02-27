@@ -683,6 +683,14 @@ describe("isFlickTransition", () => {
   test("negative: unrelated characters", () => {
     expect(isFlickTransition("あ", "か")).toBe(false);
   });
+
+  test("multi-tap family: っ → づ (same base つ)", () => {
+    expect(isFlickTransition("っ", "づ")).toBe(true);
+  });
+
+  test("multi-tap family: は → ぱ (same ha-row family)", () => {
+    expect(isFlickTransition("は", "ぱ")).toBe(true);
+  });
 });
 
 describe("hasFlickPending", () => {
@@ -718,10 +726,16 @@ describe("hasFlickPending", () => {
     expect(hasFlickPending("ひさ", "ひょうが")).toBe(false);
   });
 
-  test("ha-row pending: は for target ぱ (two transitions away)", () => {
-    // は → ば (one step), but は → ぱ requires two steps, so not a direct transition
-    expect(hasFlickPending("は", "ぱん")).toBe(false);
-    // ば → ぱ is valid
+  test("ha-row multi-tap: は and ば are both pending for target ぱ", () => {
+    // は → ば → ぱ: both intermediates are valid pending states
+    expect(hasFlickPending("は", "ぱん")).toBe(true);
     expect(hasFlickPending("ば", "ぱん")).toBe(true);
+  });
+
+  test("multi-tap: っ is pending for target づ (つ→っ→づ)", () => {
+    // つ → っ (small toggle) → づ (dakuten): っ is an intermediate for づ
+    expect(hasFlickPending("まつば っ", "まつばづえ")).toBe(false); // space doesn't match
+    expect(hasFlickPending("まつばっ", "まつばづえ")).toBe(true);
+    expect(hasFlickPending("まつばつ", "まつばづえ")).toBe(true);
   });
 });
