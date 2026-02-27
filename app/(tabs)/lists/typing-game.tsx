@@ -312,6 +312,7 @@ function CoinAnimation({
   screenY: number;
   onDone: () => void;
 }) {
+  const { width: screenWidth } = useWindowDimensions();
   const coinY = useSharedValue(0);
   const coinOpacity = useSharedValue(1);
 
@@ -333,7 +334,10 @@ function CoinAnimation({
         {
           position: "absolute",
           top: screenY - 12,
-          left: screenX - COIN_MAX_W / 2,
+          left: Math.max(
+            SCREEN_PAD,
+            Math.min(screenX - COIN_MAX_W / 2, screenWidth - SCREEN_PAD - COIN_MAX_W),
+          ),
           width: COIN_MAX_W,
           zIndex: 50,
         },
@@ -504,7 +508,7 @@ export default function TypingGameScreen() {
     if (phase !== "playing") return;
     const y = wordYPositions.current.get(currentWordIndex);
     if (y == null || scrollViewHeight.current === 0) return;
-    const wordScrollY = y + 60; // account for contentContainer paddingTop
+    const wordScrollY = y + 12; // account for contentContainer paddingTop
     const bottomEdge = scrollOffset.current + scrollViewHeight.current;
     // Only scroll if the word is within one row height of the bottom edge or below it
     if (wordScrollY + ROW_HEIGHT > bottomEdge) {
@@ -866,8 +870,10 @@ export default function TypingGameScreen() {
           <ScrollView
             ref={scrollRef}
             className="flex-1"
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 60 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12 }}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={false}
+            contentInsetAdjustmentBehavior="never"
             onScroll={(e) => {
               scrollOffset.current = e.nativeEvent.contentOffset.y;
             }}
