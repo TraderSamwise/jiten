@@ -194,11 +194,40 @@ for (const [from, to] of FLICK_PAIRS) {
   set.add(to);
 }
 
+// Build family groups: characters reachable from the same base via modifier key.
+// e.g. つ, っ, づ are all in the same family (つ→っ via small toggle, つ→づ via dakuten).
+// This handles multi-tap sequences like つ→っ→づ where っ is an intermediate.
+const flickFamily = new Map<string, Set<string>>();
+function getOrCreateFamily(char: string): Set<string> {
+  let family = flickFamily.get(char);
+  if (!family) {
+    family = new Set([char]);
+    flickFamily.set(char, family);
+  }
+  return family;
+}
+for (const [from, to] of FLICK_PAIRS) {
+  const fFamily = getOrCreateFamily(from);
+  const tFamily = getOrCreateFamily(to);
+  if (fFamily !== tFamily) {
+    // Merge the two families
+    const merged = new Set([...fFamily, ...tFamily]);
+    for (const ch of merged) {
+      flickFamily.set(ch, merged);
+    }
+  }
+}
+
 /** Check if `typed` could become `target` via a valid flick keyboard transition. */
 export function isFlickTransition(typed: string, target: string): boolean {
   const t = toHira(norm(typed));
   const g = toHira(norm(target));
-  return flickMap.get(t)?.has(g) ?? false;
+  if (t === g) return false;
+  // Direct transition (single modifier tap)
+  if (flickMap.get(t)?.has(g)) return true;
+  // Same family (multi-tap: both reachable from the same base character)
+  const family = flickFamily.get(t);
+  return family?.has(g) ?? false;
 }
 
 /**
