@@ -413,6 +413,8 @@ export default function TypingGameScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const gameRef = useRef<View>(null);
   const wordYPositions = useRef<Map<number, number>>(new Map());
+  const scrollOffset = useRef(0);
+  const scrollViewHeight = useRef(0);
 
   // Floating coins rendered outside ScrollView to avoid clipping
   const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
@@ -496,13 +498,17 @@ export default function TypingGameScreen() {
     }, [phase]),
   );
 
-  // ─── Auto-scroll to current word ───
+  // ─── Auto-scroll to current word (only when it's near/below the bottom) ───
 
   useEffect(() => {
     if (phase !== "playing") return;
     const y = wordYPositions.current.get(currentWordIndex);
-    if (y != null) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y + 60 - 8), animated: true });
+    if (y == null || scrollViewHeight.current === 0) return;
+    const wordScrollY = y + 60; // account for contentContainer paddingTop
+    const bottomEdge = scrollOffset.current + scrollViewHeight.current;
+    // Only scroll if the word is within one row height of the bottom edge or below it
+    if (wordScrollY + ROW_HEIGHT > bottomEdge) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, wordScrollY - 8), animated: true });
     }
   }, [currentWordIndex, phase]);
 
@@ -862,6 +868,13 @@ export default function TypingGameScreen() {
             className="flex-1"
             contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 60 }}
             keyboardShouldPersistTaps="handled"
+            onScroll={(e) => {
+              scrollOffset.current = e.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
+            onLayout={(e) => {
+              scrollViewHeight.current = e.nativeEvent.layout.height;
+            }}
           >
             <Pressable onPress={() => inputRef.current?.focus()}>
               <View className="flex-row flex-wrap">
