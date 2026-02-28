@@ -108,6 +108,10 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN typing_mode INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lists ADD COLUMN disable_flip_animation INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lists ADD COLUMN disable_swipe_animation INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE list_entries ADD COLUMN kanji_literal TEXT DEFAULT NULL`,
+  `ALTER TABLE srs_cards ADD COLUMN kanji_literal TEXT DEFAULT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_list_entries_kanji ON list_entries(kanji_literal)`,
+  `CREATE INDEX IF NOT EXISTS idx_srs_cards_kanji ON srs_cards(kanji_literal)`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

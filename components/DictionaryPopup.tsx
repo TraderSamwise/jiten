@@ -75,7 +75,7 @@ export function DictionaryPopup({
   const total = wordResult ? wordResult.entries.length : 0;
 
   const isBookmarked = useBookmarkStore((s) =>
-    currentEntry ? s.bookmarkedIds.has(currentEntry.id) : false,
+    currentEntry ? s.bookmarkedIds.has(`e:${currentEntry.id}`) : false,
   );
 
   const {

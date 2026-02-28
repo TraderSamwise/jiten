@@ -126,9 +126,20 @@ export interface Book {
   lastReadAt: string | null;
 }
 
+// Discriminated union for items in a list
+export type ListItem =
+  | { kind: "entry"; entry: DictEntry }
+  | { kind: "kanji"; kanji: KanjiCharacter };
+
+// Helper for unique keys in Sets/Maps
+export function listItemKey(item: ListItem): string {
+  return item.kind === "entry" ? `e:${item.entry.id}` : `k:${item.kanji.literal}`;
+}
+
 export interface SrsCardRow {
   id: string;
   entryId: number;
+  kanjiLiteral: string | null;
   listId: string | null;
   due: string;
   stability: number;

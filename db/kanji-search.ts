@@ -301,6 +301,20 @@ export async function getSimilarByMeaningAsync(
   return rows.map(rowToKanjiCharacter);
 }
 
+/** Batch-fetch kanji by their literal characters (async). */
+export async function getKanjiBatchAsync(
+  db: SQLite.SQLiteDatabase,
+  literals: string[],
+): Promise<KanjiCharacter[]> {
+  if (literals.length === 0) return [];
+  const placeholders = literals.map(() => "?").join(", ");
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT * FROM kanji_characters WHERE literal IN (${placeholders})`,
+    literals,
+  );
+  return rows.map(rowToKanjiCharacter);
+}
+
 /** Get radicals for a specific kanji (async). */
 export async function getRadicalsForKanjiAsync(
   db: SQLite.SQLiteDatabase,
