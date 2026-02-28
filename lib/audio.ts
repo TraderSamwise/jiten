@@ -3,11 +3,29 @@
  *
  * Queries word_audio table, plays MP3 via expo-audio.
  * Singleton player instance — stops previous before playing new.
+ * Gracefully degrades if native audio module is unavailable.
  */
 
-import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { Platform } from "react-native";
+import { isNativeModuleAvailable } from "@/lib/native-guard";
 import type { SQLiteDatabase } from "expo-sqlite";
+
+// Lazy-load expo-audio to avoid crashes when native module isn't linked
+let _audioChecked = false;
+type AudioPlayer = { play: () => void; remove: () => void };
+let _createAudioPlayer: ((uri: string) => AudioPlayer) | null = null;
+
+function getCreateAudioPlayer() {
+  if (_audioChecked) return _createAudioPlayer;
+  _audioChecked = true;
+  if (!isNativeModuleAvailable("ExpoAudio")) return null;
+  try {
+    _createAudioPlayer = require("expo-audio").createAudioPlayer;
+  } catch {
+    _createAudioPlayer = null;
+  }
+  return _createAudioPlayer;
+}
 
 let currentPlayer: AudioPlayer | null = null;
 let currentUri: string | null = null;
@@ -18,6 +36,9 @@ let currentUri: string | null = null;
  */
 export async function playEntryAudio(db: SQLiteDatabase, entryId: number): Promise<boolean> {
   try {
+    const create = getCreateAudioPlayer();
+    if (!create) return false;
+
     const row = await db.getFirstAsync<{ audio: ArrayBuffer; format: string }>(
       "SELECT audio, format FROM word_audio WHERE entry_id = ? LIMIT 1",
       [entryId],
@@ -28,7 +49,7 @@ export async function playEntryAudio(db: SQLiteDatabase, entryId: number): Promi
     stopAudio();
 
     const uri = await blobToUri(row.audio);
-    const player = createAudioPlayer(uri);
+    const player = create(uri);
     currentPlayer = player;
     currentUri = uri;
 

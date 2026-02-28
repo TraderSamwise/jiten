@@ -1,23 +1,37 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { isNativeModuleAvailable } from "@/lib/native-guard";
 
-// Lazy-load the native module so the file can be imported safely
-// even before a native build includes @jamsch/expo-speech-recognition.
-function getModule() {
+// Cache the lazy-load result so we only attempt once.
+// requireNativeModule() throws at module-evaluation time when the native
+// binary doesn't include ExpoSpeechRecognition. We guard with
+// isNativeModuleAvailable before ever touching the package.
+let _moduleChecked = false;
+let _module: import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModule | null = null;
+let _emitter: import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModuleEmitter | null =
+  null;
+
+function loadModule() {
+  if (_moduleChecked) return;
+  _moduleChecked = true;
+  if (!isNativeModuleAvailable("ExpoSpeechRecognition")) return;
   try {
-    return require("@jamsch/expo-speech-recognition")
-      .ExpoSpeechRecognitionModule as import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModule;
+    const pkg = require("@jamsch/expo-speech-recognition");
+    _module = pkg.ExpoSpeechRecognitionModule;
+    _emitter = pkg.ExpoSpeechRecognitionModuleEmitter;
   } catch {
-    return null;
+    _module = null;
+    _emitter = null;
   }
 }
 
+function getModule() {
+  loadModule();
+  return _module;
+}
+
 function getEmitter() {
-  try {
-    return require("@jamsch/expo-speech-recognition")
-      .ExpoSpeechRecognitionModuleEmitter as import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModuleEmitter;
-  } catch {
-    return null;
-  }
+  loadModule();
+  return _emitter;
 }
 
 /** Request microphone + speech recognition permissions. Returns true if granted. */
@@ -70,8 +84,10 @@ export function useVoiceRecognition(options: {
   const [isListening, setIsListening] = useState(false);
   const enabledRef = useRef(enabled);
   const onResultRef = useRef(onResult);
-  enabledRef.current = enabled;
-  onResultRef.current = onResult;
+  useEffect(() => {
+    enabledRef.current = enabled;
+    onResultRef.current = onResult;
+  });
 
   const startListening = useCallback(() => {
     if (!enabledRef.current) return;
@@ -86,7 +102,7 @@ export function useVoiceRecognition(options: {
       emitter.addListener("start", () => {
         if (enabledRef.current) setIsListening(true);
       }),
-      emitter.addListener("result", (ev: any) => {
+      emitter.addListener("result", (ev: { results?: { transcript?: string }[] }) => {
         if (!enabledRef.current) return;
         const transcript = ev.results?.[0]?.transcript;
         if (transcript) onResultRef.current(transcript);
