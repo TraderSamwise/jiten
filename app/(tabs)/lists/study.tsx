@@ -28,8 +28,19 @@ import { StudyStatisticsModal } from "@/components/StudyStatisticsModal";
 import { X, Settings, Info, Check, ChevronLeft, ChevronRight, Mic } from "@/lib/icons";
 import { useVoiceRecognition } from "@/lib/voice-recognition";
 import { toHiragana } from "wanakana";
+import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
+import {
+  romajiToKana,
+  getTargetReading,
+  getDisplayText,
+  compareChars,
+  isReadingComplete,
+  getKanjiColor,
+  hasFlickPending,
+  type CharStatus,
+} from "@/lib/typing-utils";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
@@ -64,87 +75,227 @@ function generateId(): string {
 }
 
 // --- Self-contained typing input component ---
-function TypingInput({ entry, onCorrect }: { entry: DictEntry; onCorrect: () => void }) {
+function TypingInput({
+  entry,
+  onComplete,
+  frontFaceIsKanji,
+}: {
+  entry: DictEntry;
+  onComplete: (wasCorrect: boolean) => void;
+  frontFaceIsKanji: boolean;
+}) {
   const [typedRomaji, setTypedRomaji] = useState("");
-  const [typedKana, setTypedKana] = useState("");
-  const [status, setStatus] = useState<"idle" | "correct" | "wrong">("idle");
+  const [furiganaRevealed, setFuriganaRevealed] = useState(false);
+  const [done, setDone] = useState(false);
+  const [isKanaInput, setIsKanaInput] = useState(false);
   const inputRef = useRef<TextInput>(null);
+
+  const targetReading = getTargetReading(entry);
+  const displayText = getDisplayText(entry);
+  const targetChars = [...targetReading];
+  const displayChars = [...displayText];
+  const displayDiffersFromReading = displayText !== targetReading;
 
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 100);
     return () => clearTimeout(t);
   }, []);
 
-  function handleInput(raw: string) {
-    if (status === "correct") return;
-    setTypedRomaji(raw);
-    const converted = toHiragana(raw, { IMEMode: true });
-    setTypedKana(converted);
+  // Compute char statuses from current typed kana
+  const converted = romajiToKana(typedRomaji);
+  const flickPending = isKanaInput && hasFlickPending(converted, targetReading);
 
-    const readings = entry.kana.map((k) => k.text);
-    const kanjiTexts = entry.kanji.map((k) => k.text);
-    const norm = (s: string) => s.normalize("NFC");
-    const isCorrect =
-      readings.some((r) => norm(r) === norm(converted)) ||
-      readings.some((r) => norm(r) === norm(raw)) ||
-      kanjiTexts.some((k) => norm(k) === norm(raw));
-
-    if (isCorrect) {
-      setStatus("correct");
-      onCorrect();
-    } else {
-      const anyMatch =
-        readings.some((r) => norm(r).startsWith(norm(converted))) ||
-        readings.some((r) => norm(r).startsWith(norm(raw)));
-      setStatus(anyMatch || converted.length === 0 ? "idle" : "wrong");
+  let charStatuses: CharStatus[] = compareChars(converted, targetReading);
+  if (flickPending && charStatuses.length > 0) {
+    const lastIdx = [...converted].length - 1;
+    if (lastIdx >= 0 && lastIdx < charStatuses.length && charStatuses[lastIdx] === "wrong") {
+      charStatuses = [...charStatuses];
+      charStatuses[lastIdx] = "pending";
     }
   }
 
-  if (status === "correct") {
-    return <Text className="text-lg font-bold text-green-500">Correct!</Text>;
+  // Pitch accent data
+  const pitch = entry.pitchAccents.find((pa) => pa.reading === targetReading);
+  const morae = pitch ? splitMorae(targetReading) : [];
+  const moraCharOffsets: number[] = [];
+  if (pitch) {
+    let offset = 0;
+    for (const mora of morae) {
+      moraCharOffsets.push(offset);
+      offset += mora.length;
+    }
   }
 
-  const readings = entry.kana.map((k) => k.text);
-  const kanjiTexts = entry.kanji.map((k) => k.text);
-  const targets = kanjiTexts.some((k) => [...typedKana].some((c) => [...k].includes(c)))
-    ? [...readings, ...kanjiTexts]
-    : readings;
-  const maxLen = Math.max(...readings.map((r) => r.length));
-  const chars = [...typedKana];
-
-  return (
-    <>
-      <View className="flex-row justify-center mb-3">
-        {Array.from({ length: maxLen }, (_, i) => {
-          if (i < chars.length) {
-            const matchesAny = targets.some((r) => i < [...r].length && [...r][i] === chars[i]);
-            return (
-              <Text
-                key={i}
-                className={`text-2xl font-bold ${matchesAny ? "text-green-500" : "text-red-500"}`}
-              >
-                {chars[i]}
-              </Text>
-            );
-          }
+  const coloredMoraRenderer = (mora: string, moraIndex: number) => {
+    const start = moraCharOffsets[moraIndex] ?? 0;
+    return (
+      <View className="flex-row">
+        {[...mora].map((char, ci) => {
+          const charIdx = start + ci;
           return (
-            <Text key={i} className="text-2xl text-muted-foreground/30">
-              ＿
+            <Text
+              key={ci}
+              className={`text-sm ${
+                charStatuses[charIdx] === "correct"
+                  ? "text-green-500"
+                  : charStatuses[charIdx] === "wrong"
+                    ? "text-red-500"
+                    : charStatuses[charIdx] === "pending"
+                      ? "text-green-300"
+                      : "text-muted-foreground"
+              }`}
+            >
+              {char}
             </Text>
           );
         })}
       </View>
+    );
+  };
+
+  function handleInput(raw: string) {
+    if (done) return;
+
+    // Detect kana keyboard
+    let kanaInput = isKanaInput;
+    if (raw.length > 0) {
+      const lastCode = raw.charCodeAt(raw.length - 1);
+      kanaInput = lastCode >= 0x3040 && lastCode <= 0x30ff;
+      setIsKanaInput(kanaInput);
+    }
+
+    setTypedRomaji(raw);
+    const conv = romajiToKana(raw);
+
+    const isFlickPending = kanaInput && hasFlickPending(conv, targetReading);
+
+    // Auto-furigana: reveal on mistype (but not if flick-pending)
+    if (frontFaceIsKanji && !furiganaRevealed) {
+      const statuses = compareChars(conv, targetReading);
+      if (statuses.some((s) => s === "wrong") && !isFlickPending) {
+        setFuriganaRevealed(true);
+      }
+    }
+
+    // Check complete
+    if (isReadingComplete(conv, entry) || isReadingComplete(raw, entry)) {
+      setDone(true);
+      inputRef.current?.blur();
+      onComplete(true);
+      return;
+    }
+
+    // Over-length check: kana count >= target length → fail
+    const targetLen = targetChars.length;
+    const kanaCount = [...conv].filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x3040 && code <= 0x30ff;
+    }).length;
+    if (kanaCount >= targetLen && targetLen > 0) {
+      if (isFlickPending) return;
+      setDone(true);
+      inputRef.current?.blur();
+      onComplete(false);
+      return;
+    }
+  }
+
+  function handleSubmitEditing() {
+    if (done) return;
+    if (frontFaceIsKanji && !furiganaRevealed) {
+      // First Enter: reveal furigana hint
+      setFuriganaRevealed(true);
+    } else {
+      // Second Enter (or non-kanji front): give up
+      setDone(true);
+      inputRef.current?.blur();
+      onComplete(false);
+    }
+  }
+
+  // Color helper for kana chars
+  const charColorClass = (status: CharStatus) =>
+    status === "correct"
+      ? "text-green-500"
+      : status === "wrong"
+        ? "text-red-500"
+        : status === "pending"
+          ? "text-green-300"
+          : "text-muted-foreground";
+
+  return (
+    <Pressable onPress={() => inputRef.current?.focus()} className="items-center">
+      {/* Furigana row (only when front face is kanji and display differs from reading) */}
+      {frontFaceIsKanji &&
+        displayDiffersFromReading &&
+        (furiganaRevealed ? (
+          pitch ? (
+            <PitchAccent accent={pitch} renderMora={coloredMoraRenderer} />
+          ) : (
+            <View className="flex-row">
+              {targetChars.map((char, i) => (
+                <Text key={i} className={`text-sm ${charColorClass(charStatuses[i])}`}>
+                  {char}
+                </Text>
+              ))}
+            </View>
+          )
+        ) : pitch ? (
+          <View style={{ opacity: 0 }} pointerEvents="none">
+            <PitchAccent accent={pitch} />
+          </View>
+        ) : (
+          <Text className="text-sm text-transparent">{targetReading}</Text>
+        ))}
+
+      {/* Display text with color coding */}
+      {frontFaceIsKanji ? (
+        <View className="flex-row">
+          {displayChars.map((char, i) => {
+            const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
+            const colorClass =
+              color === "green"
+                ? "text-green-500"
+                : color === "red"
+                  ? "text-red-500"
+                  : color === "pending"
+                    ? "text-green-300"
+                    : "text-foreground";
+            return (
+              <Text key={i} className={`text-3xl font-bold ${colorClass}`}>
+                {char}
+              </Text>
+            );
+          })}
+        </View>
+      ) : (
+        /* Kana/english front: show reading chars with color coding */
+        <View className="flex-row justify-center">
+          {targetChars.map((char, i) => (
+            <Text
+              key={i}
+              className={`text-2xl font-bold ${charColorClass(charStatuses[i] ?? "untyped")}`}
+            >
+              {char}
+            </Text>
+          ))}
+        </View>
+      )}
+
+      {/* Visible TextInput — triggers virtual keyboard on mobile */}
       <TextInput
         ref={inputRef}
-        className="w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
+        className="mt-4 w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
         value={typedRomaji}
         onChangeText={handleInput}
+        onSubmitEditing={handleSubmitEditing}
         autoCapitalize="none"
         autoCorrect={false}
+        blurOnSubmit={false}
         placeholder="Type reading..."
         placeholderTextColor="#999"
       />
-    </>
+    </Pressable>
   );
 }
 
@@ -270,6 +421,9 @@ export default function StudyScreen() {
   const [confusedResults, setConfusedResults] = useState<ConfusedWordResult[]>([]);
   const [confusedFailedEntry, setConfusedFailedEntry] = useState<DictEntry | null>(null);
 
+  // Pre-selected rating from typing/voice completion
+  const [preSelectedRating, setPreSelectedRating] = useState<"pass" | "fail" | null>(null);
+
   // Voice recognition state
   const [voiceHeard, setVoiceHeard] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<"idle" | "correct" | "wrong">("idle");
@@ -308,10 +462,11 @@ export default function StudyScreen() {
     };
   }, []);
 
-  // Reset voice state when card changes (typing state resets via TypingInput remount)
+  // Reset voice/typing state when card changes (typing state resets via TypingInput remount)
   useEffect(() => {
     setVoiceStatus("idle");
     setVoiceHeard(null);
+    setPreSelectedRating(null);
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
@@ -322,24 +477,38 @@ export default function StudyScreen() {
     }
   }, [currentIndex]);
 
-  // Web: Enter key to reveal / advance
+  // Web: keyboard shortcuts for reveal / rating
   useEffect(() => {
     if (Platform.OS !== "web") return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Enter") return;
       const isRevealed = revealedRef.current;
-      // Skip Enter in text inputs unless card is already revealed (typing mode fast-advance)
       const tag = (document.activeElement as HTMLElement)?.tagName;
-      if ((tag === "INPUT" || tag === "TEXTAREA") && !isRevealed) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (isBrowsingHistory) return;
-      if (isRevealed) {
-        flipProgress.value = 1;
-        setIsFlipping(false);
-        handlePass(false);
-      } else {
-        handleReveal();
+      const isInInput = tag === "INPUT" || tag === "TEXTAREA";
+
+      if (e.key === "Enter" || e.key === " ") {
+        // When typing input is focused and card not revealed, let it handle the event
+        if (isInInput && !isRevealed) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (isBrowsingHistory) return;
+        if (!isRevealed) {
+          handleReveal();
+        } else if (preSelectedRating === "fail") {
+          handleFail();
+        } else {
+          handlePass(false);
+        }
+        return;
+      }
+      if (isRevealed && !isBrowsingHistory) {
+        if (e.key === "1") {
+          e.preventDefault();
+          handleFail();
+        }
+        if (e.key === "2") {
+          e.preventDefault();
+          handlePass(false);
+        }
       }
     }
     document.addEventListener("keydown", handleKeyDown, true);
@@ -841,6 +1010,7 @@ export default function StudyScreen() {
   // Navigation: only update state. translateX is handled by callers (gesture/button animations).
   function goBack() {
     setIsFlipping(false);
+    setPreSelectedRating(null);
     if (isBrowsingHistory) {
       if (historyIndex! > 0) {
         setHistoryIndex(historyIndex! - 1);
@@ -854,6 +1024,7 @@ export default function StudyScreen() {
 
   function goForward() {
     setIsFlipping(false);
+    setPreSelectedRating(null);
     if (!isBrowsingHistory) return;
     if (historyIndex! < history.length - 1) {
       setHistoryIndex(historyIndex! + 1);
@@ -1145,6 +1316,7 @@ export default function StudyScreen() {
     if (isCorrect) {
       setVoiceStatus("correct");
       setVoiceHeard(null);
+      setPreSelectedRating("pass");
       handleReveal();
       voiceAutoAdvanceRef.current = setTimeout(() => {
         handlePass(false);
@@ -1286,47 +1458,72 @@ export default function StudyScreen() {
   const backFaces = list?.backFaces ?? ["english"];
 
   function renderCardFront(item: QueueItem, isCurrent: boolean) {
+    const isTyping = !!list?.typingMode && isCurrent && !isBrowsingHistory;
+    const frontIsKanji =
+      frontFaces[0] === "kanji" && getDisplayText(item.entry) !== getTargetReading(item.entry);
+
+    const typingOnComplete = (wasCorrect: boolean) => {
+      setPreSelectedRating(wasCorrect ? "pass" : "fail");
+      handleReveal();
+    };
+
     return (
       <View className="items-center justify-center flex-1">
-        <Text className="text-3xl font-bold text-foreground">
-          {getFaceText(item.entry, frontFaces[0])}
-        </Text>
+        {isTyping && frontIsKanji ? (
+          /* Typing mode with kanji front: TypingInput replaces primary face text */
+          <TypingInput
+            key={item.entry.id}
+            entry={item.entry}
+            frontFaceIsKanji
+            onComplete={typingOnComplete}
+          />
+        ) : (
+          <>
+            <Text className="text-3xl font-bold text-foreground">
+              {getFaceText(item.entry, frontFaces[0])}
+            </Text>
+            {isTyping && (
+              <View className="mt-6 items-center w-full px-4">
+                <TypingInput
+                  key={item.entry.id}
+                  entry={item.entry}
+                  frontFaceIsKanji={false}
+                  onComplete={typingOnComplete}
+                />
+              </View>
+            )}
+          </>
+        )}
         {frontFaces.slice(1).map((face, i) => (
           <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
             {getFaceText(item.entry, face)}
           </Text>
         ))}
-        {list?.typingMode && isCurrent && !isBrowsingHistory ? (
-          <View className="mt-6 items-center w-full px-4">
-            <TypingInput
-              key={item.entry.id}
-              entry={item.entry}
-              onCorrect={() => {
-                handleReveal();
-              }}
-            />
-          </View>
-        ) : list?.voiceMode ? (
-          <View className="mt-6 items-center">
-            {voiceStatus === "correct" ? (
-              <Text className="text-lg font-bold text-green-500">Correct!</Text>
-            ) : voiceStatus === "wrong" ? (
-              <>
-                <Text className="text-lg font-bold text-red-500">Try again</Text>
-                {voiceHeard && (
-                  <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
-                )}
-              </>
-            ) : (
-              <>
-                <Mic size={24} className={isListening ? "text-primary" : "text-muted-foreground"} />
-                <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
-              </>
-            )}
-          </View>
-        ) : (
-          <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
-        )}
+        {!isTyping &&
+          (list?.voiceMode ? (
+            <View className="mt-6 items-center">
+              {voiceStatus === "correct" ? (
+                <Text className="text-lg font-bold text-green-500">Correct!</Text>
+              ) : voiceStatus === "wrong" ? (
+                <>
+                  <Text className="text-lg font-bold text-red-500">Try again</Text>
+                  {voiceHeard && (
+                    <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Mic
+                    size={24}
+                    className={isListening ? "text-primary" : "text-muted-foreground"}
+                  />
+                  <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
+                </>
+              )}
+            </View>
+          ) : (
+            <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
+          ))}
       </View>
     );
   }
@@ -1557,13 +1754,22 @@ export default function StudyScreen() {
       {/* Rating buttons */}
       {(revealed || isBrowsingHistory) && (
         <View className="flex-row gap-3 px-4 mt-4 mb-8">
-          <Button className="flex-1 bg-red-500" label="Fail" onPress={handleFail} />
+          <Pressable
+            onPress={handleFail}
+            className={`flex-1 items-center justify-center rounded-lg h-11 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
+          >
+            <Text className="font-medium text-white">
+              {preSelectedRating === "fail" ? "Fail \u21B5" : "Fail"}
+            </Text>
+          </Pressable>
           <Pressable
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
-            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-blue-500" : "bg-green-500"}`}
+            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-blue-500" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
           >
-            <Text className="font-medium text-white">{longPressActive ? "Easy!" : "Pass"}</Text>
+            <Text className="font-medium text-white">
+              {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
+            </Text>
           </Pressable>
         </View>
       )}
