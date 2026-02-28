@@ -22,6 +22,7 @@ function makeEntry(opts: { kanji?: string[]; kana: string[]; glosses?: string[] 
   return {
     id: 1,
     common: true,
+    jlptLevel: null,
     kanji: (opts.kanji ?? []).map((text) => ({ text, common: true, tags: [] })),
     kana: opts.kana.map((text) => ({ text, romaji: null, common: true, tags: [] })),
     senses:

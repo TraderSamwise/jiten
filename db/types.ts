@@ -1,6 +1,7 @@
 export interface DictEntry {
   id: number;
   common: boolean;
+  jlptLevel: number | null;
   kanji: DictKanji[];
   kana: DictKana[];
   senses: DictSense[];

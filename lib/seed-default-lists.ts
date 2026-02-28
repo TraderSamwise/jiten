@@ -2,14 +2,20 @@ import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "@/db/user-db";
 
 const FLAG_KEY = "default_lists_seeded";
+const VOCAB_FLAG_KEY = "default_vocab_lists_seeded";
 
-interface ListDef {
+interface KanjiListDef {
   name: string;
   column: "jlpt_level" | "grade";
   value: number;
 }
 
-const LIST_DEFS: ListDef[] = [
+interface VocabListDef {
+  name: string;
+  jlptLevel: number;
+}
+
+const KANJI_LIST_DEFS: KanjiListDef[] = [
   { name: "JLPT N5 Kanji", column: "jlpt_level", value: 5 },
   { name: "JLPT N4 Kanji", column: "jlpt_level", value: 4 },
   { name: "JLPT N3 Kanji", column: "jlpt_level", value: 3 },
@@ -23,6 +29,14 @@ const LIST_DEFS: ListDef[] = [
   { name: "Jouyou Grade 6", column: "grade", value: 6 },
 ];
 
+const VOCAB_LIST_DEFS: VocabListDef[] = [
+  { name: "JLPT N5 Words", jlptLevel: 5 },
+  { name: "JLPT N4 Words", jlptLevel: 4 },
+  { name: "JLPT N3 Words", jlptLevel: 3 },
+  { name: "JLPT N2 Words", jlptLevel: 2 },
+  { name: "JLPT N1 Words", jlptLevel: 1 },
+];
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
@@ -31,17 +45,40 @@ export async function seedDefaultListsIfNeeded(
   userDb: WrappedUserDb,
   dictDb: SQLite.SQLiteDatabase,
 ): Promise<boolean> {
-  // Check if already seeded
-  const flag = await userDb.getFirstAsync<{ value: string }>(
+  let seeded = false;
+
+  // Seed kanji lists
+  const kanjiFlag = await userDb.getFirstAsync<{ value: string }>(
     "SELECT value FROM app_flags WHERE key = ?",
     [FLAG_KEY],
   );
-  if (flag) return false;
+  if (!kanjiFlag) {
+    await seedKanjiLists(userDb, dictDb);
+    await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [FLAG_KEY, "1"]);
+    seeded = true;
+  }
 
+  // Seed vocab lists (separate flag so existing users also get them)
+  const vocabFlag = await userDb.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_flags WHERE key = ?",
+    [VOCAB_FLAG_KEY],
+  );
+  if (!vocabFlag) {
+    await seedVocabLists(userDb, dictDb);
+    await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [
+      VOCAB_FLAG_KEY,
+      "1",
+    ]);
+    seeded = true;
+  }
+
+  return seeded;
+}
+
+async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDatabase): Promise<void> {
   const now = new Date().toISOString();
 
-  // Fetch all kanji grouped by list definition
-  for (const def of LIST_DEFS) {
+  for (const def of KANJI_LIST_DEFS) {
     const literals = await dictDb.getAllAsync<{ literal: string }>(
       `SELECT literal FROM kanji_characters WHERE ${def.column} = ? ORDER BY frequency_rank IS NULL, frequency_rank`,
       [def.value],
@@ -51,13 +88,11 @@ export async function seedDefaultListsIfNeeded(
 
     const listId = generateId();
 
-    // Create the list
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
       [listId, def.name, null, now, now],
     );
 
-    // Insert all kanji entries in batches to avoid overly large statements
     const BATCH_SIZE = 200;
     for (let i = 0; i < literals.length; i += BATCH_SIZE) {
       const batch = literals.slice(i, i + BATCH_SIZE);
@@ -72,9 +107,44 @@ export async function seedDefaultListsIfNeeded(
       );
     }
   }
+}
 
-  // Mark as seeded
-  await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [FLAG_KEY, "1"]);
+async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDatabase): Promise<void> {
+  const now = new Date().toISOString();
 
-  return true;
+  for (const def of VOCAB_LIST_DEFS) {
+    let entries: { id: number }[];
+    try {
+      entries = await dictDb.getAllAsync<{ id: number }>(
+        `SELECT id FROM entries WHERE jlpt_level = ? ORDER BY priority DESC`,
+        [def.jlptLevel],
+      );
+    } catch {
+      // jlpt_level column may not exist in older dict DBs — skip
+      return;
+    }
+
+    if (entries.length === 0) continue;
+
+    const listId = generateId();
+
+    await userDb.runAsync(
+      "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+      [listId, def.name, null, now, now],
+    );
+
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const batch = entries.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => "(?, ?, ?, ?)").join(", ");
+      const params: (string | number)[] = [];
+      for (const row of batch) {
+        params.push(generateId(), listId, row.id, now);
+      }
+      await userDb.runAsync(
+        `INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES ${placeholders}`,
+        params,
+      );
+    }
+  }
 }

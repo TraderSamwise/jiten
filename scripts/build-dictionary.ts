@@ -16,6 +16,8 @@ import wordnetDb from "wordnet-db";
 import { buildKanjiTables } from "./kanji/build-kanji-tables";
 import { buildAudioTable } from "./audio/build-audio-table";
 import { DICT_VERSION } from "../db/dict-version";
+import { downloadFile, CACHE_DIR as SHARED_CACHE_DIR } from "./lib/download";
+import { downloadJlptCsvs, loadJlptVocab, JLPT_LEVELS } from "./lib/jlpt";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -43,7 +45,7 @@ async function getJmdictUrl(): Promise<string> {
 
 const OUT_DIR = path.resolve(__dirname, "..", "assets");
 const DB_PATH = path.join(OUT_DIR, "dictionary.db");
-const CACHE_DIR = path.resolve(__dirname, "..", ".cache");
+const CACHE_DIR = SHARED_CACHE_DIR;
 
 interface JMdictWord {
   id: string;
@@ -77,19 +79,6 @@ interface JMdictData {
   dictRevisions: string[];
   tags: Record<string, string>;
   words: JMdictWord[];
-}
-
-async function downloadFile(url: string, dest: string): Promise<void> {
-  if (fs.existsSync(dest)) {
-    console.log(`  Using cached: ${path.basename(dest)}`);
-    return;
-  }
-  console.log(`  Downloading: ${url}`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status}`);
-  const buffer = Buffer.from(await res.arrayBuffer());
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, buffer);
 }
 
 async function extractTgz(tgzPath: string, outDir: string): Promise<string> {
@@ -147,7 +136,28 @@ function loadPitchAccents(
   return map;
 }
 
+async function confirmFullBuild(): Promise<void> {
+  if (process.argv.includes("--force")) return;
+  const readline = await import("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>((resolve) =>
+    rl.question(
+      "\n⚠️  FULL REBUILD: This deletes dictionary.db and regenerates EVERYTHING\n" +
+        "   including TTS audio via Google Cloud API (costs $$$).\n" +
+        "   This should almost never be needed. Use 'yarn migrate:dict' instead.\n\n" +
+        "   Continue? [y/N] ",
+      resolve,
+    ),
+  );
+  rl.close();
+  if (answer.toLowerCase() !== "y") {
+    console.log("Aborted.");
+    process.exit(0);
+  }
+}
+
 async function main() {
+  await confirmFullBuild();
   console.log("Building dictionary database...\n");
 
   // Ensure directories exist
@@ -170,6 +180,9 @@ async function main() {
   const pitchPath = path.join(CACHE_DIR, "accents.txt");
   await downloadFile(KANJIUM_URL, pitchPath);
 
+  console.log("2b. Downloading JLPT vocab CSVs...");
+  await downloadJlptCsvs();
+
   // Load data
   console.log("\n3. Loading JMdict JSON...");
   const jmdict: JMdictData = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
@@ -178,6 +191,10 @@ async function main() {
   console.log("4. Loading pitch accent data...");
   const pitchMap = loadPitchAccents(pitchPath);
   console.log(`   ${pitchMap.size} words with pitch data`);
+
+  console.log("4b. Loading JLPT vocab data...");
+  const jlptVocabMap = loadJlptVocab(CACHE_DIR);
+  console.log(`   ${jlptVocabMap.size} entries with JLPT vocab levels`);
 
   // Build SQLite database
   console.log("\n5. Building SQLite database...");
@@ -191,7 +208,8 @@ async function main() {
     CREATE TABLE entries (
       id INTEGER PRIMARY KEY,
       common INTEGER NOT NULL DEFAULT 0,
-      priority INTEGER NOT NULL DEFAULT 0
+      priority INTEGER NOT NULL DEFAULT 0,
+      jlpt_level INTEGER
     );
 
     CREATE TABLE kanji (
@@ -307,6 +325,20 @@ async function main() {
   console.log(`   ${entryCount} entries inserted`);
   console.log(`   ${pitchMatches} entries matched with pitch accent data`);
 
+  // Update JLPT vocab levels
+  console.log("5b. Setting JLPT vocab levels...");
+  const updateJlpt = db.prepare("UPDATE entries SET jlpt_level = ? WHERE id = ?");
+  const setJlptLevels = db.transaction(() => {
+    let updated = 0;
+    for (const [seq, level] of jlptVocabMap) {
+      const result = updateJlpt.run(level, seq);
+      if (result.changes > 0) updated++;
+    }
+    return updated;
+  });
+  const jlptUpdated = setJlptLevels();
+  console.log(`   ${jlptUpdated} entries matched with JLPT vocab levels`);
+
   // Create indexes
   console.log("\n6. Creating indexes...");
   db.exec(`
@@ -319,6 +351,7 @@ async function main() {
     CREATE INDEX idx_pitch_entry ON pitch_accents(entry_id);
     CREATE INDEX idx_entries_common ON entries(common);
     CREATE INDEX idx_entries_priority ON entries(priority);
+    CREATE INDEX idx_entries_jlpt ON entries(jlpt_level);
   `);
 
   // Create FTS5 table for English gloss search
@@ -454,6 +487,12 @@ async function main() {
 
   // Build word audio
   await buildAudioTable(db);
+
+  // Write dict_meta version table
+  db.exec(`CREATE TABLE IF NOT EXISTS dict_meta (key TEXT PRIMARY KEY, value TEXT)`);
+  db.prepare("INSERT OR REPLACE INTO dict_meta (key, value) VALUES ('version', ?)").run(
+    String(DICT_VERSION),
+  );
 
   // Optimize
   console.log("\n19. Optimizing database...");

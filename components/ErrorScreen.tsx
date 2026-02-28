@@ -1,5 +1,4 @@
-import { View, ScrollView, Pressable, Platform, StyleSheet } from "react-native";
-import { Text } from "@/components/ui/text";
+import { View, ScrollView, Pressable, Platform, StyleSheet, Text } from "react-native";
 import { getVersionString, getVersionCode } from "@/lib/version";
 
 interface ErrorScreenProps {
