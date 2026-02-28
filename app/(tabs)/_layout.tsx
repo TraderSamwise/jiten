@@ -5,6 +5,8 @@ import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 
+export { ErrorBoundary } from "@/components/ErrorBoundary";
+
 export default function TabLayout() {
   const userDb = useUserDb();
   const loadBookmarks = useBookmarkStore((s) => s.load);

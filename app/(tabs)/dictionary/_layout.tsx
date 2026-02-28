@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
 import { DictionaryHeader } from "@/components/DictionaryHeader";
 
+export { ErrorBoundary } from "@/components/ErrorBoundary";
+
 export default function DictionaryLayout() {
   return (
     <Stack

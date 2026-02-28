@@ -1,5 +1,7 @@
 import { Stack } from "expo-router";
 
+export { ErrorBoundary } from "@/components/ErrorBoundary";
+
 export default function ReaderLayout() {
   return (
     <Stack>
