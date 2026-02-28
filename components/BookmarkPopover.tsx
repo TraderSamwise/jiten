@@ -17,10 +17,17 @@ interface BookmarkPopoverProps {
   visible: boolean;
   onClose: () => void;
   entryId: number;
+  anchorPosition?: { top: number; right: number };
 }
 
-export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverProps) {
+export function BookmarkPopover({
+  visible,
+  onClose,
+  entryId,
+  anchorPosition,
+}: BookmarkPopoverProps) {
   const insets = useSafeAreaInsets();
+  const pos = anchorPosition ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
   const updateListInStore = useListsStore((s) => s.updateList);
@@ -141,7 +148,7 @@ export function BookmarkPopover({ visible, onClose, entryId }: BookmarkPopoverPr
         {/* Popover content */}
         <Pressable
           onPress={() => {}}
-          style={{ top: insets.top + 44, right: 8 }}
+          style={{ top: pos.top, right: pos.right }}
           className="absolute w-64 rounded-xl border border-border bg-background shadow-lg"
         >
           {/* New List row */}
