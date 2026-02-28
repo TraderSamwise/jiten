@@ -10,7 +10,7 @@ import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { useDatabase } from "@/db/provider";
 import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
-import { shouldDeEmphasize, getTagLabel } from "@/lib/tags";
+import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { DictEntry } from "@/db/types";
@@ -71,38 +71,42 @@ export function WordDetail({ entryId }: WordDetailProps) {
           isBookmarked ? "mb-4 rounded-lg border-l-4 border-primary bg-primary/5 pl-3 py-2" : "mb-4"
         }
       >
-        {entry.kanji.map((k, i) => {
-          const muted = shouldDeEmphasize(k.tags);
-          return (
-            <View key={i} className="flex-row items-center gap-2">
-              <Text
-                className={
-                  muted ? "text-2xl text-muted-foreground" : "text-4xl font-bold text-foreground"
-                }
-              >
-                {muted
-                  ? k.text
-                  : [...k.text].map((ch, ci) =>
-                      isKanji(ch.codePointAt(0)!) ? (
-                        <Text
-                          key={ci}
-                          className="text-4xl font-bold text-foreground"
-                          onPress={() => router.push(`/dictionary/kanji/${encodeURIComponent(ch)}`)}
-                        >
-                          {ch}
-                        </Text>
-                      ) : (
-                        ch
-                      ),
-                    )}
-              </Text>
-              {k.common && <Badge variant="common" label="common" />}
-              {k.tags.map((t, j) => (
-                <Badge key={j} variant="outline" label={getTagLabel(t)} />
-              ))}
-            </View>
-          );
-        })}
+        {entry.kanji
+          .filter((k) => !shouldHide(k.tags))
+          .map((k, i) => {
+            const muted = shouldDeEmphasize(k.tags);
+            return (
+              <View key={i} className="flex-row items-center gap-2">
+                <Text
+                  className={
+                    muted ? "text-2xl text-muted-foreground" : "text-4xl font-bold text-foreground"
+                  }
+                >
+                  {muted
+                    ? k.text
+                    : [...k.text].map((ch, ci) =>
+                        isKanji(ch.codePointAt(0)!) ? (
+                          <Text
+                            key={ci}
+                            className="text-4xl font-bold text-foreground"
+                            onPress={() =>
+                              router.push(`/dictionary/kanji/${encodeURIComponent(ch)}`)
+                            }
+                          >
+                            {ch}
+                          </Text>
+                        ) : (
+                          ch
+                        ),
+                      )}
+                </Text>
+                {k.common && <Badge variant="common" label="common" />}
+                {k.tags.map((t, j) => (
+                  <Badge key={j} variant="outline" label={getTagLabel(t)} />
+                ))}
+              </View>
+            );
+          })}
         <View className="flex-wrap gap-2 mt-2">
           {entry.kana.map((k, i) => {
             const muted = shouldDeEmphasize(k.tags);

@@ -16,8 +16,15 @@ export const TAG_LABELS: Record<string, string> = {
 /** Tags that indicate a form should be visually de-emphasized */
 const DE_EMPHASIZED_TAGS = new Set(["oK", "ok", "rK", "rk", "sK", "sk"]);
 
+/** Tags that indicate a form should be hidden from the UI entirely */
+const HIDDEN_TAGS = new Set(["sK", "sk"]);
+
 export function shouldDeEmphasize(tags: string[]): boolean {
   return tags.some((t) => DE_EMPHASIZED_TAGS.has(t));
+}
+
+export function shouldHide(tags: string[]): boolean {
+  return tags.some((t) => HIDDEN_TAGS.has(t));
 }
 
 export function getTagLabel(tag: string): string {
