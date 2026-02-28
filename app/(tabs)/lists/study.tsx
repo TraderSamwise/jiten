@@ -1457,7 +1457,7 @@ export default function StudyScreen() {
                         </Pressable>
                       </View>
                     )}
-                    {isFocused && isFlipping ? (
+                    {isFocused && card.isRevealed ? (
                       <>
                         <Animated.View
                           style={[
