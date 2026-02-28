@@ -90,3 +90,26 @@ npx tsx scripts/midori-import.ts --output /tmp/midori-export --verify
 
 This produces `.jiten` files that can be imported via the "Import" button on the Lists screen. SRS progress is preserved — set the list to "Simple SRS" mode to continue studying with the same algorithm.
 
+#### Importing .jiten files on iOS Simulator
+
+The simulator can't open `file://` URLs from the Mac filesystem. To make a `.jiten` file appear in the Files app under "On My iPhone":
+
+```bash
+# Find the simulator's local file storage
+DEVICE_ID=$(xcrun simctl list devices booted -j | python3 -c "import sys,json; print(list(d['udid'] for devs in json.loads(sys.stdin.read())['devices'].values() for d in devs if d['state']=='Booted')[0])")
+
+# Find the LocalStorage File Provider path
+LOCAL_STORAGE=$(find "/Users/$(whoami)/Library/Developer/CoreSimulator/Devices/$DEVICE_ID/data/Containers/Shared/AppGroup" -maxdepth 2 -name "File Provider Storage" -path "*LocalStorage*" 2>/dev/null | head -1)
+
+# If the above doesn't find it, search by metadata instead:
+# for dir in ~/Library/Developer/CoreSimulator/Devices/$DEVICE_ID/data/Containers/Shared/AppGroup/*/; do
+#   id=$(defaults read "$dir/.com.apple.mobile_container_manager.metadata.plist" MCMMetadataIdentifier 2>/dev/null)
+#   [ "$id" = "group.com.apple.FileProvider.LocalStorage" ] && LOCAL_STORAGE="$dir/File Provider Storage" && break
+# done
+
+# Copy the file
+cp /path/to/file.jiten "$LOCAL_STORAGE/"
+```
+
+You may need to kill and reopen the Files app on the simulator for the file to appear.
+
