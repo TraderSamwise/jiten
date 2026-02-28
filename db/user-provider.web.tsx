@@ -112,6 +112,9 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE srs_cards ADD COLUMN kanji_literal TEXT DEFAULT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_list_entries_kanji ON list_entries(kanji_literal)`,
   `CREATE INDEX IF NOT EXISTS idx_srs_cards_kanji ON srs_cards(kanji_literal)`,
+  `CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY, value TEXT)`,
+  `ALTER TABLE lists ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
+  `UPDATE lists SET is_default = 1 WHERE name IN ('JLPT N5 Kanji','JLPT N4 Kanji','JLPT N3 Kanji','JLPT N2 Kanji','JLPT N1 Kanji','Jouyou Grade 1','Jouyou Grade 2','Jouyou Grade 3','Jouyou Grade 4','Jouyou Grade 5','Jouyou Grade 6')`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

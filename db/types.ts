@@ -105,6 +105,7 @@ export interface WordList {
   typingMode: boolean;
   disableFlipAnimation: boolean;
   disableSwipeAnimation: boolean;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;
