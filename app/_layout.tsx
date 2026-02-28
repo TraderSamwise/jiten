@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { UserDatabaseProvider } from "@/db/user-provider";
+import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { loadTheme, applyTheme } from "@/lib/theme";
 import "../global.css";
 
@@ -104,17 +105,19 @@ export default function RootLayout() {
   const navTheme = colorScheme === "dark" ? DarkTheme : DefaultTheme;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={navTheme}>
-        <AuthProvider>
-          <AuthGate>
-            <Stack>
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            </Stack>
-          </AuthGate>
-        </AuthProvider>
-      </ThemeProvider>
-    </GestureHandlerRootView>
+    <GlobalErrorHandler>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider value={navTheme}>
+          <AuthProvider>
+            <AuthGate>
+              <Stack>
+                <Stack.Screen name="index" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              </Stack>
+            </AuthGate>
+          </AuthProvider>
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </GlobalErrorHandler>
   );
 }
