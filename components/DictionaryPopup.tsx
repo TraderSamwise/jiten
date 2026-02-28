@@ -13,6 +13,7 @@ import { EntrySummary } from "@/components/EntrySummary";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { LookupResult } from "@/lib/smart-lookup";
 
 interface DictionaryPopupProps {
@@ -36,7 +37,6 @@ export function DictionaryPopup({
   const router = useRouter();
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
   const [entryIdx, setEntryIdx] = useState(0);
-  const [bookmarkEntryId, setBookmarkEntryId] = useState<number | null>(null);
   const [bookmarkAnchor, setBookmarkAnchor] = useState<
     { top: number; right: number } | undefined
   >();
@@ -77,6 +77,14 @@ export function DictionaryPopup({
   const isBookmarked = useBookmarkStore((s) =>
     currentEntry ? s.bookmarkedIds.has(currentEntry.id) : false,
   );
+
+  const {
+    handlePress: quickBookmarkPress,
+    handleLongPress,
+    popoverVisible,
+    dismissPopover,
+    onListToggled,
+  } = useQuickBookmark(currentEntry?.id ?? 0, isBookmarked);
 
   if (!mounted) return null;
 
@@ -189,8 +197,15 @@ export function DictionaryPopup({
                 bookmarkRef.current?.measureInWindow((x, y, width, height) => {
                   const screenWidth = Dimensions.get("window").width;
                   setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
-                  setBookmarkEntryId(currentEntry!.id);
                 });
+                quickBookmarkPress();
+              }}
+              onLongPress={() => {
+                bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+                  const screenWidth = Dimensions.get("window").width;
+                  setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+                });
+                handleLongPress();
               }}
               className="p-1"
             >
@@ -266,15 +281,16 @@ export function DictionaryPopup({
         </Animated.View>
       </View>
 
-      {bookmarkEntryId !== null && (
+      {popoverVisible && currentEntry && (
         <BookmarkPopover
           visible
           onClose={() => {
-            setBookmarkEntryId(null);
+            dismissPopover();
             setBookmarkAnchor(undefined);
           }}
-          entryId={bookmarkEntryId}
+          entryId={currentEntry.id}
           anchorPosition={bookmarkAnchor}
+          onListToggled={onListToggled}
         />
       )}
     </>
