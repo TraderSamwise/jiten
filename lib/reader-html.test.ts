@@ -85,35 +85,29 @@ describe("generateReaderHtml", () => {
 
   // ── CSS structure tests ──
 
-  test("uses overflow hidden for virtualized content (no columns)", () => {
+  test("uses overflow hidden on #content", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).not.toContain("column-width:");
-    expect(html).not.toContain("column-gap:");
     expect(html).toContain("overflow: hidden");
   });
 
-  test("includes #page and buffer divs for virtualized rendering", () => {
+  test("includes #page div for content rendering", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
     expect(html).toContain('id="page"');
-    expect(html).toContain('id="buf-prev"');
-    expect(html).toContain('id="buf-next"');
-    expect(html).toContain('class="buffer"');
   });
 
-  test("buffer class is visually hidden but DOM-accessible", () => {
+  test("#page has overflow hidden for scroll-based pagination", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain(".buffer");
-    expect(html).toContain("clip: rect(0, 0, 0, 0)");
-    expect(html).toContain("position: absolute");
+    expect(html).toContain("#page");
+    expect(html).toContain("overflow: hidden");
   });
 
   test("includes serif font family for Japanese", () => {
@@ -278,37 +272,33 @@ describe("generateReaderHtml", () => {
     expect(html).toContain("keydown");
   });
 
-  // ── Virtualized pagination functions ──
+  // ── CSS column pagination functions ──
 
-  test("includes parseBlocks function", () => {
+  test("includes setupContent function", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("parseBlocks");
-    expect(html).toContain("blockHtmls");
-    expect(html).toContain("outerHTML");
+    expect(html).toContain("setupContent");
   });
 
-  test("includes paginate function with measurement div", () => {
+  test("includes paginate function with column-width", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
     expect(html).toContain("function paginate()");
-    expect(html).toContain("getComputedStyle");
-    expect(html).toContain("scrollWidth > measure.clientWidth");
+    expect(html).toContain("columnWidth");
+    expect(html).toContain("scrollWidth");
   });
 
-  test("includes renderPage function with buffer population", () => {
+  test("includes goToPage function with scrollLeft", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("function renderPage(pageNum)");
-    expect(html).toContain("pageEl.innerHTML");
-    expect(html).toContain("bufPrevEl.innerHTML");
-    expect(html).toContain("bufNextEl.innerHTML");
+    expect(html).toContain("function goToPage(page)");
+    expect(html).toContain("scrollLeft");
   });
 
   // ── Highlight commands ──
@@ -373,15 +363,15 @@ describe("generateReaderHtml", () => {
     expect(html).toContain('charset="utf-8"');
   });
 
-  // ── No scroll-based pagination remnants ──
+  // ── Scroll-based pagination ──
 
-  test("does not use CSS columns or scroll-based navigation", () => {
+  test("uses scrollLeft-based pagination (no CSS columns)", () => {
     const html = generateReaderHtml(sampleContent, {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).not.toContain("column-width:");
-    expect(html).not.toContain("column-gap:");
+    expect(html).toContain("scrollLeft");
+    expect(html).toContain("scrollWidth");
     expect(html).not.toContain("animateScroll");
     expect(html).not.toContain("overflow-x: auto");
   });

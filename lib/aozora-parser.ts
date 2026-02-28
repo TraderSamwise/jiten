@@ -81,7 +81,7 @@ export function parseAozoraToHtml(rawText: string): string {
 
 /**
  * Simple wrapper for plain text (no Aozora markup).
- * Wraps paragraphs in <p> tags.
+ * Wraps each non-empty line in a <p> tag.
  */
 export function plainTextToHtml(text: string): string {
   return text

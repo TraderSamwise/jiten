@@ -3,7 +3,7 @@ import { isJapanese } from "./japanese";
 import { guessWordLength, guessWordStart } from "./japanese";
 import { nodeOffsetToAbsolute, getTextFromPosition, getTextBeforePosition } from "./text";
 import { clearHighlight, applyHighlight } from "./highlight";
-import { parseBlocks, updateSizing, paginate, goToPage, nextPage, prevPage } from "./pagination";
+import { setupContent, updateSizing, paginate, goToPage, nextPage, prevPage } from "./pagination";
 import { setupTouchHandlers } from "./touch";
 import { setupMouseHandlers } from "./mouse";
 import { setupMessageListener } from "./bridge";
@@ -15,11 +15,8 @@ declare const window: Window & {
 
 (function () {
   // Grab DOM refs
-  state.rawEl = document.getElementById("raw");
   state.contentEl = document.getElementById("content");
   state.pageEl = document.getElementById("page");
-  state.bufPrevEl = document.getElementById("buf-prev");
-  state.bufNextEl = document.getElementById("buf-next");
   state.pageNumEl = document.getElementById("page-num");
   state.btnNext = document.getElementById("btn-next") as HTMLButtonElement;
   state.btnPrev = document.getElementById("btn-prev") as HTMLButtonElement;
@@ -116,7 +113,7 @@ declare const window: Window & {
   setupMessageListener();
 
   // Initial setup
-  parseBlocks();
+  setupContent();
   updateSizing();
   const savedPos = window.__READER_CONFIG__.scrollPosition;
   requestAnimationFrame(function () {
