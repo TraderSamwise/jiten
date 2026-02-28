@@ -31,9 +31,7 @@ ${css}</style>
 <body>
 <div id="raw" style="display:none">${content}</div>
 <div id="content">
-  <div id="buf-prev" class="buffer"></div>
   <div id="page"></div>
-  <div id="buf-next" class="buffer"></div>
 </div>
 <div id="page-controls">
   <button id="btn-next" aria-label="Next page">\u2039</button>

@@ -1,8 +1,7 @@
 export const state = {
-  blockHtmls: [] as string[],
-  pages: [] as { start: number; end: number; scrollOffset?: number }[],
   currentPage: 1,
   totalPages: 1,
+  columnWidth: 0,
   lastTapNode: null as Node | null,
   lastTapOffset: 0,
   lastTapAbsOffset: 0,
@@ -10,17 +9,13 @@ export const state = {
   suppressClick: false,
   dragMode: "idle" as "idle" | "undecided" | "swiping" | "selecting",
 
-  // Highlight-scroll: extra blocks appended beyond current page
-  extraBlocks: 0,
+  // Highlight-scroll: extra shift when dragging near page edge
   shiftOffset: 0,
   lastShiftTime: 0,
 
   // DOM element refs — set during init
-  rawEl: null as HTMLElement | null,
   contentEl: null as HTMLElement | null,
   pageEl: null as HTMLElement | null,
-  bufPrevEl: null as HTMLElement | null,
-  bufNextEl: null as HTMLElement | null,
   pageNumEl: null as HTMLElement | null,
   btnNext: null as HTMLButtonElement | null,
   btnPrev: null as HTMLButtonElement | null,
