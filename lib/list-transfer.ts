@@ -204,6 +204,7 @@ export async function importListToDb(
   userDb: WrappedUserDb,
   data: JitenExportFile,
   importStudyHistory: boolean,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
   const listId = generateId();
   const now = new Date().toISOString();
@@ -243,119 +244,134 @@ export async function importListToDb(
     ],
   );
 
-  // Insert entries
-  for (const entry of data.entries) {
-    await userDb.runAsync(
-      "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-      [generateId(), listId, entry.entryId, entry.addedAt],
-    );
-  }
-
-  // Import simple SRS data
-  if (importStudyHistory && data.simpleSrsData?.cards) {
-    for (const card of data.simpleSrsData.cards) {
-      const cardId = generateId();
+  // Wrap all inserts in a single transaction to avoid per-statement journal syncs
+  await userDb.runAsync("BEGIN");
+  try {
+    // Insert entries
+    const totalEntries = data.entries.length;
+    for (let i = 0; i < totalEntries; i++) {
+      const entry = data.entries[i];
       await userDb.runAsync(
-        `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          cardId,
-          card.entryId,
-          listId,
-          now, // due (placeholder for FSRS, not used in simple mode)
-          0, // stability
-          0, // difficulty
-          0, // elapsed_days
-          0, // scheduled_days
-          0, // reps
-          0, // lapses
-          0, // state
-          "kanji", // front_mode
-          "english", // back_mode
-          card.stage,
-          card.n,
-          card.interval,
-          now,
-          now,
-        ],
+        "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
+        [generateId(), listId, entry.entryId, entry.addedAt],
       );
-    }
-
-    // Also create srs_cards for entries without SRS data (unseen cards)
-    const srsEntryIds = new Set(data.simpleSrsData.cards.map((c) => c.entryId));
-    for (const entry of data.entries) {
-      if (!srsEntryIds.has(entry.entryId)) {
-        await userDb.runAsync(
-          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            generateId(),
-            entry.entryId,
-            listId,
-            now,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            "kanji",
-            "english",
-            now,
-            now,
-          ],
-        );
+      if (onProgress && i % 100 === 0) {
+        onProgress(totalEntries > 0 ? i / totalEntries : 0);
       }
     }
-  }
 
-  // Import FSRS SRS data
-  if (importStudyHistory && data.studyHistory?.srsCards) {
-    for (const card of data.studyHistory.srsCards) {
-      const cardId = generateId();
-      await userDb.runAsync(
-        `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          cardId,
-          card.entryId,
-          listId,
-          card.due,
-          card.stability,
-          card.difficulty,
-          card.elapsedDays,
-          card.scheduledDays,
-          card.reps,
-          card.lapses,
-          card.state,
-          card.lastReview,
-          card.frontMode,
-          card.backMode,
-          card.createdAt,
-          card.updatedAt,
-        ],
-      );
-
-      for (const log of card.reviewLogs) {
+    // Import simple SRS data
+    if (importStudyHistory && data.simpleSrsData?.cards) {
+      for (const card of data.simpleSrsData.cards) {
+        const cardId = generateId();
         await userDb.runAsync(
-          `INSERT INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            generateId(),
             cardId,
-            log.rating,
-            log.state,
-            log.due,
-            log.stability,
-            log.difficulty,
-            log.elapsedDays,
-            log.scheduledDays,
-            log.reviewedAt,
+            card.entryId,
+            listId,
+            now, // due (placeholder for FSRS, not used in simple mode)
+            0, // stability
+            0, // difficulty
+            0, // elapsed_days
+            0, // scheduled_days
+            0, // reps
+            0, // lapses
+            0, // state
+            "kanji", // front_mode
+            "english", // back_mode
+            card.stage,
+            card.n,
+            card.interval,
+            now,
+            now,
           ],
         );
       }
+
+      // Also create srs_cards for entries without SRS data (unseen cards)
+      const srsEntryIds = new Set(data.simpleSrsData.cards.map((c) => c.entryId));
+      for (const entry of data.entries) {
+        if (!srsEntryIds.has(entry.entryId)) {
+          await userDb.runAsync(
+            `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              generateId(),
+              entry.entryId,
+              listId,
+              now,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              "kanji",
+              "english",
+              now,
+              now,
+            ],
+          );
+        }
+      }
     }
+
+    // Import FSRS SRS data
+    if (importStudyHistory && data.studyHistory?.srsCards) {
+      for (const card of data.studyHistory.srsCards) {
+        const cardId = generateId();
+        await userDb.runAsync(
+          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            cardId,
+            card.entryId,
+            listId,
+            card.due,
+            card.stability,
+            card.difficulty,
+            card.elapsedDays,
+            card.scheduledDays,
+            card.reps,
+            card.lapses,
+            card.state,
+            card.lastReview,
+            card.frontMode,
+            card.backMode,
+            card.createdAt,
+            card.updatedAt,
+          ],
+        );
+
+        for (const log of card.reviewLogs) {
+          await userDb.runAsync(
+            `INSERT INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              generateId(),
+              cardId,
+              log.rating,
+              log.state,
+              log.due,
+              log.stability,
+              log.difficulty,
+              log.elapsedDays,
+              log.scheduledDays,
+              log.reviewedAt,
+            ],
+          );
+        }
+      }
+    }
+
+    onProgress?.(1);
+    await userDb.runAsync("COMMIT");
+  } catch (e) {
+    await userDb.runAsync("ROLLBACK");
+    throw e;
   }
 
   return listId;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, TextInput, Platform, ActivityIndicator } from "react-native";
+import { View, FlatList, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/components/ui/text";
@@ -28,7 +28,7 @@ export default function ListsIndexScreen() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<TextInput>(null);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState<number | null>(null);
 
   useEffect(() => {
     if (!userDb) return;
@@ -156,9 +156,9 @@ export default function ListsIndexScreen() {
         importStudy = await confirm("Study Progress", "Include SRS cards and review history?");
       }
 
-      setImporting(true);
+      setImporting(0);
       try {
-        const newListId = await importListToDb(userDb, data, importStudy);
+        const newListId = await importListToDb(userDb, data, importStudy, setImporting);
 
         // Refresh stores
         await loadLists();
@@ -166,7 +166,7 @@ export default function ListsIndexScreen() {
 
         router.push(`/lists/${newListId}`);
       } finally {
-        setImporting(false);
+        setImporting(null);
       }
     } catch (err) {
       alert("Import Error", String(err instanceof Error ? err.message : err));
@@ -264,14 +264,21 @@ export default function ListsIndexScreen() {
         }
       />
 
-      {importing && (
+      {importing !== null && (
         <View
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
           className="items-center justify-center bg-black/50"
         >
-          <View className="rounded-2xl bg-background p-6 items-center">
-            <ActivityIndicator size="large" />
-            <Text className="mt-3 text-foreground font-medium">Importing...</Text>
+          <View className="rounded-2xl bg-background p-6 items-center w-64">
+            <View className="w-full h-2 bg-secondary rounded-full mb-2 overflow-hidden">
+              <View
+                className="h-full bg-primary rounded-full"
+                style={{ width: `${Math.round(importing * 100)}%` }}
+              />
+            </View>
+            <Text className="text-foreground font-medium">
+              Importing... {Math.round(importing * 100)}%
+            </Text>
           </View>
         </View>
       )}
