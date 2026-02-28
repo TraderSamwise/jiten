@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, View, ScrollView, ActivityIndicator } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Dimensions, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Animated, {
@@ -37,6 +37,10 @@ export function DictionaryPopup({
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
   const [entryIdx, setEntryIdx] = useState(0);
   const [bookmarkEntryId, setBookmarkEntryId] = useState<number | null>(null);
+  const [bookmarkAnchor, setBookmarkAnchor] = useState<
+    { top: number; right: number } | undefined
+  >();
+  const bookmarkRef = useRef<View>(null);
   const [mounted, setMounted] = useState(false);
 
   const translateY = useSharedValue(400);
@@ -179,7 +183,17 @@ export function DictionaryPopup({
                 </Pressable>
               </View>
             )}
-            <Pressable onPress={() => setBookmarkEntryId(currentEntry!.id)} className="p-1">
+            <Pressable
+              ref={bookmarkRef}
+              onPress={() => {
+                bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+                  const screenWidth = Dimensions.get("window").width;
+                  setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+                  setBookmarkEntryId(currentEntry!.id);
+                });
+              }}
+              className="p-1"
+            >
               <Bookmark
                 size={20}
                 fill={isBookmarked ? "currentColor" : "none"}
@@ -255,8 +269,12 @@ export function DictionaryPopup({
       {bookmarkEntryId !== null && (
         <BookmarkPopover
           visible
-          onClose={() => setBookmarkEntryId(null)}
+          onClose={() => {
+            setBookmarkEntryId(null);
+            setBookmarkAnchor(undefined);
+          }}
           entryId={bookmarkEntryId}
+          anchorPosition={bookmarkAnchor}
         />
       )}
     </>
