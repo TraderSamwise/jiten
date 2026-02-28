@@ -1,8 +1,10 @@
 import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "@/db/user-db";
+import { STARTER_BOOK_CONTENT } from "@/lib/starter-book-content";
 
 const FLAG_KEY = "default_lists_seeded";
 const VOCAB_FLAG_KEY = "default_vocab_lists_seeded";
+const BOOK_FLAG_KEY = "default_book_seeded";
 
 interface KanjiListDef {
   name: string;
@@ -107,6 +109,25 @@ async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
       );
     }
   }
+}
+
+export async function seedDefaultBookIfNeeded(userDb: WrappedUserDb): Promise<void> {
+  const flag = await userDb.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_flags WHERE key = ?",
+    [BOOK_FLAG_KEY],
+  );
+  if (flag) return;
+
+  const now = new Date().toISOString();
+  const id = generateId();
+
+  await userDb.runAsync(
+    `INSERT INTO books (id, title, author, source, aozora_id, source_id, raw_content, is_default, created_at, updated_at)
+     VALUES (?, ?, ?, 'aozora', ?, ?, ?, 1, ?, ?)`,
+    [id, "夢十夜", "夏目漱石", 799, "799", STARTER_BOOK_CONTENT, now, now],
+  );
+
+  await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [BOOK_FLAG_KEY, "1"]);
 }
 
 async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDatabase): Promise<void> {

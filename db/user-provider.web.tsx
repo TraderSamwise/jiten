@@ -116,6 +116,7 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `UPDATE lists SET is_default = 1 WHERE name IN ('JLPT N5 Kanji','JLPT N4 Kanji','JLPT N3 Kanji','JLPT N2 Kanji','JLPT N1 Kanji','Jouyou Grade 1','Jouyou Grade 2','Jouyou Grade 3','Jouyou Grade 4','Jouyou Grade 5','Jouyou Grade 6')`,
   `UPDATE lists SET is_default = 1 WHERE name IN ('JLPT N5 Words','JLPT N4 Words','JLPT N3 Words','JLPT N2 Words','JLPT N1 Words')`,
+  `ALTER TABLE books ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{
