@@ -49,7 +49,9 @@ export function BookmarkPopover({
 
   async function loadData() {
     if (!userDb) return;
-    const allLists = await userDb.getAllAsync<WordList>("SELECT * FROM lists ORDER BY name");
+    const allLists = await userDb.getAllAsync<WordList>(
+      "SELECT * FROM lists WHERE is_default = 0 ORDER BY name",
+    );
     setLists(allLists.map(parseListRow));
 
     if (isKanji) {
@@ -111,6 +113,7 @@ export function BookmarkPopover({
       typingMode: false,
       disableFlipAnimation: false,
       disableSwipeAnimation: false,
+      isDefault: false,
       createdAt: now,
       updatedAt: now,
     };

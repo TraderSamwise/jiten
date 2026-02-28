@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState, useRef } from "react";
-import { View, FlatList, TextInput, Platform } from "react-native";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { View, ScrollView, Pressable, TextInput, Platform } from "react-native";
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/components/ui/text";
@@ -7,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
-import { Pencil, Trash2 } from "@/lib/icons";
+import { Pencil, Trash2, ChevronDown } from "@/lib/icons";
 import { confirm, alert } from "@/lib/confirm";
 import { useUserDb } from "@/db/user-provider";
+import { useDatabase } from "@/db/provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { parseListImport, importListToDb } from "@/lib/list-transfer";
+import { seedDefaultListsIfNeeded } from "@/lib/seed-default-lists";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
@@ -22,6 +25,7 @@ function generateId(): string {
 export default function ListsIndexScreen() {
   const router = useRouter();
   const userDb = useUserDb();
+  const { dictDb } = useDatabase();
   const { lists, setLists, addList, removeList, updateList } = useListsStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -29,11 +33,37 @@ export default function ListsIndexScreen() {
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<TextInput>(null);
   const [importing, setImporting] = useState<number | null>(null);
+  const [defaultsExpanded, setDefaultsExpanded] = useState(false);
+  const contentHeight = useRef(0);
+  const animatedHeight = useSharedValue(0);
+  const chevronRotation = useSharedValue(0);
+
+  const toggleDefaults = useCallback(() => {
+    const next = !defaultsExpanded;
+    setDefaultsExpanded(next);
+    animatedHeight.value = withTiming(next ? contentHeight.current : 0, { duration: 250 });
+    chevronRotation.value = withTiming(next ? 180 : 0, { duration: 250 });
+  }, [defaultsExpanded]);
+
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    height: animatedHeight.value,
+    overflow: "hidden" as const,
+  }));
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
 
   useEffect(() => {
     if (!userDb) return;
-    loadLists();
-  }, [userDb]);
+    (async () => {
+      if (dictDb) {
+        const seeded = await seedDefaultListsIfNeeded(userDb, dictDb);
+        if (seeded) await useBookmarkStore.getState().load(userDb);
+      }
+      await loadLists();
+    })();
+  }, [userDb, dictDb]);
 
   async function loadLists() {
     if (!userDb) return;
@@ -63,6 +93,7 @@ export default function ListsIndexScreen() {
       typingMode: false,
       disableFlipAnimation: false,
       disableSwipeAnimation: false,
+      isDefault: false,
       createdAt: now,
       updatedAt: now,
     };
@@ -173,47 +204,49 @@ export default function ListsIndexScreen() {
     }
   }
 
-  const renderItem = useCallback(
-    ({ item }: { item: WordList }) => {
-      const actions: SwipeAction[] = [
-        {
-          label: "Rename",
-          icon: Pencil,
-          color: "#3b82f6",
-          onPress: () => handleRenameStart(item),
-        },
-        {
-          label: "Delete",
-          icon: Trash2,
-          color: "#ef4444",
-          onPress: () => handleDeleteList(item.id),
-        },
-      ];
+  const customLists = lists.filter((l) => !l.isDefault);
+  const defaultLists = lists.filter((l) => l.isDefault);
 
-      return (
-        <SwipeableRow actions={actions}>
-          <PressableCard className="mb-2" onPress={() => router.push(`/lists/${item.id}`)}>
-            {renamingId === item.id ? (
-              <TextInput
-                ref={renameInputRef}
-                className="text-lg font-semibold text-card-foreground bg-transparent p-0"
-                value={renameValue}
-                onChangeText={setRenameValue}
-                onSubmitEditing={() => handleRenameSubmit(item.id)}
-                onBlur={() => handleRenameSubmit(item.id)}
-                autoFocus
-                selectTextOnFocus
-              />
-            ) : (
-              <CardTitle>{item.name}</CardTitle>
-            )}
-            <CardDescription>{item.entryCount ?? 0} words</CardDescription>
-          </PressableCard>
-        </SwipeableRow>
-      );
-    },
-    [userDb, renamingId, renameValue, lists],
-  );
+  function renderListCard(item: WordList) {
+    const actions: SwipeAction[] = item.isDefault
+      ? []
+      : [
+          {
+            label: "Rename",
+            icon: Pencil,
+            color: "#3b82f6",
+            onPress: () => handleRenameStart(item),
+          },
+          {
+            label: "Delete",
+            icon: Trash2,
+            color: "#ef4444",
+            onPress: () => handleDeleteList(item.id),
+          },
+        ];
+
+    return (
+      <SwipeableRow key={item.id} actions={actions}>
+        <PressableCard className="mb-2" onPress={() => router.push(`/lists/${item.id}`)}>
+          {renamingId === item.id ? (
+            <TextInput
+              ref={renameInputRef}
+              className="text-lg font-semibold text-card-foreground bg-transparent p-0"
+              value={renameValue}
+              onChangeText={setRenameValue}
+              onSubmitEditing={() => handleRenameSubmit(item.id)}
+              onBlur={() => handleRenameSubmit(item.id)}
+              autoFocus
+              selectTextOnFocus
+            />
+          ) : (
+            <CardTitle>{item.name}</CardTitle>
+          )}
+          <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+        </PressableCard>
+      </SwipeableRow>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -246,23 +279,53 @@ export default function ListsIndexScreen() {
 
       <Separator />
 
-      <FlatList
-        data={lists}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+      <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
           paddingBottom: 20,
         }}
-        ListEmptyComponent={
+      >
+        {customLists.length === 0 && defaultLists.length === 0 && (
           <View className="items-center pt-10">
             <Text className="text-muted-foreground">
               No lists yet. Create one to start collecting words.
             </Text>
           </View>
-        }
-      />
+        )}
+
+        {customLists.map(renderListCard)}
+
+        {defaultLists.length > 0 && (
+          <View className="mt-4">
+            <Pressable
+              onPress={toggleDefaults}
+              className="flex-row items-center justify-between rounded-lg bg-muted/50 px-3 py-3"
+            >
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Default Lists ({defaultLists.length})
+              </Text>
+              <Animated.View style={chevronStyle}>
+                <ChevronDown size={16} className="text-muted-foreground" />
+              </Animated.View>
+            </Pressable>
+
+            {/* Hidden measure pass */}
+            <View
+              style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+              onLayout={(e) => {
+                contentHeight.current = e.nativeEvent.layout.height;
+              }}
+            >
+              <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+            </View>
+
+            <Animated.View style={animatedContainerStyle}>
+              <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+            </Animated.View>
+          </View>
+        )}
+      </ScrollView>
 
       {importing !== null && (
         <View

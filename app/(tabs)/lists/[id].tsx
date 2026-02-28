@@ -210,14 +210,16 @@ export default function ListDetailScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
-      const actions: SwipeAction[] = [
-        {
-          label: "Remove",
-          icon: Trash2,
-          color: "#ef4444",
-          onPress: () => handleRemoveItem(item),
-        },
-      ];
+      const actions: SwipeAction[] = list?.isDefault
+        ? []
+        : [
+            {
+              label: "Remove",
+              icon: Trash2,
+              color: "#ef4444",
+              onPress: () => handleRemoveItem(item),
+            },
+          ];
 
       if (item.kind === "kanji") {
         const isBookmarked = useBookmarkStore
@@ -254,7 +256,7 @@ export default function ListDetailScreen() {
         </SwipeableRow>
       );
     },
-    [userDb, id],
+    [userDb, id, list?.isDefault],
   );
 
   function handleStudy() {
