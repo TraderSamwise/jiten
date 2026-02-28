@@ -73,6 +73,12 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     Linking.openURL(`https://kanji.koohii.com/study/kanji/${encodeURIComponent(character)}`);
   };
 
+  const handleRtkAppPress = (character: string) => {
+    Linking.openURL(`kanji://open?action=open&kanji=${encodeURIComponent(character)}`).catch(() => {
+      Linking.openURL("https://apps.apple.com/us/app/remembering-the-kanji/id424471278");
+    });
+  };
+
   if (!kanji) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -110,13 +116,20 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           )}
         </View>
         {kanji.heisigIndex != null && (
-          <Button
-            variant="outline"
-            size="sm"
-            label="Study on Koohii"
-            onPress={() => handleKoohiiPress(kanji.literal)}
-            className="mt-3"
-          />
+          <View className="flex-row gap-2 mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              label="Study on Koohii"
+              onPress={() => handleKoohiiPress(kanji.literal)}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="Open in RTK App"
+              onPress={() => handleRtkAppPress(kanji.literal)}
+            />
+          </View>
         )}
       </View>
 
