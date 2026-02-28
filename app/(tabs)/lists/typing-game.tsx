@@ -314,38 +314,41 @@ function CoinAnimation({
 }) {
   const { width: screenWidth } = useWindowDimensions();
   const coinY = useSharedValue(0);
-  const coinOpacity = useSharedValue(1);
+  const coinOpacity = useSharedValue(0);
+  const [textW, setTextW] = useState<number | null>(null);
 
   useEffect(() => {
+    if (textW === null) return;
+    coinOpacity.value = 1;
     coinY.value = withTiming(-48, { duration: 3000, easing: Easing.out(Easing.quad) });
     coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
     const timer = setTimeout(onDone, 3100);
     return () => clearTimeout(timer);
-  }, [coinY, coinOpacity, onDone]);
+  }, [textW]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: coinY.value }],
     opacity: coinOpacity.value,
   }));
 
+  const w = textW ?? COIN_MAX_W;
+  const idealLeft = screenX - w / 2;
+  const clampedLeft = Math.max(SCREEN_PAD, Math.min(idealLeft, screenWidth - SCREEN_PAD - w));
+
   return (
     <Animated.View
       style={[
-        {
-          position: "absolute",
-          top: screenY - 12,
-          left: Math.max(
-            SCREEN_PAD,
-            Math.min(screenX - COIN_MAX_W / 2, screenWidth - SCREEN_PAD - COIN_MAX_W),
-          ),
-          width: COIN_MAX_W,
-          zIndex: 50,
-        },
+        { position: "absolute", top: screenY - 12, left: clampedLeft, zIndex: 50 },
         animatedStyle,
       ]}
       pointerEvents="none"
     >
-      <Text className="text-sm font-medium text-primary text-center" numberOfLines={1}>
+      <Text
+        className="text-sm font-medium text-primary text-center"
+        style={{ maxWidth: COIN_MAX_W }}
+        numberOfLines={1}
+        onLayout={textW === null ? (e) => setTextW(e.nativeEvent.layout.width) : undefined}
+      >
         {gloss}
       </Text>
     </Animated.View>
