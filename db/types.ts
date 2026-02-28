@@ -73,6 +73,7 @@ export interface KanjiCharacter {
   heisigIndex: number | null;
   unicodeCodepoint: string;
   strokePaths: StrokePath[];
+  heisigKeyword: string | null;
 }
 
 export interface StrokePath {
