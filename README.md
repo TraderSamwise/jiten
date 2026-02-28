@@ -60,18 +60,46 @@ No scrolling is involved — page navigation directly swaps DOM content.
 ### Dictionary Database
 
 ```bash
-yarn build:db      # Build dictionary from JMDict sources + audio
+yarn migrate:dict  # Apply incremental dictionary migrations (the normal workflow)
 yarn serve:dict    # Serve dictionary files locally (localhost:3001)
 yarn publish:dict  # Upload dictionary assets to GitHub release
 ```
 
-`build:db` downloads JMdict and pitch accent data, generates Google Cloud TTS audio for common entries (`GOOGLE_TTS_API_KEY` env var, cached in `.cache/tts-audio/`), and outputs three files to `assets/`:
+The dictionary lives in `assets/` as three files:
 
 - `dictionary.db` — core dictionary (~170MB): entries, kanji, kana, senses, pitch accents, FTS index, synonyms
 - `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
 - `dict-manifest.json` — version and file sizes for the download client
 
-`publish:dict` uploads all three to the [jiten-data](https://github.com/TraderSamwise/jiten-data) GitHub release (requires `gh` CLI). The app downloads core first (blocking), then audio silently in the background.
+#### Updating the dictionary (migrations)
+
+Use `yarn migrate:dict` to apply incremental changes to the existing `assets/dictionary.db`. This is fast (seconds) and doesn't touch audio or other expensive data.
+
+To add a new migration:
+
+1. Create `scripts/dict-migrations/NNN-description.ts` (NNN = target version number)
+2. Export a default `DictMigration` with `version`, `description`, and `migrate(db)` function
+3. Bump `DICT_VERSION` in `db/dict-version.ts` to match
+
+#### Publishing dictionary updates
+
+After migrating locally, upload to the [jiten-data](https://github.com/TraderSamwise/jiten-data) GitHub release (requires `gh` CLI):
+
+```bash
+yarn publish:dict
+```
+
+The app downloads core first (blocking), then audio silently in the background. Clients detect the version bump and re-download automatically.
+
+#### Full rebuild from scratch (almost never needed)
+
+```bash
+yarn build:db
+```
+
+> **WARNING**: This deletes the entire dictionary and regenerates everything from scratch, including TTS audio via Google Cloud API which costs real money (`GOOGLE_TTS_API_KEY` env var required). It takes 5-10+ minutes and should not be run without explicit instruction.
+>
+> You almost certainly want `yarn migrate:dict` instead. Only use `build:db` if the database is corrupted beyond repair or you need to regenerate from an entirely new JMDict release. The script will prompt for confirmation (bypass with `--force`).
 
 ### Midori Import
 

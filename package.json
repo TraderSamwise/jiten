@@ -8,6 +8,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:db": "npx tsx scripts/build-dictionary.ts",
+    "migrate:dict": "npx tsx scripts/migrate-dict.ts",
     "build:reader": "npx tsx lib/reader/build.ts",
     "prestart": "yarn build:reader",
     "prebuild": "yarn build:reader",

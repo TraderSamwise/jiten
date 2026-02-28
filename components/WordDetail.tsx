@@ -133,6 +133,11 @@ export function WordDetail({ entryId }: WordDetailProps) {
             );
           })}
         </View>
+        {entry.jlptLevel != null && (
+          <View className="flex-row gap-1 mt-1">
+            <Badge variant="secondary" label={`JLPT N${entry.jlptLevel}`} />
+          </View>
+        )}
       </View>
 
       <Card className="mb-4">

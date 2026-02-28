@@ -17,6 +17,7 @@ interface RawEntryRow {
   entry_id: number;
   priority: number;
   common: number;
+  jlpt_level: number | null;
 }
 
 interface RawKanjiRow {
@@ -330,6 +331,37 @@ async function searchRomaji(
 }
 
 let fts5Available: boolean | null = null;
+let hasJlptColumn: boolean | null = null;
+
+/** SELECT from entries with graceful fallback if jlpt_level column doesn't exist (old DB). */
+async function queryEntryRows(
+  db: SQLite.SQLiteDatabase,
+  whereClause: string,
+  params: any[],
+): Promise<{ id: number; common: number; jlpt_level: number | null }[]> {
+  if (hasJlptColumn !== false) {
+    try {
+      const rows = await db.getAllAsync<{ id: number; common: number; jlpt_level: number | null }>(
+        `SELECT id, common, jlpt_level FROM entries WHERE ${whereClause}`,
+        params,
+      );
+      hasJlptColumn = true;
+      return rows;
+    } catch (e) {
+      if (hasJlptColumn === null && String(e).includes("jlpt_level")) {
+        hasJlptColumn = false;
+      } else {
+        throw e;
+      }
+    }
+  }
+  // Fallback: no jlpt_level column
+  const rows = await db.getAllAsync<{ id: number; common: number }>(
+    `SELECT id, common FROM entries WHERE ${whereClause}`,
+    params,
+  );
+  return rows.map((r) => ({ ...r, jlpt_level: null }));
+}
 
 async function searchEnglishFts(
   db: SQLite.SQLiteDatabase,
@@ -716,6 +748,7 @@ function assembleEntries(
   senseRows: RawSenseRow[],
   pitchRows: RawPitchRow[],
   commonMap: Map<number, boolean>,
+  jlptMap: Map<number, number | null>,
 ): DictEntry[] {
   const kanjiMap = new Map<number, DictKanji[]>();
   for (const r of kanjiRows) {
@@ -754,6 +787,7 @@ function assembleEntries(
   return entryIds.map((id) => ({
     id,
     common: commonMap.get(id) ?? false,
+    jlptLevel: jlptMap.get(id) ?? null,
     kanji: kanjiMap.get(id) ?? [],
     kana: kanaMap.get(id) ?? [],
     senses: senseMap.get(id) ?? [],
@@ -813,10 +847,7 @@ export async function searchDictionary(
   const placeholders = entryIds.map(() => "?").join(",");
 
   const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
-    db.getAllAsync<{ id: number; common: number }>(
-      `SELECT id, common FROM entries WHERE id IN (${placeholders})`,
-      entryIds,
-    ),
+    queryEntryRows(db, `id IN (${placeholders})`, entryIds),
     db.getAllAsync<RawKanjiRow>(
       `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
       entryIds,
@@ -836,8 +867,10 @@ export async function searchDictionary(
   ]);
 
   const commonMap = new Map<number, boolean>();
+  const jlptMap = new Map<number, number | null>();
   for (const r of entryRows) {
     commonMap.set(r.id, !!r.common);
+    jlptMap.set(r.id, r.jlpt_level);
   }
 
   // Build a lookup map of assembled entries
@@ -848,6 +881,7 @@ export async function searchDictionary(
     senseRows,
     pitchRows,
     commonMap,
+    jlptMap,
   );
   const entryMap = new Map<number, DictEntry>();
   for (const e of allAssembled) {
@@ -947,10 +981,7 @@ export async function getEntries(
   const placeholders = entryIds.map(() => "?").join(",");
 
   const [entryRows, kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
-    db.getAllAsync<{ id: number; common: number }>(
-      `SELECT id, common FROM entries WHERE id IN (${placeholders})`,
-      entryIds,
-    ),
+    queryEntryRows(db, `id IN (${placeholders})`, entryIds),
     db.getAllAsync<RawKanjiRow>(
       `SELECT entry_id, text, common, tags FROM kanji WHERE entry_id IN (${placeholders})`,
       entryIds,
@@ -970,11 +1001,13 @@ export async function getEntries(
   ]);
 
   const commonMap = new Map<number, boolean>();
+  const jlptMap = new Map<number, number | null>();
   for (const r of entryRows) {
     commonMap.set(r.id, !!r.common);
+    jlptMap.set(r.id, r.jlpt_level);
   }
 
-  return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+  return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap, jlptMap);
 }
 
 export async function getWordsForKanjiAsync(
@@ -1003,10 +1036,8 @@ export async function getEntry(
   db: SQLite.SQLiteDatabase,
   entryId: number,
 ): Promise<DictEntry | null> {
-  const row = await db.getFirstAsync<{ id: number; common: number }>(
-    "SELECT id, common FROM entries WHERE id = ?",
-    [entryId],
-  );
+  const entryRows = await queryEntryRows(db, "id = ?", [entryId]);
+  const row = entryRows[0];
   if (!row) return null;
 
   const [kanjiRows, kanaRows, senseRows, pitchRows] = await Promise.all([
@@ -1029,6 +1060,15 @@ export async function getEntry(
   ]);
 
   const commonMap = new Map([[row.id, !!row.common]]);
-  const entries = assembleEntries([row.id], kanjiRows, kanaRows, senseRows, pitchRows, commonMap);
+  const jlptMap = new Map<number, number | null>([[row.id, row.jlpt_level]]);
+  const entries = assembleEntries(
+    [row.id],
+    kanjiRows,
+    kanaRows,
+    senseRows,
+    pitchRows,
+    commonMap,
+    jlptMap,
+  );
   return entries[0] ?? null;
 }

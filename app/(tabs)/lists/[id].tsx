@@ -244,6 +244,16 @@ export default function ListDetailScreen() {
                     {item.kanji.meanings.join(", ")}
                   </Text>
                 </View>
+                {(item.kanji.jlptLevel != null || item.kanji.grade != null) && (
+                  <View className="flex-row gap-1 mt-1">
+                    {item.kanji.jlptLevel != null && (
+                      <Badge variant="secondary" label={`N${item.kanji.jlptLevel}`} />
+                    )}
+                    {item.kanji.grade != null && (
+                      <Badge variant="secondary" label={`Grade ${item.kanji.grade}`} />
+                    )}
+                  </View>
+                )}
               </View>
             </PressableCard>
           </SwipeableRow>

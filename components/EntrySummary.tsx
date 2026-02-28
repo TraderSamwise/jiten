@@ -58,6 +58,7 @@ export function EntrySummary({ entry, variant = "default" }: EntrySummaryProps) 
           <Text className="text-base text-muted-foreground">{primaryKana}</Text>
         )}
         {entry.common && <Badge variant="common" label="common" />}
+        {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
       </View>
       {pos && <Text className="mt-1 text-xs text-muted-foreground italic">{pos}</Text>}
       {primaryGloss && (
