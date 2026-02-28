@@ -1453,6 +1453,11 @@ export default function StudyScreen() {
     };
   });
 
+  // Reset carousel position when window resizes (slideDistance changes with screenWidth)
+  useEffect(() => {
+    translateX.value = -(focusedCardIndex * slideDistance);
+  }, [slideDistance]);
+
   // --- Card content helpers ---
   const frontFaces = list?.frontFaces ?? ["kanji"];
   const backFaces = list?.backFaces ?? ["english"];
@@ -1655,7 +1660,11 @@ export default function StudyScreen() {
                 >
                   <Card
                     className="flex-1 items-center justify-center"
-                    style={{ opacity: isFocused ? 1 : 0.6, position: "relative" }}
+                    style={{
+                      opacity: isFocused ? 1 : 0.6,
+                      position: "relative",
+                      overflow: "hidden",
+                    }}
                   >
                     {isFocused && currentItem && (
                       <View
