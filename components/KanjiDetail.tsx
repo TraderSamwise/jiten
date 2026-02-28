@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { View, ScrollView, Pressable } from "react-native";
+import { View, ScrollView, Pressable, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
@@ -68,6 +69,10 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     router.push(`/dictionary/kanji/${encodeURIComponent(similarLiteral)}`);
   };
 
+  const handleKoohiiPress = (character: string) => {
+    Linking.openURL(`https://kanji.koohii.com/study/kanji/${encodeURIComponent(character)}`);
+  };
+
   if (!kanji) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -90,6 +95,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           </Pressable>
         </View>
         <Text className="text-7xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
+        {kanji.heisigKeyword && (
+          <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
+        )}
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
           {kanji.jlptLevel != null && <Badge variant="secondary" label={`N${kanji.jlptLevel}`} />}
@@ -101,6 +109,15 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             <Badge variant="outline" label={`Heisig ${kanji.heisigIndex}`} />
           )}
         </View>
+        {kanji.heisigIndex != null && (
+          <Button
+            variant="outline"
+            size="sm"
+            label="Study on Koohii"
+            onPress={() => handleKoohiiPress(kanji.literal)}
+            className="mt-3"
+          />
+        )}
       </View>
 
       {/* Readings */}
