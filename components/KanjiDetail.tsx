@@ -4,8 +4,12 @@ import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { BookmarkPopover } from "@/components/BookmarkPopover";
+import { Bookmark } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useSearchStore } from "@/stores/search";
+import { useBookmarkStore } from "@/stores/bookmarks";
+import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -29,6 +33,10 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
   const [words, setWords] = useState<DictEntry[]>([]);
+
+  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`k:${literal}`));
+  const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
+    useQuickBookmarkKanji(literal, isBookmarked);
 
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
@@ -72,6 +80,15 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
       {/* Header */}
       <View className="items-center mb-6">
+        <View className="flex-row justify-end w-full mb-2">
+          <Pressable onPress={handlePress} onLongPress={handleLongPress} className="p-1">
+            <Bookmark
+              size={22}
+              fill={isBookmarked ? "currentColor" : "none"}
+              className="text-foreground"
+            />
+          </Pressable>
+        </View>
         <Text className="text-7xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
@@ -186,6 +203,13 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           ))}
         </View>
       )}
+
+      <BookmarkPopover
+        visible={popoverVisible}
+        onClose={dismissPopover}
+        kanjiLiteral={literal}
+        onListToggled={onListToggled}
+      />
     </ScrollView>
   );
 }

@@ -12,7 +12,7 @@ interface EntrySummaryProps {
 }
 
 export function EntrySummary({ entry, variant = "default" }: EntrySummaryProps) {
-  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(entry.id));
+  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entry.id}`));
   const primaryKanji = entry.kanji[0]?.text;
   const primaryKana = entry.kana[0]?.text;
   const primaryGloss = entry.senses[0]?.glosses

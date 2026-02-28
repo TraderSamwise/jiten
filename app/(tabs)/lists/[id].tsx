@@ -3,6 +3,8 @@ import { View, FlatList, Pressable } from "react-native";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { PressableCard } from "@/components/ui/card";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { ListEntryCard } from "@/components/ListEntryCard";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
@@ -11,10 +13,12 @@ import { Trash2, EllipsisVertical } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
+import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { ExportListModal } from "@/components/ExportListModal";
-import type { DictEntry } from "@/db/types";
+import { listItemKey } from "@/db/types";
+import type { ListItem, KanjiCharacter, DictEntry } from "@/db/types";
 
 export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,7 +26,7 @@ export default function ListDetailScreen() {
   const router = useRouter();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
-  const [entries, setEntries] = useState<DictEntry[]>([]);
+  const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
@@ -73,18 +77,18 @@ export default function ListDetailScreen() {
   }, [userDb, dictDb, id]);
 
   useEffect(() => {
-    if (entries.length > 0 && list) {
+    if (items.length > 0 && list) {
       updateStudyCount();
     } else {
       setReviewCount(0);
       setNewCount(0);
     }
-  }, [entries.length, list?.flashcardMode, list?.studyPosition]);
+  }, [items.length, list?.flashcardMode, list?.studyPosition]);
 
   async function updateStudyCount() {
     if (!userDb || !list || !id) return;
     if (list.flashcardMode === "add_order") {
-      const remaining = entries.length - (list.studyPosition ?? 0);
+      const remaining = items.length - (list.studyPosition ?? 0);
       setReviewCount(Math.max(0, remaining));
       setNewCount(0);
     } else {
@@ -105,57 +109,95 @@ export default function ListDetailScreen() {
     if (!userDb || !dictDb || !id) return;
     setLoading(true);
 
-    const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at DESC",
+    const rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
+      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at DESC",
       [id],
     );
 
     if (rows.length === 0) {
-      setEntries([]);
+      setItems([]);
       setLoading(false);
       return;
     }
 
-    const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
-    const fetched = await getEntries(dictDb, entryIds);
+    // Split into word entry IDs and kanji literals
+    const wordEntryIds: number[] = [];
+    const kanjiLiterals: string[] = [];
+    for (const r of rows) {
+      if (r.kanji_literal != null) {
+        kanjiLiterals.push(r.kanji_literal);
+      } else {
+        wordEntryIds.push(r.entry_id);
+      }
+    }
 
-    // Preserve the order from list_entries
-    const entryMap = new Map(fetched.map((e: DictEntry) => [e.id, e]));
-    const ordered = entryIds
-      .map((eid: number) => entryMap.get(eid))
-      .filter((e: DictEntry | undefined): e is DictEntry => e !== undefined);
+    // Batch fetch both types
+    const [wordEntries, kanjiEntries] = await Promise.all([
+      wordEntryIds.length > 0 ? getEntries(dictDb, wordEntryIds) : Promise.resolve([]),
+      kanjiLiterals.length > 0 ? getKanjiBatchAsync(dictDb, kanjiLiterals) : Promise.resolve([]),
+    ]);
 
-    setEntries(ordered);
+    const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
+    const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
+
+    // Preserve order from list_entries
+    const ordered: ListItem[] = [];
+    for (const r of rows) {
+      if (r.kanji_literal != null) {
+        const k = kanjiMap.get(r.kanji_literal);
+        if (k) ordered.push({ kind: "kanji", kanji: k });
+      } else {
+        const e = entryMap.get(r.entry_id);
+        if (e) ordered.push({ kind: "entry", entry: e });
+      }
+    }
+
+    setItems(ordered);
     setLoading(false);
   }
 
-  async function handleRemoveEntry(entryId: number) {
+  async function handleRemoveItem(item: ListItem) {
     if (!userDb) return;
 
-    // Remove from list_entries
-    await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?", [
-      id,
-      entryId,
-    ]);
-
-    // Remove associated SRS cards for this list
-    await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ? AND entry_id = ?", [
-      id,
-      entryId,
-    ]);
-
-    // Check if entry is still in any list
-    const remaining = await userDb.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ?",
-      [entryId],
-    );
-
-    if (!remaining || remaining.count === 0) {
-      useBookmarkStore.getState().remove(entryId);
+    if (item.kind === "kanji") {
+      const literal = item.kanji.literal;
+      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND kanji_literal = ?", [
+        id,
+        literal,
+      ]);
+      await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ? AND kanji_literal = ?", [
+        id,
+        literal,
+      ]);
+      const remaining = await userDb.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM list_entries WHERE kanji_literal = ?",
+        [literal],
+      );
+      if (!remaining || remaining.count === 0) {
+        useBookmarkStore.getState().remove(`k:${literal}`);
+      }
+    } else {
+      const entryId = item.entry.id;
+      await userDb.runAsync(
+        "DELETE FROM list_entries WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
+        [id, entryId],
+      );
+      await userDb.runAsync(
+        "DELETE FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
+        [id, entryId],
+      );
+      const remaining = await userDb.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL",
+        [entryId],
+      );
+      if (!remaining || remaining.count === 0) {
+        useBookmarkStore.getState().remove(`e:${entryId}`);
+      }
     }
 
     // Update local state
-    setEntries((prev) => prev.filter((e) => e.id !== entryId));
+    const key = listItemKey(item);
+    setItems((prev) => prev.filter((i) => listItemKey(i) !== key));
 
     // Update entry count in lists store
     const currentList = useListsStore.getState().lists.find((l) => l.id === id);
@@ -167,19 +209,48 @@ export default function ListDetailScreen() {
   }
 
   const renderItem = useCallback(
-    ({ item }: { item: DictEntry }) => {
+    ({ item }: { item: ListItem }) => {
       const actions: SwipeAction[] = [
         {
           label: "Remove",
           icon: Trash2,
           color: "#ef4444",
-          onPress: () => handleRemoveEntry(item.id),
+          onPress: () => handleRemoveItem(item),
         },
       ];
 
+      if (item.kind === "kanji") {
+        const isBookmarked = useBookmarkStore
+          .getState()
+          .bookmarkedIds.has(`k:${item.kanji.literal}`);
+        const bookmarkClass = isBookmarked ? "border-l-4 border-l-primary bg-primary/5 pl-2" : "";
+        return (
+          <SwipeableRow actions={actions}>
+            <PressableCard
+              className="mb-1 p-3"
+              onPress={() =>
+                router.push(`/dictionary/kanji/${encodeURIComponent(item.kanji.literal)}`)
+              }
+            >
+              <View className={bookmarkClass}>
+                <View className="flex-row items-baseline gap-2">
+                  <Text className="text-lg font-bold text-foreground">{item.kanji.literal}</Text>
+                  <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+                    {[...item.kanji.readingsOn, ...item.kanji.readingsKun].join("、")}
+                  </Text>
+                  <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+                    {item.kanji.meanings.join(", ")}
+                  </Text>
+                </View>
+              </View>
+            </PressableCard>
+          </SwipeableRow>
+        );
+      }
+
       return (
         <SwipeableRow actions={actions}>
-          <ListEntryCard entry={item} />
+          <ListEntryCard entry={item.entry} />
         </SwipeableRow>
       );
     },
@@ -212,14 +283,14 @@ export default function ListDetailScreen() {
           : newCount > 0
             ? `Study (${newCount} new)`
             : "Study"
-      : `Study (${entries.length} cards)`;
+      : `Study (${items.length} cards)`;
 
   return (
     <View className="flex-1 bg-background">
       <FlatList
-        data={entries}
+        data={items}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => listItemKey(item)}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
@@ -244,7 +315,7 @@ export default function ListDetailScreen() {
             disabled={
               list?.flashcardMode === "srs"
                 ? reviewCount === 0 && newCount === 0
-                : entries.length === 0
+                : items.length === 0
             }
           />
           <Button
@@ -252,7 +323,7 @@ export default function ListDetailScreen() {
             variant="outline"
             label="Games"
             onPress={() => setGamesModalVisible(true)}
-            disabled={entries.length === 0}
+            disabled={items.length === 0}
           />
         </View>
       </View>

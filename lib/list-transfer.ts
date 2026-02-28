@@ -3,8 +3,12 @@ import type { CardFace, FlashcardMode } from "@/db/types";
 
 // ─── Export file schema ───
 
+export type JitenExportEntry =
+  | { entryId: number; addedAt: string }
+  | { kanjiLiteral: string; addedAt: string };
+
 export interface JitenExportFile {
-  format: "jiten-list-v1";
+  format: "jiten-list-v1" | "jiten-list-v2";
   exportedAt: string;
 
   list: {
@@ -16,15 +20,13 @@ export interface JitenExportFile {
     autoPlayAudio: boolean;
   };
 
-  entries: {
-    entryId: number;
-    addedAt: string;
-  }[];
+  entries: JitenExportEntry[];
 
   studyHistory?: {
     studyPosition: number;
     srsCards?: {
       entryId: number;
+      kanjiLiteral?: string;
       due: string;
       stability: number;
       difficulty: number;
@@ -55,6 +57,7 @@ export interface JitenExportFile {
     studyPosition: number;
     cards: {
       entryId: number;
+      kanjiLiteral?: string;
       stage: number;
       n: number;
       interval: number;
@@ -82,7 +85,7 @@ export async function buildListExport(
   const flashcardMode = listRow.flashcard_mode ?? listRow.flashcardMode ?? "add_order";
 
   const result: JitenExportFile = {
-    format: "jiten-list-v1",
+    format: "jiten-list-v2",
     exportedAt: new Date().toISOString(),
     list: {
       name: listRow.name,
@@ -95,14 +98,20 @@ export async function buildListExport(
     entries: [],
   };
 
-  const entryRows = await userDb.getAllAsync<{ entry_id: number; added_at: string }>(
-    "SELECT entry_id, added_at FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+  const entryRows = await userDb.getAllAsync<{
+    entry_id: number;
+    kanji_literal: string | null;
+    added_at: string;
+  }>(
+    "SELECT entry_id, kanji_literal, added_at FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
     [listId],
   );
-  result.entries = entryRows.map((r) => ({
-    entryId: r.entry_id,
-    addedAt: r.added_at,
-  }));
+  result.entries = entryRows.map((r) => {
+    if (r.kanji_literal != null) {
+      return { kanjiLiteral: r.kanji_literal, addedAt: r.added_at };
+    }
+    return { entryId: r.entry_id, addedAt: r.added_at };
+  });
 
   if (includeStudyHistory) {
     const studyPosition = listRow.study_position ?? listRow.studyPosition ?? 0;
@@ -110,18 +119,22 @@ export async function buildListExport(
     if (flashcardMode === "simple_srs") {
       // Export simple SRS data
       const srsRows = await userDb.getAllAsync<any>(
-        "SELECT entry_id, simple_stage, simple_n, simple_interval FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
+        "SELECT entry_id, kanji_literal, simple_stage, simple_n, simple_interval FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
         [listId],
       );
 
       result.simpleSrsData = {
         studyPosition,
-        cards: srsRows.map((card: any) => ({
-          entryId: card.entry_id,
-          stage: card.simple_stage,
-          n: card.simple_n,
-          interval: card.simple_interval,
-        })),
+        cards: srsRows.map((card: any) => {
+          const base: any = {
+            entryId: card.entry_id,
+            stage: card.simple_stage,
+            n: card.simple_n,
+            interval: card.simple_interval,
+          };
+          if (card.kanji_literal != null) base.kanjiLiteral = card.kanji_literal;
+          return base;
+        }),
       };
     } else {
       // Export FSRS data
@@ -136,7 +149,7 @@ export async function buildListExport(
           [card.id],
         );
 
-        srsCards.push({
+        const srsCard: any = {
           entryId: card.entry_id,
           due: card.due,
           stability: card.stability,
@@ -161,7 +174,9 @@ export async function buildListExport(
             scheduledDays: log.scheduled_days,
             reviewedAt: log.reviewed_at,
           })),
-        });
+        };
+        if (card.kanji_literal != null) srsCard.kanjiLiteral = card.kanji_literal;
+        srsCards.push(srsCard);
       }
 
       result.studyHistory = { studyPosition, srsCards };
@@ -181,7 +196,7 @@ export function parseListImport(json: string): JitenExportFile {
     throw new Error("Invalid JSON file");
   }
 
-  if (data.format !== "jiten-list-v1") {
+  if (data.format !== "jiten-list-v1" && data.format !== "jiten-list-v2") {
     throw new Error("Unrecognized file format");
   }
   if (!data.list || !data.list.name) {
@@ -198,6 +213,10 @@ export function parseListImport(json: string): JitenExportFile {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+}
+
+function isKanjiEntry(entry: JitenExportEntry): entry is { kanjiLiteral: string; addedAt: string } {
+  return "kanjiLiteral" in entry;
 }
 
 export async function importListToDb(
@@ -251,10 +270,17 @@ export async function importListToDb(
     const totalEntries = data.entries.length;
     for (let i = 0; i < totalEntries; i++) {
       const entry = data.entries[i];
-      await userDb.runAsync(
-        "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-        [generateId(), listId, entry.entryId, entry.addedAt],
-      );
+      if (isKanjiEntry(entry)) {
+        await userDb.runAsync(
+          "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at) VALUES (?, ?, 0, ?, ?)",
+          [generateId(), listId, entry.kanjiLiteral, entry.addedAt],
+        );
+      } else {
+        await userDb.runAsync(
+          "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
+          [generateId(), listId, entry.entryId, entry.addedAt],
+        );
+      }
       if (onProgress && i % 100 === 0) {
         onProgress(totalEntries > 0 ? i / totalEntries : 0);
       }
@@ -264,12 +290,15 @@ export async function importListToDb(
     if (importStudyHistory && data.simpleSrsData?.cards) {
       for (const card of data.simpleSrsData.cards) {
         const cardId = generateId();
+        const kanjiLiteral = "kanjiLiteral" in card ? ((card as any).kanjiLiteral ?? null) : null;
+        const entryId = kanjiLiteral != null ? 0 : card.entryId;
         await userDb.runAsync(
-          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             cardId,
-            card.entryId,
+            entryId,
+            kanjiLiteral,
             listId,
             now, // due (placeholder for FSRS, not used in simple mode)
             0, // stability
@@ -291,15 +320,25 @@ export async function importListToDb(
       }
 
       // Also create srs_cards for entries without SRS data (unseen cards)
-      const srsEntryIds = new Set(data.simpleSrsData.cards.map((c) => c.entryId));
+      const srsEntryKeys = new Set(
+        data.simpleSrsData.cards.map((c) =>
+          "kanjiLiteral" in c && (c as any).kanjiLiteral
+            ? `k:${(c as any).kanjiLiteral}`
+            : `e:${c.entryId}`,
+        ),
+      );
       for (const entry of data.entries) {
-        if (!srsEntryIds.has(entry.entryId)) {
+        const key = isKanjiEntry(entry) ? `k:${entry.kanjiLiteral}` : `e:${entry.entryId}`;
+        if (!srsEntryKeys.has(key)) {
+          const kanjiLiteral = isKanjiEntry(entry) ? entry.kanjiLiteral : null;
+          const entryId = isKanjiEntry(entry) ? 0 : entry.entryId;
           await userDb.runAsync(
-            `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               generateId(),
-              entry.entryId,
+              entryId,
+              kanjiLiteral,
               listId,
               now,
               0,
@@ -323,12 +362,15 @@ export async function importListToDb(
     if (importStudyHistory && data.studyHistory?.srsCards) {
       for (const card of data.studyHistory.srsCards) {
         const cardId = generateId();
+        const kanjiLiteral = card.kanjiLiteral ?? null;
+        const entryId = kanjiLiteral != null ? 0 : card.entryId;
         await userDb.runAsync(
-          `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             cardId,
-            card.entryId,
+            entryId,
+            kanjiLiteral,
             listId,
             card.due,
             card.stability,

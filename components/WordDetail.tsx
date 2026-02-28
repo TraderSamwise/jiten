@@ -32,7 +32,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
   const navigation = useNavigation();
   const router = useRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
-  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(entryId));
+  const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entryId}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmark(entryId, isBookmarked);
 

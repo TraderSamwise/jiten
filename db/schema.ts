@@ -114,13 +114,15 @@ export const listEntries = sqliteTable("list_entries", {
   listId: text("list_id")
     .notNull()
     .references(() => lists.id, { onDelete: "cascade" }),
-  entryId: integer("entry_id").notNull(), // FK to dictionary entries.id
+  entryId: integer("entry_id").notNull(), // FK to dictionary entries.id (0 = kanji sentinel)
   addedAt: text("added_at").notNull(),
+  kanjiLiteral: text("kanji_literal"), // set when this is a kanji entry (entry_id = 0)
 });
 
 export const srsCards = sqliteTable("srs_cards", {
   id: text("id").primaryKey(), // UUID
-  entryId: integer("entry_id").notNull(),
+  entryId: integer("entry_id").notNull(), // 0 = kanji sentinel
+  kanjiLiteral: text("kanji_literal"), // set when this is a kanji card (entry_id = 0)
   listId: text("list_id").references(() => lists.id, { onDelete: "set null" }),
   // FSRS fields
   due: text("due").notNull(),

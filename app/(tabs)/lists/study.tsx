@@ -57,8 +57,8 @@ import {
   findConfusedWords,
   type ConfusedWordResult,
 } from "@/lib/confused-words";
-import { getSimilarKanjiAsync } from "@/db/kanji-search";
-import type { DictEntry, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
+import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
+import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
 const CONFUSION_COOLDOWN_HOURS = 24;
@@ -315,9 +315,23 @@ function getFaceText(entry: DictEntry, face: CardFace): string {
   }
 }
 
-interface QueueItem {
-  entry: DictEntry;
-  srsCard?: SrsCardRow;
+function getKanjiFaceText(kanji: KanjiCharacter, face: CardFace): string {
+  switch (face) {
+    case "kanji":
+      return kanji.literal;
+    case "kana":
+      return [...kanji.readingsOn, ...kanji.readingsKun].join("、");
+    case "english":
+      return kanji.meanings.join(", ");
+  }
+}
+
+type QueueItem =
+  | { kind: "entry"; entry: DictEntry; srsCard?: SrsCardRow }
+  | { kind: "kanji"; kanji: KanjiCharacter; srsCard?: SrsCardRow };
+
+function getQueueItemId(item: QueueItem): string {
+  return item.kind === "entry" ? `e:${item.entry.id}` : `k:${item.kanji.literal}`;
 }
 
 interface SrsSnapshot {
@@ -544,8 +558,8 @@ export default function StudyScreen() {
     try {
       if (list.flashcardMode === "add_order") {
         let position = list.studyPosition ?? 0;
-        let rows = await userDb.getAllAsync<{ entry_id: number }>(
-          "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
+        let rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
+          "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
           [listId, position],
         );
 
@@ -557,8 +571,8 @@ export default function StudyScreen() {
             [new Date().toISOString(), listId],
           );
           updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
-          rows = await userDb.getAllAsync<{ entry_id: number }>(
-            "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
+          rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
             [listId],
           );
         }
@@ -570,13 +584,31 @@ export default function StudyScreen() {
           return;
         }
 
-        const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
-        const entries = await getEntries(dictDb, entryIds);
-        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
-        const items: QueueItem[] = entryIds
-          .map((eid: number) => entryMap.get(eid))
-          .filter((e: DictEntry | undefined): e is DictEntry => e !== undefined)
-          .map((entry: DictEntry) => ({ entry }));
+        type ListEntryRow = { entry_id: number; kanji_literal: string | null };
+        const wordIds = rows
+          .filter((r: ListEntryRow) => r.kanji_literal == null)
+          .map((r: ListEntryRow) => r.entry_id);
+        const kanjiLits = rows
+          .filter((r: ListEntryRow) => r.kanji_literal != null)
+          .map((r: ListEntryRow) => r.kanji_literal!);
+
+        const [wordEntries, kanjiEntries] = await Promise.all([
+          wordIds.length > 0 ? getEntries(dictDb, wordIds) : Promise.resolve([]),
+          kanjiLits.length > 0 ? getKanjiBatchAsync(dictDb, kanjiLits) : Promise.resolve([]),
+        ]);
+        const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
+        const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
+
+        const items: QueueItem[] = [];
+        for (const r of rows) {
+          if (r.kanji_literal != null) {
+            const k = kanjiMap.get(r.kanji_literal);
+            if (k) items.push({ kind: "kanji", kanji: k });
+          } else {
+            const e = entryMap.get(r.entry_id);
+            if (e) items.push({ kind: "entry", entry: e });
+          }
+        }
 
         setQueue(items);
         setCurrentIndex(0);
@@ -584,7 +616,7 @@ export default function StudyScreen() {
         setSessionDone(items.length === 0);
       } else if (list.flashcardMode === "simple_srs") {
         // Simple SRS mode: due review cards first, then new cards
-        const simpleSrsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
+        const simpleSrsSelect = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
           stability, difficulty, elapsed_days as elapsedDays,
           scheduled_days as scheduledDays, reps, lapses, state,
           last_review as lastReview, front_mode as frontMode,
@@ -600,16 +632,19 @@ export default function StudyScreen() {
           [listId],
         );
         if (!cardCount || cardCount.c === 0) {
-          const entryRows = await userDb.getAllAsync<{ entry_id: number }>(
-            "SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+          const entryRows = await userDb.getAllAsync<{
+            entry_id: number;
+            kanji_literal: string | null;
+          }>(
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
             [listId],
           );
           const now = new Date().toISOString();
           for (const row of entryRows) {
             await userDb.runAsync(
-              `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
-              [generateId(), row.entry_id, listId, now, now, now],
+              `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
+              [generateId(), row.entry_id, row.kanji_literal, listId, now, now, now],
             );
           }
         }
@@ -653,15 +688,35 @@ export default function StudyScreen() {
           return;
         }
 
-        const entryIds = srsRows.map((r: SrsCardRow) => r.entryId);
-        const entries = await getEntries(dictDb, entryIds);
-        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
-        const items: QueueItem[] = srsRows
-          .map((card: SrsCardRow) => {
-            const entry = entryMap.get(card.entryId);
-            return entry ? { entry, srsCard: card } : null;
-          })
-          .filter((item: QueueItem | null): item is QueueItem => item !== null);
+        const wordCards = srsRows.filter((r) => r.kanjiLiteral == null);
+        const kanjiCards = srsRows.filter((r) => r.kanjiLiteral != null);
+        const [wordEntries, kanjiEntries] = await Promise.all([
+          wordCards.length > 0
+            ? getEntries(
+                dictDb,
+                wordCards.map((r) => r.entryId),
+              )
+            : Promise.resolve([]),
+          kanjiCards.length > 0
+            ? getKanjiBatchAsync(
+                dictDb,
+                kanjiCards.map((r) => r.kanjiLiteral!),
+              )
+            : Promise.resolve([]),
+        ]);
+        const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
+        const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
+
+        const items: QueueItem[] = [];
+        for (const card of srsRows) {
+          if (card.kanjiLiteral != null) {
+            const k = kanjiMap.get(card.kanjiLiteral);
+            if (k) items.push({ kind: "kanji", kanji: k, srsCard: card });
+          } else {
+            const e = entryMap.get(card.entryId);
+            if (e) items.push({ kind: "entry", entry: e, srsCard: card });
+          }
+        }
 
         setQueue(items);
         setCurrentIndex(0);
@@ -669,7 +724,7 @@ export default function StudyScreen() {
         setSessionDone(items.length === 0);
       } else {
         // FSRS mode: reviews first, then a batch of new cards
-        const srsSelect = `SELECT id, entry_id as entryId, list_id as listId, due,
+        const srsSelect = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
           stability, difficulty, elapsed_days as elapsedDays,
           scheduled_days as scheduledDays, reps, lapses, state,
           last_review as lastReview, front_mode as frontMode,
@@ -698,15 +753,35 @@ export default function StudyScreen() {
           return;
         }
 
-        const entryIds = srsRows.map((r: SrsCardRow) => r.entryId);
-        const entries = await getEntries(dictDb, entryIds);
-        const entryMap = new Map(entries.map((e: DictEntry) => [e.id, e]));
-        const items: QueueItem[] = srsRows
-          .map((card: SrsCardRow) => {
-            const entry = entryMap.get(card.entryId);
-            return entry ? { entry, srsCard: card } : null;
-          })
-          .filter((item: QueueItem | null): item is QueueItem => item !== null);
+        const wordCards2 = srsRows.filter((r) => r.kanjiLiteral == null);
+        const kanjiCards2 = srsRows.filter((r) => r.kanjiLiteral != null);
+        const [wordEntries2, kanjiEntries2] = await Promise.all([
+          wordCards2.length > 0
+            ? getEntries(
+                dictDb,
+                wordCards2.map((r) => r.entryId),
+              )
+            : Promise.resolve([]),
+          kanjiCards2.length > 0
+            ? getKanjiBatchAsync(
+                dictDb,
+                kanjiCards2.map((r) => r.kanjiLiteral!),
+              )
+            : Promise.resolve([]),
+        ]);
+        const entryMap2 = new Map(wordEntries2.map((e: DictEntry) => [e.id, e]));
+        const kanjiMap2 = new Map(kanjiEntries2.map((k: KanjiCharacter) => [k.literal, k]));
+
+        const items: QueueItem[] = [];
+        for (const card of srsRows) {
+          if (card.kanjiLiteral != null) {
+            const k = kanjiMap2.get(card.kanjiLiteral);
+            if (k) items.push({ kind: "kanji", kanji: k, srsCard: card });
+          } else {
+            const e = entryMap2.get(card.entryId);
+            if (e) items.push({ kind: "entry", entry: e, srsCard: card });
+          }
+        }
 
         setQueue(items);
         setCurrentIndex(0);
@@ -755,8 +830,8 @@ export default function StudyScreen() {
       },
     ]);
 
-    // Check for confused words (fire-and-forget, modal appears async)
-    if (card && list?.flashcardMode !== "add_order") {
+    // Check for confused words (fire-and-forget, modal appears async) — skip for kanji
+    if (card && list?.flashcardMode !== "add_order" && item.kind === "entry") {
       checkForConfusedWords(item.entry, card);
     }
 
@@ -930,12 +1005,12 @@ export default function StudyScreen() {
     // Use post-review reps/lapses (the +1 hasn't been written to the card object yet)
     if (!shouldCheckConfusion(card.reps + 1, card.lapses + 1)) return;
 
-    // Get all entry_ids in the list (excluding the failed one)
+    // Get all entry_ids in the list (excluding the failed one and kanji entries)
     const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ?",
+      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ? AND kanji_literal IS NULL",
       [listId, entry.id],
     );
-    const entryIds = rows.map((r) => r.entry_id);
+    const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
     if (entryIds.length === 0) return;
 
     const results = await findConfusedWords(
@@ -964,7 +1039,7 @@ export default function StudyScreen() {
 
     // Find the srs_card for this confused entry
     const cardRow = await userDb.getFirstAsync<SrsCardRow>(
-      `SELECT id, entry_id as entryId, list_id as listId, due,
+      `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
         stability, difficulty, elapsed_days as elapsedDays,
         scheduled_days as scheduledDays, reps, lapses, state,
         last_review as lastReview, front_mode as frontMode,
@@ -973,7 +1048,7 @@ export default function StudyScreen() {
         simple_stage as simpleStage, simple_n as simpleN,
         simple_interval as simpleInterval,
         last_confusion_check as lastConfusionCheck
-       FROM srs_cards WHERE list_id = ? AND entry_id = ?`,
+       FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL`,
       [listId, result.entry.id],
     );
 
@@ -986,7 +1061,10 @@ export default function StudyScreen() {
       }
 
       // Push to end of current session queue
-      setQueue((q) => [...q, { entry: result.entry as DictEntry, srsCard: cardRow }]);
+      setQueue((q) => [
+        ...q,
+        { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: cardRow },
+      ]);
     }
   }
 
@@ -1198,8 +1276,9 @@ export default function StudyScreen() {
 
   function findQueueIndex(item: QueueItem): number {
     // Find the queue index that matches this item
+    const targetId = getQueueItemId(item);
     const idx = queue.findIndex(
-      (q) => q.entry.id === item.entry.id && q.srsCard?.id === item.srsCard?.id,
+      (q) => getQueueItemId(q) === targetId && q.srsCard?.id === item.srsCard?.id,
     );
     return idx >= 0 ? idx : currentIndex;
   }
@@ -1300,7 +1379,7 @@ export default function StudyScreen() {
         },
       );
     }
-    if (list?.autoPlayAudio && audioDb && displayItem) {
+    if (list?.autoPlayAudio && audioDb && displayItem && displayItem.kind === "entry") {
       playEntryAudio(audioDb, displayItem.entry.id);
     }
   }
@@ -1309,6 +1388,8 @@ export default function StudyScreen() {
   voiceCallbackRef.current = (transcript: string) => {
     if (revealed || !displayItem) return;
 
+    // Voice recognition only works for word entries
+    if (displayItem.kind !== "entry") return;
     const heard = toHiragana(transcript, { passRomaji: true });
     const readings = displayItem.entry.kana.map((k) => k.text);
     const isCorrect = readings.some((r) => r === heard);
@@ -1463,18 +1544,32 @@ export default function StudyScreen() {
   const backFaces = list?.backFaces ?? ["english"];
 
   function renderCardFront(item: QueueItem, isCurrent: boolean) {
-    const isTyping = !!list?.typingMode && isCurrent && !isBrowsingHistory;
+    // Typing and voice modes only for word entries
+    const isTyping = !!list?.typingMode && isCurrent && !isBrowsingHistory && item.kind === "entry";
     const frontIsKanji =
-      frontFaces[0] === "kanji" && getDisplayText(item.entry) !== getTargetReading(item.entry);
+      item.kind === "entry" &&
+      frontFaces[0] === "kanji" &&
+      getDisplayText(item.entry) !== getTargetReading(item.entry);
 
     const typingOnComplete = (wasCorrect: boolean) => {
       setPreSelectedRating(wasCorrect ? "pass" : "fail");
       handleReveal();
     };
 
+    const faceText =
+      item.kind === "entry"
+        ? getFaceText(item.entry, frontFaces[0])
+        : getKanjiFaceText(item.kanji, frontFaces[0]);
+
+    const secondaryFaces = frontFaces.slice(1).map((face, i) => (
+      <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
+        {item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face)}
+      </Text>
+    ));
+
     return (
       <View className="items-center justify-center flex-1">
-        {isTyping && frontIsKanji ? (
+        {isTyping && frontIsKanji && item.kind === "entry" ? (
           /* Typing mode with kanji front: TypingInput replaces primary face text */
           <TypingInput
             key={item.entry.id}
@@ -1484,10 +1579,8 @@ export default function StudyScreen() {
           />
         ) : (
           <>
-            <Text className="text-3xl font-bold text-foreground">
-              {getFaceText(item.entry, frontFaces[0])}
-            </Text>
-            {isTyping && (
+            <Text className="text-3xl font-bold text-foreground">{faceText}</Text>
+            {isTyping && item.kind === "entry" && (
               <View className="mt-6 items-center w-full px-4">
                 <TypingInput
                   key={item.entry.id}
@@ -1499,13 +1592,9 @@ export default function StudyScreen() {
             )}
           </>
         )}
-        {frontFaces.slice(1).map((face, i) => (
-          <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
-            {getFaceText(item.entry, face)}
-          </Text>
-        ))}
+        {secondaryFaces}
         {!isTyping &&
-          (list?.voiceMode ? (
+          (list?.voiceMode && item.kind === "entry" ? (
             <View className="mt-6 items-center">
               {voiceStatus === "correct" ? (
                 <Text className="text-lg font-bold text-green-500">Correct!</Text>
@@ -1534,29 +1623,40 @@ export default function StudyScreen() {
   }
 
   function renderCardRevealed(item: QueueItem) {
+    const frontText =
+      item.kind === "entry"
+        ? getFaceText(item.entry, frontFaces[0])
+        : getKanjiFaceText(item.kanji, frontFaces[0]);
+    const backText =
+      item.kind === "entry"
+        ? getFaceText(item.entry, backFaces[0])
+        : getKanjiFaceText(item.kanji, backFaces[0]);
+
     return (
       <View className="items-center justify-center flex-1">
-        <Text className="text-lg text-muted-foreground">
-          {getFaceText(item.entry, frontFaces[0])}
-        </Text>
+        <Text className="text-lg text-muted-foreground">{frontText}</Text>
         {frontFaces.slice(1).map((face, i) => (
           <Text key={`front-${i}`} className="mt-1 text-sm text-muted-foreground">
-            {getFaceText(item.entry, face)}
+            {item.kind === "entry"
+              ? getFaceText(item.entry, face)
+              : getKanjiFaceText(item.kanji, face)}
           </Text>
         ))}
         <View className="mt-6 items-center">
           <View className="h-px w-32 bg-border mb-4" />
-          <Text className="text-3xl font-bold text-foreground">
-            {getFaceText(item.entry, backFaces[0])}
-          </Text>
+          <Text className="text-3xl font-bold text-foreground">{backText}</Text>
           {backFaces.slice(1).map((face, i) => (
             <Text key={`back-${i}`} className="mt-2 text-3xl text-muted-foreground">
-              {getFaceText(item.entry, face)}
+              {item.kind === "entry"
+                ? getFaceText(item.entry, face)
+                : getKanjiFaceText(item.kanji, face)}
             </Text>
           ))}
-          <View className="mt-3">
-            <PlayAudioButton entryId={item.entry.id} size={22} />
-          </View>
+          {item.kind === "entry" && (
+            <View className="mt-3">
+              <PlayAudioButton entryId={item.entry.id} size={22} />
+            </View>
+          )}
         </View>
       </View>
     );
@@ -1694,7 +1794,13 @@ export default function StudyScreen() {
                           ),
                         )}
                         <Pressable
-                          onPress={() => router.push(`/lists/word/${currentItem.entry.id}`)}
+                          onPress={() =>
+                            currentItem.kind === "entry"
+                              ? router.push(`/lists/word/${currentItem.entry.id}`)
+                              : router.push(
+                                  `/dictionary/kanji/${encodeURIComponent(currentItem.kanji.literal)}`,
+                                )
+                          }
                           hitSlop={8}
                         >
                           <Info size={18} className="text-muted-foreground" />

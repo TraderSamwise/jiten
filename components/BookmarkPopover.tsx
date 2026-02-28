@@ -5,13 +5,20 @@ import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { Plus, Check, FolderOpen } from "@/lib/icons";
-import { generateId, addEntryToList, removeEntryFromList } from "@/lib/quick-bookmark";
+import {
+  generateId,
+  addEntryToList,
+  removeEntryFromList,
+  addKanjiToList,
+  removeKanjiFromList,
+} from "@/lib/quick-bookmark";
 import type { WordList } from "@/db/types";
 
 interface BookmarkPopoverProps {
   visible: boolean;
   onClose: () => void;
-  entryId: number;
+  entryId?: number;
+  kanjiLiteral?: string;
   anchorPosition?: { top: number; right: number };
   onListToggled?: (listId: string, added: boolean) => void;
 }
@@ -20,6 +27,7 @@ export function BookmarkPopover({
   visible,
   onClose,
   entryId,
+  kanjiLiteral,
   anchorPosition,
   onListToggled,
 }: BookmarkPopoverProps) {
@@ -32,6 +40,8 @@ export function BookmarkPopover({
   const [showNewList, setShowNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
 
+  const isKanji = kanjiLiteral != null;
+
   useEffect(() => {
     if (!visible || !userDb) return;
     loadData();
@@ -42,24 +52,42 @@ export function BookmarkPopover({
     const allLists = await userDb.getAllAsync<WordList>("SELECT * FROM lists ORDER BY name");
     setLists(allLists.map(parseListRow));
 
-    const memberships = await userDb.getAllAsync<{ list_id: string }>(
-      "SELECT list_id FROM list_entries WHERE entry_id = ?",
-      [entryId],
-    );
-    setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
+    if (isKanji) {
+      const memberships = await userDb.getAllAsync<{ list_id: string }>(
+        "SELECT list_id FROM list_entries WHERE kanji_literal = ?",
+        [kanjiLiteral],
+      );
+      setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
+    } else if (entryId != null) {
+      const memberships = await userDb.getAllAsync<{ list_id: string }>(
+        "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL",
+        [entryId],
+      );
+      setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
+    }
   }
 
   async function toggleList(listId: string) {
     if (!userDb) return;
 
     if (membershipMap.has(listId)) {
-      await removeEntryFromList(userDb, entryId, listId);
+      // Remove
+      if (isKanji) {
+        await removeKanjiFromList(userDb, kanjiLiteral!, listId);
+      } else if (entryId != null) {
+        await removeEntryFromList(userDb, entryId, listId);
+      }
       const newMap = new Set(membershipMap);
       newMap.delete(listId);
       setMembershipMap(newMap);
       onListToggled?.(listId, false);
     } else {
-      await addEntryToList(userDb, entryId, listId);
+      // Add
+      if (isKanji) {
+        await addKanjiToList(userDb, kanjiLiteral!, listId);
+      } else if (entryId != null) {
+        await addEntryToList(userDb, entryId, listId);
+      }
       setMembershipMap((prev) => new Set(prev).add(listId));
       onListToggled?.(listId, true);
     }

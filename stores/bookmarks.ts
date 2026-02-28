@@ -2,34 +2,40 @@ import { create } from "zustand";
 import type { WrappedUserDb } from "@/db/user-db";
 
 interface BookmarkState {
-  /** Set of entry IDs that appear in any bookmark list */
-  bookmarkedIds: Set<number>;
-  /** Load all bookmarked entry IDs from the user database */
+  /** Set of compound keys ("e:123" for entries, "k:食" for kanji) in any list */
+  bookmarkedIds: Set<string>;
+  /** Load all bookmarked entry/kanji IDs from the user database */
   load: (userDb: WrappedUserDb) => Promise<void>;
-  /** Mark an entry as bookmarked (optimistic update) */
-  add: (entryId: number) => void;
-  /** Remove an entry from bookmarked set (optimistic update) */
-  remove: (entryId: number) => void;
+  /** Mark an item as bookmarked (optimistic update) */
+  add: (key: string) => void;
+  /** Remove an item from bookmarked set (optimistic update) */
+  remove: (key: string) => void;
 }
 
 export const useBookmarkStore = create<BookmarkState>((set) => ({
   bookmarkedIds: new Set(),
   load: async (userDb) => {
-    const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT DISTINCT entry_id FROM list_entries",
+    const entryRows = await userDb.getAllAsync<{ entry_id: number }>(
+      "SELECT DISTINCT entry_id FROM list_entries WHERE kanji_literal IS NULL",
     );
-    set({ bookmarkedIds: new Set(rows.map((r) => r.entry_id)) });
+    const kanjiRows = await userDb.getAllAsync<{ kanji_literal: string }>(
+      "SELECT DISTINCT kanji_literal FROM list_entries WHERE kanji_literal IS NOT NULL",
+    );
+    const ids = new Set<string>();
+    for (const r of entryRows) ids.add(`e:${r.entry_id}`);
+    for (const r of kanjiRows) ids.add(`k:${r.kanji_literal}`);
+    set({ bookmarkedIds: ids });
   },
-  add: (entryId) =>
+  add: (key) =>
     set((state) => {
       const next = new Set(state.bookmarkedIds);
-      next.add(entryId);
+      next.add(key);
       return { bookmarkedIds: next };
     }),
-  remove: (entryId) =>
+  remove: (key) =>
     set((state) => {
       const next = new Set(state.bookmarkedIds);
-      next.delete(entryId);
+      next.delete(key);
       return { bookmarkedIds: next };
     }),
 }));
