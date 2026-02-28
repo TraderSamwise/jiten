@@ -11,6 +11,7 @@ import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { alert, confirm } from "@/lib/confirm";
+import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
 import type { Book } from "@/db/types";
 
 function generateId(): string {
@@ -45,6 +46,7 @@ export default function LibraryScreen() {
 
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
+    await seedDefaultBookIfNeeded(userDb);
     const rows = await userDb.getAllAsync<any>(
       "SELECT * FROM books ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
     );
