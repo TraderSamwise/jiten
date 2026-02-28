@@ -81,6 +81,8 @@ export function BookmarkPopover({
       confusionDetection: true,
       voiceMode: false,
       typingMode: false,
+      disableFlipAnimation: false,
+      disableSwipeAnimation: false,
       createdAt: now,
       updatedAt: now,
     };

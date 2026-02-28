@@ -826,8 +826,11 @@ export default function StudyScreen() {
     if (nextIndex >= currentQueue.length) {
       loadQueue();
     } else {
-      // Animate row left to reveal the next card (already pre-rendered in allCards)
-      translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
+      if (list?.disableSwipeAnimation) {
+        translateX.value = translateX.value - slideDistance;
+      } else {
+        translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
+      }
       setCurrentIndex(nextIndex);
       revealedRef.current = false;
       setRevealed(false);
@@ -1035,7 +1038,11 @@ export default function StudyScreen() {
     if (nextIndex >= currentQueue.length) {
       loadQueue();
     } else {
-      translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
+      if (list?.disableSwipeAnimation) {
+        translateX.value = translateX.value - slideDistance;
+      } else {
+        translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
+      }
       setCurrentIndex(nextIndex);
       setRevealed(false);
       setIsFlipping(false);
@@ -1109,15 +1116,19 @@ export default function StudyScreen() {
     if (revealed) return;
     revealedRef.current = true;
     setRevealed(true);
-    setIsFlipping(true);
-    flipProgress.value = 0;
-    flipProgress.value = withTiming(
-      1,
-      { duration: FLIP_DURATION, easing: Easing.inOut(Easing.ease) },
-      (finished) => {
-        if (finished) runOnJS(setIsFlipping)(false);
-      },
-    );
+    if (list?.disableFlipAnimation) {
+      flipProgress.value = 1;
+    } else {
+      setIsFlipping(true);
+      flipProgress.value = 0;
+      flipProgress.value = withTiming(
+        1,
+        { duration: FLIP_DURATION, easing: Easing.inOut(Easing.ease) },
+        (finished) => {
+          if (finished) runOnJS(setIsFlipping)(false);
+        },
+      );
+    }
     if (list?.autoPlayAudio && audioDb && displayItem) {
       playEntryAudio(audioDb, displayItem.entry.id);
     }
@@ -1152,19 +1163,30 @@ export default function StudyScreen() {
   // --- Animated navigation wrappers ---
   function goBackAnimated() {
     if (!hasPrev) return;
-    translateX.value = withTiming(translateX.value + slideDistance, slideConfig, () => {
-      runOnJS(goBack)();
-    });
+    if (list?.disableSwipeAnimation) {
+      translateX.value = translateX.value + slideDistance;
+      goBack();
+    } else {
+      translateX.value = withTiming(translateX.value + slideDistance, slideConfig, () => {
+        runOnJS(goBack)();
+      });
+    }
   }
 
   function goForwardAnimated() {
     if (!hasNext) return;
-    translateX.value = withTiming(translateX.value - slideDistance, slideConfig, () => {
-      runOnJS(goForward)();
-    });
+    if (list?.disableSwipeAnimation) {
+      translateX.value = translateX.value - slideDistance;
+      goForward();
+    } else {
+      translateX.value = withTiming(translateX.value - slideDistance, slideConfig, () => {
+        runOnJS(goForward)();
+      });
+    }
   }
 
   // --- Gesture handling ---
+  const disableSwipe = list?.disableSwipeAnimation ?? false;
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -1185,20 +1207,36 @@ export default function StudyScreen() {
         })
         .onEnd((e) => {
           if (e.translationX > SWIPE_THRESHOLD && hasPrev) {
-            // Animate to show prev card, then update state
-            translateX.value = withTiming(gestureStartX.value + slideDistance, slideConfig, () => {
+            if (disableSwipe) {
+              translateX.value = gestureStartX.value + slideDistance;
               runOnJS(goBack)();
-            });
+            } else {
+              translateX.value = withTiming(
+                gestureStartX.value + slideDistance,
+                slideConfig,
+                () => {
+                  runOnJS(goBack)();
+                },
+              );
+            }
           } else if (e.translationX < -SWIPE_THRESHOLD && hasNext) {
-            // Animate to show next card, then update state
-            translateX.value = withTiming(gestureStartX.value - slideDistance, slideConfig, () => {
+            if (disableSwipe) {
+              translateX.value = gestureStartX.value - slideDistance;
               runOnJS(goForward)();
-            });
+            } else {
+              translateX.value = withTiming(
+                gestureStartX.value - slideDistance,
+                slideConfig,
+                () => {
+                  runOnJS(goForward)();
+                },
+              );
+            }
           } else {
             translateX.value = withTiming(gestureStartX.value, slideConfig);
           }
         }),
-    [hasPrev, hasNext, slideDistance],
+    [hasPrev, hasNext, slideDistance, disableSwipe],
   );
 
   const tapGesture = useMemo(

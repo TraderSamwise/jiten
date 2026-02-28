@@ -103,6 +103,8 @@ export interface WordList {
   confusionDetection: boolean;
   voiceMode: boolean;
   typingMode: boolean;
+  disableFlipAnimation: boolean;
+  disableSwipeAnimation: boolean;
   createdAt: string;
   updatedAt: string;
   entryCount?: number;
