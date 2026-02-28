@@ -12,6 +12,7 @@ import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
 import { shouldDeEmphasize, getTagLabel } from "@/lib/tags";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { DictEntry } from "@/db/types";
 
 function isKanji(code: number): boolean {
@@ -31,8 +32,9 @@ export function WordDetail({ entryId }: WordDetailProps) {
   const navigation = useNavigation();
   const router = useRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
-  const [popoverVisible, setPopoverVisible] = useState(false);
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(entryId));
+  const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
+    useQuickBookmark(entryId, isBookmarked);
 
   useEffect(() => {
     if (!dictDb || !isReady || !entryId) return;
@@ -55,7 +57,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
       <View className="flex-row justify-end items-center gap-2 mb-1">
         <PlayAudioButton entryId={entryId} size={22} />
-        <Pressable onPress={() => setPopoverVisible(true)} className="p-1">
+        <Pressable onPress={handlePress} onLongPress={handleLongPress} className="p-1">
           <Bookmark
             size={22}
             fill={isBookmarked ? "currentColor" : "none"}
@@ -161,8 +163,9 @@ export function WordDetail({ entryId }: WordDetailProps) {
 
       <BookmarkPopover
         visible={popoverVisible}
-        onClose={() => setPopoverVisible(false)}
+        onClose={dismissPopover}
         entryId={entryId}
+        onListToggled={onListToggled}
       />
     </ScrollView>
   );

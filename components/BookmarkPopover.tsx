@@ -4,20 +4,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
-import { createNewCard } from "@/stores/srs";
 import { Plus, Check, FolderOpen } from "@/lib/icons";
-import { useBookmarkStore } from "@/stores/bookmarks";
+import { generateId, addEntryToList, removeEntryFromList } from "@/lib/quick-bookmark";
 import type { WordList } from "@/db/types";
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
 
 interface BookmarkPopoverProps {
   visible: boolean;
   onClose: () => void;
   entryId: number;
   anchorPosition?: { top: number; right: number };
+  onListToggled?: (listId: string, added: boolean) => void;
 }
 
 export function BookmarkPopover({
@@ -25,14 +21,12 @@ export function BookmarkPopover({
   onClose,
   entryId,
   anchorPosition,
+  onListToggled,
 }: BookmarkPopoverProps) {
   const insets = useSafeAreaInsets();
   const pos = anchorPosition ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
-  const updateListInStore = useListsStore((s) => s.updateList);
-  const addBookmark = useBookmarkStore((s) => s.add);
-  const removeBookmark = useBookmarkStore((s) => s.remove);
   const [lists, setLists] = useState<WordList[]>([]);
   const [membershipMap, setMembershipMap] = useState<Set<string>>(new Set());
   const [showNewList, setShowNewList] = useState(false);
@@ -57,59 +51,17 @@ export function BookmarkPopover({
 
   async function toggleList(listId: string) {
     if (!userDb) return;
-    const now = new Date().toISOString();
 
     if (membershipMap.has(listId)) {
-      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND entry_id = ?", [
-        listId,
-        entryId,
-      ]);
-      await userDb.runAsync("DELETE FROM srs_cards WHERE entry_id = ? AND list_id = ?", [
-        entryId,
-        listId,
-      ]);
+      await removeEntryFromList(userDb, entryId, listId);
       const newMap = new Set(membershipMap);
       newMap.delete(listId);
       setMembershipMap(newMap);
-      const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-      if (cur) updateListInStore(listId, { entryCount: Math.max(0, (cur.entryCount ?? 1) - 1) });
-      // If no longer in any list, remove from global bookmark set
-      if (newMap.size === 0) removeBookmark(entryId);
+      onListToggled?.(listId, false);
     } else {
-      await userDb.runAsync(
-        "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-        [generateId(), listId, entryId, now],
-      );
-
-      const card = createNewCard();
-      await userDb.runAsync(
-        `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty,
-          elapsed_days, scheduled_days, reps, lapses, state, last_review,
-          front_mode, back_mode, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          generateId(),
-          entryId,
-          listId,
-          card.due.toISOString(),
-          card.stability,
-          card.difficulty,
-          card.elapsed_days,
-          card.scheduled_days,
-          card.reps,
-          card.lapses,
-          card.state,
-          card.last_review?.toISOString() ?? null,
-          "kanji",
-          "english",
-          now,
-          now,
-        ],
-      );
+      await addEntryToList(userDb, entryId, listId);
       setMembershipMap((prev) => new Set(prev).add(listId));
-      const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-      if (cur) updateListInStore(listId, { entryCount: (cur.entryCount ?? 0) + 1 });
-      addBookmark(entryId);
+      onListToggled?.(listId, true);
     }
   }
 
