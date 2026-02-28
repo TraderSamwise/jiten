@@ -38,6 +38,8 @@ export function FlashcardSettingsModal({
   const [confusionDetection, setConfusionDetection] = useState(true);
   const [voiceMode, setVoiceMode] = useState(false);
   const [typingMode, setTypingMode] = useState(false);
+  const [flipAnimation, setFlipAnimation] = useState(true);
+  const [swipeAnimation, setSwipeAnimation] = useState(true);
 
   const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
 
@@ -63,6 +65,8 @@ export function FlashcardSettingsModal({
       setConfusionDetection(list.confusionDetection !== false);
       setVoiceMode(list.voiceMode ?? false);
       setTypingMode(list.typingMode ?? false);
+      setFlipAnimation(!list.disableFlipAnimation);
+      setSwipeAnimation(!list.disableSwipeAnimation);
     }
   }, [visible, list]);
 
@@ -80,7 +84,7 @@ export function FlashcardSettingsModal({
     if (!userDb) return;
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, disable_flip_animation = ?, disable_swipe_animation = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -89,6 +93,8 @@ export function FlashcardSettingsModal({
         confusionDetection ? 1 : 0,
         voiceMode ? 1 : 0,
         typingMode ? 1 : 0,
+        flipAnimation ? 0 : 1,
+        swipeAnimation ? 0 : 1,
         now,
         listId,
       ],
@@ -102,6 +108,8 @@ export function FlashcardSettingsModal({
       confusionDetection,
       voiceMode,
       typingMode,
+      disableFlipAnimation: !flipAnimation,
+      disableSwipeAnimation: !swipeAnimation,
       updatedAt: now,
     });
     if (onStartStudy) {
@@ -343,6 +351,72 @@ export function FlashcardSettingsModal({
                   }`}
                 >
                   Typing
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Flip animation */}
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Flip animation</Text>
+            <View className="flex-row gap-2 mb-5">
+              <Pressable
+                onPress={() => setFlipAnimation(false)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  !flipAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    !flipAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Off
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setFlipAnimation(true)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  flipAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    flipAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  On
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Swipe animation */}
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Swipe animation</Text>
+            <View className="flex-row gap-2 mb-5">
+              <Pressable
+                onPress={() => setSwipeAnimation(false)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  !swipeAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    !swipeAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Off
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSwipeAnimation(true)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  swipeAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    swipeAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  On
                 </Text>
               </Pressable>
             </View>

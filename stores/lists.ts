@@ -25,6 +25,8 @@ export function parseListRow(row: any): WordList {
     confusionDetection: (row.confusionDetection ?? row.confusion_detection ?? 1) !== 0,
     voiceMode: Boolean(row.voiceMode ?? row.voice_mode ?? 0),
     typingMode: Boolean(row.typingMode ?? row.typing_mode ?? 0),
+    disableFlipAnimation: Boolean(row.disableFlipAnimation ?? row.disable_flip_animation ?? 0),
+    disableSwipeAnimation: Boolean(row.disableSwipeAnimation ?? row.disable_swipe_animation ?? 0),
   };
 }
 
