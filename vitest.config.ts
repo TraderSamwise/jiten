@@ -5,6 +5,7 @@ export default defineConfig({
   test: { include: ["**/*.test.ts"] },
   resolve: {
     alias: {
+      "@/": path.resolve(__dirname, "") + "/",
       "react-native": path.resolve(__dirname, "test/__mocks__/react-native.ts"),
       "@react-native-async-storage/async-storage": path.resolve(
         __dirname,
