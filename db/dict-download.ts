@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { DICT_VERSION } from "./dict-version";
+import { DICT_BASE_VERSION, DICT_VERSION } from "./dict-version";
 
 export type DownloadStatus =
   | { state: "checking" }
@@ -17,6 +17,11 @@ export interface DictManifest {
   audioSizeBytes?: number;
   audioUrl?: string;
 }
+
+export type UpdateAction =
+  | { type: "none" }
+  | { type: "full-download"; manifest: DictManifest }
+  | { type: "client-migration"; fromVersion: number; toVersion: number };
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
@@ -36,7 +41,7 @@ async function getLocalFormat(): Promise<number | null> {
   return f ? parseInt(f, 10) : null;
 }
 
-async function setLocalVersion(version: number): Promise<void> {
+export async function setLocalVersion(version: number): Promise<void> {
   await AsyncStorage.setItem(VERSION_KEY, String(version));
   await AsyncStorage.setItem(FORMAT_KEY, String(DICT_VERSION));
 }
@@ -74,13 +79,38 @@ export async function isDictReady(): Promise<boolean> {
     await AsyncStorage.removeItem(FORMAT_KEY);
     return false;
   }
-  return version !== null && format === DICT_VERSION;
+  return version !== null && version >= DICT_VERSION && format === DICT_VERSION;
+}
+
+/** Get the locally stored dict version (for use by provider init). */
+export async function getStoredDictVersion(): Promise<number | null> {
+  return getLocalVersion();
 }
 
 export async function checkForUpdate(manifest: DictManifest): Promise<boolean> {
   const local = await getLocalVersion();
   const format = await getLocalFormat();
   return local === null || format !== DICT_VERSION || manifest.version > local;
+}
+
+/**
+ * Determine what action is needed to bring the local dict up to DICT_VERSION.
+ *
+ * @param localVersion  version stored in AsyncStorage (null if no DB downloaded)
+ * @param manifest      published manifest from GitHub
+ */
+export function determineUpdateAction(
+  localVersion: number | null,
+  manifest: DictManifest,
+): UpdateAction {
+  if (localVersion !== null && localVersion >= DICT_VERSION) {
+    return { type: "none" };
+  }
+  if (localVersion === null || localVersion < DICT_BASE_VERSION) {
+    return { type: "full-download", manifest };
+  }
+  // localVersion >= DICT_BASE_VERSION && localVersion < DICT_VERSION
+  return { type: "client-migration", fromVersion: localVersion, toVersion: DICT_VERSION };
 }
 
 export async function downloadDictionary(
@@ -217,7 +247,7 @@ function openIdb(): Promise<IDBDatabase> {
 }
 
 /** Store DB bytes split into chunks to stay under IDB value-size limits. */
-async function storeDbBytes(data: Uint8Array, keyPrefix: string = IDB_KEY): Promise<void> {
+export async function storeDbBytes(data: Uint8Array, keyPrefix: string = IDB_KEY): Promise<void> {
   const db = await openIdb();
   const numChunks = Math.ceil(data.byteLength / CHUNK_SIZE);
   console.log(`[DB] Storing ${data.byteLength} bytes (${keyPrefix}) in ${numChunks} chunks...`);

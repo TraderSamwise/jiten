@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Checks that the local dict version matches what's published on GitHub.
-# Exits with code 1 if there's a mismatch (local is ahead of published).
+# Checks that the local dict base version matches what's published on GitHub.
+# Uses two-tier versioning: DICT_BASE_VERSION (download) vs DICT_VERSION (client migrations).
+#
+# Exits with code 1 (in --strict mode) if DICT_BASE_VERSION > published version,
+# meaning a new dict DB needs to be published.
+#
+# DICT_VERSION > DICT_BASE_VERSION is fine — client migrations handle the gap.
 #
 # Usage:
 #   ./scripts/check-dict-version.sh          # Check and warn
@@ -11,7 +16,9 @@ set -e
 
 REPO="TraderSamwise/jiten-data"
 TAG="v1"
-LOCAL_MANIFEST="$(cd "$(dirname "$0")/.." && pwd)/assets/dict-manifest.json"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOCAL_MANIFEST="$PROJECT_ROOT/assets/dict-manifest.json"
+DICT_VERSION_FILE="$PROJECT_ROOT/db/dict-version.ts"
 STRICT=false
 
 for arg in "$@"; do
@@ -20,12 +27,32 @@ for arg in "$@"; do
   esac
 done
 
-if [ ! -f "$LOCAL_MANIFEST" ]; then
-  echo "⚠️  Local dict-manifest.json not found"
+# Read DICT_BASE_VERSION and DICT_VERSION from dict-version.ts
+DICT_BASE_VERSION=$(grep 'export const DICT_BASE_VERSION' "$DICT_VERSION_FILE" | grep -o '[0-9]*')
+DICT_VERSION=$(grep 'export const DICT_VERSION' "$DICT_VERSION_FILE" | grep -o '[0-9]*')
+
+if [ -z "$DICT_BASE_VERSION" ]; then
+  echo "⚠️  Could not read DICT_BASE_VERSION from $DICT_VERSION_FILE"
   exit 0
 fi
 
-LOCAL_VERSION=$(grep -o '"version": [0-9]*' "$LOCAL_MANIFEST" | grep -o '[0-9]*')
+if [ -z "$DICT_VERSION" ]; then
+  echo "⚠️  Could not read DICT_VERSION from $DICT_VERSION_FILE"
+  exit 0
+fi
+
+# Check local manifest version matches DICT_BASE_VERSION
+if [ -f "$LOCAL_MANIFEST" ]; then
+  LOCAL_MANIFEST_VERSION=$(grep -o '"version": [0-9]*' "$LOCAL_MANIFEST" | grep -o '[0-9]*')
+  if [ -n "$LOCAL_MANIFEST_VERSION" ] && [ "$LOCAL_MANIFEST_VERSION" != "$DICT_BASE_VERSION" ]; then
+    echo ""
+    echo "⚠️  Local manifest version (v$LOCAL_MANIFEST_VERSION) != DICT_BASE_VERSION (v$DICT_BASE_VERSION)"
+    echo "   Run 'yarn migrate:dict' to sync manifest, or update DICT_BASE_VERSION."
+    echo ""
+  fi
+else
+  echo "⚠️  Local dict-manifest.json not found"
+fi
 
 # Fetch published manifest from GitHub release
 PUBLISHED_JSON=$(curl -sL "https://github.com/$REPO/releases/download/$TAG/dict-manifest.json" 2>/dev/null || echo "")
@@ -42,21 +69,31 @@ if [ -z "$PUBLISHED_VERSION" ]; then
   exit 0
 fi
 
-if [ "$LOCAL_VERSION" != "$PUBLISHED_VERSION" ]; then
+# Report version info
+if [ "$DICT_VERSION" -gt "$DICT_BASE_VERSION" ]; then
+  echo "ℹ️  Two-tier versioning active: base=v$DICT_BASE_VERSION, effective=v$DICT_VERSION (client migrations bridge the gap)"
+fi
+
+if [ "$DICT_BASE_VERSION" -gt "$PUBLISHED_VERSION" ]; then
   echo ""
   echo "╔══════════════════════════════════════════════════════════════╗"
-  echo "║  ⚠️  DICT VERSION MISMATCH                                  ║"
+  echo "║  ⚠️  DICT BASE VERSION AHEAD OF PUBLISHED                   ║"
   echo "║                                                              ║"
-  echo "║  Local:     v$LOCAL_VERSION                                          ║"
-  echo "║  Published: v$PUBLISHED_VERSION                                          ║"
+  echo "║  DICT_BASE_VERSION: v$DICT_BASE_VERSION                                     ║"
+  echo "║  Published:         v$PUBLISHED_VERSION                                     ║"
   echo "║                                                              ║"
   echo "║  Run 'yarn publish:dict' to push local dict to GitHub.       ║"
-  echo "║  Devices will get the wrong dict DB until this is resolved.  ║"
+  echo "║  Devices will re-download the dict DB once published.        ║"
   echo "╚══════════════════════════════════════════════════════════════╝"
   echo ""
   if [ "$STRICT" = true ]; then
     exit 1
   fi
+elif [ "$DICT_BASE_VERSION" -lt "$PUBLISHED_VERSION" ]; then
+  echo ""
+  echo "⚠️  Published version (v$PUBLISHED_VERSION) is ahead of DICT_BASE_VERSION (v$DICT_BASE_VERSION)"
+  echo "   This shouldn't normally happen. Check dict-version.ts."
+  echo ""
 else
-  echo "✅ Dict version matches (v$LOCAL_VERSION)"
+  echo "✅ Dict base version matches published (v$DICT_BASE_VERSION)"
 fi

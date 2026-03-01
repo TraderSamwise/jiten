@@ -84,12 +84,12 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 
 ### Key files
 
-| File | Purpose |
-| --- | --- |
-| `lib/navigation.ts` | `useSafeGoBack()`, `SafeBackButton`, `useTabRouter()` |
-| `app/(tabs)/lists/_layout.tsx` | Lists stack with automatic `SafeBackButton` |
-| `app/(tabs)/reader/_layout.tsx` | Reader stack with automatic `SafeBackButton` |
-| `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button |
+| File                              | Purpose                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `lib/navigation.ts`               | `useSafeGoBack()`, `SafeBackButton`, `useTabRouter()` |
+| `app/(tabs)/lists/_layout.tsx`    | Lists stack with automatic `SafeBackButton`           |
+| `app/(tabs)/reader/_layout.tsx`   | Reader stack with automatic `SafeBackButton`          |
+| `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button    |
 
 ## Scripts
 
@@ -107,25 +107,67 @@ The dictionary lives in `assets/` as three files:
 - `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
 - `dict-manifest.json` — version and file sizes for the download client
 
-#### Updating the dictionary (migrations)
+#### Two-tier versioning
 
-Use `yarn migrate:dict` to apply incremental changes to the existing `assets/dictionary.db`. This is fast (seconds) and doesn't touch audio or other expensive data.
+The dictionary uses two version constants in `db/dict-version.ts`:
 
-To add a new migration:
+- **`DICT_BASE_VERSION`** — the version of the published `dictionary.db` on GitHub. Bump this only when a full re-download is required (large schema changes, new tables with blob data, FTS rebuilds).
+- **`DICT_VERSION`** — the effective version after client-side migrations. Bump this ahead of `DICT_BASE_VERSION` for lightweight changes that can be applied on-device without re-downloading.
 
-1. Create `scripts/dict-migrations/NNN-description.ts` (NNN = target version number)
-2. Export a default `DictMigration` with `version`, `description`, and `migrate(db)` function
-3. Bump `DICT_VERSION` in `db/dict-version.ts` to match
+Client devices compare their local version against both constants:
+
+| Local version                               | Action                                       |
+| ------------------------------------------- | -------------------------------------------- |
+| `== DICT_VERSION`                           | Ready, no action needed                      |
+| `>= DICT_BASE_VERSION` but `< DICT_VERSION` | Run client-side SQL migrations (no download) |
+| `< DICT_BASE_VERSION` or missing            | Full re-download from GitHub                 |
+
+```bash
+yarn check:dict   # Compare local vs published dict version
+```
+
+The pre-commit hook and `yarn update` (OTA) both block if `DICT_BASE_VERSION` is ahead of published — preventing deploys that would break devices.
+
+#### Updating the dictionary
+
+There are two types of dictionary updates:
+
+**Minor update (client-side migration)** — for ADD COLUMN, small data updates, new indexes:
+
+1. Create a build-time migration: `scripts/dict-migrations/NNN-description.ts`
+2. Run `yarn migrate:dict` to apply it to your local `assets/dictionary.db`
+3. Add a matching client migration in `db/dict-client-migrations.ts` with the SQL statements that will run on user devices
+4. Bump `DICT_VERSION` in `db/dict-version.ts` (leave `DICT_BASE_VERSION` unchanged)
+5. Deploy via OTA (`yarn update`) — devices apply the migration in-place, no download needed
+
+**Major update (full re-download)** — for new tables with large data, FTS rebuilds, audio changes:
+
+1. Create a build-time migration and run `yarn migrate:dict`
+2. Bump both `DICT_VERSION` and `DICT_BASE_VERSION` in `db/dict-version.ts`
+3. Run `yarn publish:dict` to upload to GitHub
+4. Deploy via OTA — devices re-download the full dictionary
+
+#### Client-side migrations
+
+Client migrations live in `db/dict-client-migrations.ts` as an array of `{ version, description, sql[] }` objects. They run on-device after the app opens the dict DB, bridging the gap from `DICT_BASE_VERSION` to `DICT_VERSION`.
+
+Guidelines for client migrations:
+
+- Keep SQL simple: `ALTER TABLE`, `CREATE INDEX`, `UPDATE` with embedded data, small `INSERT` batches
+- Embed data directly as SQL VALUES for small datasets (<10KB)
+- Each migration runs in a transaction — if it fails, it rolls back and stops
+- On web, the migrated DB is serialized back to IndexedDB automatically
+- Test with `yarn test` (migration runner has dedicated vitest coverage)
 
 #### Publishing dictionary updates
 
-After migrating locally, upload to the [jiten-data](https://github.com/TraderSamwise/jiten-data) GitHub release (requires `gh` CLI):
+After a major update, upload to the [jiten-data](https://github.com/TraderSamwise/jiten-data) GitHub release (requires `gh` CLI):
 
 ```bash
 yarn publish:dict
 ```
 
-The app downloads core first (blocking), then audio silently in the background. Clients detect the version bump and re-download automatically.
+The app downloads core first (blocking), then audio silently in the background. Not needed for minor updates (client migrations handle those via OTA).
 
 #### Full rebuild from scratch (almost never needed)
 

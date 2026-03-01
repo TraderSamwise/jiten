@@ -8,11 +8,17 @@ import {
   downloadDictionary,
   downloadAudio,
   checkForUpdate,
+  getStoredDictVersion,
+  setLocalVersion,
+  determineUpdateAction,
   loadWebDictDb,
   loadWebAudioDb,
+  storeDbBytes,
   type DownloadStatus,
   type DictManifest,
 } from "./dict-download";
+import { DICT_VERSION } from "./dict-version";
+import { runClientDictMigrations } from "./dict-client-migrations";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -148,19 +154,85 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         // Fire-and-forget audio init (downloads in background if needed)
         initAudio(fetchedManifest);
       } else {
-        setIsReady(true);
-        // Fetch manifest to show download size
+        // Dict is not at DICT_VERSION — check if we can apply client migrations
+        const localVersion = await getStoredDictVersion();
+        let fetchedManifest: DictManifest | undefined;
         try {
           const m = await fetchManifest();
+          fetchedManifest = m;
           setManifest(m);
-          setDownloadStatus({ state: "needs-download", manifest: m });
         } catch (err) {
-          console.error("[DB] Manifest fetch error:", err);
-          const detail = err instanceof Error ? err.message : String(err);
-          setDownloadStatus({
-            state: "error",
-            message: `Could not reach dictionary server: ${detail}`,
-          });
+          // Offline — if we have a local DB that needs migrations, we can
+          // still run them without the manifest
+          if (localVersion !== null) {
+            fetchedManifest = undefined;
+          } else {
+            console.error("[DB] Manifest fetch error:", err);
+            const detail = err instanceof Error ? err.message : String(err);
+            setIsReady(true);
+            setDownloadStatus({
+              state: "error",
+              message: `Could not reach dictionary server: ${detail}`,
+            });
+            return;
+          }
+        }
+
+        // Determine action: full download or client migration?
+        const action = fetchedManifest
+          ? determineUpdateAction(localVersion, fetchedManifest)
+          : localVersion !== null && localVersion < DICT_VERSION
+            ? ({
+                type: "client-migration",
+                fromVersion: localVersion,
+                toVersion: DICT_VERSION,
+              } as const)
+            : ({ type: "none" } as const);
+
+        if (action.type === "client-migration") {
+          // Open DB, run lightweight client migrations, update version
+          setDownloadStatus({ state: "preparing" });
+          console.log(
+            `[DB] Running client migrations: v${action.fromVersion} → v${action.toVersion}`,
+          );
+
+          const db = await openDictDb();
+          const finalVersion = await runClientDictMigrations(
+            db,
+            action.fromVersion,
+            action.toVersion,
+          );
+
+          if (Platform.OS === "web" && finalVersion > action.fromVersion) {
+            // Web: serialize migrated DB back to IDB so changes persist
+            const SQLiteModule = require("expo-sqlite");
+            const bytes: Uint8Array = await SQLiteModule.serializeDatabaseAsync(db);
+            await storeDbBytes(bytes);
+          }
+
+          await setLocalVersion(finalVersion);
+
+          dictDbRef.current = db;
+          setDictDb(db);
+          setIsDownloaded(true);
+          setDownloadStatus({ state: "ready" });
+          setIsReady(true);
+
+          // Fire-and-forget audio init
+          initAudio(fetchedManifest);
+        } else if (action.type === "full-download") {
+          setIsReady(true);
+          setDownloadStatus({ state: "needs-download", manifest: action.manifest });
+        } else {
+          // action.type === "none" — should not normally reach here,
+          // but handle gracefully by opening the DB
+          const db = await openDictDb();
+          dictDbRef.current = db;
+          setDictDb(db);
+          setIsDownloaded(true);
+          setDownloadStatus({ state: "ready" });
+          setIsReady(true);
+          initAudio(fetchedManifest);
         }
       }
     } catch (err) {
@@ -243,6 +315,21 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
       setDownloadStatus({ state: "preparing" });
       const db = await openDictDb();
+
+      // After a fresh download, run client migrations if DICT_VERSION > base
+      if (m.version < DICT_VERSION) {
+        console.log(`[DB] Post-download client migrations: v${m.version} → v${DICT_VERSION}`);
+        const finalVersion = await runClientDictMigrations(db, m.version, DICT_VERSION);
+
+        if (Platform.OS === "web" && finalVersion > m.version) {
+          const SQLiteModule = require("expo-sqlite");
+          const bytes: Uint8Array = await SQLiteModule.serializeDatabaseAsync(db);
+          await storeDbBytes(bytes);
+        }
+
+        await setLocalVersion(finalVersion);
+      }
+
       dictDbRef.current = db;
       setDictDb(db);
       setIsDownloaded(true);
