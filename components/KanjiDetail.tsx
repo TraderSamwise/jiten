@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { View, ScrollView, Pressable, Linking } from "react-native";
+import React, { useEffect, useState, useRef } from "react";
+import { View, ScrollView, Pressable, Linking, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
@@ -11,11 +11,14 @@ import { useDatabase } from "@/db/provider";
 import { useSearchStore } from "@/stores/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
+import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
   getSimilarByMeaningAsync,
   getRadicalsForKanjiAsync,
+  getKanjiUsingRadicalAsync,
+  getKanjiBatchAsync,
 } from "@/db/kanji-search";
 import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
@@ -34,10 +37,16 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
   const [words, setWords] = useState<DictEntry[]>([]);
+  const [usedIn, setUsedIn] = useState<KanjiCharacter[]>([]);
+  const [componentKanji, setComponentKanji] = useState<Map<string, KanjiCharacter>>(new Map());
+  const [editingMnemonic, setEditingMnemonic] = useState(false);
+  const [mnemonicDraft, setMnemonicDraft] = useState("");
+  const mnemonicInputRef = useRef<TextInput>(null);
 
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`k:${literal}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmarkKanji(literal, isBookmarked);
+  const { mnemonic, saveMnemonic } = useKanjiMnemonic(literal);
 
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
@@ -57,7 +66,22 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     getWordsForKanjiAsync(dictDb, literal)
       .then(setWords)
       .catch(() => {});
+    getKanjiUsingRadicalAsync(dictDb, literal)
+      .then((results) => setUsedIn(results.filter((k) => k.literal !== literal)))
+      .catch(() => {});
   }, [dictDb, isReady, literal]);
+
+  // Fetch kanji data for each radical/component to show meanings
+  useEffect(() => {
+    if (!dictDb || radicals.length === 0) return;
+    getKanjiBatchAsync(dictDb, radicals)
+      .then((kanjiList) => {
+        const map = new Map<string, KanjiCharacter>();
+        for (const k of kanjiList) map.set(k.literal, k);
+        setComponentKanji(map);
+      })
+      .catch(() => {});
+  }, [dictDb, radicals]);
 
   const handleRadicalPress = (radical: string) => {
     setSearchMode("radical");
@@ -114,6 +138,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           {kanji.heisigIndex != null && (
             <Badge variant="outline" label={`Heisig ${kanji.heisigIndex}`} />
           )}
+          {kanji.heisigLesson != null && (
+            <Badge variant="outline" label={`RTK Lesson ${kanji.heisigLesson}`} />
+          )}
         </View>
         {kanji.heisigIndex != null && (
           <View className="flex-row gap-2 mt-3">
@@ -132,6 +159,46 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           </View>
         )}
       </View>
+
+      {/* Mnemonic */}
+      {(kanji.heisigIndex != null || mnemonic) && (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
+          {editingMnemonic ? (
+            <TextInput
+              ref={mnemonicInputRef}
+              className="text-base text-foreground bg-secondary/50 rounded-lg p-3 min-h-[80px]"
+              value={mnemonicDraft}
+              onChangeText={setMnemonicDraft}
+              multiline
+              textAlignVertical="top"
+              placeholder="Write your mnemonic here..."
+              placeholderTextColor="#999"
+              autoFocus
+              onBlur={() => {
+                saveMnemonic(mnemonicDraft);
+                setEditingMnemonic(false);
+              }}
+            />
+          ) : (
+            <Pressable
+              onPress={() => {
+                setMnemonicDraft(mnemonic ?? "");
+                setEditingMnemonic(true);
+                setTimeout(() => mnemonicInputRef.current?.focus(), 50);
+              }}
+            >
+              {mnemonic ? (
+                <Text className="text-base text-foreground">{mnemonic}</Text>
+              ) : (
+                <Text className="text-base text-muted-foreground italic">
+                  Tap to add a mnemonic...
+                </Text>
+              )}
+            </Pressable>
+          )}
+        </Card>
+      )}
 
       {/* Readings */}
       <Card className="mb-3">
@@ -168,20 +235,35 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         </Card>
       )}
 
-      {/* Radicals */}
+      {/* Components */}
       {radicals.length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Radicals</Text>
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
           <View className="flex-row flex-wrap gap-2">
-            {radicals.map((r) => (
-              <Pressable
-                key={r}
-                onPress={() => handleRadicalPress(r)}
-                className="h-9 w-9 items-center justify-center rounded-lg bg-secondary active:opacity-70"
-              >
-                <Text className="text-lg text-foreground">{r}</Text>
-              </Pressable>
-            ))}
+            {radicals.map((r) => {
+              const ck = componentKanji.get(r);
+              const meaning = ck?.heisigKeyword ?? ck?.meanings[0];
+              return (
+                <Pressable
+                  key={r}
+                  onPress={() => {
+                    if (ck) {
+                      router.push(`/dictionary/kanji/${encodeURIComponent(r)}`);
+                    } else {
+                      handleRadicalPress(r);
+                    }
+                  }}
+                  className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                >
+                  <Text className="text-xl font-bold text-foreground">{r}</Text>
+                  {meaning && (
+                    <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                      {meaning}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         </Card>
       )}
@@ -218,6 +300,29 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               >
                 <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
                 <Text className="text-xs text-muted-foreground">{k.meanings[0] ?? ""}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
+      )}
+
+      {/* Used as component in */}
+      {usedIn.length > 0 && (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">
+            Used as Component in
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {usedIn.map((k) => (
+              <Pressable
+                key={k.literal}
+                onPress={() => handleSimilarPress(k.literal)}
+                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+              >
+                <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {k.heisigKeyword ?? k.meanings[0] ?? ""}
+                </Text>
               </Pressable>
             ))}
           </View>

@@ -44,6 +44,7 @@ function rowToKanjiCharacter(row: Record<string, unknown>): KanjiCharacter {
     unicodeCodepoint: row.unicode_codepoint as string,
     strokePaths: parseJsonArray<StrokePath>(row.stroke_paths as string | null),
     heisigKeyword: (row.heisig_keyword as string | null) ?? null,
+    heisigLesson: (row.heisig_lesson as number | null) ?? null,
   };
 }
 
@@ -247,6 +248,7 @@ export async function searchKanjiByMeaningAsync(
     `SELECT kc.* FROM kanji_meanings_fts fts
      JOIN kanji_characters kc ON kc.literal = fts.literal
      WHERE fts.meanings MATCH ?
+     AND (kc.grade IS NOT NULL OR kc.jlpt_level IS NOT NULL OR kc.frequency_rank IS NOT NULL OR kc.heisig_index IS NOT NULL)
      ORDER BY kc.frequency_rank IS NULL, kc.frequency_rank
      LIMIT 50`,
     [query],
@@ -262,7 +264,8 @@ export async function searchKanjiByReadingAsync(
   const pattern = `%"${reading}"%`;
   const rows = await db.getAllAsync<Record<string, unknown>>(
     `SELECT * FROM kanji_characters
-     WHERE readings_on LIKE ? OR readings_kun LIKE ?
+     WHERE (readings_on LIKE ? OR readings_kun LIKE ?)
+     AND (grade IS NOT NULL OR jlpt_level IS NOT NULL OR frequency_rank IS NOT NULL OR heisig_index IS NOT NULL)
      ORDER BY frequency_rank IS NULL, frequency_rank
      LIMIT 50`,
     [pattern, pattern],
@@ -326,4 +329,33 @@ export async function getRadicalsForKanjiAsync(
     [literal],
   );
   return rows.map((r) => r.radical);
+}
+
+/** Get kanji that use a given character as a radical/component (async). */
+export async function getKanjiUsingRadicalAsync(
+  db: SQLite.SQLiteDatabase,
+  radical: string,
+  limit: number = 30,
+): Promise<KanjiCharacter[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT kc.* FROM kanji_characters kc
+     JOIN kanji_radicals kr ON kc.literal = kr.literal
+     WHERE kr.radical = ?
+     ORDER BY kc.heisig_index IS NULL, kc.heisig_index, kc.frequency_rank IS NULL, kc.frequency_rank
+     LIMIT ?`,
+    [radical, limit],
+  );
+  return rows.map(rowToKanjiCharacter);
+}
+
+/** Get kanji by RTK lesson number (async). */
+export async function getKanjiByLessonAsync(
+  db: SQLite.SQLiteDatabase,
+  lesson: number,
+): Promise<KanjiCharacter[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    "SELECT * FROM kanji_characters WHERE heisig_lesson = ? ORDER BY heisig_index",
+    [lesson],
+  );
+  return rows.map(rowToKanjiCharacter);
 }

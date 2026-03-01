@@ -74,6 +74,10 @@ export async function seedDefaultListsIfNeeded(
     seeded = true;
   }
 
+  // Seed RTK lesson lists (separate flag)
+  const rtkSeeded = await seedRtkLessonsIfNeeded(userDb, dictDb);
+  if (rtkSeeded) seeded = true;
+
   return seeded;
 }
 
@@ -128,6 +132,62 @@ export async function seedDefaultBookIfNeeded(userDb: WrappedUserDb): Promise<vo
   );
 
   await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [BOOK_FLAG_KEY, "1"]);
+}
+
+const RTK_FLAG_KEY = "rtk_lessons_seeded";
+
+export async function seedRtkLessonsIfNeeded(
+  userDb: WrappedUserDb,
+  dictDb: SQLite.SQLiteDatabase,
+): Promise<boolean> {
+  const flag = await userDb.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_flags WHERE key = ?",
+    [RTK_FLAG_KEY],
+  );
+  if (flag) return false;
+
+  // Check if heisig_lesson column exists before seeding
+  try {
+    await dictDb.getFirstAsync("SELECT heisig_lesson FROM kanji_characters LIMIT 1");
+  } catch {
+    // Column doesn't exist in this dict version — skip silently
+    return false;
+  }
+
+  const now = new Date().toISOString();
+
+  for (let lesson = 1; lesson <= 56; lesson++) {
+    const literals = await dictDb.getAllAsync<{ literal: string }>(
+      "SELECT literal FROM kanji_characters WHERE heisig_lesson = ? ORDER BY heisig_index",
+      [lesson],
+    );
+
+    if (literals.length === 0) continue;
+
+    const listId = generateId();
+
+    await userDb.runAsync(
+      "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+      [listId, `RTK Lesson ${lesson}`, null, now, now],
+    );
+
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < literals.length; i += BATCH_SIZE) {
+      const batch = literals.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => "(?, ?, 0, ?, ?)").join(", ");
+      const params: (string | number)[] = [];
+      for (const row of batch) {
+        params.push(generateId(), listId, now, row.literal);
+      }
+      await userDb.runAsync(
+        `INSERT INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
+        params,
+      );
+    }
+  }
+
+  await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [RTK_FLAG_KEY, "1"]);
+  return true;
 }
 
 async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDatabase): Promise<void> {
