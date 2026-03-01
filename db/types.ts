@@ -49,10 +49,19 @@ export interface GlossGroup {
   entries: DictEntry[];
 }
 
+export interface NameEntry {
+  id: number;
+  kanji: string | null;
+  kana: string;
+  nameType: string | null;
+  translation: string | null;
+}
+
 export interface SearchResults {
   japanese: DictEntry[];
   english: DictEntry[];
   englishMatches?: EnglishMatchEntry[];
+  names?: NameEntry[];
 }
 
 // ─── Kanji types ───

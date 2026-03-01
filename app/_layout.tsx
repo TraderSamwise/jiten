@@ -2,13 +2,14 @@ import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
+import { BackgroundDownloadBanner } from "@/components/BackgroundDownloadBanner";
 import { UserDatabaseProvider } from "@/db/user-provider";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { useThemeEffect } from "@/lib/theme-effect";
@@ -53,7 +54,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <DatabaseProvider>
       <DictDownloadGate>
-        <UserDatabaseProvider userId={userId!}>{children}</UserDatabaseProvider>
+        <UserDatabaseProvider userId={userId!}>
+          <View style={{ flex: 1 }}>
+            <BackgroundDownloadBanner />
+            {children}
+          </View>
+        </UserDatabaseProvider>
       </DictDownloadGate>
     </DatabaseProvider>
   );

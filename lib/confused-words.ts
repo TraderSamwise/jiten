@@ -86,7 +86,7 @@ export interface ConfusedWordResult {
 }
 
 /** Minimal interface for entries used by findConfusedWords. */
-interface EntryLike {
+export interface EntryLike {
   id: number;
   kanji: { text: string }[];
   [key: string]: any;
@@ -170,4 +170,37 @@ export async function findConfusedWords(
 
   results.sort((a, b) => b.bestSimilarity - a.bestSimilarity);
   return results;
+}
+
+// ─── Reading-based confusion detection ───
+
+function toHira(s: string): string {
+  return s.replace(/[\u30A1-\u30F6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+
+function norm(s: string): string {
+  return s.normalize("NFC");
+}
+
+export async function findReadingConfusion(
+  failedEntryId: number,
+  typedKana: string,
+  listEntryIds: number[],
+  getEntries: (ids: number[]) => Promise<EntryLike[]>,
+): Promise<EntryLike | null> {
+  const normalizedTyped = toHira(norm(typedKana));
+  if (!normalizedTyped || normalizedTyped.length < 2) return null;
+
+  const otherIds = listEntryIds.filter((id) => id !== failedEntryId);
+  if (otherIds.length === 0) return null;
+  const candidates = await getEntries(otherIds);
+
+  for (const candidate of candidates) {
+    const kana = candidate.kana ?? candidate.kanji ?? [];
+    const readings = Array.isArray(kana) ? kana.map((k: any) => k.text) : [];
+    if (readings.some((r: string) => toHira(norm(r)) === normalizedTyped)) {
+      return candidate;
+    }
+  }
+  return null;
 }

@@ -16,9 +16,12 @@ import {
   storeDbBytes,
   type DownloadStatus,
   type DictManifest,
+  type BackgroundDownloadItem,
 } from "./dict-download";
 import { DICT_VERSION } from "./dict-version";
 import { runClientDictMigrations } from "./dict-client-migrations";
+import { openExtendedDb, isDatasetReady } from "./extended-db";
+import { importDataset, DATASET_CONFIGS } from "./extended-download";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -33,9 +36,11 @@ function isOpfsLockError(err: unknown): boolean {
 interface DatabaseContextType {
   dictDb: SQLite.SQLiteDatabase | null;
   audioDb: SQLite.SQLiteDatabase | null;
+  extendedDb: SQLite.SQLiteDatabase | null;
   isReady: boolean;
   isDownloaded: boolean;
   downloadStatus: DownloadStatus;
+  backgroundStatus: BackgroundDownloadItem[];
   startDownload: () => Promise<void>;
   retryManifest: () => Promise<void>;
 }
@@ -43,9 +48,11 @@ interface DatabaseContextType {
 const DatabaseContext = createContext<DatabaseContextType>({
   dictDb: null,
   audioDb: null,
+  extendedDb: null,
   isReady: false,
   isDownloaded: false,
   downloadStatus: { state: "checking" },
+  backgroundStatus: [],
   startDownload: async () => {},
   retryManifest: async () => {},
 });
@@ -90,35 +97,115 @@ async function openAudioDb(): Promise<SQLite.SQLiteDatabase> {
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [dictDb, setDictDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [audioDb, setAudioDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [extendedDb, setExtendedDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({
     state: "checking",
   });
+  const [backgroundStatus, setBackgroundStatus] = useState<BackgroundDownloadItem[]>([]);
   const [manifest, setManifest] = useState<DictManifest | null>(null);
   const dictDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const audioDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const extendedDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
 
-  // Background audio init — downloads if needed, then opens audio DB
-  const initAudio = useCallback(async (m?: DictManifest) => {
-    try {
-      const ready = await isAudioReady();
-      if (!ready) {
-        if (m?.audioUrl) {
-          console.log("[DB] Downloading audio DB in background...");
-          await downloadAudio(m);
-        } else {
-          return; // Can't download without manifest/audioUrl
-        }
-      }
-      const db = await openAudioDb();
-      audioDbRef.current = db;
-      setAudioDb(db);
-      console.log("[DB] Audio DB ready");
-    } catch (err) {
-      console.warn("[DB] Audio init failed (non-blocking):", err);
-    }
+  // Helper to update a single background item
+  const updateBgItem = useCallback((key: string, updates: Partial<BackgroundDownloadItem>) => {
+    setBackgroundStatus((prev) =>
+      prev.map((item) => (item.key === key ? { ...item, ...updates } : item)),
+    );
   }, []);
+
+  // Background data init — extended data (synonyms, names) + audio
+  const initBackgroundData = useCallback(
+    async (m?: DictManifest) => {
+      const items: BackgroundDownloadItem[] = [];
+      const extManifest = m?.extended;
+
+      // Build initial status list
+      if (extManifest?.datasets?.synonyms) {
+        items.push({ key: "synonyms", label: "Synonyms", state: "pending", progress: 0 });
+      }
+      if (extManifest?.datasets?.names) {
+        items.push({ key: "names", label: "Names", state: "pending", progress: 0 });
+      }
+      if (m?.audioUrl) {
+        items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
+      }
+      setBackgroundStatus(items);
+
+      // Open/create extended DB immediately (enables progressive queries)
+      try {
+        const extDb = await openExtendedDb();
+        extendedDbRef.current = extDb;
+        setExtendedDb(extDb);
+
+        // Import datasets sequentially
+        if (extManifest) {
+          for (const [key, dsInfo] of Object.entries(extManifest.datasets)) {
+            const config = DATASET_CONFIGS[key];
+            if (!config || !dsInfo.url) continue;
+
+            // Check if already complete
+            const ready = await isDatasetReady(extDb, key, extManifest.version);
+            if (ready) {
+              updateBgItem(key, { state: "ready", progress: 1 });
+              continue;
+            }
+
+            try {
+              updateBgItem(key, { state: "downloading" });
+              await importDataset({
+                db: extDb,
+                config,
+                url: dsInfo.url,
+                expectedRowCount: dsInfo.rowCount,
+                version: extManifest.version,
+                onProgress: (imported, total) => {
+                  const progress = total > 0 ? imported / total : 0;
+                  updateBgItem(key, {
+                    state: progress >= 1 ? "ready" : "importing",
+                    progress,
+                  });
+                },
+              });
+              updateBgItem(key, { state: "ready", progress: 1 });
+            } catch (err) {
+              console.warn(`[DB] Extended data import failed for ${key}:`, err);
+              updateBgItem(key, { state: "error", progress: 0 });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[DB] Extended DB init failed (non-blocking):", err);
+      }
+
+      // Audio download (existing flow)
+      try {
+        const audioReady = await isAudioReady();
+        if (!audioReady) {
+          if (m?.audioUrl) {
+            updateBgItem("audio", { state: "downloading" });
+            console.log("[DB] Downloading audio DB in background...");
+            await downloadAudio(m, (progress) => {
+              updateBgItem("audio", { state: "downloading", progress });
+            });
+          } else {
+            return;
+          }
+        }
+        const db = await openAudioDb();
+        audioDbRef.current = db;
+        setAudioDb(db);
+        updateBgItem("audio", { state: "ready", progress: 1 });
+        console.log("[DB] Audio DB ready");
+      } catch (err) {
+        console.warn("[DB] Audio init failed (non-blocking):", err);
+        updateBgItem("audio", { state: "error", progress: 0 });
+      }
+    },
+    [updateBgItem],
+  );
 
   // Full init sequence — used on mount and on visibility reacquire
   const runInit = useCallback(async () => {
@@ -151,8 +238,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
 
-        // Fire-and-forget audio init (downloads in background if needed)
-        initAudio(fetchedManifest);
+        // Fire-and-forget background data init
+        initBackgroundData(fetchedManifest);
       } else {
         // Dict is not at DICT_VERSION — check if we can apply client migrations
         const localVersion = await getStoredDictVersion();
@@ -218,8 +305,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
 
-          // Fire-and-forget audio init
-          initAudio(fetchedManifest);
+          // Fire-and-forget background data init
+          initBackgroundData(fetchedManifest);
         } else if (action.type === "full-download") {
           setIsReady(true);
           setDownloadStatus({ state: "needs-download", manifest: action.manifest });
@@ -232,7 +319,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setIsDownloaded(true);
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
-          initAudio(fetchedManifest);
+          initBackgroundData(fetchedManifest);
         }
       }
     } catch (err) {
@@ -247,7 +334,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Failed to initialize",
       });
     }
-  }, [initAudio]);
+  }, [initBackgroundData]);
 
   useEffect(() => {
     runInit();
@@ -264,6 +351,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDictDb(null);
         audioDbRef.current = null;
         setAudioDb(null);
+        extendedDbRef.current = null;
+        setExtendedDb(null);
       });
     });
 
@@ -335,8 +424,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       setIsDownloaded(true);
       setDownloadStatus({ state: "ready" });
 
-      // Fire-and-forget audio init after fresh core download
-      initAudio(m);
+      // Fire-and-forget background data init after fresh core download
+      initBackgroundData(m);
     } catch (err) {
       console.error("[DB] Download error:", err);
       setDownloadStatus({
@@ -348,16 +437,18 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Download failed",
       });
     }
-  }, [manifest, initAudio]);
+  }, [manifest, initBackgroundData]);
 
   return (
     <DatabaseContext.Provider
       value={{
         dictDb,
         audioDb,
+        extendedDb,
         isReady,
         isDownloaded,
         downloadStatus,
+        backgroundStatus,
         startDownload,
         retryManifest,
       }}

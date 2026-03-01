@@ -12,9 +12,11 @@ import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
 import { GlossGroupCard } from "@/components/GlossGroupCard";
 import { KanjiCard } from "@/components/KanjiCard";
+import { NameCard } from "@/components/NameCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
+import { searchNames } from "@/db/name-search";
 import {
   searchKanjiByMeaningAsync,
   searchKanjiByReadingAsync,
@@ -23,12 +25,12 @@ import {
   getKanjiAsync,
 } from "@/db/kanji-search";
 import { groupByGloss } from "@/lib/gloss-groups";
-import type { DictEntry, GlossGroup, KanjiCharacter } from "@/db/types";
+import type { DictEntry, GlossGroup, KanjiCharacter, NameEntry } from "@/db/types";
 
 interface Section {
   title: string;
-  type: "words" | "definitions";
-  data: (DictEntry | GlossGroup)[];
+  type: "words" | "definitions" | "names";
+  data: (DictEntry | GlossGroup | NameEntry)[];
 }
 
 function isSingleKanji(input: string): boolean {
@@ -140,7 +142,7 @@ function RadicalSearchView() {
 // ─── Main Screen ───
 
 export default function SearchScreen() {
-  const { dictDb, isReady } = useDatabase();
+  const { dictDb, extendedDb, isReady } = useDatabase();
   const {
     query,
     results,
@@ -183,9 +185,15 @@ export default function SearchScreen() {
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const searchResults = await searchDictionary(dictDb, query);
+        const [searchResults, nameResults] = await Promise.all([
+          searchDictionary(dictDb, query, 50, extendedDb),
+          extendedDb ? searchNames(extendedDb, query) : Promise.resolve([]),
+        ]);
         if (gen !== searchGenRef.current) return;
-        setResults(searchResults);
+        setResults({
+          ...searchResults,
+          names: nameResults.length > 0 ? nameResults : undefined,
+        });
       } catch (err) {
         if (gen !== searchGenRef.current) return;
         console.error("Search error:", err);
@@ -198,7 +206,7 @@ export default function SearchScreen() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [dictDb, isReady, query, searchMode]);
+  }, [dictDb, extendedDb, isReady, query, searchMode]);
 
   // Kanji mode search
   useEffect(() => {
@@ -254,15 +262,21 @@ export default function SearchScreen() {
     } else if (results.japanese.length > 0) {
       s.push({ title: "Words", type: "words", data: results.japanese });
     }
+    if (results.names && results.names.length > 0) {
+      s.push({ title: "Names", type: "names", data: results.names });
+    }
     return s;
   }, [results, searchMode]);
 
   const hasBothSections = sections.length > 1;
 
   const renderItem = useCallback(
-    ({ item, section }: { item: DictEntry | GlossGroup; section: Section }) => {
+    ({ item, section }: { item: DictEntry | GlossGroup | NameEntry; section: Section }) => {
       if (section.type === "definitions") {
         return <GlossGroupCard group={item as GlossGroup} />;
+      }
+      if (section.type === "names") {
+        return <NameCard name={item as NameEntry} />;
       }
       return <EntryCard entry={item as DictEntry} />;
     },
@@ -346,9 +360,11 @@ export default function SearchScreen() {
         sections={sections}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
-        keyExtractor={(item, index) =>
-          "gloss" in item ? `gloss-${item.gloss}-${index}` : `${item.id}-${index}`
-        }
+        keyExtractor={(item, index) => {
+          if ("gloss" in item) return `gloss-${item.gloss}-${index}`;
+          if ("kana" in item && "nameType" in item) return `name-${item.id}-${index}`;
+          return `${(item as DictEntry).id}-${index}`;
+        }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         stickySectionHeadersEnabled={false}
         ListEmptyComponent={

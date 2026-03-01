@@ -10,12 +10,31 @@ export type DownloadStatus =
   | { state: "ready" }
   | { state: "error"; message: string };
 
+export interface ExtendedDatasetInfo {
+  sizeBytes: number;
+  rowCount: number;
+  url?: string; // derived from manifest base if absent
+}
+
+export interface ExtendedManifest {
+  version: number;
+  datasets: Record<string, ExtendedDatasetInfo>;
+}
+
 export interface DictManifest {
   version: number;
   url: string;
   sizeBytes: number;
   audioSizeBytes?: number;
   audioUrl?: string;
+  extended?: ExtendedManifest;
+}
+
+export interface BackgroundDownloadItem {
+  key: string;
+  label: string;
+  state: "pending" | "downloading" | "importing" | "ready" | "error";
+  progress: number; // 0-1
 }
 
 export type UpdateAction =
@@ -64,6 +83,17 @@ export async function fetchManifest(): Promise<DictManifest> {
   }
   if (!data.audioUrl && data.audioSizeBytes) {
     data.audioUrl = `${base}/dictionary-audio.db`;
+  }
+
+  // Derive extended dataset URLs from manifest base
+  if (data.extended?.datasets) {
+    for (const [key, ds] of Object.entries(
+      data.extended.datasets as Record<string, ExtendedDatasetInfo>,
+    )) {
+      if (!ds.url) {
+        ds.url = `${base}/${key}.jsonl.gz`;
+      }
+    }
   }
 
   return data;
@@ -376,6 +406,8 @@ export async function isAudioReady(): Promise<boolean> {
   return v !== null && parseInt(v, 10) === DICT_VERSION;
 }
 
+const AUDIO_RESUME_KEY = "audio-download-resume";
+
 export async function downloadAudio(
   manifest: DictManifest,
   onProgress?: (progress: number) => void,
@@ -411,31 +443,92 @@ export async function downloadAudio(
 
     await storeDbBytes(data, "dictionary-audio");
   } else {
-    const FileSystem = require("expo-file-system/legacy");
-
-    const dbDir = `${FileSystem.documentDirectory}SQLite/`;
-    await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
-
-    const destPath = `${dbDir}${AUDIO_DB_NAME}`;
-
-    const download = FileSystem.createDownloadResumable(
-      audioUrl,
-      destPath,
-      {},
-      (downloadProgress: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
-        const progress =
-          downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-        onProgress?.(progress);
-      },
-    );
-
-    const result = await download.downloadAsync();
-    if (!result || result.status !== 200) {
-      throw new Error(`Audio download failed with status ${result?.status}`);
-    }
+    await downloadAudioNativeResumable(audioUrl, manifest.audioSizeBytes ?? 0, onProgress);
   }
 
   await AsyncStorage.setItem(AUDIO_VERSION_KEY, String(DICT_VERSION));
+}
+
+/** Native audio download with resume support via persisted DownloadResumable state. */
+async function downloadAudioNativeResumable(
+  audioUrl: string,
+  totalBytes: number,
+  onProgress?: (progress: number) => void,
+): Promise<void> {
+  const FileSystem = require("expo-file-system/legacy");
+  const { AppState } = require("react-native");
+
+  const dbDir = `${FileSystem.documentDirectory}SQLite/`;
+  await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
+  const destPath = `${dbDir}${AUDIO_DB_NAME}`;
+
+  let lastSavedProgress = 0;
+
+  const progressCallback = (dp: {
+    totalBytesWritten: number;
+    totalBytesExpectedToWrite: number;
+  }) => {
+    const progress = dp.totalBytesWritten / dp.totalBytesExpectedToWrite;
+    onProgress?.(progress);
+    lastSavedProgress = progress;
+  };
+
+  // Try to resume from saved state
+  const savedState = await AsyncStorage.getItem(AUDIO_RESUME_KEY);
+  let download: any;
+  let result: any;
+
+  if (savedState) {
+    try {
+      const resumeData = JSON.parse(savedState);
+      console.log("[DB] Resuming audio download from saved state...");
+      download = new FileSystem.DownloadResumable(
+        audioUrl,
+        destPath,
+        {},
+        progressCallback,
+        resumeData,
+      );
+      result = await download.resumeAsync();
+    } catch (err) {
+      console.warn("[DB] Audio resume failed, starting fresh:", err);
+      // Clear stale resume data and start fresh
+      await AsyncStorage.removeItem(AUDIO_RESUME_KEY);
+      download = null;
+      result = null;
+    }
+  }
+
+  if (!result) {
+    download = FileSystem.createDownloadResumable(audioUrl, destPath, {}, progressCallback);
+
+    // Save state when app goes to background so we can resume later
+    const subscription = AppState.addEventListener("change", async (state: string) => {
+      if (state === "background" || state === "inactive") {
+        try {
+          const savable = download.savable();
+          await AsyncStorage.setItem(AUDIO_RESUME_KEY, JSON.stringify(savable));
+          console.log(`[DB] Audio download state saved at ${Math.round(lastSavedProgress * 100)}%`);
+          await download.pauseAsync();
+        } catch {
+          // Already completed or not started — ignore
+        }
+      }
+    });
+
+    try {
+      result = await download.downloadAsync();
+    } finally {
+      subscription.remove();
+    }
+  }
+
+  if (!result || result.status !== 200) {
+    throw new Error(`Audio download failed with status ${result?.status}`);
+  }
+
+  // Clear saved resume state on success
+  await AsyncStorage.removeItem(AUDIO_RESUME_KEY);
 }
 
 /** Load audio DB bytes from IndexedDB and return an in-memory SQLiteDatabase. */

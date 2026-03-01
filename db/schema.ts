@@ -157,3 +157,27 @@ export const reviewLogs = sqliteTable("review_logs", {
   scheduledDays: integer("scheduled_days").notNull(),
   reviewedAt: text("reviewed_at").notNull(),
 });
+
+export const practiceEvents = sqliteTable("practice_events", {
+  id: text("id").primaryKey(),
+  entryId: integer("entry_id").notNull(),
+  kanjiLiteral: text("kanji_literal"),
+  listId: text("list_id"),
+  practiceMode: text("practice_mode").notNull(),
+  correct: integer("correct").notNull(),
+  responseMs: integer("response_ms"),
+  typedAnswer: text("typed_answer"),
+  reviewedAt: text("reviewed_at").notNull(),
+});
+
+export const confusionPairs = sqliteTable("confusion_pairs", {
+  id: text("id").primaryKey(),
+  entryIdA: integer("entry_id_a").notNull(),
+  kanjiLiteralA: text("kanji_literal_a"),
+  entryIdB: integer("entry_id_b").notNull(),
+  kanjiLiteralB: text("kanji_literal_b"),
+  confusionType: text("confusion_type").notNull(),
+  confusionCount: integer("confusion_count").notNull().default(1),
+  lastConfusedAt: text("last_confused_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});

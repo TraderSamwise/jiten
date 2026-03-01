@@ -119,6 +119,33 @@ const USER_DB_MIGRATIONS = [
   `ALTER TABLE books ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `CREATE TABLE IF NOT EXISTS user_kanji_notes (literal TEXT PRIMARY KEY, mnemonic TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `ALTER TABLE user_kanji_notes ADD COLUMN keyword TEXT`,
+  `CREATE TABLE IF NOT EXISTS practice_events (
+    id TEXT PRIMARY KEY,
+    entry_id INTEGER NOT NULL,
+    kanji_literal TEXT,
+    list_id TEXT,
+    practice_mode TEXT NOT NULL,
+    correct INTEGER NOT NULL,
+    response_ms INTEGER,
+    typed_answer TEXT,
+    reviewed_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_practice_events_entry ON practice_events(entry_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_practice_events_list ON practice_events(list_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_practice_events_date ON practice_events(reviewed_at)`,
+  `CREATE TABLE IF NOT EXISTS confusion_pairs (
+    id TEXT PRIMARY KEY,
+    entry_id_a INTEGER NOT NULL,
+    kanji_literal_a TEXT,
+    entry_id_b INTEGER NOT NULL,
+    kanji_literal_b TEXT,
+    confusion_type TEXT NOT NULL,
+    confusion_count INTEGER NOT NULL DEFAULT 1,
+    last_confused_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_confusion_pairs_unique ON confusion_pairs(entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type)`,
+  `CREATE INDEX IF NOT EXISTS idx_confusion_pairs_entry ON confusion_pairs(entry_id_a)`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{
