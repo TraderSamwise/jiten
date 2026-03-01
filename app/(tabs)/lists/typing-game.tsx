@@ -48,6 +48,8 @@ import {
 } from "@/stores/settings";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
+import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
+import { findReadingConfusion } from "@/lib/confused-words";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -383,6 +385,8 @@ export default function TypingGameScreen() {
   const [endTime, setEndTime] = useState(0);
   const [completedTotal, setCompletedTotal] = useState(0);
   const [totalWordCount, setTotalWordCount] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [incorrectCount, setIncorrectCount] = useState(0);
 
   // Counts for mode selection
   const [reviewCount, setReviewCount] = useState(0);
@@ -404,6 +408,7 @@ export default function TypingGameScreen() {
   const wordYPositions = useRef<Map<number, number>>(new Map());
   const scrollOffset = useRef(0);
   const scrollViewHeight = useRef(0);
+  const wordStartTime = useRef(0);
 
   // Floating coins rendered outside ScrollView to avoid clipping
   const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
@@ -501,6 +506,11 @@ export default function TypingGameScreen() {
     }
   }, [currentWordIndex, phase]);
 
+  // Reset per-word timer when advancing to a new word
+  useEffect(() => {
+    wordStartTime.current = Date.now();
+  }, [currentWordIndex]);
+
   // ─── Start Game ───
 
   async function loadBatch(ids: number[]): Promise<WordState[]> {
@@ -549,6 +559,8 @@ export default function TypingGameScreen() {
 
     setTotalWordCount(entryIds.length);
     setCompletedTotal(0);
+    setCorrectCount(0);
+    setIncorrectCount(0);
 
     const firstBatchIds = entryIds.slice(0, batchSize);
     shuffledQueue.current = entryIds.slice(batchSize);
@@ -588,6 +600,45 @@ export default function TypingGameScreen() {
 
   function advanceWord(raw: string, isCorrect: boolean) {
     answers.current[currentWordIndex] = raw;
+
+    if (isCorrect) {
+      setCorrectCount((c) => c + 1);
+    } else {
+      setIncorrectCount((c) => c + 1);
+    }
+
+    // Log practice event
+    const responseMs = Date.now() - wordStartTime.current;
+    const currentEntry = words[currentWordIndex].entry;
+    const converted = romajiToKana(raw);
+    if (userDb && listId) {
+      logPracticeEvent(userDb, {
+        entryId: currentEntry.id,
+        listId,
+        practiceMode: "typing_game",
+        correct: isCorrect,
+        responseMs,
+        typedAnswer: converted,
+      }).catch(() => {});
+
+      // Reading-based confusion detection on incorrect answers
+      if (!isCorrect && converted.length >= 2 && dictDb) {
+        findReadingConfusion(currentEntry.id, converted, allEntryIds, (ids) =>
+          getEntries(dictDb, ids),
+        )
+          .then((confused) => {
+            if (confused) {
+              recordConfusion(
+                userDb,
+                { entryId: currentEntry.id },
+                { entryId: confused.id },
+                "reading",
+              ).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    }
 
     // Reset state before advancing so the next word doesn't flash
     setAutoFuriganaRevealed(false);
@@ -699,6 +750,13 @@ export default function TypingGameScreen() {
 
     const prevIndex = currentWordIndex - 1;
     const prevRomaji = answers.current[prevIndex] || "";
+
+    // Decrement the counter for the previous word's result before undoing it
+    const prevWord = words[prevIndex];
+    if (prevWord.completed) {
+      if (prevWord.correct) setCorrectCount((c) => c - 1);
+      else setIncorrectCount((c) => c - 1);
+    }
 
     // Unmark the previous word
     setWords((prev) =>
@@ -845,8 +903,11 @@ export default function TypingGameScreen() {
           keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
         >
           {/* Progress */}
-          <View className="px-4 py-2">
-            <Text className="text-sm text-muted-foreground text-right">
+          <View className="flex-row items-center justify-between px-4 py-2">
+            <Text className="text-sm font-medium text-green-500">
+              {correctCount}/{correctCount + incorrectCount}
+            </Text>
+            <Text className="text-sm text-muted-foreground">
               {completedTotal + currentWordIndex}/{totalWordCount}
             </Text>
           </View>
@@ -936,6 +997,10 @@ export default function TypingGameScreen() {
           <View className="items-center gap-2 mb-8">
             <Text className="text-lg text-muted-foreground">
               {completedTotal} words in {Math.round(elapsedSeconds)}s
+            </Text>
+            <Text className="text-2xl font-semibold text-foreground">
+              {completedTotal > 0 ? Math.round((correctCount / completedTotal) * 100) : 0}% correct
+              ({correctCount}/{completedTotal})
             </Text>
             <Text className="text-2xl font-semibold text-primary">{wordsPerMinute} words/min</Text>
           </View>

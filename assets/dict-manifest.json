@@ -1,5 +1,18 @@
 {
-  "version": 15,
+  "version": 16,
   "sizeBytes": 187125760,
-  "audioSizeBytes": 198111232
+  "audioSizeBytes": 198111232,
+  "extended": {
+    "version": 1,
+    "datasets": {
+      "synonyms": {
+        "sizeBytes": 1528979,
+        "rowCount": 281610
+      },
+      "names": {
+        "sizeBytes": 11725174,
+        "rowCount": 743184
+      }
+    }
+  }
 }

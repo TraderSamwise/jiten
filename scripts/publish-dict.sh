@@ -16,6 +16,8 @@ FILES=(
   "$ASSETS_DIR/dict-manifest.json"
   "$ASSETS_DIR/dictionary.db"
   "$ASSETS_DIR/dictionary-audio.db"
+  "$ASSETS_DIR/synonyms.jsonl.gz"
+  "$ASSETS_DIR/names.jsonl.gz"
 )
 
 # Verify all files exist

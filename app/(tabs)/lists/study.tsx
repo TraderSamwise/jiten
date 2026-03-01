@@ -57,6 +57,7 @@ import {
   findConfusedWords,
   type ConfusedWordResult,
 } from "@/lib/confused-words";
+import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
 import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
 import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
@@ -427,6 +428,7 @@ export default function StudyScreen() {
   const [longPressActive, setLongPressActive] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const revealedRef = useRef(false);
+  const revealTimeRef = useRef(0);
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
@@ -831,6 +833,23 @@ export default function StudyScreen() {
       },
     ]);
 
+    // Log practice event
+    if (userDb && listId && item.kind === "entry") {
+      const practiceMode = list?.typingMode
+        ? "typing_flashcard"
+        : list?.voiceMode
+          ? "voice"
+          : "flashcard";
+      const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
+      logPracticeEvent(userDb, {
+        entryId: item.entry.id,
+        listId,
+        practiceMode,
+        correct: false,
+        responseMs,
+      }).catch(() => {});
+    }
+
     // Check for confused words (fire-and-forget, modal appears async) — skip for kanji
     if (card && list?.flashcardMode !== "add_order" && item.kind === "entry") {
       checkForConfusedWords(item.entry, card);
@@ -895,6 +914,23 @@ export default function StudyScreen() {
         wasNewSimpleSrs,
       },
     ]);
+
+    // Log practice event
+    if (userDb && listId && item.kind === "entry") {
+      const practiceMode = list?.typingMode
+        ? "typing_flashcard"
+        : list?.voiceMode
+          ? "voice"
+          : "flashcard";
+      const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
+      logPracticeEvent(userDb, {
+        entryId: item.entry.id,
+        listId,
+        practiceMode,
+        correct: true,
+        responseMs,
+      }).catch(() => {});
+    }
 
     setReviewedCount((c) => c + 1);
     advance(queue);
@@ -1032,6 +1068,16 @@ export default function StudyScreen() {
       setConfusedFailedEntry(entry);
       setConfusedResults(results);
       setConfusedWordsVisible(true);
+
+      // Persist confusion pairs
+      for (const result of results) {
+        recordConfusion(
+          userDb,
+          { entryId: entry.id },
+          { entryId: result.entry.id },
+          "visual_kanji",
+        ).catch(() => {});
+      }
     }
   }
 
@@ -1366,6 +1412,7 @@ export default function StudyScreen() {
   function handleReveal() {
     if (revealed) return;
     revealedRef.current = true;
+    revealTimeRef.current = Date.now();
     setRevealed(true);
     if (list?.disableFlipAnimation) {
       flipProgress.value = 1;

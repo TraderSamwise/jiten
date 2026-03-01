@@ -43,7 +43,7 @@ fi
 
 # Check local manifest version matches DICT_BASE_VERSION
 if [ -f "$LOCAL_MANIFEST" ]; then
-  LOCAL_MANIFEST_VERSION=$(grep -o '"version": [0-9]*' "$LOCAL_MANIFEST" | grep -o '[0-9]*')
+  LOCAL_MANIFEST_VERSION=$(grep -o '"version": [0-9]*' "$LOCAL_MANIFEST" | head -1 | grep -o '[0-9]*')
   if [ -n "$LOCAL_MANIFEST_VERSION" ] && [ "$LOCAL_MANIFEST_VERSION" != "$DICT_BASE_VERSION" ]; then
     echo ""
     echo "⚠️  Local manifest version (v$LOCAL_MANIFEST_VERSION) != DICT_BASE_VERSION (v$DICT_BASE_VERSION)"
@@ -62,7 +62,7 @@ if [ -z "$PUBLISHED_JSON" ] || echo "$PUBLISHED_JSON" | grep -q "Not Found"; the
   exit 0
 fi
 
-PUBLISHED_VERSION=$(echo "$PUBLISHED_JSON" | grep -o '"version": [0-9]*' | grep -o '[0-9]*')
+PUBLISHED_VERSION=$(echo "$PUBLISHED_JSON" | grep -o '"version": [0-9]*' | head -1 | grep -o '[0-9]*')
 
 if [ -z "$PUBLISHED_VERSION" ]; then
   echo "⚠️  Could not parse published dict version"

@@ -88,22 +88,27 @@ function stemForLike(word: string): string {
 }
 
 /** Look up synonyms for a list of words from the synonyms table.
+ *  Tries extendedDb first (v16+), falls back to main dict DB.
  *  maxPerWord caps synonyms per word to keep LIKE queries fast. */
 async function expandWithSynonyms(
   db: SQLite.SQLiteDatabase,
   words: string[],
   maxPerWord: number = 8,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>();
   if (words.length === 0) return map;
   for (const w of words) map.set(w.toLowerCase(), []);
+
+  // Try extended DB first (synonyms moved there in v16), fall back to main DB
+  const synDb = extendedDb ?? db;
 
   try {
     const placeholders = words.map(() => "?").join(",");
     const lowerWords = words.map((w) => w.toLowerCase());
 
     // Forward: word → synonym
-    const fwd = await db.getAllAsync<{ word: string; synonym: string }>(
+    const fwd = await synDb.getAllAsync<{ word: string; synonym: string }>(
       `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`,
       lowerWords,
     );
@@ -115,7 +120,7 @@ async function expandWithSynonyms(
     }
 
     // Reverse: synonym → word (bidirectional lookup)
-    const rev = await db.getAllAsync<{ word: string; synonym: string }>(
+    const rev = await synDb.getAllAsync<{ word: string; synonym: string }>(
       `SELECT word, synonym FROM synonyms WHERE synonym IN (${placeholders})`,
       lowerWords,
     );
@@ -126,7 +131,31 @@ async function expandWithSynonyms(
       }
     }
   } catch {
-    // No synonyms table — skip expansion
+    // No synonyms table in synDb — try main DB as fallback
+    if (synDb !== db) {
+      try {
+        const placeholders = words.map(() => "?").join(",");
+        const lowerWords = words.map((w) => w.toLowerCase());
+        const fwd = await db.getAllAsync<{ word: string; synonym: string }>(
+          `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`,
+          lowerWords,
+        );
+        for (const r of fwd) {
+          const arr = map.get(r.word);
+          if (arr && arr.length < maxPerWord) arr.push(r.synonym);
+        }
+        const rev = await db.getAllAsync<{ word: string; synonym: string }>(
+          `SELECT word, synonym FROM synonyms WHERE synonym IN (${placeholders})`,
+          lowerWords,
+        );
+        for (const r of rev) {
+          const arr = map.get(r.synonym);
+          if (arr && arr.length < maxPerWord) arr.push(r.word);
+        }
+      } catch {
+        // No synonyms table anywhere — skip expansion
+      }
+    }
   }
 
   return map;
@@ -393,6 +422,7 @@ async function searchEnglishFts(
   db: SQLite.SQLiteDatabase,
   input: string,
   limit: number,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<ScoredEntry[]> {
   const cleaned = input.replace(/['"]/g, "").replace(/\s+/g, " ").trim();
   if (!cleaned) return [];
@@ -458,7 +488,7 @@ async function searchEnglishFts(
   }
 
   // Tier 2.5: Synonym-expanded AND
-  const synMap = await expandWithSynonyms(db, contentWords);
+  const synMap = await expandWithSynonyms(db, contentWords, 8, extendedDb);
   const allSyns = [...synMap.values()].flat();
   if (contentWords.length > 0) {
     const groupQueries = contentWords.map((w) => {
@@ -520,6 +550,7 @@ async function searchEnglishLike(
   db: SQLite.SQLiteDatabase,
   input: string,
   limit: number,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<ScoredEntry[]> {
   const cleaned = input
     .toLowerCase()
@@ -598,7 +629,7 @@ async function searchEnglishLike(
   }
 
   // Tier 2.5: Synonym-expanded AND (LIKE)
-  const synMapLike = await expandWithSynonyms(db, contentWords, 15);
+  const synMapLike = await expandWithSynonyms(db, contentWords, 15, extendedDb);
   const allSynsLike = [...synMapLike.values()].flat();
   if (contentWords.length > 0) {
     const groups = contentWords.map((w) => {
@@ -730,20 +761,21 @@ async function searchEnglish(
   db: SQLite.SQLiteDatabase,
   input: string,
   limit: number,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<ScoredEntry[]> {
   if (fts5Available === false) {
-    return searchEnglishLike(db, input, limit);
+    return searchEnglishLike(db, input, limit, extendedDb);
   }
 
   try {
-    const results = await searchEnglishFts(db, input, limit);
+    const results = await searchEnglishFts(db, input, limit, extendedDb);
     fts5Available = true;
     return results;
   } catch (e) {
     if (fts5Available === null && String(e).includes("fts5")) {
       console.warn("FTS5 not available, falling back to LIKE-based English search");
       fts5Available = false;
-      return searchEnglishLike(db, input, limit);
+      return searchEnglishLike(db, input, limit, extendedDb);
     }
     throw e;
   }
@@ -837,6 +869,7 @@ export async function searchDictionary(
   db: SQLite.SQLiteDatabase,
   query: string,
   limit: number = 50,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<SearchResults> {
   const trimmed = query.trim();
   if (!trimmed) return { japanese: [], english: [] };
@@ -853,7 +886,7 @@ export async function searchDictionary(
   if (isAscii) {
     const [romajiResults, engResults] = await Promise.all([
       searchRomaji(db, trimmed, limit),
-      searchEnglish(db, trimmed, limit),
+      searchEnglish(db, trimmed, limit, extendedDb),
     ]);
     japaneseResults.push(...romajiResults);
     englishResults.push(...engResults);
