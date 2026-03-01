@@ -10,6 +10,21 @@ import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { LookupResult } from "@/lib/smart-lookup";
+import type { NameEntry } from "@/db/types";
+
+const NAME_TYPE_LABELS: Record<string, string> = {
+  surname: "Surname",
+  given: "Given name",
+  fem: "Female name",
+  masc: "Male name",
+  place: "Place",
+  station: "Station",
+  organization: "Organization",
+  company: "Company",
+  product: "Product",
+  person: "Person",
+  unclass: "Name",
+};
 
 interface DictionaryPopupProps {
   visible: boolean;
@@ -83,7 +98,11 @@ export function DictionaryPopup({
 
   if (!mounted) return null;
 
-  const hasResults = results.length > 0 && results.some((r) => r.entries.length > 0);
+  const hasResults =
+    results.length > 0 &&
+    results.some((r) => r.entries.length > 0 || (r.nameMatches && r.nameMatches.length > 0));
+  const isNameResult =
+    wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
 
   function renderContent() {
     // Loading state
@@ -159,7 +178,7 @@ export function DictionaryPopup({
 
           {/* Right side: fixed controls */}
           <View className="flex-row items-center gap-2">
-            {total > 1 && (
+            {!isNameResult && total > 1 && (
               <View className="flex-row items-center gap-1">
                 <Pressable
                   onPress={() => setEntryIdx(Math.max(0, safeEntryIdx - 1))}
@@ -186,30 +205,32 @@ export function DictionaryPopup({
                 </Pressable>
               </View>
             )}
-            <Pressable
-              ref={bookmarkRef}
-              onPress={() => {
-                bookmarkRef.current?.measureInWindow((x, y, width, height) => {
-                  const screenWidth = Dimensions.get("window").width;
-                  setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
-                });
-                quickBookmarkPress();
-              }}
-              onLongPress={() => {
-                bookmarkRef.current?.measureInWindow((x, y, width, height) => {
-                  const screenWidth = Dimensions.get("window").width;
-                  setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
-                });
-                handleLongPress();
-              }}
-              className="p-1"
-            >
-              <Bookmark
-                size={20}
-                fill={isBookmarked ? "currentColor" : "none"}
-                className="text-foreground"
-              />
-            </Pressable>
+            {!isNameResult && (
+              <Pressable
+                ref={bookmarkRef}
+                onPress={() => {
+                  bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+                    const screenWidth = Dimensions.get("window").width;
+                    setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+                  });
+                  quickBookmarkPress();
+                }}
+                onLongPress={() => {
+                  bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+                    const screenWidth = Dimensions.get("window").width;
+                    setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+                  });
+                  handleLongPress();
+                }}
+                className="p-1"
+              >
+                <Bookmark
+                  size={20}
+                  fill={isBookmarked ? "currentColor" : "none"}
+                  className="text-foreground"
+                />
+              </Pressable>
+            )}
             <Pressable onPress={onClose} className="p-1">
               <X size={20} className="text-muted-foreground" />
             </Pressable>
@@ -227,17 +248,51 @@ export function DictionaryPopup({
           </View>
         )}
 
-        {/* Entry display — tap to navigate to full detail */}
-        <Pressable
-          onPress={() => {
-            onClose();
-            router.push(`/reader/word/${currentEntry!.id}`);
-          }}
-        >
+        {/* Content display */}
+        {isNameResult ? (
           <ScrollView style={{ maxHeight: 200 }}>
-            <EntrySummary entry={currentEntry!} />
+            {wordResult!.nameMatches!.map((name: NameEntry) => {
+              const typeLabel = name.nameType
+                ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
+                : null;
+              return (
+                <View key={name.id} className="flex-row items-center flex-wrap gap-2 mb-2">
+                  {name.kanji && (
+                    <Text className="text-lg font-bold text-foreground">{name.kanji}</Text>
+                  )}
+                  <Text
+                    className={
+                      name.kanji
+                        ? "text-sm text-muted-foreground"
+                        : "text-lg font-bold text-foreground"
+                    }
+                  >
+                    {name.kana}
+                  </Text>
+                  {typeLabel && (
+                    <View className="rounded-md bg-secondary px-2 py-0.5">
+                      <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
+                    </View>
+                  )}
+                  {name.translation && (
+                    <Text className="text-sm text-muted-foreground">{name.translation}</Text>
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
-        </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => {
+              onClose();
+              router.push(`/reader/word/${currentEntry!.id}`);
+            }}
+          >
+            <ScrollView style={{ maxHeight: 200 }}>
+              <EntrySummary entry={currentEntry!} />
+            </ScrollView>
+          </Pressable>
+        )}
       </>
     );
   }

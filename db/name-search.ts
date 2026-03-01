@@ -224,6 +224,26 @@ interface NameRow {
   translation: string | null;
 }
 
+/**
+ * Exact name lookup for reader fallback: matches kanji = ? or kana = ? (or hiragana-converted).
+ * No prefix matching or FTS — just exact hits for known names.
+ */
+export async function lookupExactName(extDb: SQLiteDatabase, text: string): Promise<NameEntry[]> {
+  if (!text) return [];
+  try {
+    const hiragana = toHiragana(text);
+    const rows = await extDb.getAllAsync<NameRow>(
+      `SELECT id, kanji, kana, name_type, translation FROM names
+       WHERE kanji = ? OR kana = ? OR kana = ?
+       LIMIT 20`,
+      [text, text, hiragana],
+    );
+    return rows.map(toNameEntry);
+  } catch {
+    return [];
+  }
+}
+
 function toNameEntry(row: NameRow): NameEntry {
   return {
     id: row.id,

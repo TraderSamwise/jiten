@@ -1,6 +1,7 @@
 import * as SQLite from "expo-sqlite";
 import { lookupExactJapanese } from "@/db/search";
-import type { DictEntry } from "@/db/types";
+import { lookupExactName } from "@/db/name-search";
+import type { DictEntry, NameEntry } from "@/db/types";
 import { deinflect, generateSubstrings } from "./deinflect";
 
 export interface LookupResult {
@@ -9,6 +10,8 @@ export interface LookupResult {
   deinflectReasons: string[];
   /** Offset within the sent text window where the match begins (used for highlight positioning) */
   matchStart?: number;
+  /** Name matches (only set in name lookup mode) */
+  nameMatches?: NameEntry[];
 }
 
 /**
@@ -337,5 +340,61 @@ export async function smartLookupWithOffset(
     }
   }
 
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Name-mode lookups (used when user toggles to "Names" mode in reader)
+// Same greedy longest-first strategy, but exact name match only (no deinflection).
+// ---------------------------------------------------------------------------
+
+/** Tap-based name lookup: greedy longest-first match containing the tap position. */
+export async function nameLookupWithOffset(
+  text: string,
+  tapOffset: number,
+  extDb: SQLite.SQLiteDatabase,
+): Promise<LookupResult[]> {
+  for (let len = Math.min(text.length, 15); len >= 1; len--) {
+    const minStart = Math.max(0, tapOffset - len + 1);
+    const maxStart = Math.min(tapOffset, text.length - len);
+
+    for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
+      const substr = text.slice(start, start + len);
+      const names = await lookupExactName(extDb, substr);
+      if (names.length > 0) {
+        return [
+          {
+            matchedText: substr,
+            entries: [],
+            deinflectReasons: [],
+            matchStart: start,
+            nameMatches: names,
+          },
+        ];
+      }
+    }
+  }
+  return [];
+}
+
+/** Simple name lookup: greedy longest-first match from start of text. */
+export async function nameLookup(
+  text: string,
+  extDb: SQLite.SQLiteDatabase,
+): Promise<LookupResult[]> {
+  const substrings = generateSubstrings(text, Math.min(text.length, 15));
+  for (const substr of substrings) {
+    const names = await lookupExactName(extDb, substr);
+    if (names.length > 0) {
+      return [
+        {
+          matchedText: substr,
+          entries: [],
+          deinflectReasons: [],
+          nameMatches: names,
+        },
+      ];
+    }
+  }
   return [];
 }
