@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Dimensions, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
+import { Dimensions, Pressable, View, ScrollView, ActivityIndicator, Linking, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Animated, {
@@ -9,6 +9,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { EntrySummary } from "@/components/EntrySummary";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
@@ -243,6 +244,58 @@ export function DictionaryPopup({
             <EntrySummary entry={currentEntry!} />
           </ScrollView>
         </Pressable>
+
+        {Platform.OS === "ios" && currentEntry && (() => {
+          const query = currentEntry.kanji[0]?.text ?? currentEntry.kana[0]?.text ?? "";
+          const encoded = encodeURIComponent(query);
+          return (
+            <View className="mt-3">
+              <Text className="text-xs text-muted-foreground mb-1.5">Open in...</Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="Midori"
+                  onPress={() => {
+                    Linking.openURL(`midori://search?text=${encoded}`).catch(() => {
+                      Linking.openURL("https://apps.apple.com/app/midori-japanese-dictionary/id385231773");
+                    });
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="Shirabe Jisho"
+                  onPress={() => {
+                    Linking.openURL(`shirabelookup://search?w=${encoded}`).catch(() => {
+                      Linking.openURL("https://apps.apple.com/app/shirabe-jisho/id1005203380");
+                    });
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="DaKanji"
+                  onPress={() => {
+                    Linking.openURL(`dakanji://dictionary?search=${encoded}`).catch(() => {
+                      Linking.openURL("https://apps.apple.com/app/dakanji/id1548746810");
+                    });
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="imiwa?"
+                  onPress={() => {
+                    Linking.openURL(`imiwa://analyser?text=${encoded}`).catch(() => {
+                      Linking.openURL("https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125");
+                    });
+                  }}
+                />
+              </View>
+            </View>
+          );
+        })()}
       </>
     );
   }
