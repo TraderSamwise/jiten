@@ -61,7 +61,6 @@ export interface SearchResults {
   japanese: DictEntry[];
   english: DictEntry[];
   englishMatches?: EnglishMatchEntry[];
-  names?: NameEntry[];
 }
 
 // ─── Kanji types ───

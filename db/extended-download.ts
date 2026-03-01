@@ -36,15 +36,23 @@ export const DATASET_CONFIGS: Record<string, DatasetConfig> = {
   names: {
     key: "names",
     insertSql:
-      "INSERT OR REPLACE INTO names (id, kanji, kana, name_type, translation) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO names (id, kanji, kana, name_type, translation, category) VALUES (?, ?, ?, ?, ?, ?)",
     parseLine: (line: string) => {
       const obj = JSON.parse(line);
+      const nameType: string = obj.t || "";
+      let category = "other";
+      if (/\b(surname|fem|masc|given|person)\b/.test(nameType)) {
+        category = "person";
+      } else if (/\b(place|station)\b/.test(nameType)) {
+        category = "place";
+      }
       return [
         obj.id,
         obj.k ? obj.k.join(", ") : null,
         obj.r.join(", "),
         obj.t || null,
         obj.tr || null,
+        category,
       ];
     },
   },

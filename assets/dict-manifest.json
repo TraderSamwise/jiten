@@ -3,7 +3,7 @@
   "sizeBytes": 187125760,
   "audioSizeBytes": 198111232,
   "extended": {
-    "version": 1,
+    "version": 2,
     "datasets": {
       "synonyms": {
         "sizeBytes": 1528979,

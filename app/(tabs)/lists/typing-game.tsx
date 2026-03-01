@@ -904,9 +904,13 @@ export default function TypingGameScreen() {
         >
           {/* Progress */}
           <View className="flex-row items-center justify-between px-4 py-2">
-            <Text className="text-sm font-medium text-green-500">
-              {correctCount}/{correctCount + incorrectCount}
-            </Text>
+            {correctCount + incorrectCount > 0 ? (
+              <Text className="text-sm font-medium text-green-500">
+                {correctCount}/{correctCount + incorrectCount}
+              </Text>
+            ) : (
+              <View />
+            )}
             <Text className="text-sm text-muted-foreground">
               {completedTotal + currentWordIndex}/{totalWordCount}
             </Text>

@@ -12,18 +12,21 @@ const MODE_LABELS: Record<SearchMode, string> = {
   normal: "文",
   kanji: "漢",
   radical: "部",
+  names: "名",
 };
 
 const MODE_CYCLE: Record<SearchMode, SearchMode> = {
   normal: "kanji",
   kanji: "radical",
-  radical: "normal",
+  radical: "names",
+  names: "normal",
 };
 
 const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
   normal: "Search Japanese or English...",
   kanji: "Search kanji by meaning or reading...",
   radical: "",
+  names: "Search names...",
 };
 
 export function DictionaryHeader({ back, options, route }: NativeStackHeaderProps) {

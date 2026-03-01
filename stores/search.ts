@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import type { SearchResults, GlossGroup, KanjiCharacter } from "@/db/types";
+import type { SearchResults, GlossGroup, KanjiCharacter, NameEntry } from "@/db/types";
+import type { NameFilter } from "@/db/name-search";
 
-export type SearchMode = "normal" | "kanji" | "radical";
+export type SearchMode = "normal" | "kanji" | "radical" | "names";
 
 const EMPTY_RESULTS: SearchResults = { japanese: [], english: [] };
 
@@ -12,6 +13,8 @@ interface SearchState {
   selectedGlossGroup: GlossGroup | null;
   searchMode: SearchMode;
   kanjiResults: KanjiCharacter[];
+  nameResults: NameEntry[];
+  nameFilter: NameFilter;
   selectedRadicals: string[];
   setQuery: (query: string) => void;
   setResults: (results: SearchResults) => void;
@@ -19,6 +22,8 @@ interface SearchState {
   setSelectedGlossGroup: (group: GlossGroup | null) => void;
   setSearchMode: (mode: SearchMode) => void;
   setKanjiResults: (results: KanjiCharacter[]) => void;
+  setNameResults: (results: NameEntry[]) => void;
+  setNameFilter: (filter: NameFilter) => void;
   toggleRadical: (radical: string) => void;
   setSelectedRadicals: (radicals: string[]) => void;
   clear: () => void;
@@ -31,14 +36,25 @@ export const useSearchStore = create<SearchState>((set) => ({
   selectedGlossGroup: null,
   searchMode: "normal",
   kanjiResults: [],
+  nameResults: [],
+  nameFilter: "all" as NameFilter,
   selectedRadicals: [],
   setQuery: (query) => set({ query }),
   setResults: (results) => set({ results, isSearching: false }),
   setIsSearching: (isSearching) => set({ isSearching }),
   setSelectedGlossGroup: (selectedGlossGroup) => set({ selectedGlossGroup }),
   setSearchMode: (searchMode) =>
-    set({ searchMode, kanjiResults: [], selectedRadicals: [], query: "" }),
+    set({
+      searchMode,
+      kanjiResults: [],
+      nameResults: [],
+      nameFilter: "all",
+      selectedRadicals: [],
+      query: "",
+    }),
   setKanjiResults: (kanjiResults) => set({ kanjiResults, isSearching: false }),
+  setNameResults: (nameResults) => set({ nameResults, isSearching: false }),
+  setNameFilter: (nameFilter) => set({ nameFilter }),
   toggleRadical: (radical) =>
     set((state) => ({
       selectedRadicals: state.selectedRadicals.includes(radical)
@@ -53,6 +69,8 @@ export const useSearchStore = create<SearchState>((set) => ({
       isSearching: false,
       selectedGlossGroup: null,
       kanjiResults: [],
+      nameResults: [],
+      nameFilter: "all",
       selectedRadicals: [],
     }),
 }));
