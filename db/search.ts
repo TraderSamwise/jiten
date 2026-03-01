@@ -100,14 +100,29 @@ async function expandWithSynonyms(
 
   try {
     const placeholders = words.map(() => "?").join(",");
-    const rows = await db.getAllAsync<{ word: string; synonym: string }>(
+    const lowerWords = words.map((w) => w.toLowerCase());
+
+    // Forward: word → synonym
+    const fwd = await db.getAllAsync<{ word: string; synonym: string }>(
       `SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`,
-      words.map((w) => w.toLowerCase()),
+      lowerWords,
     );
-    for (const r of rows) {
+    for (const r of fwd) {
       const arr = map.get(r.word);
       if (arr && arr.length < maxPerWord) {
         arr.push(r.synonym);
+      }
+    }
+
+    // Reverse: synonym → word (bidirectional lookup)
+    const rev = await db.getAllAsync<{ word: string; synonym: string }>(
+      `SELECT word, synonym FROM synonyms WHERE synonym IN (${placeholders})`,
+      lowerWords,
+    );
+    for (const r of rev) {
+      const arr = map.get(r.synonym);
+      if (arr && arr.length < maxPerWord) {
+        arr.push(r.word);
       }
     }
   } catch {

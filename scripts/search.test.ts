@@ -210,16 +210,27 @@ function expandWithSynonyms(
 
   try {
     const placeholders = words.map(() => "?").join(",");
-    const rows = db
+    const lowerWords = words.map((w) => w.toLowerCase());
+
+    // Forward: word → synonym
+    const fwd = db
       .prepare(`SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`)
-      .all(...words.map((w) => w.toLowerCase())) as {
-      word: string;
-      synonym: string;
-    }[];
-    for (const r of rows) {
+      .all(...lowerWords) as { word: string; synonym: string }[];
+    for (const r of fwd) {
       const arr = map.get(r.word);
       if (arr && arr.length < maxPerWord) {
         arr.push(r.synonym);
+      }
+    }
+
+    // Reverse: synonym → word (bidirectional lookup)
+    const rev = db
+      .prepare(`SELECT word, synonym FROM synonyms WHERE synonym IN (${placeholders})`)
+      .all(...lowerWords) as { word: string; synonym: string }[];
+    for (const r of rev) {
+      const arr = map.get(r.synonym);
+      if (arr && arr.length < maxPerWord) {
+        arr.push(r.word);
       }
     }
   } catch {
