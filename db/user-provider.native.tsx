@@ -108,6 +108,7 @@ const USER_DB_MIGRATIONS = [
   `UPDATE lists SET is_default = 1 WHERE name IN ('JLPT N5 Words','JLPT N4 Words','JLPT N3 Words','JLPT N2 Words','JLPT N1 Words')`,
   `ALTER TABLE books ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `CREATE TABLE IF NOT EXISTS user_kanji_notes (literal TEXT PRIMARY KEY, mnemonic TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+  `ALTER TABLE user_kanji_notes ADD COLUMN keyword TEXT`,
 ];
 
 export function UserDatabaseProvider({

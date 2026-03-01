@@ -1,40 +1,71 @@
 import { useState, useEffect, useCallback } from "react";
 import { useUserDb } from "@/db/user-provider";
 
+interface KanjiNotesRow {
+  mnemonic: string;
+  keyword: string | null;
+}
+
 export function useKanjiMnemonic(literal: string) {
   const userDb = useUserDb();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [keyword, setKeyword] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userDb || !literal) return;
 
     userDb
-      .getFirstAsync<{ mnemonic: string }>(
-        "SELECT mnemonic FROM user_kanji_notes WHERE literal = ?",
+      .getFirstAsync<KanjiNotesRow>(
+        "SELECT mnemonic, keyword FROM user_kanji_notes WHERE literal = ?",
         [literal],
       )
-      .then((row: { mnemonic: string } | null) => setMnemonic(row?.mnemonic ?? null))
-      .catch(() => setMnemonic(null));
+      .then((row: KanjiNotesRow | null) => {
+        setMnemonic(row?.mnemonic || null);
+        setKeyword(row?.keyword ?? null);
+      })
+      .catch(() => {
+        setMnemonic(null);
+        setKeyword(null);
+      });
   }, [userDb, literal]);
 
-  const saveMnemonic = useCallback(
-    async (text: string) => {
+  const upsertOrDelete = useCallback(
+    async (newMnemonic: string | null, newKeyword: string | null) => {
       if (!userDb || !literal) return;
       const now = new Date().toISOString();
-      if (text.trim()) {
+      const m = newMnemonic?.trim() || "";
+      const k = newKeyword?.trim() || null;
+
+      if (m || k) {
         await userDb.runAsync(
-          `INSERT INTO user_kanji_notes (literal, mnemonic, updated_at) VALUES (?, ?, ?)
-           ON CONFLICT(literal) DO UPDATE SET mnemonic = excluded.mnemonic, updated_at = excluded.updated_at`,
-          [literal, text.trim(), now],
+          `INSERT INTO user_kanji_notes (literal, mnemonic, keyword, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(literal) DO UPDATE SET mnemonic = excluded.mnemonic, keyword = excluded.keyword, updated_at = excluded.updated_at`,
+          [literal, m, k, now],
         );
-        setMnemonic(text.trim());
       } else {
         await userDb.runAsync("DELETE FROM user_kanji_notes WHERE literal = ?", [literal]);
-        setMnemonic(null);
       }
     },
     [userDb, literal],
   );
 
-  return { mnemonic, saveMnemonic };
+  const saveMnemonic = useCallback(
+    async (text: string) => {
+      const newMnemonic = text.trim() || null;
+      setMnemonic(newMnemonic);
+      await upsertOrDelete(newMnemonic, keyword);
+    },
+    [upsertOrDelete, keyword],
+  );
+
+  const saveKeyword = useCallback(
+    async (text: string) => {
+      const newKeyword = text.trim() || null;
+      setKeyword(newKeyword);
+      await upsertOrDelete(mnemonic, newKeyword);
+    },
+    [upsertOrDelete, mnemonic],
+  );
+
+  return { mnemonic, keyword, saveMnemonic, saveKeyword };
 }
