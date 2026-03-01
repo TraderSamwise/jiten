@@ -56,8 +56,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       <DictDownloadGate>
         <UserDatabaseProvider userId={userId!}>
           <View style={{ flex: 1 }}>
-            <BackgroundDownloadBanner />
             {children}
+            <BackgroundDownloadBanner />
           </View>
         </UserDatabaseProvider>
       </DictDownloadGate>
