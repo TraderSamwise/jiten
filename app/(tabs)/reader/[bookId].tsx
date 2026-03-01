@@ -403,13 +403,15 @@ export default function BookReaderScreen() {
         <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
           {book.title}
         </Text>
-        <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
-          {nameMode ? (
-            <User size={20} className="text-primary" />
-          ) : (
-            <BookText size={20} className="text-muted-foreground" />
-          )}
-        </Pressable>
+        {extendedDb && (
+          <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
+            {nameMode ? (
+              <User size={20} className="text-primary" />
+            ) : (
+              <BookText size={20} className="text-muted-foreground" />
+            )}
+          </Pressable>
+        )}
         <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
           <SlidersHorizontal size={20} className="text-foreground" />
         </Pressable>

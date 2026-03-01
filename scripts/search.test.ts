@@ -8,10 +8,12 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import Database from "better-sqlite3";
+import * as fs from "fs";
 import * as path from "path";
 import { toHiragana } from "wanakana";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
+const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
 
 // ─── Types ───
 
@@ -198,6 +200,7 @@ function stemForLike(word: string): string {
 }
 
 /** Look up synonyms for a list of words from the synonyms table.
+ *  Checks ext.synonyms (attached extended DB) first, falls back to main DB.
  *  maxPerWord caps synonyms per word to keep LIKE queries fast. */
 function expandWithSynonyms(
   db: Database.Database,
@@ -208,33 +211,41 @@ function expandWithSynonyms(
   if (words.length === 0) return map;
   for (const w of words) map.set(w.toLowerCase(), []);
 
-  try {
-    const placeholders = words.map(() => "?").join(",");
-    const lowerWords = words.map((w) => w.toLowerCase());
+  // Try ext.synonyms (extended DB attached as "ext"), then fall back to main synonyms table
+  const tables = ["ext.synonyms", "synonyms"];
 
-    // Forward: word → synonym
-    const fwd = db
-      .prepare(`SELECT word, synonym FROM synonyms WHERE word IN (${placeholders})`)
-      .all(...lowerWords) as { word: string; synonym: string }[];
-    for (const r of fwd) {
-      const arr = map.get(r.word);
-      if (arr && arr.length < maxPerWord) {
-        arr.push(r.synonym);
-      }
-    }
+  for (const table of tables) {
+    // If we already found synonyms from a previous table, stop
+    if ([...map.values()].some((arr) => arr.length > 0)) break;
 
-    // Reverse: synonym → word (bidirectional lookup)
-    const rev = db
-      .prepare(`SELECT word, synonym FROM synonyms WHERE synonym IN (${placeholders})`)
-      .all(...lowerWords) as { word: string; synonym: string }[];
-    for (const r of rev) {
-      const arr = map.get(r.synonym);
-      if (arr && arr.length < maxPerWord) {
-        arr.push(r.word);
+    try {
+      const placeholders = words.map(() => "?").join(",");
+      const lowerWords = words.map((w) => w.toLowerCase());
+
+      // Forward: word → synonym
+      const fwd = db
+        .prepare(`SELECT word, synonym FROM ${table} WHERE word IN (${placeholders})`)
+        .all(...lowerWords) as { word: string; synonym: string }[];
+      for (const r of fwd) {
+        const arr = map.get(r.word);
+        if (arr && arr.length < maxPerWord) {
+          arr.push(r.synonym);
+        }
       }
+
+      // Reverse: synonym → word (bidirectional lookup)
+      const rev = db
+        .prepare(`SELECT word, synonym FROM ${table} WHERE synonym IN (${placeholders})`)
+        .all(...lowerWords) as { word: string; synonym: string }[];
+      for (const r of rev) {
+        const arr = map.get(r.synonym);
+        if (arr && arr.length < maxPerWord) {
+          arr.push(r.word);
+        }
+      }
+    } catch {
+      // Table doesn't exist — try next
     }
-  } catch {
-    // No synonyms table — skip expansion
   }
 
   return map;
@@ -705,6 +716,11 @@ let db: Database.Database;
 
 beforeAll(() => {
   db = new Database(DB_PATH, { readonly: true });
+
+  // Attach extended DB for synonym lookups (synonyms moved there in v16)
+  if (fs.existsSync(EXT_DB_PATH)) {
+    db.exec(`ATTACH DATABASE '${EXT_DB_PATH}' AS ext`);
+  }
 });
 
 afterAll(() => {

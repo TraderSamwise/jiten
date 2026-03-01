@@ -6,6 +6,7 @@ import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { useSearchStore, type SearchMode } from "@/stores/search";
+import { useDatabase } from "@/db/provider";
 import { ChevronLeft } from "@/lib/icons";
 
 const MODE_LABELS: Record<SearchMode, string> = {
@@ -22,6 +23,13 @@ const MODE_CYCLE: Record<SearchMode, SearchMode> = {
   names: "normal",
 };
 
+const MODE_CYCLE_NO_NAMES: Record<SearchMode, SearchMode> = {
+  normal: "kanji",
+  kanji: "radical",
+  radical: "normal",
+  names: "normal",
+};
+
 const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
   normal: "Search Japanese or English...",
   kanji: "Search kanji by meaning or reading...",
@@ -33,6 +41,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   const insets = useSafeAreaInsets();
   const goBack = useSafeGoBack("/dictionary");
   const { query, setQuery, searchMode, setSearchMode } = useSearchStore();
+  const { extendedDb } = useDatabase();
   const isWordDetail = route.name === "word/[id]" || route.name === "gloss-group";
   const isKanjiDetail = route.name === "kanji/[literal]";
 
@@ -45,7 +54,8 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   };
 
   const cycleMode = () => {
-    setSearchMode(MODE_CYCLE[searchMode]);
+    const cycle = extendedDb ? MODE_CYCLE : MODE_CYCLE_NO_NAMES;
+    setSearchMode(cycle[searchMode]);
   };
 
   const showInput = searchMode !== "radical";

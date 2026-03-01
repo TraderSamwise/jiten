@@ -20,8 +20,9 @@ import {
 } from "./dict-download";
 import { DICT_VERSION } from "./dict-version";
 import { runClientDictMigrations } from "./dict-client-migrations";
-import { openExtendedDb, isDatasetReady } from "./extended-db";
-import { importDataset, DATASET_CONFIGS } from "./extended-download";
+import { openExtendedDb } from "./extended-db";
+import { isExtendedReady, downloadExtendedDb, setExtendedVersion } from "./extended-download";
+import { isNativeModuleAvailable } from "@/lib/native-guard";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -116,71 +117,38 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  // Background data init — extended data (synonyms, names) + audio
+  // Background data init — audio + extended DB
   const initBackgroundData = useCallback(
     async (m?: DictManifest) => {
       const items: BackgroundDownloadItem[] = [];
       const extManifest = m?.extended;
 
-      // Build initial status list
-      if (extManifest?.datasets?.synonyms) {
-        items.push({ key: "synonyms", label: "Synonyms", state: "pending", progress: 0 });
-      }
-      if (extManifest?.datasets?.names) {
-        items.push({ key: "names", label: "Names", state: "pending", progress: 0 });
-      }
+      // Build initial status list — audio first (smaller, more immediately useful)
       if (m?.audioUrl) {
         items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
       }
+      if (extManifest) {
+        items.push({ key: "extended", label: "Extended data", state: "pending", progress: 0 });
+      }
       setBackgroundStatus(items);
 
-      // Open/create extended DB immediately (enables progressive queries)
-      try {
-        const extDb = await openExtendedDb();
-        extendedDbRef.current = extDb;
-        setExtendedDb(extDb);
-
-        // Import datasets sequentially
-        if (extManifest) {
-          for (const [key, dsInfo] of Object.entries(extManifest.datasets)) {
-            const config = DATASET_CONFIGS[key];
-            if (!config || !dsInfo.url) continue;
-
-            // Check if already complete
-            const ready = await isDatasetReady(extDb, key, extManifest.version);
-            if (ready) {
-              updateBgItem(key, { state: "ready", progress: 1 });
-              continue;
-            }
-
-            try {
-              updateBgItem(key, { state: "downloading" });
-              await importDataset({
-                db: extDb,
-                config,
-                url: dsInfo.url,
-                expectedRowCount: dsInfo.rowCount,
-                version: extManifest.version,
-                onProgress: (imported, total) => {
-                  const progress = total > 0 ? imported / total : 0;
-                  updateBgItem(key, {
-                    state: progress >= 1 ? "ready" : "importing",
-                    progress,
-                  });
-                },
-              });
-              updateBgItem(key, { state: "ready", progress: 1 });
-            } catch (err) {
-              console.warn(`[DB] Extended data import failed for ${key}:`, err);
-              updateBgItem(key, { state: "error", progress: 0 });
-            }
+      // WiFi check — skip large background downloads on cellular
+      let onWifi = true;
+      if (Platform.OS !== "web" && isNativeModuleAvailable("ExpoNetwork")) {
+        try {
+          const Network = require("expo-network");
+          const state = await Network.getNetworkStateAsync();
+          onWifi = state.type === Network.NetworkStateType.WIFI;
+          if (!onWifi) {
+            console.log("[DB] Not on WiFi, skipping background downloads");
+            return;
           }
+        } catch {
+          // Module check passed but call failed — assume WiFi
         }
-      } catch (err) {
-        console.warn("[DB] Extended DB init failed (non-blocking):", err);
       }
 
-      // Audio download (existing flow)
+      // Audio download first (smaller, immediately useful)
       try {
         const audioReady = await isAudioReady();
         if (!audioReady) {
@@ -191,7 +159,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
               updateBgItem("audio", { state: "downloading", progress });
             });
           } else {
-            return;
+            updateBgItem("audio", { state: "ready", progress: 1 });
           }
         }
         const db = await openAudioDb();
@@ -202,6 +170,30 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.warn("[DB] Audio init failed (non-blocking):", err);
         updateBgItem("audio", { state: "error", progress: 0 });
+      }
+
+      // Extended DB download — pre-built .db file, just download and open
+      if (extManifest?.url) {
+        try {
+          const extReady = await isExtendedReady(extManifest.version);
+          if (!extReady) {
+            updateBgItem("extended", { state: "downloading" });
+            console.log("[DB] Downloading extended DB in background...");
+            await downloadExtendedDb(extManifest.url, extManifest.sizeBytes, (progress) => {
+              updateBgItem("extended", { state: "downloading", progress });
+            });
+            await setExtendedVersion(extManifest.version);
+          }
+
+          const extDb = await openExtendedDb();
+          extendedDbRef.current = extDb;
+          setExtendedDb(extDb);
+          updateBgItem("extended", { state: "ready", progress: 1 });
+          console.log("[DB] Extended DB ready");
+        } catch (err) {
+          console.warn("[DB] Extended DB init failed (non-blocking):", err);
+          updateBgItem("extended", { state: "error", progress: 0 });
+        }
       }
     },
     [updateBgItem],
