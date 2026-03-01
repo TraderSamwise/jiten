@@ -19,5 +19,5 @@
  *   - scripts/build-dictionary.ts (build time — writes base version into manifest)
  *   - scripts/check-dict-version.sh (compares base version against published)
  */
-export const DICT_BASE_VERSION = 14;
-export const DICT_VERSION = 14;
+export const DICT_BASE_VERSION = 15;
+export const DICT_VERSION = 15;
