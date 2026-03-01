@@ -54,3 +54,8 @@ assets/dictionary.db-wal
 assets/dictionary-audio.db
 assets/dictionary-audio.db-shm
 assets/dictionary-audio.db-wal
+assets/dictionary-extended.db
+assets/dictionary-extended.db-shm
+assets/dictionary-extended.db-wal
+assets/synonyms.jsonl.gz
+assets/names.jsonl.gz

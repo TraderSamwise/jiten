@@ -1,42 +1,86 @@
 /**
- * Build script: Generates extended data files (synonyms + names) as compressed JSONL.
+ * Build script: Generates dictionary-extended.db containing synonyms + names.
  *
- * These are downloaded in the background by the app and inserted progressively
- * into a local dictionary-extended.db.
+ * The app downloads this pre-built SQLite DB in the background — no client-side
+ * parsing or importing needed.
  *
  * Usage: npx tsx scripts/build-extended-data.ts
  *
  * Output:
- *   assets/synonyms.jsonl.gz
- *   assets/names.jsonl.gz
+ *   assets/dictionary-extended.db
  *   (updates assets/dict-manifest.json with extended data section)
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import * as zlib from "zlib";
 import Database from "better-sqlite3";
 import WordNet from "node-wordnet";
 import wordnetDb from "wordnet-db";
 import { downloadFile, CACHE_DIR, ASSETS_DIR } from "./lib/download";
 
-const DB_PATH = path.join(ASSETS_DIR, "dictionary.db");
+const DICT_DB_PATH = path.join(ASSETS_DIR, "dictionary.db");
+const EXT_DB_PATH = path.join(ASSETS_DIR, "dictionary-extended.db");
 const MANIFEST_PATH = path.join(ASSETS_DIR, "dict-manifest.json");
+
+// ─── Schema ───
+
+function createSchema(db: InstanceType<typeof Database>) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ext_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS synonyms (
+      word TEXT NOT NULL,
+      synonym TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS names (
+      id INTEGER PRIMARY KEY,
+      kanji TEXT,
+      kana TEXT NOT NULL,
+      name_type TEXT,
+      translation TEXT,
+      category TEXT
+    );
+  `);
+}
+
+function buildIndexes(db: InstanceType<typeof Database>) {
+  console.log("  Building indexes...");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_synonyms_word ON synonyms(word)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_synonyms_synonym ON synonyms(synonym)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_kanji ON names(kanji)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_kana ON names(kana)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_category ON names(category)");
+
+  // FTS5 index for translation search
+  try {
+    db.exec(
+      "CREATE VIRTUAL TABLE IF NOT EXISTS names_fts USING fts5(translation, content=names, content_rowid=id)",
+    );
+    db.exec("INSERT INTO names_fts(names_fts) VALUES('rebuild')");
+    console.log("  FTS5 index built");
+  } catch (e) {
+    console.warn("  FTS5 not available in this SQLite build, skipping:", e);
+  }
+}
 
 // ─── Synonyms ───
 
-async function buildSynonyms(): Promise<{ filePath: string; rowCount: number }> {
-  console.log("\n=== Building synonyms.jsonl.gz ===\n");
+async function insertSynonyms(db: InstanceType<typeof Database>): Promise<number> {
+  console.log("\n=== Building synonyms ===\n");
 
-  if (!fs.existsSync(DB_PATH)) {
-    throw new Error(`dictionary.db not found at ${DB_PATH}. Run yarn migrate:dict first.`);
+  if (!fs.existsSync(DICT_DB_PATH)) {
+    throw new Error(`dictionary.db not found at ${DICT_DB_PATH}. Run yarn migrate:dict first.`);
   }
 
-  const db = new Database(DB_PATH, { readonly: true });
+  const dictDb = new Database(DICT_DB_PATH, { readonly: true });
 
   // Extract gloss vocabulary — all unique content words from English glosses
   console.log("  Extracting gloss vocabulary...");
-  const glossRows = db.prepare(`SELECT glosses FROM senses`).all() as { glosses: string }[];
+  const glossRows = dictDb.prepare(`SELECT glosses FROM senses`).all() as { glosses: string }[];
 
   const glossVocab = new Set<string>();
   const wordPattern = /[a-z]{3,}/g;
@@ -52,14 +96,14 @@ async function buildSynonyms(): Promise<{ filePath: string; rowCount: number }> 
       }
     } catch {}
   }
-  db.close();
+  dictDb.close();
   console.log(`  ${glossVocab.size} unique vocabulary words`);
 
   // Look up WordNet relationships
   console.log("  Looking up WordNet relationships...");
   const wn = new WordNet(wordnetDb.path);
   const RELATED_PTRS = new Set(["+", "&", "~"]); // derivational, similar-to, hyponym
-  const lines: string[] = [];
+  const pairs: [string, string][] = [];
   let wordsDone = 0;
   const vocabArray = [...glossVocab];
 
@@ -106,7 +150,7 @@ async function buildSynonyms(): Promise<{ filePath: string; rowCount: number }> 
           }
 
           for (const syn of synonyms) {
-            lines.push(JSON.stringify({ w: word, s: syn }));
+            pairs.push([word, syn]);
           }
         } catch {}
       }),
@@ -114,22 +158,21 @@ async function buildSynonyms(): Promise<{ filePath: string; rowCount: number }> 
 
     wordsDone += batch.length;
     if (wordsDone % 5000 === 0 || wordsDone === vocabArray.length) {
-      console.log(`  ${wordsDone}/${vocabArray.length} words processed, ${lines.length} pairs...`);
+      console.log(`  ${wordsDone}/${vocabArray.length} words processed, ${pairs.length} pairs...`);
     }
   }
 
-  console.log(`  ${lines.length} synonym pairs total`);
+  console.log(`  ${pairs.length} synonym pairs total`);
 
-  // Write compressed JSONL
-  const outPath = path.join(ASSETS_DIR, "synonyms.jsonl.gz");
-  const jsonl = lines.join("\n") + "\n";
-  const compressed = zlib.gzipSync(Buffer.from(jsonl));
-  fs.writeFileSync(outPath, compressed);
-  console.log(
-    `  Written: ${outPath} (${(compressed.length / 1024).toFixed(0)} KB compressed, ${(jsonl.length / 1024).toFixed(0)} KB uncompressed)`,
-  );
+  // Bulk insert into DB
+  console.log("  Inserting into DB...");
+  const insert = db.prepare("INSERT INTO synonyms (word, synonym) VALUES (?, ?)");
+  const insertMany = db.transaction((rows: [string, string][]) => {
+    for (const row of rows) insert.run(...row);
+  });
+  insertMany(pairs);
 
-  return { filePath: outPath, rowCount: lines.length };
+  return pairs.length;
 }
 
 // ─── Names (JMnedict) ───
@@ -169,8 +212,8 @@ async function getJmnedictUrl(): Promise<string> {
   return asset.browser_download_url;
 }
 
-async function buildNames(): Promise<{ filePath: string; rowCount: number }> {
-  console.log("\n=== Building names.jsonl.gz ===\n");
+async function insertNames(db: InstanceType<typeof Database>): Promise<number> {
+  console.log("\n=== Building names ===\n");
 
   // Download JMnedict
   const tgzPath = path.join(CACHE_DIR, "jmnedict-all.json.tgz");
@@ -198,43 +241,50 @@ async function buildNames(): Promise<{ filePath: string; rowCount: number }> {
   const data: JMnedictData = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
   console.log(`  ${data.words.length} name entries loaded`);
 
-  // Convert to JSONL
-  const lines: string[] = [];
-  for (const entry of data.words) {
-    const id = parseInt(entry.id, 10);
-    const kanji = entry.kanji.map((k) => k.text);
-    const kana = entry.kana.map((k) => k.text);
-
-    // Collect all English translations and types
-    const types = new Set<string>();
-    const translations: string[] = [];
-    for (const tr of entry.translation) {
-      for (const t of tr.type) types.add(t);
-      for (const tl of tr.translation) {
-        if (tl.lang === "eng") translations.push(tl.text);
-      }
-    }
-
-    const line: Record<string, unknown> = { id, r: kana };
-    if (kanji.length > 0) line.k = kanji;
-    if (types.size > 0) line.t = [...types].join(",");
-    if (translations.length > 0) line.tr = translations.join("; ");
-
-    lines.push(JSON.stringify(line));
-  }
-
-  console.log(`  ${lines.length} name entries processed`);
-
-  // Write compressed JSONL
-  const outPath = path.join(ASSETS_DIR, "names.jsonl.gz");
-  const jsonl = lines.join("\n") + "\n";
-  const compressed = zlib.gzipSync(Buffer.from(jsonl));
-  fs.writeFileSync(outPath, compressed);
-  console.log(
-    `  Written: ${outPath} (${(compressed.length / 1024 / 1024).toFixed(1)} MB compressed, ${(jsonl.length / 1024 / 1024).toFixed(1)} MB uncompressed)`,
+  // Bulk insert into DB
+  console.log("  Inserting into DB...");
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO names (id, kanji, kana, name_type, translation, category) VALUES (?, ?, ?, ?, ?, ?)",
   );
 
-  return { filePath: outPath, rowCount: lines.length };
+  const insertMany = db.transaction((entries: JMnedictEntry[]) => {
+    for (const entry of entries) {
+      const id = parseInt(entry.id, 10);
+      const kanji = entry.kanji.map((k) => k.text);
+      const kana = entry.kana.map((k) => k.text);
+
+      const types = new Set<string>();
+      const translations: string[] = [];
+      for (const tr of entry.translation) {
+        for (const t of tr.type) types.add(t);
+        for (const tl of tr.translation) {
+          if (tl.lang === "eng") translations.push(tl.text);
+        }
+      }
+
+      const nameType = types.size > 0 ? [...types].join(",") : null;
+      let category = "other";
+      if (nameType && /\b(surname|fem|masc|given|person)\b/.test(nameType)) {
+        category = "person";
+      } else if (nameType && /\b(place|station)\b/.test(nameType)) {
+        category = "place";
+      }
+
+      insert.run(
+        id,
+        kanji.length > 0 ? kanji.join(", ") : null,
+        kana.join(", "),
+        nameType,
+        translations.length > 0 ? translations.join("; ") : null,
+        category,
+      );
+    }
+  });
+
+  insertMany(data.words);
+  console.log(`  ${data.words.length} name entries inserted`);
+
+  return data.words.length;
 }
 
 // ─── Main ───
@@ -243,30 +293,47 @@ async function main() {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
 
-  const synonyms = await buildSynonyms();
-  const names = await buildNames();
+  // Remove old files if they exist
+  if (fs.existsSync(EXT_DB_PATH)) fs.unlinkSync(EXT_DB_PATH);
 
-  // Update manifest with extended data section
+  // Create fresh DB
+  const db = new Database(EXT_DB_PATH);
+  db.pragma("journal_mode = WAL");
+  createSchema(db);
+
+  const synonymCount = await insertSynonyms(db);
+  const nameCount = await insertNames(db);
+
+  // Write version metadata
+  const version = 1;
+  db.prepare("INSERT OR REPLACE INTO ext_meta (key, value) VALUES (?, ?)").run(
+    "version",
+    String(version),
+  );
+
+  // Build indexes
+  buildIndexes(db);
+
+  // Optimize
+  console.log("\n  Running VACUUM and optimize...");
+  db.pragma("journal_mode = DELETE");
+  db.exec("VACUUM");
+  db.pragma("optimize");
+  db.close();
+
+  const dbSize = fs.statSync(EXT_DB_PATH).size;
+  console.log(`\n  Written: ${EXT_DB_PATH} (${(dbSize / 1024 / 1024).toFixed(1)} MB)`);
+  console.log(`  ${synonymCount} synonyms, ${nameCount} names`);
+
+  // Update manifest
   if (!fs.existsSync(MANIFEST_PATH)) {
     throw new Error(`dict-manifest.json not found at ${MANIFEST_PATH}`);
   }
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf-8"));
 
-  const synonymsSize = fs.statSync(path.join(ASSETS_DIR, "synonyms.jsonl.gz")).size;
-  const namesSize = fs.statSync(path.join(ASSETS_DIR, "names.jsonl.gz")).size;
-
   manifest.extended = {
-    version: 1,
-    datasets: {
-      synonyms: {
-        sizeBytes: synonymsSize,
-        rowCount: synonyms.rowCount,
-      },
-      names: {
-        sizeBytes: namesSize,
-        rowCount: names.rowCount,
-      },
-    },
+    version,
+    sizeBytes: dbSize,
   };
 
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");

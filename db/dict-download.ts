@@ -10,15 +10,10 @@ export type DownloadStatus =
   | { state: "ready" }
   | { state: "error"; message: string };
 
-export interface ExtendedDatasetInfo {
-  sizeBytes: number;
-  rowCount: number;
-  url?: string; // derived from manifest base if absent
-}
-
 export interface ExtendedManifest {
   version: number;
-  datasets: Record<string, ExtendedDatasetInfo>;
+  sizeBytes: number;
+  url?: string; // derived from manifest base if absent
 }
 
 export interface DictManifest {
@@ -85,15 +80,9 @@ export async function fetchManifest(): Promise<DictManifest> {
     data.audioUrl = `${base}/dictionary-audio.db`;
   }
 
-  // Derive extended dataset URLs from manifest base
-  if (data.extended?.datasets) {
-    for (const [key, ds] of Object.entries(
-      data.extended.datasets as Record<string, ExtendedDatasetInfo>,
-    )) {
-      if (!ds.url) {
-        ds.url = `${base}/${key}.jsonl.gz`;
-      }
-    }
+  // Derive extended DB URL from manifest base
+  if (data.extended && !data.extended.url) {
+    data.extended.url = `${base}/dictionary-extended.db`;
   }
 
   return data;
@@ -536,4 +525,78 @@ export async function loadWebAudioDb(): Promise<import("expo-sqlite").SQLiteData
   const data = await loadDbBytes("dictionary-audio");
   if (!data) return null;
   return deserializeWebDb(data, "audio");
+}
+
+// ─── Extended DB support ───
+
+const EXT_VERSION_KEY = "ext-db-version";
+const EXT_DB_NAME = "dictionary-extended.db";
+
+export async function isExtendedReady(version: number): Promise<boolean> {
+  const v = await AsyncStorage.getItem(EXT_VERSION_KEY);
+  return v !== null && parseInt(v, 10) >= version;
+}
+
+export async function downloadExtendedDb(
+  url: string,
+  sizeBytes: number,
+  onProgress?: (progress: number) => void,
+): Promise<void> {
+  if (Platform.OS === "web") {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Extended DB download failed: ${res.status}`);
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("ReadableStream not supported");
+
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      onProgress?.(sizeBytes > 0 ? received / sizeBytes : 0);
+    }
+
+    const data = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    await storeDbBytes(data, "dictionary-extended");
+  } else {
+    const FileSystem = require("expo-file-system/legacy");
+    const dbDir = `${FileSystem.documentDirectory}SQLite/`;
+    await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
+    const destPath = `${dbDir}${EXT_DB_NAME}`;
+
+    const download = FileSystem.createDownloadResumable(
+      url,
+      destPath,
+      {},
+      (dp: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
+        onProgress?.(dp.totalBytesWritten / dp.totalBytesExpectedToWrite);
+      },
+    );
+
+    const result = await download.downloadAsync();
+    if (!result || result.status !== 200) {
+      throw new Error(`Extended DB download failed with status ${result?.status}`);
+    }
+  }
+}
+
+export async function setExtendedVersion(version: number): Promise<void> {
+  await AsyncStorage.setItem(EXT_VERSION_KEY, String(version));
+}
+
+/** Load extended DB bytes from IndexedDB and return an in-memory SQLiteDatabase. */
+export async function loadWebExtendedDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
+  const data = await loadDbBytes("dictionary-extended");
+  if (!data) return null;
+  return deserializeWebDb(data, "extended");
 }
