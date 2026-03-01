@@ -57,7 +57,7 @@ import {
   findConfusedWords,
   type ConfusedWordResult,
 } from "@/lib/confused-words";
-import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
+import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
 import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
@@ -429,6 +429,9 @@ export default function StudyScreen() {
   const [isFlipping, setIsFlipping] = useState(false);
   const revealedRef = useRef(false);
   const revealTimeRef = useRef(0);
+  const sessionIdRef = useRef("");
+  const sessionStartRef = useRef("");
+  const sessionCorrectRef = useRef(0);
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
@@ -493,6 +496,26 @@ export default function StudyScreen() {
       voiceWrongTimerRef.current = null;
     }
   }, [currentIndex]);
+
+  // Log session summary when study session completes
+  useEffect(() => {
+    if (sessionDone && reviewedCount > 0 && userDb && listId && sessionIdRef.current) {
+      const practiceMode = list?.typingMode
+        ? "typing_flashcard"
+        : list?.voiceMode
+          ? "voice"
+          : "flashcard";
+      logSessionSummary(userDb, {
+        sessionId: sessionIdRef.current,
+        listId,
+        practiceMode,
+        startedAt: sessionStartRef.current,
+        durationMs: Date.now() - new Date(sessionStartRef.current).getTime(),
+        totalItems: reviewedCount,
+        correctCount: sessionCorrectRef.current,
+      }).catch(() => {});
+    }
+  }, [sessionDone]);
 
   // Web: keyboard shortcuts for reveal / rating
   useEffect(() => {
@@ -794,6 +817,9 @@ export default function StudyScreen() {
     } catch (err) {
       console.error("loadQueue error:", err);
     }
+    sessionIdRef.current = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+    sessionStartRef.current = new Date().toISOString();
+    sessionCorrectRef.current = 0;
     setLoading(false);
   }
 
@@ -847,6 +873,7 @@ export default function StudyScreen() {
         practiceMode,
         correct: false,
         responseMs,
+        sessionId: sessionIdRef.current,
       }).catch(() => {});
     }
 
@@ -929,9 +956,11 @@ export default function StudyScreen() {
         practiceMode,
         correct: true,
         responseMs,
+        sessionId: sessionIdRef.current,
       }).catch(() => {});
     }
 
+    sessionCorrectRef.current++;
     setReviewedCount((c) => c + 1);
     advance(queue);
   }

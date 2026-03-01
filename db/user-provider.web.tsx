@@ -146,6 +146,10 @@ const USER_DB_MIGRATIONS = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_confusion_pairs_unique ON confusion_pairs(entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type)`,
   `CREATE INDEX IF NOT EXISTS idx_confusion_pairs_entry ON confusion_pairs(entry_id_a)`,
+  `ALTER TABLE practice_events ADD COLUMN session_id TEXT`,
+  `CREATE TABLE IF NOT EXISTS practice_sessions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, list_id TEXT, practice_mode TEXT NOT NULL, started_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, total_items INTEGER NOT NULL, correct_count INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_practice_sessions_list ON practice_sessions(list_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_practice_sessions_date ON practice_sessions(started_at)`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{
