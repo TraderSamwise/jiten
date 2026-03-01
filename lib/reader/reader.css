@@ -43,6 +43,11 @@ ruby rt {
   text-emphasis: filled dot;
 }
 
+::highlight(word-highlight) {
+  background-color: __HIGHLIGHT_BG__;
+}
+
+/* Span fallback for older WebKit without CSS Custom Highlight API */
 .highlight {
   background: __HIGHLIGHT_BG__;
   -webkit-box-decoration-break: clone;
