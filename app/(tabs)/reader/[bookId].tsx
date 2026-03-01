@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, ActivityIndicator, Dimensions } from "react-native";
+import { View, Pressable, ActivityIndicator, Dimensions, Linking, Platform } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,7 +7,7 @@ import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
-import { ChevronLeft, SlidersHorizontal } from "@/lib/icons";
+import { ChevronLeft, ChevronDown, SlidersHorizontal } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
@@ -21,59 +21,146 @@ import {
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
-const TOOLTIP_W = 70;
-const TOOLTIP_H = 32;
-const TOOLTIP_GAP = 24;
+const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
 
-function CopyTooltip({
-  copyTooltip,
+const EXTERNAL_DICTS = [
+  {
+    label: "Midori",
+    url: (q: string) => `midori://search?text=${q}`,
+    store: "https://apps.apple.com/app/midori-japanese-dictionary/id385231773",
+  },
+  {
+    label: "Shirabe Jisho",
+    url: (q: string) => `shirabelookup://search?w=${q}`,
+    store: "https://apps.apple.com/app/shirabe-jisho/id1005203380",
+  },
+  {
+    label: "DaKanji",
+    url: (q: string) => `dakanji://dictionary?search=${q}`,
+    store: "https://apps.apple.com/app/dakanji/id1548746810",
+  },
+  {
+    label: "imiwa?",
+    url: (q: string) => `imiwa://analyser?text=${q}`,
+    store: "https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125",
+  },
+];
+
+function HighlightToolbar({
+  tooltip,
   readerY,
   isDark,
   copied,
-  onPress,
+  onCopy,
 }: {
-  copyTooltip: { text: string; x: number; y: number };
+  tooltip: { text: string; x: number; y: number };
   readerY: React.RefObject<number>;
   isDark: boolean;
   copied: boolean;
-  onPress: () => void;
+  onCopy: () => void;
 }) {
+  const [openInExpanded, setOpenInExpanded] = useState(false);
   const screen = Dimensions.get("window");
   const layoutY = readerY.current ?? 0;
-  const rawTop = layoutY + copyTooltip.y - TOOLTIP_H - TOOLTIP_GAP;
+  const toolbarH = openInExpanded ? 76 : 32;
+  const rawTop = layoutY + tooltip.y - toolbarH - TOOLBAR_GAP;
   const top = Math.max(layoutY, Math.min(rawTop, screen.height - POPUP_SAFE_ZONE));
-  const left = Math.max(8, Math.min(copyTooltip.x - TOOLTIP_W / 2, screen.width - TOOLTIP_W - 8));
+
+  const bg = isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)";
+  const fg = isDark ? "#000" : "#fff";
 
   return (
-    <Pressable
-      onPress={onPress}
+    <View
       style={{
         position: "absolute",
         zIndex: 101,
         top,
-        left,
-        backgroundColor: isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)",
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5,
+        left: 0,
+        right: 0,
+        alignItems: "center",
       }}
+      pointerEvents="box-none"
     >
-      <Text
+      <View
         style={{
-          color: isDark ? "#000" : "#fff",
-          fontSize: 13,
-          fontWeight: "600",
+          backgroundColor: bg,
+          borderRadius: 16,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.25,
+          shadowRadius: 4,
+          elevation: 5,
+          paddingVertical: 6,
+          paddingHorizontal: 4,
         }}
       >
-        {copied ? "Copied!" : "Copy"}
-      </Text>
-    </Pressable>
+        {/* Main row: Copy + Open in */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+          <Pressable onPress={onCopy} style={{ paddingHorizontal: 10, paddingVertical: 2 }}>
+            <Text style={{ color: fg, fontSize: 13, fontWeight: "600" }}>
+              {copied ? "Copied!" : "Copy"}
+            </Text>
+          </Pressable>
+          {Platform.OS === "ios" && (
+            <>
+              <View style={{ width: 1, height: 16, backgroundColor: fg, opacity: 0.3 }} />
+              <Pressable
+                onPress={() => setOpenInExpanded(!openInExpanded)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text style={{ color: fg, fontSize: 13, fontWeight: "600" }}>Open in</Text>
+                <ChevronDown
+                  size={14}
+                  color={fg}
+                  style={{
+                    marginLeft: 2,
+                    transform: [{ rotate: openInExpanded ? "180deg" : "0deg" }],
+                  }}
+                />
+              </Pressable>
+            </>
+          )}
+        </View>
+        {/* Expanded: external dict buttons */}
+        {openInExpanded && (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 4,
+              marginTop: 6,
+              paddingHorizontal: 4,
+            }}
+          >
+            {EXTERNAL_DICTS.map((d) => (
+              <Pressable
+                key={d.label}
+                onPress={() => {
+                  const encoded = encodeURIComponent(tooltip.text);
+                  Linking.openURL(d.url(encoded)).catch(() => {
+                    Linking.openURL(d.store);
+                  });
+                }}
+                style={{
+                  backgroundColor: fg,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 10,
+                }}
+              >
+                <Text style={{ color: bg, fontSize: 11, fontWeight: "600" }}>{d.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -329,14 +416,14 @@ export default function BookReaderScreen() {
         <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
       </View>
 
-      {/* Copy tooltip */}
+      {/* Highlight toolbar: Copy + Open in */}
       {copyTooltip && (
-        <CopyTooltip
-          copyTooltip={copyTooltip}
+        <HighlightToolbar
+          tooltip={copyTooltip}
           readerY={readerLayoutY}
           isDark={isDark}
           copied={copied}
-          onPress={handleCopy}
+          onCopy={handleCopy}
         />
       )}
 
