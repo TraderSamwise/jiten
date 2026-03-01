@@ -13,6 +13,10 @@ function isInsideRt(node: Node): boolean {
 // Clear existing highlights
 export function clearHighlight(): void {
   const spans = state.contentEl!.querySelectorAll("span.highlight");
+  if (spans.length === 0) {
+    if (state.dragMode !== "selecting") animateResetShift();
+    return;
+  }
   for (let i = 0; i < spans.length; i++) {
     const span = spans[i];
     const parent = span.parentNode!;
@@ -22,6 +26,9 @@ export function clearHighlight(): void {
     parent.removeChild(span);
     parent.normalize();
   }
+
+  // Force WebKit to repaint — prevents stale highlight artifacts in vertical-rl
+  void state.contentEl!.offsetWidth;
 
   // Animate page back to normal if shifted, but not during an active selection
   if (state.dragMode !== "selecting") {
