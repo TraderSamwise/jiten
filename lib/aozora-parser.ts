@@ -1,4 +1,12 @@
 /**
+ * Convert halfwidth punctuation to fullwidth equivalents for proper
+ * upright display in vertical (vertical-rl) typesetting.
+ */
+function toFullwidthPunctuation(text: string): string {
+  return text.replace(/\?/g, "？").replace(/!/g, "！").replace(/~/g, "〜");
+}
+
+/**
  * Converts Aozora Bunko markup to HTML with ruby annotations.
  * Also handles plain text gracefully.
  */
@@ -73,7 +81,7 @@ export function parseAozoraToHtml(rawText: string): string {
     // ── Strip other Aozora annotations we don't handle ──
     processed = processed.replace(/［＃[^］]*］/g, "");
 
-    htmlParts.push(`<p>${processed}</p>`);
+    htmlParts.push(`<p>${toFullwidthPunctuation(processed)}</p>`);
   }
 
   return htmlParts.join("\n");
@@ -87,7 +95,7 @@ export function plainTextToHtml(text: string): string {
   return text
     .split(/\r?\n/)
     .filter((line) => line.trim() !== "")
-    .map((line) => `<p>${line}</p>`)
+    .map((line) => `<p>${toFullwidthPunctuation(line)}</p>`)
     .join("\n");
 }
 
