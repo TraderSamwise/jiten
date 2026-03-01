@@ -104,6 +104,27 @@ ruby rt {
   color: __FG__;
   opacity: 0.4;
   user-select: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#page-jump {
+  width: 3em;
+  font-size: 13px;
+  font-family: -apple-system, "Helvetica Neue", sans-serif;
+  color: __FG__;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid __FG__;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+#page-jump::-webkit-inner-spin-button,
+#page-jump::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 #content::-webkit-scrollbar {

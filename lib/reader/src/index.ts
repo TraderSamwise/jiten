@@ -31,6 +31,47 @@ declare const window: Window & {
     prevPage();
   });
 
+  // Tap page number to jump to a page
+  state.pageNumEl!.addEventListener("click", function (e: Event) {
+    e.stopPropagation();
+    const el = state.pageNumEl!;
+    const current = state.currentPage;
+    const total = state.totalPages;
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.inputMode = "numeric";
+    input.pattern = "[0-9]*";
+    input.value = String(current);
+    input.min = "1";
+    input.max = String(total);
+    input.id = "page-jump";
+
+    el.textContent = "";
+    el.appendChild(input);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const val = parseInt(input.value, 10);
+      if (!isNaN(val) && val >= 1 && val <= total) {
+        goToPage(val);
+      } else {
+        goToPage(current); // restores display
+      }
+      // Input may already be removed by blur→commit, guard against double-call
+      if (input.parentNode) input.remove();
+    }
+
+    input.addEventListener("keydown", function (ke: KeyboardEvent) {
+      if (ke.key === "Enter") {
+        ke.preventDefault();
+        input.blur();
+      }
+    });
+    input.addEventListener("blur", commit, { once: true });
+  });
+
   // Touch / swipe / drag-select
   setupTouchHandlers();
 
