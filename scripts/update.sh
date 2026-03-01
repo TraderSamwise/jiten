@@ -28,6 +28,9 @@ else
   CHANNEL_NAME="Production"
 fi
 
+# Block if dict version is out of sync
+./scripts/check-dict-version.sh --strict
+
 echo "📤 Starting OTA update ($CHANNEL_NAME channel)..."
 
 echo ""

@@ -14,6 +14,7 @@
     "prebuild": "yarn build:reader",
     "serve:dict": "npx tsx scripts/serve-dict.ts",
     "publish:dict": "./scripts/publish-dict.sh",
+    "check:dict": "./scripts/check-dict-version.sh",
     "test": "yarn build:reader && vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
