@@ -101,10 +101,11 @@ yarn serve:dict    # Serve dictionary files locally (localhost:3001)
 yarn publish:dict  # Upload dictionary assets to GitHub release
 ```
 
-The dictionary lives in `assets/` as three files:
+The dictionary lives in `assets/` as four files:
 
-- `dictionary.db` — core dictionary (~170MB): entries, kanji, kana, senses, pitch accents, FTS index, synonyms
+- `dictionary.db` — core dictionary (~185MB): entries, kanji, kana, senses, pitch accents, FTS index
 - `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
+- `dictionary-extended.db` — extended data (~110MB): synonyms (WordNet), names (JMnedict) with FTS5
 - `dict-manifest.json` — version and file sizes for the download client
 
 #### Two-tier versioning
@@ -167,7 +168,15 @@ After a major update, upload to the [jiten-data](https://github.com/TraderSamwis
 yarn publish:dict
 ```
 
-The app downloads core first (blocking), then audio silently in the background. Not needed for minor updates (client migrations handle those via OTA).
+The app downloads core first (blocking), then audio and extended data silently in the background (WiFi only on mobile). Not needed for minor updates (client migrations handle those via OTA).
+
+#### Building extended data
+
+```bash
+yarn build:extended  # Build dictionary-extended.db from WordNet + JMnedict
+```
+
+This generates `assets/dictionary-extended.db` containing synonyms and names. Run `yarn publish:dict` afterward to upload. The extended DB is a pre-built SQLite file — the app downloads and opens it directly with no client-side processing.
 
 #### Full rebuild from scratch (almost never needed)
 
