@@ -78,7 +78,7 @@ export function expandPageForHighlight(): boolean {
   state.lastShiftTime = now;
 
   const base = (state.currentPage - 1) * state.columnWidth;
-  state.pageEl!.scrollLeft = -(base + state.shiftOffset);
+  state.pageEl!.scrollTo({ left: -(base + state.shiftOffset), behavior: "smooth" });
   return true;
 }
 
