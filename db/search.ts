@@ -163,6 +163,7 @@ function computeGlossBonus(
   query: string,
   senseIndex: number,
   isCommon: boolean,
+  synonyms?: string[],
 ): { score: number; matchedGloss: string | null } {
   const senseBonus = senseIndex === 0 ? 3000 : 1000;
   const exactBonus = isCommon ? 5000 : 0;
@@ -197,6 +198,16 @@ function computeGlossBonus(
         if (senseBonus > best) {
           best = senseBonus;
           bestGloss = g.text;
+        }
+      }
+      // Synonym match: boost entries whose gloss matches a synonym exactly
+      if (synonyms && best < senseBonus) {
+        for (const syn of synonyms) {
+          if (gl === syn || gl === "to " + syn) {
+            best = senseBonus;
+            bestGloss = g.text;
+            break;
+          }
         }
       }
       gi++;
@@ -448,6 +459,7 @@ async function searchEnglishFts(
 
   // Tier 2.5: Synonym-expanded AND
   const synMap = await expandWithSynonyms(db, contentWords);
+  const allSyns = [...synMap.values()].flat();
   if (contentWords.length > 0) {
     const groupQueries = contentWords.map((w) => {
       const syns = synMap.get(w.toLowerCase()) ?? [];
@@ -470,7 +482,7 @@ async function searchEnglishFts(
          LIMIT ?`,
         [synQuery, limit * 4],
       );
-      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
+      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250, allSyns);
       for (const r of tier25) {
         if (!seenIds.has(r.entryId)) {
           seenIds.add(r.entryId);
@@ -587,6 +599,7 @@ async function searchEnglishLike(
 
   // Tier 2.5: Synonym-expanded AND (LIKE)
   const synMapLike = await expandWithSynonyms(db, contentWords, 15);
+  const allSynsLike = [...synMapLike.values()].flat();
   if (contentWords.length > 0) {
     const groups = contentWords.map((w) => {
       const syns = synMapLike.get(w.toLowerCase()) ?? [];
@@ -635,7 +648,7 @@ async function searchEnglishLike(
          LIMIT ?`,
         [...allPatterns, ...havingPatterns, limit * 4],
       );
-      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250);
+      const tier25 = await applyGlossBonus(db, tier25Rows, input, 250, allSynsLike);
       for (const r of tier25) {
         if (!seenIds.has(r.entryId)) {
           seenIds.add(r.entryId);
@@ -677,8 +690,10 @@ async function applyGlossBonus(
   rows: { entry_id: number; priority: number; common: number }[],
   input: string,
   tierBonus: number = 0,
+  synonyms?: string[],
 ): Promise<ScoredEntry[]> {
   const lowerQuery = input.toLowerCase();
+  const lowerSyns = synonyms?.map((s) => s.toLowerCase());
   const results: ScoredEntry[] = [];
 
   for (const r of rows) {
@@ -689,7 +704,13 @@ async function applyGlossBonus(
       [r.entry_id],
     );
     for (let si = 0; si < senseRows.length; si++) {
-      const result = computeGlossBonus(senseRows[si].glosses, lowerQuery, si, !!r.common);
+      const result = computeGlossBonus(
+        senseRows[si].glosses,
+        lowerQuery,
+        si,
+        !!r.common,
+        lowerSyns,
+      );
       if (result.score > bonus) {
         bonus = result.score;
         matchedGloss = result.matchedGloss;

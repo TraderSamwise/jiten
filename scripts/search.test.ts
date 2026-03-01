@@ -245,8 +245,10 @@ function applyGlossBonus(
   rows: { entry_id: number; priority: number; common: number }[],
   input: string,
   tierBonus: number = 0,
+  synonyms?: string[],
 ): ScoredEntry[] {
   const lowerQuery = input.toLowerCase();
+  const lowerSyns = synonyms?.map((s) => s.toLowerCase());
   return rows.map((r) => {
     let bonus = 0;
     const exactBonus = r.common ? 5000 : 0;
@@ -278,6 +280,15 @@ function applyGlossBonus(
             gl.startsWith("to " + lowerQuery + ",")
           ) {
             bonus = Math.max(bonus, senseBonus);
+          }
+          // Synonym match: boost entries whose gloss matches a synonym exactly
+          if (lowerSyns && bonus < senseBonus) {
+            for (const syn of lowerSyns) {
+              if (gl === syn || gl === "to " + syn) {
+                bonus = Math.max(bonus, senseBonus);
+                break;
+              }
+            }
           }
           gi++;
         }
@@ -347,6 +358,7 @@ function searchEnglishFts(db: Database.Database, input: string, limit: number): 
 
   // Tier 2.5: Synonym-expanded AND
   const synMap = expandWithSynonyms(db, contentWords);
+  const allSyns = [...synMap.values()].flat();
   if (contentWords.length > 0) {
     const groupQueries = contentWords.map((w) => {
       const syns = synMap.get(w.toLowerCase()) ?? [];
@@ -370,7 +382,7 @@ function searchEnglishFts(db: Database.Database, input: string, limit: number): 
         priority: number;
         common: number;
       }[];
-      const tier25 = applyGlossBonus(db, tier25Rows, input, 250);
+      const tier25 = applyGlossBonus(db, tier25Rows, input, 250, allSyns);
       for (const r of tier25) {
         if (!seenIds.has(r.entryId)) {
           seenIds.add(r.entryId);
@@ -479,6 +491,7 @@ function searchEnglishLike(db: Database.Database, input: string, limit: number):
 
   // Tier 2.5: Synonym-expanded AND (LIKE)
   const synMapLike = expandWithSynonyms(db, contentWords, 15);
+  const allSynsLike = [...synMapLike.values()].flat();
   if (contentWords.length > 0) {
     const groups = contentWords.map((w) => {
       const syns = synMapLike.get(w.toLowerCase()) ?? [];
@@ -529,7 +542,7 @@ function searchEnglishLike(db: Database.Database, input: string, limit: number):
         priority: number;
         common: number;
       }[];
-      const tier25 = applyGlossBonus(db, tier25Rows, input, 250);
+      const tier25 = applyGlossBonus(db, tier25Rows, input, 250, allSynsLike);
       for (const r of tier25) {
         if (!seenIds.has(r.entryId)) {
           seenIds.add(r.entryId);
