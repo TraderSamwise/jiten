@@ -446,8 +446,8 @@ export default function BookReaderScreen() {
         <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
       </View>
 
-      {/* Highlight toolbar: Copy + Open in */}
-      {copyTooltip && (
+      {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
+      {Platform.OS !== "web" && copyTooltip && (
         <HighlightToolbar
           tooltip={copyTooltip}
           readerY={readerLayoutY}
