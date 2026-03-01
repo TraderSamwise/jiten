@@ -35,12 +35,8 @@ function ProgressBar({
 
   return (
     <View className="mt-2 h-1.5 flex-row rounded-full overflow-hidden bg-muted">
-      {learnedPct > 0 && (
-        <View className="bg-green-600" style={{ width: `${learnedPct}%` }} />
-      )}
-      {learningPct > 0 && (
-        <View className="bg-yellow-500" style={{ width: `${learningPct}%` }} />
-      )}
+      {learnedPct > 0 && <View className="bg-green-600" style={{ width: `${learnedPct}%` }} />}
+      {learningPct > 0 && <View className="bg-yellow-500" style={{ width: `${learningPct}%` }} />}
     </View>
   );
 }
@@ -81,8 +77,12 @@ export default function ListsIndexScreen() {
     if (!userDb) return;
     (async () => {
       if (dictDb) {
-        const seeded = await seedDefaultListsIfNeeded(userDb, dictDb);
-        if (seeded) await useBookmarkStore.getState().load(userDb);
+        try {
+          const seeded = await seedDefaultListsIfNeeded(userDb, dictDb);
+          if (seeded) await useBookmarkStore.getState().load(userDb);
+        } catch (err) {
+          console.warn("[Lists] Seeding error (non-fatal):", err);
+        }
       }
       await loadLists();
     })();
@@ -119,7 +119,11 @@ export default function ListsIndexScreen() {
             learning: srs.learning,
             unlearned: (parsed.entryCount ?? 0) - srs.learned - srs.learning,
           };
-        } else if (parsed.configured && parsed.flashcardMode === "add_order" && parsed.studyPosition > 0) {
+        } else if (
+          parsed.configured &&
+          parsed.flashcardMode === "add_order" &&
+          parsed.studyPosition > 0
+        ) {
           // Add-order mode with progress — derive from study_position
           parsed.studyProgress = {
             learned: parsed.studyPosition,
@@ -300,9 +304,10 @@ export default function ListsIndexScreen() {
             <CardTitle>{item.name}</CardTitle>
           )}
           <CardDescription>{item.entryCount ?? 0} words</CardDescription>
-          {item.studyProgress && (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
-            <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
-          )}
+          {item.studyProgress &&
+            (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
+              <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
+            )}
         </PressableCard>
       </SwipeableRow>
     );
