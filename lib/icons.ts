@@ -27,6 +27,8 @@ import {
   EllipsisVertical,
   Info,
   Mic,
+  BarChart3,
+  User,
 } from "lucide-react-native";
 
 // Map className → style with color extraction so NativeWind
@@ -59,6 +61,8 @@ const icons = [
   EllipsisVertical,
   Info,
   Mic,
+  BarChart3,
+  User,
 ];
 
 for (const icon of icons) {
@@ -98,4 +102,6 @@ export {
   EllipsisVertical,
   Info,
   Mic,
+  BarChart3,
+  User,
 };

@@ -7,7 +7,7 @@ import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
-import { ChevronLeft, ChevronDown, SlidersHorizontal } from "@/lib/icons";
+import { ChevronLeft, ChevronDown, SlidersHorizontal, BookText, User } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
@@ -16,6 +16,8 @@ import {
   smartLookup,
   smartLookupWithOffset,
   selectionLookup,
+  nameLookup,
+  nameLookupWithOffset,
   type LookupResult,
 } from "@/lib/smart-lookup";
 import { parseBookRow } from "./index";
@@ -171,7 +173,7 @@ export default function BookReaderScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const userDb = useUserDb();
-  const { dictDb } = useDatabase();
+  const { dictDb, extendedDb } = useDatabase();
   const readerRef = useRef<ReaderViewRef>(null);
 
   const [book, setBook] = useState<Book | null>(null);
@@ -186,6 +188,12 @@ export default function BookReaderScreen() {
     null,
   );
   const [copied, setCopied] = useState(false);
+  const [nameMode, setNameMode] = useState(false);
+  const nameModeRef = useRef(false);
+
+  useEffect(() => {
+    nameModeRef.current = nameMode;
+  }, [nameMode]);
 
   // Track scroll position for saving
   const scrollPosRef = useRef(0);
@@ -249,9 +257,12 @@ export default function BookReaderScreen() {
         const msg = JSON.parse(data);
 
         if (msg.type === "tap" || msg.type === "selection") {
-          if (!dictDb) return;
           const text = msg.text as string;
           if (!text || text.length === 0) return;
+
+          const isNameMode = nameModeRef.current;
+          if (isNameMode && !extendedDb) return;
+          if (!isNameMode && !dictDb) return;
 
           setLookupResults([]);
           setLookupLoading(true);
@@ -267,24 +278,36 @@ export default function BookReaderScreen() {
               x: msg.startX ?? 0,
               y: msg.startY ?? 0,
             });
-            await selectionLookup(
-              text,
-              dictDb,
-              (result) => {
-                setLookupResults((prev) => [...prev, result]);
-              },
-              { prefix: msg.prefix || "", suffix: msg.suffix || "" },
-            );
+            if (isNameMode) {
+              // In name mode, just do a simple name lookup on the full selection
+              const names = await nameLookup(text, extendedDb!);
+              setLookupResults(names);
+            } else {
+              await selectionLookup(
+                text,
+                dictDb!,
+                (result) => {
+                  setLookupResults((prev) => [...prev, result]);
+                },
+                { prefix: msg.prefix || "", suffix: msg.suffix || "" },
+              );
+            }
           } else {
             // Store tap position; tooltip shown after lookup
             pendingTapPos.current = { x: msg.x ?? 0, y: msg.y ?? 0 };
             const tapOffset = msg.tapOffset as number | undefined;
             let results: LookupResult[];
 
-            if (tapOffset && tapOffset > 0) {
-              results = await smartLookupWithOffset(text, tapOffset, dictDb);
+            if (isNameMode) {
+              results =
+                tapOffset && tapOffset > 0
+                  ? await nameLookupWithOffset(text, tapOffset, extendedDb!)
+                  : await nameLookup(text, extendedDb!);
             } else {
-              results = await smartLookup(text, dictDb);
+              results =
+                tapOffset && tapOffset > 0
+                  ? await smartLookupWithOffset(text, tapOffset, dictDb!)
+                  : await smartLookup(text, dictDb!);
             }
             setLookupResults(results);
 
@@ -328,7 +351,7 @@ export default function BookReaderScreen() {
         }
       } catch {}
     },
-    [dictDb, userDb, bookId],
+    [dictDb, extendedDb, userDb, bookId],
   );
 
   const handleCopy = useCallback(() => {
@@ -380,6 +403,13 @@ export default function BookReaderScreen() {
         <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
           {book.title}
         </Text>
+        <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
+          {nameMode ? (
+            <User size={20} className="text-primary" />
+          ) : (
+            <BookText size={20} className="text-muted-foreground" />
+          )}
+        </Pressable>
         <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
           <SlidersHorizontal size={20} className="text-foreground" />
         </Pressable>
