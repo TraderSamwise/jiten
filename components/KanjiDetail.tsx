@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { View, ScrollView, Pressable, Linking, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
@@ -92,8 +93,8 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       .catch(() => {});
   }, [dictDb, radicals]);
 
-  // Batch-load user keywords for component radicals
-  useEffect(() => {
+  // Batch-load user keywords for component radicals (re-fetch on focus)
+  const loadComponentUserKeywords = useCallback(() => {
     if (!userDb || radicals.length === 0) return;
     const filtered = radicals.filter((r) => r !== literal);
     if (filtered.length === 0) return;
@@ -110,6 +111,8 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       })
       .catch(() => {});
   }, [userDb, radicals, literal]);
+
+  useFocusEffect(useCallback(() => { loadComponentUserKeywords(); }, [loadComponentUserKeywords]));
 
   // Compute highlighted mnemonic segments
   const mnemonicSegments = useMemo(() => {
