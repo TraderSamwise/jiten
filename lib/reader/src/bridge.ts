@@ -26,6 +26,17 @@ export function setupMessageListener(): void {
         applyHighlight(msg.start || 0, msg.length || 0);
       } else if (msg.type === "clearHighlight") {
         clearHighlight();
+      } else if (msg.type === "copyToClipboard") {
+        const text = msg.text as string;
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: "copied" }));
       }
     } catch {}
   });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, ActivityIndicator } from "react-native";
+import { View, Pressable, ActivityIndicator, Dimensions } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +21,62 @@ import {
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
+const TOOLTIP_W = 70;
+const TOOLTIP_H = 32;
+const TOOLTIP_GAP = 24;
+const POPUP_SAFE_ZONE = 380;
+
+function CopyTooltip({
+  copyTooltip,
+  readerY,
+  isDark,
+  copied,
+  onPress,
+}: {
+  copyTooltip: { text: string; x: number; y: number };
+  readerY: React.RefObject<number>;
+  isDark: boolean;
+  copied: boolean;
+  onPress: () => void;
+}) {
+  const screen = Dimensions.get("window");
+  const layoutY = readerY.current ?? 0;
+  const rawTop = layoutY + copyTooltip.y - TOOLTIP_H - TOOLTIP_GAP;
+  const top = Math.max(layoutY, Math.min(rawTop, screen.height - POPUP_SAFE_ZONE));
+  const left = Math.max(8, Math.min(copyTooltip.x - TOOLTIP_W / 2, screen.width - TOOLTIP_W - 8));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        position: "absolute",
+        zIndex: 101,
+        top,
+        left,
+        backgroundColor: isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)",
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
+      }}
+    >
+      <Text
+        style={{
+          color: isDark ? "#000" : "#fff",
+          fontSize: 13,
+          fontWeight: "600",
+        }}
+      >
+        {copied ? "Copied!" : "Copy"}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function BookReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const goBack = useSafeGoBack("/reader");
@@ -39,9 +95,17 @@ export default function BookReaderScreen() {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [fontSize, setFontSize] = useState(22);
+  const [copyTooltip, setCopyTooltip] = useState<{ text: string; x: number; y: number } | null>(
+    null,
+  );
+  const [copied, setCopied] = useState(false);
 
   // Track scroll position for saving
   const scrollPosRef = useRef(0);
+  // Track ReaderView's Y offset in screen coordinates
+  const readerLayoutY = useRef(0);
+  // Store tap position while waiting for lookup results
+  const pendingTapPos = useRef<{ x: number; y: number } | null>(null);
 
   // Load book
   useEffect(() => {
@@ -106,8 +170,16 @@ export default function BookReaderScreen() {
           setLookupLoading(true);
           setLookupError(null);
           setShowPopup(true);
+          setCopyTooltip(null);
+          setCopied(false);
 
           if (msg.type === "selection") {
+            // Show copy tooltip immediately for selections
+            setCopyTooltip({
+              text,
+              x: msg.startX ?? 0,
+              y: msg.startY ?? 0,
+            });
             await selectionLookup(
               text,
               dictDb,
@@ -117,6 +189,8 @@ export default function BookReaderScreen() {
               { prefix: msg.prefix || "", suffix: msg.suffix || "" },
             );
           } else {
+            // Store tap position; tooltip shown after lookup
+            pendingTapPos.current = { x: msg.x ?? 0, y: msg.y ?? 0 };
             const tapOffset = msg.tapOffset as number | undefined;
             let results: LookupResult[];
 
@@ -138,6 +212,14 @@ export default function BookReaderScreen() {
                   length: results[0].matchedText.length,
                 }),
               );
+              // Show copy tooltip at tap position
+              if (pendingTapPos.current) {
+                setCopyTooltip({
+                  text: results[0].matchedText,
+                  x: pendingTapPos.current.x,
+                  y: pendingTapPos.current.y,
+                });
+              }
             }
           }
           setLookupLoading(false);
@@ -161,6 +243,18 @@ export default function BookReaderScreen() {
     },
     [dictDb, userDb, bookId],
   );
+
+  const handleCopy = useCallback(() => {
+    if (!copyTooltip) return;
+    readerRef.current?.postMessage(
+      JSON.stringify({ type: "copyToClipboard", text: copyTooltip.text }),
+    );
+    setCopied(true);
+    setTimeout(() => {
+      setCopyTooltip(null);
+      setCopied(false);
+    }, 800);
+  }, [copyTooltip]);
 
   const handleFontSizeChange = useCallback(
     (newSize: number) => {
@@ -226,7 +320,25 @@ export default function BookReaderScreen() {
       )}
 
       {/* Reader content */}
-      <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+      <View
+        style={{ flex: 1 }}
+        onLayout={(e) => {
+          readerLayoutY.current = e.nativeEvent.layout.y;
+        }}
+      >
+        <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+      </View>
+
+      {/* Copy tooltip */}
+      {copyTooltip && (
+        <CopyTooltip
+          copyTooltip={copyTooltip}
+          readerY={readerLayoutY}
+          isDark={isDark}
+          copied={copied}
+          onPress={handleCopy}
+        />
+      )}
 
       {/* Dictionary popup */}
       <DictionaryPopup
@@ -238,6 +350,8 @@ export default function BookReaderScreen() {
           setLookupResults([]);
           setLookupLoading(false);
           setLookupError(null);
+          setCopyTooltip(null);
+          setCopied(false);
           readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
         }}
         results={lookupResults}
