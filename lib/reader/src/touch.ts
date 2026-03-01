@@ -124,6 +124,8 @@ export function setupTouchHandlers(): void {
                 text: text,
                 prefix: prefix,
                 suffix: suffix,
+                startX: touchStartX,
+                startY: touchStartY,
               }),
             );
           } else if (text.length > 1000) {

@@ -109,6 +109,8 @@ export function setupMouseHandlers(): void {
               text: text,
               prefix: prefix,
               suffix: suffix,
+              startX: mouseStartX,
+              startY: mouseStartY,
             }),
           );
         } else if (text.length > 1000) {
