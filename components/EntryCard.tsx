@@ -1,7 +1,7 @@
 import React from "react";
-import { useRouter } from "expo-router";
 import { PressableCard } from "@/components/ui/card";
 import { EntrySummary } from "@/components/EntrySummary";
+import { useTabRouter } from "@/lib/navigation";
 import type { DictEntry } from "@/db/types";
 
 interface EntryCardProps {
@@ -9,10 +9,10 @@ interface EntryCardProps {
 }
 
 export function EntryCard({ entry }: EntryCardProps) {
-  const router = useRouter();
+  const tabRouter = useTabRouter();
 
   return (
-    <PressableCard className="mb-2" onPress={() => router.push(`/dictionary/word/${entry.id}`)}>
+    <PressableCard className="mb-2" onPress={() => tabRouter.pushWord(entry.id)}>
       <EntrySummary entry={entry} />
     </PressableCard>
   );

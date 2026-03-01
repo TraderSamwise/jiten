@@ -1,9 +1,9 @@
 import React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
 import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { Badge } from "@/components/ui/badge";
+import { useTabRouter } from "@/lib/navigation";
 import type { KanjiCharacter } from "@/db/types";
 
 interface KanjiCardProps {
@@ -11,7 +11,7 @@ interface KanjiCardProps {
 }
 
 export function KanjiCard({ kanji }: KanjiCardProps) {
-  const router = useRouter();
+  const tabRouter = useTabRouter();
 
   const onReadings = kanji.readingsOn.join(" · ");
   const meanings = kanji.meanings.slice(0, 3).join(", ");
@@ -19,7 +19,7 @@ export function KanjiCard({ kanji }: KanjiCardProps) {
   return (
     <PressableCard
       className="mb-2"
-      onPress={() => router.push(`/dictionary/kanji/${encodeURIComponent(kanji.literal)}`)}
+      onPress={() => tabRouter.pushKanji(kanji.literal)}
     >
       <View className="flex-row items-start gap-3">
         <Text className="text-3xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
