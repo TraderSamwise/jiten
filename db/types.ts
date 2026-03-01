@@ -112,6 +112,7 @@ export interface WordList {
   createdAt: string;
   updatedAt: string;
   entryCount?: number;
+  studyProgress?: { learned: number; learning: number; unlearned: number };
 }
 
 export interface Book {

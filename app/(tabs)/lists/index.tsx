@@ -22,6 +22,29 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+function ProgressBar({
+  progress,
+  total,
+}: {
+  progress: { learned: number; learning: number; unlearned: number };
+  total: number;
+}) {
+  if (total <= 0) return null;
+  const learnedPct = (progress.learned / total) * 100;
+  const learningPct = (progress.learning / total) * 100;
+
+  return (
+    <View className="mt-2 h-1.5 flex-row rounded-full overflow-hidden bg-muted">
+      {learnedPct > 0 && (
+        <View className="bg-green-600" style={{ width: `${learnedPct}%` }} />
+      )}
+      {learningPct > 0 && (
+        <View className="bg-yellow-500" style={{ width: `${learningPct}%` }} />
+      )}
+    </View>
+  );
+}
+
 export default function ListsIndexScreen() {
   const router = useRouter();
   const userDb = useUserDb();
@@ -72,7 +95,41 @@ export default function ListsIndexScreen() {
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
-    setLists(rows.map(parseListRow));
+
+    // Fetch SRS progress counts per list (handles both FSRS and simple_srs modes)
+    type SrsProgress = { list_id: string; total: number; learned: number; learning: number };
+    const srsRows = await userDb.getAllAsync<SrsProgress>(
+      `SELECT list_id,
+        COUNT(*) as total,
+        SUM(CASE WHEN state = 2 OR simple_stage = 1 THEN 1 ELSE 0 END) as learned,
+        SUM(CASE WHEN state IN (1, 3) OR simple_stage = 0 THEN 1 ELSE 0 END) as learning
+       FROM srs_cards
+       GROUP BY list_id`,
+    );
+    const srsMap = new Map<string, SrsProgress>(srsRows.map((r: SrsProgress) => [r.list_id, r]));
+
+    setLists(
+      rows.map((row: WordList & { entryCount: number }) => {
+        const parsed = parseListRow(row);
+        const srs = srsMap.get(parsed.id);
+        if (srs) {
+          // Has SRS cards — use SRS counts
+          parsed.studyProgress = {
+            learned: srs.learned,
+            learning: srs.learning,
+            unlearned: (parsed.entryCount ?? 0) - srs.learned - srs.learning,
+          };
+        } else if (parsed.configured && parsed.flashcardMode === "add_order" && parsed.studyPosition > 0) {
+          // Add-order mode with progress — derive from study_position
+          parsed.studyProgress = {
+            learned: parsed.studyPosition,
+            learning: 0,
+            unlearned: (parsed.entryCount ?? 0) - parsed.studyPosition,
+          };
+        }
+        return parsed;
+      }),
+    );
   }
 
   async function handleCreateList() {
@@ -243,6 +300,9 @@ export default function ListsIndexScreen() {
             <CardTitle>{item.name}</CardTitle>
           )}
           <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+          {item.studyProgress && (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
+            <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
+          )}
         </PressableCard>
       </SwipeableRow>
     );
