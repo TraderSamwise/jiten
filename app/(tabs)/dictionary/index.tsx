@@ -16,7 +16,7 @@ import { NameCard } from "@/components/NameCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
-import { searchNames } from "@/db/name-search";
+import { searchNames, type NameFilter } from "@/db/name-search";
 import {
   searchKanjiByMeaningAsync,
   searchKanjiByReadingAsync,
@@ -29,8 +29,8 @@ import type { DictEntry, GlossGroup, KanjiCharacter, NameEntry } from "@/db/type
 
 interface Section {
   title: string;
-  type: "words" | "definitions" | "names";
-  data: (DictEntry | GlossGroup | NameEntry)[];
+  type: "words" | "definitions";
+  data: (DictEntry | GlossGroup)[];
 }
 
 function isSingleKanji(input: string): boolean {
@@ -153,6 +153,10 @@ export default function SearchScreen() {
     searchMode,
     kanjiResults,
     setKanjiResults,
+    nameResults,
+    setNameResults,
+    nameFilter,
+    setNameFilter,
   } = useSearchStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGenRef = useRef(0);
@@ -185,15 +189,9 @@ export default function SearchScreen() {
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const [searchResults, nameResults] = await Promise.all([
-          searchDictionary(dictDb, query, 50, extendedDb),
-          extendedDb ? searchNames(extendedDb, query) : Promise.resolve([]),
-        ]);
+        const searchResults = await searchDictionary(dictDb, query, 50, extendedDb);
         if (gen !== searchGenRef.current) return;
-        setResults({
-          ...searchResults,
-          names: nameResults.length > 0 ? nameResults : undefined,
-        });
+        setResults(searchResults);
       } catch (err) {
         if (gen !== searchGenRef.current) return;
         console.error("Search error:", err);
@@ -253,6 +251,37 @@ export default function SearchScreen() {
     };
   }, [dictDb, isReady, query, searchMode]);
 
+  // Names mode search
+  useEffect(() => {
+    if (searchMode !== "names") return;
+    if (!extendedDb || !isReady) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setNameResults([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const gen = ++searchGenRef.current;
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchNames(extendedDb, trimmed, 30, nameFilter);
+        if (gen !== searchGenRef.current) return;
+        setNameResults(results);
+      } catch (err) {
+        if (gen !== searchGenRef.current) return;
+        console.error("Name search error:", err);
+        setNameResults([]);
+      }
+    }, 200);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [extendedDb, isReady, query, searchMode, nameFilter]);
+
   const sections = useMemo<Section[]>(() => {
     if (searchMode !== "normal") return [];
     const s: Section[] = [];
@@ -262,21 +291,15 @@ export default function SearchScreen() {
     } else if (results.japanese.length > 0) {
       s.push({ title: "Words", type: "words", data: results.japanese });
     }
-    if (results.names && results.names.length > 0) {
-      s.push({ title: "Names", type: "names", data: results.names });
-    }
     return s;
   }, [results, searchMode]);
 
   const hasBothSections = sections.length > 1;
 
   const renderItem = useCallback(
-    ({ item, section }: { item: DictEntry | GlossGroup | NameEntry; section: Section }) => {
+    ({ item, section }: { item: DictEntry | GlossGroup; section: Section }) => {
       if (section.type === "definitions") {
         return <GlossGroupCard group={item as GlossGroup} />;
-      }
-      if (section.type === "names") {
-        return <NameCard name={item as NameEntry} />;
       }
       return <EntryCard entry={item as DictEntry} />;
     },
@@ -347,6 +370,65 @@ export default function SearchScreen() {
     );
   }
 
+  // Names mode
+  if (searchMode === "names") {
+    const filterChips: { key: NameFilter; label: string }[] = [
+      { key: "all", label: "All" },
+      { key: "person", label: "People" },
+      { key: "place", label: "Places" },
+    ];
+
+    return (
+      <View className="flex-1 bg-background">
+        {isSearching && (
+          <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+            <ActivityIndicator size="large" />
+          </View>
+        )}
+
+        {/* Filter chips */}
+        <View className="flex-row gap-2 px-4 pt-2 pb-1">
+          {filterChips.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              onPress={() => setNameFilter(key)}
+              className={`rounded-full px-3 py-1 active:opacity-70 ${
+                nameFilter === key ? "bg-primary" : "bg-secondary"
+              }`}
+            >
+              <Text
+                className={`text-sm font-medium ${
+                  nameFilter === key ? "text-primary-foreground" : "text-foreground"
+                }`}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <FlatList
+          data={nameResults}
+          keyExtractor={(item) => `${item.id}`}
+          renderItem={({ item }) => <NameCard name={item} />}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
+          ListEmptyComponent={
+            query.trim() && !isSearching ? (
+              <View className="items-center pt-10">
+                <Text className="text-muted-foreground">No names found</Text>
+              </View>
+            ) : !query.trim() ? (
+              <View className="items-center pt-10">
+                <Text className="text-2xl">名前</Text>
+                <Text className="mt-2 text-muted-foreground">Search Japanese names</Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+    );
+  }
+
   // Normal mode
   return (
     <View className="flex-1 bg-background">
@@ -362,7 +444,6 @@ export default function SearchScreen() {
         renderSectionHeader={renderSectionHeader}
         keyExtractor={(item, index) => {
           if ("gloss" in item) return `gloss-${item.gloss}-${index}`;
-          if ("kana" in item && "nameType" in item) return `name-${item.id}-${index}`;
           return `${(item as DictEntry).id}-${index}`;
         }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}

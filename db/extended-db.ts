@@ -43,7 +43,8 @@ async function createExtendedSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       kanji TEXT,
       kana TEXT NOT NULL,
       name_type TEXT,
-      translation TEXT
+      translation TEXT,
+      category TEXT
     );
   `);
 }
@@ -96,6 +97,8 @@ export async function resetDataset(db: SQLite.SQLiteDatabase, datasetKey: string
   } else if (datasetKey === "names") {
     await db.execAsync("DROP INDEX IF EXISTS idx_ext_names_kanji");
     await db.execAsync("DROP INDEX IF EXISTS idx_ext_names_kana");
+    await db.execAsync("DROP INDEX IF EXISTS idx_ext_names_category");
+    await db.execAsync("DROP TABLE IF EXISTS names_fts");
   }
 }
 
@@ -107,5 +110,15 @@ export async function buildIndexes(db: SQLite.SQLiteDatabase, datasetKey: string
   } else if (datasetKey === "names") {
     await db.execAsync("CREATE INDEX IF NOT EXISTS idx_ext_names_kanji ON names(kanji)");
     await db.execAsync("CREATE INDEX IF NOT EXISTS idx_ext_names_kana ON names(kana)");
+    await db.execAsync("CREATE INDEX IF NOT EXISTS idx_ext_names_category ON names(category)");
+    try {
+      await db.execAsync(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS names_fts USING fts5(translation, content=names, content_rowid=id)",
+      );
+      await db.execAsync("INSERT INTO names_fts(names_fts) VALUES('rebuild')");
+      console.log("[Extended] names: FTS5 index built");
+    } catch (e) {
+      console.warn("[Extended] names: FTS5 not available, will use LIKE fallback", e);
+    }
   }
 }
