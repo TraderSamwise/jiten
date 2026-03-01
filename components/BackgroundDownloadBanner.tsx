@@ -24,12 +24,13 @@ export function BackgroundDownloadBanner() {
 
   return (
     <View className="bg-secondary">
-      <View className="flex-row items-center justify-center px-4 py-1.5 gap-2">
+      <View className="flex-row items-center justify-center px-4 pb-0.5">
         <Text className="text-xs text-secondary-foreground">
-          {stateLabel} {activeItem.label}... {percent}%
+          {stateLabel} {activeItem.label}...
         </Text>
+        <Text className="text-xs text-secondary-foreground">{percent}%</Text>
       </View>
-      <View className="h-0.5 bg-border">
+      <View className="h-px bg-border">
         <View className="h-full bg-primary" style={{ width: `${percent}%` }} />
       </View>
     </View>
