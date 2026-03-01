@@ -140,6 +140,9 @@ export async function importDataset(opts: {
     ]);
 
     onProgress?.(imported, expectedRowCount);
+
+    // Yield to the JS thread between batches so UI stays responsive
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   // Finalize: build indexes and mark version
