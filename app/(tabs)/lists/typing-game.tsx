@@ -39,7 +39,13 @@ import {
   hasFlickPending,
   type CharStatus,
 } from "@/lib/typing-utils";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAtom } from "jotai";
+import {
+  typingFuriganaModeAtom,
+  typingShowPitchAtom,
+  typingPlayAudioAtom,
+  type FuriganaMode,
+} from "@/stores/settings";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
 import type { DictEntry } from "@/db/types";
@@ -56,8 +62,6 @@ const INPUT_HEIGHT = 80;
 
 type Phase = "select" | "playing" | "done";
 type GameMode = "review" | "learn" | "all";
-type FuriganaMode = "off" | "auto" | "on";
-
 interface WordState {
   entry: DictEntry;
   completed: boolean;
@@ -366,33 +370,11 @@ export default function TypingGameScreen() {
   const { dictDb, audioDb } = useDatabase();
 
   const [phase, setPhase] = useState<Phase>("select");
-  const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>("auto");
-  const [showPitchOpt, setShowPitchOpt] = useState(true);
-  const [playAudioOpt, setPlayAudioOpt] = useState(false);
+  const [furiganaMode, setFuriganaMode] = useAtom(typingFuriganaModeAtom);
+  const [showPitchOpt, setShowPitchOpt] = useAtom(typingShowPitchAtom);
+  const [playAudioOpt, setPlayAudioOpt] = useAtom(typingPlayAudioAtom);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoFuriganaRevealed, setAutoFuriganaRevealed] = useState(false);
-
-  // Persist game options across sessions
-  const SETTINGS_KEY = "typing-game-settings";
-
-  useEffect(() => {
-    AsyncStorage.getItem(SETTINGS_KEY).then((raw) => {
-      if (!raw) return;
-      try {
-        const saved = JSON.parse(raw);
-        if (saved.furiganaMode) setFuriganaMode(saved.furiganaMode);
-        if (saved.showPitchOpt !== undefined) setShowPitchOpt(saved.showPitchOpt);
-        if (saved.playAudioOpt !== undefined) setPlayAudioOpt(saved.playAudioOpt);
-      } catch {}
-    });
-  }, []);
-
-  useEffect(() => {
-    AsyncStorage.setItem(
-      SETTINGS_KEY,
-      JSON.stringify({ furiganaMode, showPitchOpt, playAudioOpt }),
-    );
-  }, [furiganaMode, showPitchOpt, playAudioOpt]);
   const [words, setWords] = useState<WordState[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [typedRomaji, setTypedRomaji] = useState("");

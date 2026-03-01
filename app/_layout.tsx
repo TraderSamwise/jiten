@@ -1,7 +1,7 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Platform } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
@@ -11,7 +11,7 @@ import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { UserDatabaseProvider } from "@/db/user-provider";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
-import { loadTheme, applyTheme } from "@/lib/theme";
+import { useThemeEffect } from "@/lib/theme-effect";
 import "../global.css";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -63,15 +63,9 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
-  const [themeReady, setThemeReady] = useState(false);
   const { colorScheme } = useColorScheme();
 
-  useEffect(() => {
-    loadTheme().then((pref) => {
-      applyTheme(pref);
-      setThemeReady(true);
-    });
-  }, []);
+  useThemeEffect();
 
   // Check for OTA updates on app launch (native only)
   useEffect(() => {
@@ -95,12 +89,12 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    if (loaded && themeReady) {
+    if (loaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, themeReady]);
+  }, [loaded]);
 
-  if (!loaded || !themeReady) return null;
+  if (!loaded) return null;
 
   const navTheme = colorScheme === "dark" ? DarkTheme : DefaultTheme;
 

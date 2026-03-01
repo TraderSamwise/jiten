@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Platform, View } from "react-native";
+import { useAtom } from "jotai";
 import { alert } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { loadTheme, saveTheme, applyTheme, type ThemePreference } from "@/lib/theme";
+import { themeAtom, type ThemePreference } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
@@ -15,16 +16,10 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 ];
 
 export default function SettingsScreen() {
-  const [activeTheme, setActiveTheme] = useState<ThemePreference>("system");
+  const [activeTheme, setActiveTheme] = useAtom(themeAtom);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  useEffect(() => {
-    loadTheme().then(setActiveTheme);
-  }, []);
-
   function handleThemeChange(theme: ThemePreference) {
-    applyTheme(theme);
-    saveTheme(theme);
     setActiveTheme(theme);
   }
 
