@@ -163,8 +163,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       </View>
 
       {/* Mnemonic */}
-      {(kanji.heisigIndex != null || mnemonic) && (
-        <Card className="mb-3">
+      <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
           {editingMnemonic ? (
             <TextInput
@@ -199,8 +198,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               )}
             </Pressable>
           )}
-        </Card>
-      )}
+      </Card>
 
       {/* Readings */}
       <Card className="mb-3">
@@ -238,11 +236,11 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       )}
 
       {/* Components */}
-      {radicals.length > 0 && (
+      {radicals.filter((r) => r !== literal).length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
           <View className="flex-row flex-wrap gap-2">
-            {radicals.map((r) => {
+            {radicals.filter((r) => r !== literal).map((r) => {
               const ck = componentKanji.get(r);
               const meaning = ck?.heisigKeyword ?? ck?.meanings[0];
               return (
