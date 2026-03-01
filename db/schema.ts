@@ -170,6 +170,17 @@ export const practiceEvents = sqliteTable("practice_events", {
   reviewedAt: text("reviewed_at").notNull(),
 });
 
+export const practiceSessions = sqliteTable("practice_sessions", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  listId: text("list_id"),
+  practiceMode: text("practice_mode").notNull(),
+  startedAt: text("started_at").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  totalItems: integer("total_items").notNull(),
+  correctCount: integer("correct_count").notNull(),
+});
+
 export const confusionPairs = sqliteTable("confusion_pairs", {
   id: text("id").primaryKey(),
   entryIdA: integer("entry_id_a").notNull(),

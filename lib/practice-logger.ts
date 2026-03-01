@@ -10,6 +10,7 @@ interface PracticeEvent {
   correct: boolean;
   responseMs?: number | null;
   typedAnswer?: string | null;
+  sessionId?: string | null;
 }
 
 function generateId(): string {
@@ -18,8 +19,8 @@ function generateId(): string {
 
 export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEvent): Promise<void> {
   await userDb.runAsync(
-    `INSERT INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, response_ms, typed_answer, reviewed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, response_ms, typed_answer, reviewed_at, session_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),
       event.entryId,
@@ -30,6 +31,35 @@ export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEve
       event.responseMs ?? null,
       event.typedAnswer ?? null,
       new Date().toISOString(),
+      event.sessionId ?? null,
+    ],
+  );
+}
+
+export async function logSessionSummary(
+  userDb: WrappedUserDb,
+  summary: {
+    sessionId: string;
+    listId: string;
+    practiceMode: PracticeMode;
+    startedAt: string;
+    durationMs: number;
+    totalItems: number;
+    correctCount: number;
+  },
+): Promise<void> {
+  await userDb.runAsync(
+    `INSERT INTO practice_sessions (id, session_id, list_id, practice_mode, started_at, duration_ms, total_items, correct_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      generateId(),
+      summary.sessionId,
+      summary.listId,
+      summary.practiceMode,
+      summary.startedAt,
+      summary.durationMs,
+      summary.totalItems,
+      summary.correctCount,
     ],
   );
 }

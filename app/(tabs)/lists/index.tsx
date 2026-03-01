@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
-import { Pencil, Trash2, ChevronDown } from "@/lib/icons";
+import { Pencil, Trash2, ChevronDown, BarChart3 } from "@/lib/icons";
 import { confirm, alert } from "@/lib/confirm";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
@@ -303,7 +303,19 @@ export default function ListsIndexScreen() {
           ) : (
             <CardTitle>{item.name}</CardTitle>
           )}
-          <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+          <View className="flex-row items-center justify-between">
+            <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                router.push(`/lists/stats?listId=${item.id}`);
+              }}
+              className="p-1 -mr-1"
+              hitSlop={8}
+            >
+              <BarChart3 size={14} className="text-muted-foreground" />
+            </Pressable>
+          </View>
           {item.studyProgress &&
             (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
               <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />

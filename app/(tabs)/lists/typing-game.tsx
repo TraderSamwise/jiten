@@ -48,7 +48,7 @@ import {
 } from "@/stores/settings";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
-import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
+import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { findReadingConfusion } from "@/lib/confused-words";
 import type { DictEntry } from "@/db/types";
 
@@ -409,6 +409,8 @@ export default function TypingGameScreen() {
   const scrollOffset = useRef(0);
   const scrollViewHeight = useRef(0);
   const wordStartTime = useRef(0);
+  const sessionIdRef = useRef("");
+  const correctCountRef = useRef(0);
 
   // Floating coins rendered outside ScrollView to avoid clipping
   const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
@@ -561,6 +563,8 @@ export default function TypingGameScreen() {
     setCompletedTotal(0);
     setCorrectCount(0);
     setIncorrectCount(0);
+    sessionIdRef.current = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+    correctCountRef.current = 0;
 
     const firstBatchIds = entryIds.slice(0, batchSize);
     shuffledQueue.current = entryIds.slice(batchSize);
@@ -603,6 +607,7 @@ export default function TypingGameScreen() {
 
     if (isCorrect) {
       setCorrectCount((c) => c + 1);
+      correctCountRef.current++;
     } else {
       setIncorrectCount((c) => c + 1);
     }
@@ -619,6 +624,7 @@ export default function TypingGameScreen() {
         correct: isCorrect,
         responseMs,
         typedAnswer: converted,
+        sessionId: sessionIdRef.current,
       }).catch(() => {});
 
       // Reading-based confusion detection on incorrect answers
@@ -666,6 +672,17 @@ export default function TypingGameScreen() {
         setCompletedTotal(newCompletedTotal);
         setEndTime(Date.now());
         setPhase("done");
+        if (userDb && listId) {
+          logSessionSummary(userDb, {
+            sessionId: sessionIdRef.current,
+            listId,
+            practiceMode: "typing_game",
+            startedAt: new Date(startTime).toISOString(),
+            durationMs: Date.now() - startTime,
+            totalItems: newCompletedTotal,
+            correctCount: correctCountRef.current,
+          }).catch(() => {});
+        }
       }
     } else {
       setCurrentWordIndex(nextIndex);
@@ -754,8 +771,12 @@ export default function TypingGameScreen() {
     // Decrement the counter for the previous word's result before undoing it
     const prevWord = words[prevIndex];
     if (prevWord.completed) {
-      if (prevWord.correct) setCorrectCount((c) => c - 1);
-      else setIncorrectCount((c) => c - 1);
+      if (prevWord.correct) {
+        setCorrectCount((c) => c - 1);
+        correctCountRef.current--;
+      } else {
+        setIncorrectCount((c) => c - 1);
+      }
     }
 
     // Unmark the previous word

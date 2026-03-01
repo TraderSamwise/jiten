@@ -358,6 +358,15 @@ export default function ListDetailScreen() {
               <Text className="text-sm text-foreground">Flashcard Settings</Text>
             </Pressable>
             <Pressable
+              className="px-4 py-3 border-b border-border"
+              onPress={() => {
+                setMenuVisible(false);
+                router.push(`/lists/stats?listId=${id}`);
+              }}
+            >
+              <Text className="text-sm text-foreground">Practice Stats</Text>
+            </Pressable>
+            <Pressable
               className="px-4 py-3"
               onPress={() => {
                 setMenuVisible(false);
