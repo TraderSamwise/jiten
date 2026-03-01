@@ -23,15 +23,16 @@ export function BackgroundDownloadBanner() {
   const stateLabel = STATE_LABELS[activeItem.state] ?? "Preparing";
 
   return (
-    <View className="bg-secondary">
-      <View className="flex-row items-center justify-center px-4 pb-0.5">
-        <Text className="text-xs text-secondary-foreground">
-          {stateLabel} {activeItem.label}...
-        </Text>
-        <Text className="text-xs text-secondary-foreground">{percent}%</Text>
-      </View>
+    <View style={{ position: "absolute", bottom: 0, left: 0, right: 0 }} pointerEvents="none">
       <View className="h-px bg-border">
         <View className="h-full bg-primary" style={{ width: `${percent}%` }} />
+      </View>
+      <View className="bg-secondary">
+        <View className="flex-row items-center justify-center px-4 pt-1 pb-4">
+          <Text className="text-xs text-secondary-foreground">
+            {stateLabel} {activeItem.label}... {percent}%
+          </Text>
+        </View>
       </View>
     </View>
   );
