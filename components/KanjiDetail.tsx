@@ -346,8 +346,8 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               const meaningColor = userKw
                 ? "text-xs text-blue-500 font-medium"
                 : ck?.heisigKeyword
-                  ? "text-xs text-muted-foreground"
-                  : "text-xs text-muted-foreground/60";
+                  ? "text-xs text-foreground font-medium"
+                  : "text-xs text-muted-foreground";
               return (
                 <Pressable
                   key={r}
