@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeGoBack } from "@/lib/navigation";
+import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -401,6 +401,7 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
 export default function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
+  const tabRouter = useTabRouter();
   const navigateBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { dictDb, audioDb } = useDatabase();
@@ -1797,9 +1798,7 @@ export default function StudyScreen() {
                           onPress={() =>
                             currentItem.kind === "entry"
                               ? router.push(`/lists/word/${currentItem.entry.id}`)
-                              : router.push(
-                                  `/dictionary/kanji/${encodeURIComponent(currentItem.kanji.literal)}`,
-                                )
+                              : tabRouter.pushKanji(currentItem.kanji.literal)
                           }
                           hitSlop={8}
                         >

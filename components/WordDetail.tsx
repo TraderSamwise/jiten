@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, ScrollView, Pressable } from "react-native";
-import { useNavigation, useRouter } from "expo-router";
+import { useNavigation } from "expo-router";
+import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,7 @@ interface WordDetailProps {
 export function WordDetail({ entryId }: WordDetailProps) {
   const { dictDb, isReady } = useDatabase();
   const navigation = useNavigation();
-  const router = useRouter();
+  const tabRouter = useTabRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entryId}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
@@ -89,9 +90,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
                           <Text
                             key={ci}
                             className="text-4xl font-bold text-foreground"
-                            onPress={() =>
-                              router.push(`/dictionary/kanji/${encodeURIComponent(ch)}`)
-                            }
+                            onPress={() => tabRouter.pushKanji(ch)}
                           >
                             {ch}
                           </Text>

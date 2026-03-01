@@ -55,6 +55,42 @@ The ebook reader uses **JS-measured virtualized pagination** (not CSS columns):
 
 No scrolling is involved — page navigation directly swaps DOM content.
 
+## Navigation
+
+The app uses Expo Router with a **tab navigator** containing 4 tabs (Dictionary, Lists, Reader, Settings), each with its own **stack navigator**. This gives per-tab navigation history — switching tabs preserves each tab's position.
+
+### Cross-tab navigation problem
+
+Shared screens (kanji detail, word detail) exist under multiple tabs so that navigation stays within the current tab's stack. Without this, navigating from Lists to a kanji detail would switch to the Dictionary tab, and back would go to Dictionary root instead of the list.
+
+### `useTabRouter()` — tab-aware navigation for shared screens
+
+`lib/navigation.ts` exports `useTabRouter()` which provides `pushKanji(literal)` and `pushWord(id)` methods. These auto-detect the current tab and build the correct path (e.g., `/lists/kanji/X` when in the Lists tab).
+
+**When adding a new shared screen:**
+
+1. Create the route file under each tab that needs it (tiny wrapper rendering the shared component)
+2. Register it in each tab's `_layout.tsx`
+3. Add a method to `useTabRouter()` in `lib/navigation.ts`
+4. Use that method instead of `router.push()` with a hardcoded path
+
+Use `router.push()` directly only for intentional cross-tab navigation (e.g., radical search always goes to Dictionary).
+
+### Back button handling
+
+- **Lists and Reader tabs**: `SafeBackButton` is set as the default `headerLeft` in each tab's `_layout.tsx` via `screenOptions`. All non-index screens get a back button automatically — no per-screen code needed. It uses `useSafeGoBack()` which pops the stack if there's history, or navigates to the tab root on web refresh/deep link.
+- **Dictionary tab**: Uses a fully custom `DictionaryHeader` component (search bar, mode toggle) which handles its own back button via `useSafeGoBack("/dictionary")`.
+- **Fullscreen screens** (study, typing-game, reader): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
+
+### Key files
+
+| File | Purpose |
+| --- | --- |
+| `lib/navigation.ts` | `useSafeGoBack()`, `SafeBackButton`, `useTabRouter()` |
+| `app/(tabs)/lists/_layout.tsx` | Lists stack with automatic `SafeBackButton` |
+| `app/(tabs)/reader/_layout.tsx` | Reader stack with automatic `SafeBackButton` |
+| `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button |
+
 ## Scripts
 
 ### Dictionary Database

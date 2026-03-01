@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, ScrollView, Pressable, Linking, TextInput } from "react-native";
 import { useRouter } from "expo-router";
+import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ interface KanjiDetailProps {
 export function KanjiDetail({ literal }: KanjiDetailProps) {
   const { dictDb, isReady } = useDatabase();
   const router = useRouter();
+  const tabRouter = useTabRouter();
   const { setSearchMode, setSelectedRadicals } = useSearchStore();
   const [kanji, setKanji] = useState<KanjiCharacter | null>(null);
   const [similar, setSimilar] = useState<SimilarKanji[]>([]);
@@ -90,7 +92,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   };
 
   const handleSimilarPress = (similarLiteral: string) => {
-    router.push(`/dictionary/kanji/${encodeURIComponent(similarLiteral)}`);
+    tabRouter.pushKanji(similarLiteral);
   };
 
   const handleKoohiiPress = (character: string) => {
@@ -248,7 +250,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                   key={r}
                   onPress={() => {
                     if (ck) {
-                      router.push(`/dictionary/kanji/${encodeURIComponent(r)}`);
+                      tabRouter.pushKanji(r);
                     } else {
                       handleRadicalPress(r);
                     }

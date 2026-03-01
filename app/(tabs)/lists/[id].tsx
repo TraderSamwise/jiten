@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, FlatList, Pressable } from "react-native";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
   const router = useRouter();
+  const tabRouter = useTabRouter();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
   const [items, setItems] = useState<ListItem[]>([]);
@@ -230,9 +232,7 @@ export default function ListDetailScreen() {
           <SwipeableRow actions={actions}>
             <PressableCard
               className="mb-1 p-3"
-              onPress={() =>
-                router.push(`/dictionary/kanji/${encodeURIComponent(item.kanji.literal)}`)
-              }
+              onPress={() => tabRouter.pushKanji(item.kanji.literal)}
             >
               <View className={bookmarkClass}>
                 <View className="flex-row items-baseline gap-2">
