@@ -9,4 +9,4 @@
  *   - db/dict-download.ts  (app runtime — checks local vs expected)
  *   - scripts/build-dictionary.ts (build time — writes into manifest)
  */
-export const DICT_VERSION = 13;
+export const DICT_VERSION = 14;

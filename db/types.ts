@@ -74,6 +74,7 @@ export interface KanjiCharacter {
   unicodeCodepoint: string;
   strokePaths: StrokePath[];
   heisigKeyword: string | null;
+  heisigLesson: number | null;
 }
 
 export interface StrokePath {
