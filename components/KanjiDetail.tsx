@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from "react";
-import { View, ScrollView, Pressable, Linking, TextInput } from "react-native";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { View, ScrollView, Pressable, Linking, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
+import { useUserDb } from "@/db/user-provider";
 import { useSearchStore } from "@/stores/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
+import { highlightKeywords } from "@/lib/highlight-keywords";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -41,14 +43,19 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [words, setWords] = useState<DictEntry[]>([]);
   const [usedIn, setUsedIn] = useState<KanjiCharacter[]>([]);
   const [componentKanji, setComponentKanji] = useState<Map<string, KanjiCharacter>>(new Map());
+  const [componentUserKeywords, setComponentUserKeywords] = useState<Map<string, string>>(new Map());
   const [editingMnemonic, setEditingMnemonic] = useState(false);
+  const [editingKeyword, setEditingKeyword] = useState(false);
   const [mnemonicDraft, setMnemonicDraft] = useState("");
+  const [keywordDraft, setKeywordDraft] = useState("");
   const mnemonicInputRef = useRef<TextInput>(null);
+  const keywordInputRef = useRef<TextInput>(null);
 
+  const userDb = useUserDb();
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`k:${literal}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmarkKanji(literal, isBookmarked);
-  const { mnemonic, saveMnemonic } = useKanjiMnemonic(literal);
+  const { mnemonic, keyword, saveMnemonic, saveKeyword } = useKanjiMnemonic(literal);
 
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
@@ -84,6 +91,40 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       })
       .catch(() => {});
   }, [dictDb, radicals]);
+
+  // Batch-load user keywords for component radicals
+  useEffect(() => {
+    if (!userDb || radicals.length === 0) return;
+    const filtered = radicals.filter((r) => r !== literal);
+    if (filtered.length === 0) return;
+    const placeholders = filtered.map(() => "?").join(",");
+    userDb
+      .getAllAsync<{ literal: string; keyword: string }>(
+        `SELECT literal, keyword FROM user_kanji_notes WHERE literal IN (${placeholders}) AND keyword IS NOT NULL AND keyword != ''`,
+        filtered,
+      )
+      .then((rows: { literal: string; keyword: string }[]) => {
+        const map = new Map<string, string>();
+        for (const r of rows) map.set(r.literal, r.keyword);
+        setComponentUserKeywords(map);
+      })
+      .catch(() => {});
+  }, [userDb, radicals, literal]);
+
+  // Compute highlighted mnemonic segments
+  const mnemonicSegments = useMemo(() => {
+    if (!mnemonic) return [];
+    const primaryKeywords = [keyword, kanji?.heisigKeyword].filter(Boolean) as string[];
+    const compKeywords: string[] = [];
+    for (const r of radicals.filter((r) => r !== literal)) {
+      const userKw = componentUserKeywords.get(r);
+      if (userKw) compKeywords.push(userKw);
+      const ck = componentKanji.get(r);
+      if (ck?.heisigKeyword) compKeywords.push(ck.heisigKeyword);
+      else if (ck?.meanings[0]) compKeywords.push(ck.meanings[0]);
+    }
+    return highlightKeywords(mnemonic, primaryKeywords, compKeywords);
+  }, [mnemonic, keyword, kanji, radicals, literal, componentKanji, componentUserKeywords]);
 
   const handleRadicalPress = (radical: string) => {
     setSearchMode("radical");
@@ -162,42 +203,100 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         )}
       </View>
 
-      {/* Mnemonic */}
+      {/* Mnemonic & Keyword */}
       <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
-          {editingMnemonic ? (
+        <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
+
+        {/* Keyword field */}
+        <View className="flex-row items-center mb-2">
+          <Text className="text-xs text-muted-foreground mr-1.5">Keyword:</Text>
+          {editingKeyword ? (
             <TextInput
-              ref={mnemonicInputRef}
-              className="text-base text-foreground bg-secondary/50 rounded-lg p-3 min-h-[80px]"
-              value={mnemonicDraft}
-              onChangeText={setMnemonicDraft}
-              multiline
-              textAlignVertical="top"
-              placeholder="Write your mnemonic here..."
+              ref={keywordInputRef}
+              className="flex-1 text-sm text-blue-500 font-semibold bg-secondary/50 rounded px-2 py-0.5"
+              value={keywordDraft}
+              onChangeText={setKeywordDraft}
+              placeholder="set keyword..."
               placeholderTextColor="#999"
               autoFocus
+              onSubmitEditing={() => {
+                saveKeyword(keywordDraft);
+                setEditingKeyword(false);
+              }}
               onBlur={() => {
-                saveMnemonic(mnemonicDraft);
-                setEditingMnemonic(false);
+                saveKeyword(keywordDraft);
+                setEditingKeyword(false);
               }}
             />
           ) : (
             <Pressable
               onPress={() => {
-                setMnemonicDraft(mnemonic ?? "");
-                setEditingMnemonic(true);
-                setTimeout(() => mnemonicInputRef.current?.focus(), 50);
+                setKeywordDraft(keyword ?? "");
+                setEditingKeyword(true);
+                setTimeout(() => keywordInputRef.current?.focus(), 50);
               }}
+              className="flex-1"
             >
-              {mnemonic ? (
-                <Text className="text-base text-foreground">{mnemonic}</Text>
+              {keyword ? (
+                <Text className="text-sm text-blue-500 font-semibold">{keyword}</Text>
               ) : (
-                <Text className="text-base text-muted-foreground italic">
-                  Tap to add a mnemonic...
-                </Text>
+                <Text className="text-sm text-muted-foreground/60 italic">tap to set...</Text>
               )}
             </Pressable>
           )}
+        </View>
+
+        {/* Story field */}
+        {editingMnemonic ? (
+          <TextInput
+            ref={mnemonicInputRef}
+            className="text-base text-foreground bg-secondary/50 rounded-lg p-3 min-h-[80px]"
+            value={mnemonicDraft}
+            onChangeText={setMnemonicDraft}
+            multiline
+            textAlignVertical="top"
+            placeholder="Write your mnemonic story..."
+            placeholderTextColor="#999"
+            autoFocus
+            onBlur={() => {
+              saveMnemonic(mnemonicDraft);
+              setEditingMnemonic(false);
+            }}
+          />
+        ) : (
+          <Pressable
+            onPress={() => {
+              setMnemonicDraft(mnemonic ?? "");
+              setEditingMnemonic(true);
+              setTimeout(() => mnemonicInputRef.current?.focus(), 50);
+            }}
+          >
+            {mnemonic ? (
+              <Text className="text-base text-foreground">
+                {mnemonicSegments.map((seg, i) =>
+                  seg.type === "plain" ? (
+                    <React.Fragment key={i}>{seg.text}</React.Fragment>
+                  ) : (
+                    <Text
+                      key={i}
+                      className={
+                        seg.type === "primary"
+                          ? "text-blue-500 font-semibold"
+                          : "text-green-600"
+                      }
+                    >
+                      {seg.text}
+                    </Text>
+                  ),
+                )}
+              </Text>
+            ) : (
+              <Text className="text-base text-muted-foreground italic">
+                Tap to add a mnemonic story...
+              </Text>
+            )}
+          </Pressable>
+        )}
       </Card>
 
       {/* Readings */}
@@ -242,7 +341,13 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           <View className="flex-row flex-wrap gap-2">
             {radicals.filter((r) => r !== literal).map((r) => {
               const ck = componentKanji.get(r);
-              const meaning = ck?.heisigKeyword ?? ck?.meanings[0];
+              const userKw = componentUserKeywords.get(r);
+              const meaning = userKw ?? ck?.heisigKeyword ?? ck?.meanings[0];
+              const meaningColor = userKw
+                ? "text-xs text-blue-500 font-medium"
+                : ck?.heisigKeyword
+                  ? "text-xs text-muted-foreground"
+                  : "text-xs text-muted-foreground/60";
               return (
                 <Pressable
                   key={r}
@@ -257,7 +362,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                 >
                   <Text className="text-xl font-bold text-foreground">{r}</Text>
                   {meaning && (
-                    <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                    <Text className={meaningColor} numberOfLines={1}>
                       {meaning}
                     </Text>
                   )}
@@ -336,6 +441,60 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           {words.map((entry) => (
             <EntryCard key={entry.id} entry={entry} />
           ))}
+        </View>
+      )}
+
+      {Platform.OS === "ios" && (
+        <View className="mb-6">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">
+            Open in other dictionaries
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              label="Midori"
+              onPress={() => {
+                const url = `midori://search?text=${encodeURIComponent(kanji.literal)}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL("https://apps.apple.com/app/midori-japanese-dictionary/id385231773");
+                });
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="Shirabe Jisho"
+              onPress={() => {
+                const url = `shirabelookup://search?k=${encodeURIComponent(kanji.literal)}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL("https://apps.apple.com/app/shirabe-jisho/id1005203380");
+                });
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="DaKanji"
+              onPress={() => {
+                const url = `dakanji://dictionary?search=${encodeURIComponent(kanji.literal)}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL("https://apps.apple.com/app/dakanji/id1548746810");
+                });
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="imiwa?"
+              onPress={() => {
+                const url = `imiwa://analyser?text=${encodeURIComponent(kanji.literal)}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL("https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125");
+                });
+              }}
+            />
+          </View>
         </View>
       )}
 
