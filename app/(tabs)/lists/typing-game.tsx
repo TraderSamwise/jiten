@@ -26,6 +26,7 @@ import Animated, {
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { GameSelectScreen } from "@/components/GameSelectScreen";
 import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
@@ -839,24 +840,13 @@ export default function TypingGameScreen() {
       )}
 
       {phase === "select" && (
-        <View className="flex-1 justify-center px-6">
-          <Text className="text-xl font-bold text-foreground text-center mb-6">Typing Game</Text>
-
-          {/* Word filter */}
-          <Text className="text-base font-semibold text-foreground mb-3">Words</Text>
-          <SegmentedControl
-            options={[
-              { value: "review" as WordFilterMode, label: `Review (${wordFilter.reviewCount})` },
-              { value: "learn" as WordFilterMode, label: `Learn (${wordFilter.learnCount})` },
-              { value: "all" as WordFilterMode, label: `All (${wordFilter.allCount})` },
-            ]}
-            value={selectedFilter}
-            onChange={setSelectedFilter}
-            fullWidth
-            className="mb-6"
-          />
-
-          {/* Options */}
+        <GameSelectScreen
+          title="Typing Game"
+          wordFilter={wordFilter}
+          selectedFilter={selectedFilter}
+          onFilterChange={setSelectedFilter}
+          onStart={() => startGame()}
+        >
           <View className="gap-3 mb-6">
             <View className="flex-row items-center justify-between">
               <Text className="text-base text-foreground">Furigana</Text>
@@ -879,17 +869,7 @@ export default function TypingGameScreen() {
               <Switch value={playAudioOpt} onValueChange={setPlayAudioOpt} />
             </View>
           </View>
-
-          <Button
-            label="Start"
-            onPress={() => startGame()}
-            disabled={
-              (selectedFilter === "review" && wordFilter.reviewCount === 0) ||
-              (selectedFilter === "learn" && wordFilter.learnCount === 0) ||
-              wordFilter.allCount === 0
-            }
-          />
-        </View>
+        </GameSelectScreen>
       )}
 
       {phase === "playing" && (

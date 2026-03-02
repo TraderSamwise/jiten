@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { GameSelectScreen } from "@/components/GameSelectScreen";
 import { X } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
@@ -199,13 +199,6 @@ export default function ConnectGameScreen() {
   }, []);
   /* eslint-enable react-hooks/immutability */
 
-  const filteredCount =
-    selectedFilter === "review"
-      ? wordFilter.reviewCount
-      : selectedFilter === "learn"
-        ? wordFilter.learnCount
-        : wordFilter.allCount;
-
   // ─── Render ───
 
   return (
@@ -234,57 +227,15 @@ export default function ConnectGameScreen() {
 
         {/* Select mode */}
         {phase === "select" && (
-          <View className="flex-1 justify-center px-6">
-            <Text className="text-xl font-bold text-foreground text-center mb-2">Connect Game</Text>
-            <Text className="text-sm text-muted-foreground text-center mb-8">
-              Swipe through matching kanji, readings, and meanings
-            </Text>
-
-            {/* Word filter */}
-            <Text className="text-base font-semibold text-foreground mb-3">Words</Text>
-            <SegmentedControl
-              options={[
-                { value: "review" as WordFilterMode, label: `Review (${wordFilter.reviewCount})` },
-                { value: "learn" as WordFilterMode, label: `Learn (${wordFilter.learnCount})` },
-                { value: "all" as WordFilterMode, label: `All (${wordFilter.allCount})` },
-              ]}
-              value={selectedFilter}
-              onChange={setSelectedFilter}
-              fullWidth
-              className="mb-6"
-            />
-
-            {filteredCount < 3 && (
-              <Text className="text-sm text-red-400 text-center mb-4">
-                Need at least 3 entries to play
-              </Text>
-            )}
-
-            <Text className="text-base font-semibold text-foreground mb-3">Timed Mode</Text>
-            <View className="flex-row gap-3 mb-6">
-              {([60, 90, 120] as const).map((duration) => (
-                <Button
-                  key={duration}
-                  label={`${duration}s`}
-                  onPress={() => startGame("timed", duration)}
-                  disabled={filteredCount < 3}
-                  className="flex-1"
-                />
-              ))}
-            </View>
-
-            <Text className="text-base font-semibold text-foreground mb-3">Survival Mode</Text>
-            <Button
-              label="3 Lives"
-              variant="secondary"
-              onPress={() => startGame("survival", 60)}
-              disabled={filteredCount < 3}
-            />
-
-            <Text className="text-xs text-muted-foreground text-center mt-6">
-              {filteredCount} entries available
-            </Text>
-          </View>
+          <GameSelectScreen
+            title="Connect Game"
+            subtitle="Swipe through matching kanji, readings, and meanings"
+            wordFilter={wordFilter}
+            selectedFilter={selectedFilter}
+            onFilterChange={setSelectedFilter}
+            onStart={() => startGame("timed", 90)}
+            minEntries={3}
+          />
         )}
 
         {/* Playing */}
