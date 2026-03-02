@@ -140,6 +140,10 @@ const USER_DB_MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS practice_sessions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, list_id TEXT, practice_mode TEXT NOT NULL, started_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, total_items INTEGER NOT NULL, correct_count INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_practice_sessions_list ON practice_sessions(list_id)`,
   `CREATE INDEX IF NOT EXISTS idx_practice_sessions_date ON practice_sessions(started_at)`,
+  // Re-seed default lists: delete stale defaults and clear flags so seedDefaultListsIfNeeded re-creates them
+  `DELETE FROM srs_cards WHERE list_id IN (SELECT id FROM lists WHERE is_default = 1)`,
+  `DELETE FROM lists WHERE is_default = 1`,
+  `DELETE FROM app_flags WHERE key IN ('default_lists_seeded', 'default_vocab_lists_seeded', 'rtk_lessons_seeded')`,
 ];
 
 export function UserDatabaseProvider({
