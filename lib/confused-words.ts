@@ -172,6 +172,169 @@ export async function findConfusedWords(
   return results;
 }
 
+// ─── Meaning-based confusion detection ───
+
+const STOP_WORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "is",
+  "be",
+  "do",
+  "it",
+  "or",
+  "as",
+  "by",
+  "up",
+  "no",
+  "so",
+  "if",
+  "my",
+  "we",
+  "he",
+  "me",
+  "us",
+  "am",
+  "for",
+  "and",
+  "but",
+  "not",
+  "you",
+  "all",
+  "can",
+  "had",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "are",
+  "has",
+  "his",
+  "how",
+  "its",
+  "may",
+  "new",
+  "now",
+  "old",
+  "see",
+  "way",
+  "who",
+  "did",
+  "get",
+  "let",
+  "say",
+  "she",
+  "too",
+  "use",
+  "with",
+  "from",
+  "that",
+  "this",
+  "have",
+  "been",
+  "make",
+  "more",
+  "some",
+  "very",
+  "when",
+  "what",
+  "your",
+  "them",
+  "then",
+  "than",
+  "each",
+  "which",
+  "will",
+  "into",
+  "just",
+  "also",
+  "over",
+  "such",
+  "only",
+  "etc",
+  "esp",
+]);
+
+/** Extract meaningful English tokens from an entry's glosses. */
+export function extractGlossTokens(entry: {
+  senses?: { glosses?: { lang: string; text: string }[] }[];
+}): Set<string> {
+  const tokens = new Set<string>();
+  if (!entry.senses) return tokens;
+
+  for (const sense of entry.senses) {
+    if (!sense.glosses) continue;
+    for (const gloss of sense.glosses) {
+      if (gloss.lang !== "eng") continue;
+      const words = gloss.text.toLowerCase().split(/[\s\-\/\(\),;:.!?'"]+/);
+      for (const w of words) {
+        if (w.length >= 2 && !STOP_WORDS.has(w)) {
+          tokens.add(w);
+        }
+      }
+    }
+  }
+
+  return tokens;
+}
+
+/** Jaccard similarity: |intersection| / |union| */
+export function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  const smaller = setA.size <= setB.size ? setA : setB;
+  const larger = setA.size <= setB.size ? setB : setA;
+  for (const item of smaller) {
+    if (larger.has(item)) intersection++;
+  }
+  if (intersection === 0) return 0;
+  const union = setA.size + setB.size - intersection;
+  return intersection / union;
+}
+
+/** Result of meaning confusion detection */
+export interface MeaningConfusionResult {
+  entry: EntryLike & { senses?: any[] };
+  similarity: number;
+  sharedTokens: string[];
+}
+
+/** Find entries with similar English meanings to the failed entry. */
+export function findMeaningConfusion(
+  failedEntry: EntryLike & { senses?: any[] },
+  candidates: (EntryLike & { senses?: any[] })[],
+  threshold = 0.25,
+): MeaningConfusionResult[] {
+  const failedTokens = extractGlossTokens(failedEntry);
+  if (failedTokens.size === 0) return [];
+
+  const results: MeaningConfusionResult[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.id === failedEntry.id) continue;
+
+    const candTokens = extractGlossTokens(candidate);
+    const similarity = jaccardSimilarity(failedTokens, candTokens);
+
+    if (similarity >= threshold) {
+      const sharedTokens: string[] = [];
+      for (const t of failedTokens) {
+        if (candTokens.has(t)) sharedTokens.push(t);
+      }
+      results.push({ entry: candidate, similarity, sharedTokens });
+    }
+  }
+
+  results.sort((a, b) => b.similarity - a.similarity);
+  return results.slice(0, 3);
+}
+
 // ─── Reading-based confusion detection ───
 
 function toHira(s: string): string {

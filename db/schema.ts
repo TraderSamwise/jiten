@@ -193,3 +193,15 @@ export const confusionPairs = sqliteTable("confusion_pairs", {
   lastConfusedAt: text("last_confused_at").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const confusionEvents = sqliteTable("confusion_events", {
+  id: text("id").primaryKey(),
+  entryIdA: integer("entry_id_a").notNull(),
+  kanjiLiteralA: text("kanji_literal_a"),
+  entryIdB: integer("entry_id_b").notNull(),
+  kanjiLiteralB: text("kanji_literal_b"),
+  confusionType: text("confusion_type").notNull(),
+  listId: text("list_id"),
+  practiceMode: text("practice_mode"),
+  confusedAt: text("confused_at").notNull(),
+});

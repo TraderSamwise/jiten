@@ -155,6 +155,18 @@ const USER_DB_MIGRATIONS = [
   `DELETE FROM lists WHERE is_default = 1`,
   `DELETE FROM app_flags WHERE key IN ('default_lists_seeded', 'default_vocab_lists_seeded', 'rtk_lessons_seeded')`,
   `ALTER TABLE practice_events ADD COLUMN assisted INTEGER DEFAULT 0`,
+  `CREATE TABLE IF NOT EXISTS confusion_events (
+    id TEXT PRIMARY KEY,
+    entry_id_a INTEGER NOT NULL,
+    kanji_literal_a TEXT,
+    entry_id_b INTEGER NOT NULL,
+    kanji_literal_b TEXT,
+    confusion_type TEXT NOT NULL,
+    list_id TEXT,
+    practice_mode TEXT,
+    confused_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_confusion_events_date ON confusion_events(confused_at)`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{

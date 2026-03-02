@@ -49,7 +49,7 @@ import {
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
-import { findReadingConfusion } from "@/lib/confused-words";
+import { findReadingConfusion, findMeaningConfusion } from "@/lib/confused-words";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -646,10 +646,28 @@ export default function TypingGameScreen() {
                 { entryId: currentEntry.id },
                 { entryId: confused.id },
                 "reading",
+                listId,
+                "typing_game",
               ).catch(() => {});
             }
           })
           .catch(() => {});
+      }
+
+      // Meaning-based confusion detection on incorrect answers
+      if (!isCorrect) {
+        const candidates = words.map((w) => w.entry);
+        const meaningResults = findMeaningConfusion(currentEntry, candidates);
+        for (const mr of meaningResults) {
+          recordConfusion(
+            userDb,
+            { entryId: currentEntry.id },
+            { entryId: mr.entry.id },
+            "meaning",
+            listId,
+            "typing_game",
+          ).catch(() => {});
+        }
       }
     }
 

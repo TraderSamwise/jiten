@@ -73,6 +73,8 @@ export async function recordConfusion(
   entryA: { entryId: number; kanjiLiteral?: string | null },
   entryB: { entryId: number; kanjiLiteral?: string | null },
   confusionType: ConfusionType,
+  listId?: string,
+  practiceMode?: PracticeMode,
 ): Promise<void> {
   const now = new Date().toISOString();
   // Order consistently for dedup
@@ -101,4 +103,33 @@ export async function recordConfusion(
       ],
     );
   }
+
+  // Also log timestamped event
+  await logConfusionEvent(userDb, a, b, confusionType, now, listId, practiceMode);
+}
+
+async function logConfusionEvent(
+  userDb: WrappedUserDb,
+  entryA: { entryId: number; kanjiLiteral?: string | null },
+  entryB: { entryId: number; kanjiLiteral?: string | null },
+  confusionType: ConfusionType,
+  confusedAt: string,
+  listId?: string,
+  practiceMode?: PracticeMode,
+): Promise<void> {
+  await userDb.runAsync(
+    `INSERT INTO confusion_events (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, list_id, practice_mode, confused_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      generateId(),
+      entryA.entryId,
+      entryA.kanjiLiteral ?? null,
+      entryB.entryId,
+      entryB.kanjiLiteral ?? null,
+      confusionType,
+      listId ?? null,
+      practiceMode ?? null,
+      confusedAt,
+    ],
+  );
 }

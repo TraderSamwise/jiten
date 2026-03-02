@@ -56,6 +56,7 @@ import { useListsStore, parseListRow } from "@/stores/lists";
 import {
   shouldCheckConfusion,
   findConfusedWords,
+  findMeaningConfusion,
   type ConfusedWordResult,
 } from "@/lib/confused-words";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
@@ -1106,8 +1107,24 @@ export default function StudyScreen() {
           { entryId: entry.id },
           { entryId: result.entry.id },
           "visual_kanji",
+          listId,
+          "flashcard",
         ).catch(() => {});
       }
+    }
+
+    // Meaning-based confusion detection (no reps/lapses gate — cheap and useful early)
+    const listEntries = await getEntries(dictDb, entryIds);
+    const meaningResults = findMeaningConfusion(entry, listEntries);
+    for (const mr of meaningResults) {
+      recordConfusion(
+        userDb,
+        { entryId: entry.id },
+        { entryId: mr.entry.id },
+        "meaning",
+        listId,
+        "flashcard",
+      ).catch(() => {});
     }
   }
 

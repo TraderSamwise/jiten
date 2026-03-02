@@ -482,6 +482,70 @@ export async function getDaySessionsWithEvents(
   return results;
 }
 
+// ─── Temporal Confusion Events ───
+
+export interface ConfusionEventResult {
+  entryIdA: number;
+  kanjiLiteralA: string | null;
+  entryIdB: number;
+  kanjiLiteralB: string | null;
+  confusionType: string;
+  listId: string | null;
+  practiceMode: string | null;
+  confusedAt: string;
+}
+
+export async function getConfusionEventsForDay(
+  userDb: WrappedUserDb,
+  day: string,
+  listId?: string | null,
+): Promise<ConfusionEventResult[]> {
+  const listFilter = listId ? "AND list_id = ?" : "";
+  const params: any[] = [day, ...(listId ? [listId] : [])];
+  return userDb.getAllAsync<ConfusionEventResult>(
+    `SELECT entry_id_a as entryIdA, kanji_literal_a as kanjiLiteralA,
+            entry_id_b as entryIdB, kanji_literal_b as kanjiLiteralB,
+            confusion_type as confusionType, list_id as listId,
+            practice_mode as practiceMode, confused_at as confusedAt
+     FROM confusion_events
+     WHERE DATE(confused_at) = ? ${listFilter}
+     ORDER BY confused_at ASC`,
+    params,
+  );
+}
+
+export async function buildDayConfusionClusters(
+  userDb: WrappedUserDb,
+  day: string,
+  listId?: string | null,
+): Promise<ConfusionCluster[]> {
+  const events = await getConfusionEventsForDay(userDb, day, listId);
+  if (events.length === 0) return [];
+
+  // Deduplicate events into pair-like structures for buildConfusionClusters
+  const pairMap = new Map<string, ConfusionPairResult>();
+  for (const ev of events) {
+    const key = `${ev.entryIdA}:${ev.kanjiLiteralA}:${ev.entryIdB}:${ev.kanjiLiteralB}:${ev.confusionType}`;
+    const existing = pairMap.get(key);
+    if (existing) {
+      existing.confusionCount++;
+      existing.lastConfusedAt = ev.confusedAt;
+    } else {
+      pairMap.set(key, {
+        entryIdA: ev.entryIdA,
+        entryIdB: ev.entryIdB,
+        kanjiLiteralA: ev.kanjiLiteralA,
+        kanjiLiteralB: ev.kanjiLiteralB,
+        confusionType: ev.confusionType,
+        confusionCount: 1,
+        lastConfusedAt: ev.confusedAt,
+      });
+    }
+  }
+
+  return buildConfusionClusters([...pairMap.values()]);
+}
+
 // ─── Confusion Clusters (Union-Find) ───
 
 export interface ConfusionCluster {
