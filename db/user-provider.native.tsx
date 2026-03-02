@@ -144,6 +144,7 @@ const USER_DB_MIGRATIONS = [
   `DELETE FROM srs_cards WHERE list_id IN (SELECT id FROM lists WHERE is_default = 1)`,
   `DELETE FROM lists WHERE is_default = 1`,
   `DELETE FROM app_flags WHERE key IN ('default_lists_seeded', 'default_vocab_lists_seeded', 'rtk_lessons_seeded')`,
+  `ALTER TABLE practice_events ADD COLUMN assisted INTEGER DEFAULT 0`,
 ];
 
 export function UserDatabaseProvider({

@@ -68,6 +68,7 @@ interface WordState {
   entry: DictEntry;
   completed: boolean;
   correct: boolean;
+  assisted: boolean;
 }
 
 // ─── WordBlock Component ───
@@ -386,6 +387,7 @@ export default function TypingGameScreen() {
   const [completedTotal, setCompletedTotal] = useState(0);
   const [totalWordCount, setTotalWordCount] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  const [assistedCount, setAssistedCount] = useState(0);
   const [incorrectCount, setIncorrectCount] = useState(0);
 
   // Counts for mode selection
@@ -522,7 +524,7 @@ export default function TypingGameScreen() {
     return ids
       .map((id) => entryMap.get(id))
       .filter((e): e is DictEntry => e !== undefined)
-      .map((entry) => ({ entry, completed: false, correct: false }));
+      .map((entry) => ({ entry, completed: false, correct: false, assisted: false }));
   }
 
   async function startGame(mode: GameMode) {
@@ -562,6 +564,7 @@ export default function TypingGameScreen() {
     setTotalWordCount(entryIds.length);
     setCompletedTotal(0);
     setCorrectCount(0);
+    setAssistedCount(0);
     setIncorrectCount(0);
     sessionIdRef.current = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     correctCountRef.current = 0;
@@ -603,11 +606,14 @@ export default function TypingGameScreen() {
   // ─── Advance to next word (or next batch / done) ───
 
   function advanceWord(raw: string, isCorrect: boolean) {
+    const wasAssisted = autoFuriganaRevealed;
     answers.current[currentWordIndex] = raw;
 
-    if (isCorrect) {
+    if (isCorrect && !wasAssisted) {
       setCorrectCount((c) => c + 1);
       correctCountRef.current++;
+    } else if (isCorrect && wasAssisted) {
+      setAssistedCount((c) => c + 1);
     } else {
       setIncorrectCount((c) => c + 1);
     }
@@ -622,6 +628,7 @@ export default function TypingGameScreen() {
         listId,
         practiceMode: "typing_game",
         correct: isCorrect,
+        assisted: wasAssisted,
         responseMs,
         typedAnswer: converted,
         sessionId: sessionIdRef.current,
@@ -661,7 +668,9 @@ export default function TypingGameScreen() {
 
     setWords((prev) =>
       prev.map((w, i) =>
-        i === currentWordIndex ? { ...w, completed: true, correct: isCorrect } : w,
+        i === currentWordIndex
+          ? { ...w, completed: true, correct: isCorrect, assisted: wasAssisted }
+          : w,
       ),
     );
 
@@ -771,9 +780,11 @@ export default function TypingGameScreen() {
     // Decrement the counter for the previous word's result before undoing it
     const prevWord = words[prevIndex];
     if (prevWord.completed) {
-      if (prevWord.correct) {
+      if (prevWord.correct && !prevWord.assisted) {
         setCorrectCount((c) => c - 1);
         correctCountRef.current--;
+      } else if (prevWord.correct && prevWord.assisted) {
+        setAssistedCount((c) => c - 1);
       } else {
         setIncorrectCount((c) => c - 1);
       }
@@ -781,7 +792,9 @@ export default function TypingGameScreen() {
 
     // Unmark the previous word
     setWords((prev) =>
-      prev.map((w, i) => (i === prevIndex ? { ...w, completed: false, correct: false } : w)),
+      prev.map((w, i) =>
+        i === prevIndex ? { ...w, completed: false, correct: false, assisted: false } : w,
+      ),
     );
 
     setAutoFuriganaRevealed(false);
@@ -925,10 +938,16 @@ export default function TypingGameScreen() {
         >
           {/* Progress */}
           <View className="flex-row items-center justify-between px-4 py-2">
-            {correctCount + incorrectCount > 0 ? (
-              <Text className="text-sm font-medium text-green-500">
-                {correctCount}/{correctCount + incorrectCount}
-              </Text>
+            {correctCount + assistedCount + incorrectCount > 0 ? (
+              <View className="flex-row items-center gap-1.5">
+                <Text className="text-sm font-medium text-green-500">{correctCount}</Text>
+                {assistedCount > 0 && (
+                  <Text className="text-sm font-medium text-yellow-500">+{assistedCount}</Text>
+                )}
+                <Text className="text-sm text-muted-foreground">
+                  /{correctCount + assistedCount + incorrectCount}
+                </Text>
+              </View>
             ) : (
               <View />
             )}
@@ -1023,10 +1042,22 @@ export default function TypingGameScreen() {
             <Text className="text-lg text-muted-foreground">
               {completedTotal} words in {Math.round(elapsedSeconds)}s
             </Text>
-            <Text className="text-2xl font-semibold text-foreground">
-              {completedTotal > 0 ? Math.round((correctCount / completedTotal) * 100) : 0}% correct
-              ({correctCount}/{completedTotal})
-            </Text>
+            <View className="flex-row items-baseline gap-1">
+              <Text className="text-2xl font-semibold text-green-500">{correctCount}</Text>
+              {assistedCount > 0 && (
+                <Text className="text-2xl font-semibold text-yellow-500">+{assistedCount}</Text>
+              )}
+              <Text className="text-2xl font-semibold text-muted-foreground">
+                /{completedTotal}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-3">
+              <Text className="text-sm text-green-500">{correctCount} correct</Text>
+              {assistedCount > 0 && (
+                <Text className="text-sm text-yellow-500">{assistedCount} assisted</Text>
+              )}
+              <Text className="text-sm text-red-400">{incorrectCount} wrong</Text>
+            </View>
             <Text className="text-2xl font-semibold text-primary">{wordsPerMinute} words/min</Text>
           </View>
 

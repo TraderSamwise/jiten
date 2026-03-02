@@ -183,8 +183,10 @@ function EntryRow({
 }) {
   return (
     <Pressable onPress={onPress} className="flex-row items-center gap-2 py-1.5 px-1">
-      {result.correct ? (
+      {result.correct && !result.assisted ? (
         <Check size={14} className="text-green-500" />
+      ) : result.correct && result.assisted ? (
+        <Check size={14} className="text-yellow-500" />
       ) : (
         <X size={14} className="text-red-500" />
       )}
