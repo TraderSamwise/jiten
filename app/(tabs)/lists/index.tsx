@@ -59,30 +59,27 @@ export default function ListsIndexScreen() {
   const [importing, setImporting] = useState<number | null>(null);
   const [defaultsExpanded, setDefaultsExpanded] = useState(false);
   const [defaultsReady, setDefaultsReady] = useState(false);
-  const contentHeight = useRef(0);
-  const expandQueued = useRef(false);
-  const animatedHeight = useSharedValue(0);
+  const animatedMaxHeight = useSharedValue(0);
   const chevronRotation = useSharedValue(0);
+
+  const defaultListCount = lists.filter((l) => l.isDefault).length;
+  // Generous estimate — maxHeight means content takes natural size, overshoot is harmless
+  const expandedMaxHeight = 8 + defaultListCount * 100;
 
   const toggleDefaults = useCallback(() => {
     const next = !defaultsExpanded;
     setDefaultsExpanded(next);
     chevronRotation.value = withTiming(next ? 180 : 0, { duration: 250 });
     if (next) {
-      if (!defaultsReady) {
-        // First open: mount cards, wait for measurement before animating
-        expandQueued.current = true;
-        setDefaultsReady(true);
-        return;
-      }
-      animatedHeight.value = withTiming(contentHeight.current, { duration: 250 });
+      if (!defaultsReady) setDefaultsReady(true);
+      animatedMaxHeight.value = withTiming(expandedMaxHeight, { duration: 250 });
     } else {
-      animatedHeight.value = withTiming(0, { duration: 250 });
+      animatedMaxHeight.value = withTiming(0, { duration: 250 });
     }
-  }, [defaultsExpanded, defaultsReady]);
+  }, [defaultsExpanded, defaultsReady, expandedMaxHeight]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
-    height: animatedHeight.value,
+    maxHeight: animatedMaxHeight.value,
     overflow: "hidden" as const,
   }));
 
@@ -298,9 +295,48 @@ export default function ListsIndexScreen() {
   const defaultLists = lists.filter((l) => l.isDefault);
 
   function renderListCard(item: WordList) {
-    const actions: SwipeAction[] = item.isDefault
-      ? []
-      : [
+    const card = (
+      <PressableCard className="mb-2" onPress={() => router.push(`/lists/${item.id}`)}>
+        {renamingId === item.id ? (
+          <TextInput
+            ref={renameInputRef}
+            className="text-lg font-semibold text-card-foreground bg-transparent p-0"
+            value={renameValue}
+            onChangeText={setRenameValue}
+            onSubmitEditing={() => handleRenameSubmit(item.id)}
+            onBlur={() => handleRenameSubmit(item.id)}
+            autoFocus
+            selectTextOnFocus
+          />
+        ) : (
+          <CardTitle>{item.name}</CardTitle>
+        )}
+        <View className="flex-row items-center justify-between">
+          <CardDescription>{item.entryCount ?? 0} words</CardDescription>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              router.push(`/lists/stats?listId=${item.id}`);
+            }}
+            className="p-1 -mr-1"
+            hitSlop={8}
+          >
+            <BarChart3 size={14} className="text-muted-foreground" />
+          </Pressable>
+        </View>
+        {item.studyProgress &&
+          (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
+            <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
+          )}
+      </PressableCard>
+    );
+
+    if (item.isDefault) return <React.Fragment key={item.id}>{card}</React.Fragment>;
+
+    return (
+      <SwipeableRow
+        key={item.id}
+        actions={[
           {
             label: "Rename",
             icon: Pencil,
@@ -313,43 +349,9 @@ export default function ListsIndexScreen() {
             color: "#ef4444",
             onPress: () => handleDeleteList(item.id),
           },
-        ];
-
-    return (
-      <SwipeableRow key={item.id} actions={actions}>
-        <PressableCard className="mb-2" onPress={() => router.push(`/lists/${item.id}`)}>
-          {renamingId === item.id ? (
-            <TextInput
-              ref={renameInputRef}
-              className="text-lg font-semibold text-card-foreground bg-transparent p-0"
-              value={renameValue}
-              onChangeText={setRenameValue}
-              onSubmitEditing={() => handleRenameSubmit(item.id)}
-              onBlur={() => handleRenameSubmit(item.id)}
-              autoFocus
-              selectTextOnFocus
-            />
-          ) : (
-            <CardTitle>{item.name}</CardTitle>
-          )}
-          <View className="flex-row items-center justify-between">
-            <CardDescription>{item.entryCount ?? 0} words</CardDescription>
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                router.push(`/lists/stats?listId=${item.id}`);
-              }}
-              className="p-1 -mr-1"
-              hitSlop={8}
-            >
-              <BarChart3 size={14} className="text-muted-foreground" />
-            </Pressable>
-          </View>
-          {item.studyProgress &&
-            (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
-              <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
-            )}
-        </PressableCard>
+        ]}
+      >
+        {card}
       </SwipeableRow>
     );
   }
@@ -417,26 +419,9 @@ export default function ListsIndexScreen() {
             </Pressable>
 
             {defaultsReady && (
-              <>
-                {/* Measurement pass — positioned outside the animated container
-                    so iOS Yoga lays it out even when animatedHeight is 0 */}
-                <View
-                  style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
-                  onLayout={(e) => {
-                    contentHeight.current = e.nativeEvent.layout.height;
-                    if (expandQueued.current) {
-                      expandQueued.current = false;
-                      animatedHeight.value = withTiming(contentHeight.current, { duration: 250 });
-                    }
-                  }}
-                >
-                  <View className="pt-2">{defaultLists.map(renderListCard)}</View>
-                </View>
-
-                <Animated.View style={animatedContainerStyle}>
-                  <View className="pt-2">{defaultLists.map(renderListCard)}</View>
-                </Animated.View>
-              </>
+              <Animated.View style={animatedContainerStyle}>
+                <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+              </Animated.View>
             )}
           </View>
         )}
