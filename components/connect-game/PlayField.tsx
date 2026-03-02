@@ -28,6 +28,8 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
   const [trailPoints, setTrailPoints] = useState<{ x: number; y: number }[]>([]);
   const [isSwipeActive, setIsSwipeActive] = useState(false);
   const [flashes, setFlashes] = useState<FlashItem[]>([]);
+  /** Map of bubbleId → tick counter, incremented on each invalid swipe involving that bubble */
+  const [invalidTicks, setInvalidTicks] = useState<Record<string, number>>({});
   const flashKeyRef = useRef(0);
   const collectedRef = useRef<Set<string>>(new Set());
   const debounceRef = useRef(false);
@@ -88,6 +90,15 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
         setFlashes((prev) => [...prev, { key, match, x: lastX, y: lastY }]);
       } else if (isInvalid) {
         handleInvalidSwipe(state);
+
+        // Trigger shake on all collected bubbles
+        setInvalidTicks((prev) => {
+          const next = { ...prev };
+          for (const b of collected) {
+            next[b.id] = (next[b.id] ?? 0) + 1;
+          }
+          return next;
+        });
       }
 
       // Uncollect any remaining collected bubbles
@@ -151,6 +162,7 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
                 fieldWidth={fieldSize.width}
                 fieldHeight={fieldSize.height}
                 now={now}
+                invalidTick={invalidTicks[bubble.id]}
               />
             ))}
 
