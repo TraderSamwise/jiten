@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
-import { View, FlatList, ActivityIndicator, Platform } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
@@ -187,10 +188,11 @@ export default function LibraryScreen() {
         />
       </View>
 
-      <FlatList
+      <FlashList
         data={books}
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
+        estimatedItemSize={76}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         ListEmptyComponent={
           <View className="items-center py-16">

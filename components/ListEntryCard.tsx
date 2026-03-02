@@ -8,7 +8,7 @@ interface ListEntryCardProps {
   entry: DictEntry;
 }
 
-export function ListEntryCard({ entry }: ListEntryCardProps) {
+export const ListEntryCard = React.memo(function ListEntryCard({ entry }: ListEntryCardProps) {
   const router = useRouter();
 
   return (
@@ -16,4 +16,4 @@ export function ListEntryCard({ entry }: ListEntryCardProps) {
       <EntrySummary entry={entry} variant="compact" />
     </PressableCard>
   );
-}
+});

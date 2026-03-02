@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
-import { View, FlatList } from "react-native";
+import { View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
 import { useSearchStore } from "@/stores/search";
@@ -23,10 +24,11 @@ export default function GlossGroupScreen() {
       <View className="px-4 pt-3 pb-1">
         <Text className="text-sm font-medium text-muted-foreground">{group.gloss}</Text>
       </View>
-      <FlatList
+      <FlashList
         data={group.entries}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
+        estimatedItemSize={72}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
       />
     </View>

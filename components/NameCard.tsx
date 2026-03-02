@@ -27,7 +27,7 @@ interface NameCardProps {
   name: NameEntry;
 }
 
-export function NameCard({ name }: NameCardProps) {
+export const NameCard = React.memo(function NameCard({ name }: NameCardProps) {
   const typeLabel = formatType(name.nameType);
 
   return (
@@ -50,4 +50,4 @@ export function NameCard({ name }: NameCardProps) {
       )}
     </Card>
   );
-}
+});

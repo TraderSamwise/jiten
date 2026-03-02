@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, ScrollView, Pressable, Linking, Platform } from "react-native";
+import { View, ScrollView, Pressable, Linking, Platform, InteractionManager } from "react-native";
 import { useNavigation } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
@@ -40,7 +40,10 @@ export function WordDetail({ entryId }: WordDetailProps) {
 
   useEffect(() => {
     if (!dictDb || !isReady || !entryId) return;
-    getEntry(dictDb, entryId).then(setEntry);
+    const task = InteractionManager.runAfterInteractions(() => {
+      getEntry(dictDb, entryId).then(setEntry);
+    });
+    return () => task.cancel();
   }, [dictDb, isReady, entryId]);
 
   useEffect(() => {
@@ -187,7 +190,9 @@ export function WordDetail({ entryId }: WordDetailProps) {
                     label="Midori"
                     onPress={() => {
                       Linking.openURL(`midori://search?text=${encoded}`).catch(() => {
-                        Linking.openURL("https://apps.apple.com/app/midori-japanese-dictionary/id385231773");
+                        Linking.openURL(
+                          "https://apps.apple.com/app/midori-japanese-dictionary/id385231773",
+                        );
                       });
                     }}
                   />
@@ -217,7 +222,9 @@ export function WordDetail({ entryId }: WordDetailProps) {
                     label="imiwa?"
                     onPress={() => {
                       Linking.openURL(`imiwa://analyser?text=${encoded}`).catch(() => {
-                        Linking.openURL("https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125");
+                        Linking.openURL(
+                          "https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125",
+                        );
                       });
                     }}
                   />

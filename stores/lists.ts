@@ -3,6 +3,7 @@ import type { WordList, CardFace } from "@/db/types";
 
 interface ListsState {
   lists: WordList[];
+  listsLoaded: boolean;
   setLists: (lists: WordList[]) => void;
   addList: (list: WordList) => void;
   removeList: (id: string) => void;
@@ -33,7 +34,8 @@ export function parseListRow(row: any): WordList {
 
 export const useListsStore = create<ListsState>((set) => ({
   lists: [],
-  setLists: (lists) => set({ lists }),
+  listsLoaded: false,
+  setLists: (lists) => set({ lists, listsLoaded: true }),
   addList: (list) => set((state) => ({ lists: [...state.lists, list] })),
   removeList: (id) => set((state) => ({ lists: state.lists.filter((l) => l.id !== id) })),
   updateList: (id, updates) =>

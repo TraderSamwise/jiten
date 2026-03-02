@@ -1,12 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  View,
-  SectionList,
-  FlatList,
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-} from "react-native";
+import { View, SectionList, ActivityIndicator, Pressable, ScrollView } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { EntryCard } from "@/components/EntryCard";
@@ -53,14 +47,12 @@ function isAsciiInput(input: string): boolean {
 
 function RadicalSearchView() {
   const { dictDb, isReady } = useDatabase();
-  const {
-    selectedRadicals,
-    toggleRadical,
-    kanjiResults,
-    setKanjiResults,
-    isSearching,
-    setIsSearching,
-  } = useSearchStore();
+  const selectedRadicals = useSearchStore((s) => s.selectedRadicals);
+  const toggleRadical = useSearchStore((s) => s.toggleRadical);
+  const kanjiResults = useSearchStore((s) => s.kanjiResults);
+  const setKanjiResults = useSearchStore((s) => s.setKanjiResults);
+  const isSearching = useSearchStore((s) => s.isSearching);
+  const setIsSearching = useSearchStore((s) => s.setIsSearching);
   const [allRadicals, setAllRadicals] = useState<string[]>([]);
 
   useEffect(() => {
@@ -118,10 +110,11 @@ function RadicalSearchView() {
         </View>
       )}
 
-      <FlatList
+      <FlashList
         data={kanjiResults}
         keyExtractor={(item) => item.literal}
         renderItem={({ item }) => <KanjiCard kanji={item} />}
+        estimatedItemSize={80}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         ListEmptyComponent={
           selectedRadicals.length > 0 && !isSearching ? (
@@ -143,21 +136,19 @@ function RadicalSearchView() {
 
 export default function SearchScreen() {
   const { dictDb, extendedDb, isReady } = useDatabase();
-  const {
-    query,
-    results,
-    isSearching,
-    setResults,
-    setIsSearching,
-    setQuery,
-    searchMode,
-    kanjiResults,
-    setKanjiResults,
-    nameResults,
-    setNameResults,
-    nameFilter,
-    setNameFilter,
-  } = useSearchStore();
+  const query = useSearchStore((s) => s.query);
+  const results = useSearchStore((s) => s.results);
+  const isSearching = useSearchStore((s) => s.isSearching);
+  const setResults = useSearchStore((s) => s.setResults);
+  const setIsSearching = useSearchStore((s) => s.setIsSearching);
+  const setQuery = useSearchStore((s) => s.setQuery);
+  const searchMode = useSearchStore((s) => s.searchMode);
+  const kanjiResults = useSearchStore((s) => s.kanjiResults);
+  const setKanjiResults = useSearchStore((s) => s.setKanjiResults);
+  const nameResults = useSearchStore((s) => s.nameResults);
+  const setNameResults = useSearchStore((s) => s.setNameResults);
+  const nameFilter = useSearchStore((s) => s.nameFilter);
+  const setNameFilter = useSearchStore((s) => s.setNameFilter);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGenRef = useRef(0);
   const router = useRouter();
@@ -346,10 +337,11 @@ export default function SearchScreen() {
           </View>
         )}
 
-        <FlatList
+        <FlashList
           data={kanjiResults}
           keyExtractor={(item) => item.literal}
           renderItem={({ item }) => <KanjiCard kanji={item} />}
+          estimatedItemSize={80}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (
@@ -407,10 +399,11 @@ export default function SearchScreen() {
           ))}
         </View>
 
-        <FlatList
+        <FlashList
           data={nameResults}
           keyExtractor={(item) => `${item.id}`}
           renderItem={({ item }) => <NameCard name={item} />}
+          estimatedItemSize={56}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (
@@ -448,6 +441,8 @@ export default function SearchScreen() {
         }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         stickySectionHeadersEnabled={false}
+        initialNumToRender={15}
+        windowSize={5}
         ListEmptyComponent={
           query.trim() && !isSearching ? (
             <View className="items-center pt-10">

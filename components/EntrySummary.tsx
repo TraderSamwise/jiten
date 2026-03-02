@@ -11,7 +11,10 @@ interface EntrySummaryProps {
   variant?: "default" | "compact";
 }
 
-export function EntrySummary({ entry, variant = "default" }: EntrySummaryProps) {
+export const EntrySummary = React.memo(function EntrySummary({
+  entry,
+  variant = "default",
+}: EntrySummaryProps) {
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entry.id}`));
   const primaryKanji = entry.kanji[0]?.text;
   const primaryKana = entry.kana[0]?.text;
@@ -68,4 +71,4 @@ export function EntrySummary({ entry, variant = "default" }: EntrySummaryProps) 
       )}
     </View>
   );
-}
+});

@@ -10,17 +10,14 @@ interface KanjiCardProps {
   kanji: KanjiCharacter;
 }
 
-export function KanjiCard({ kanji }: KanjiCardProps) {
+export const KanjiCard = React.memo(function KanjiCard({ kanji }: KanjiCardProps) {
   const tabRouter = useTabRouter();
 
   const onReadings = kanji.readingsOn.join(" · ");
   const meanings = kanji.meanings.slice(0, 3).join(", ");
 
   return (
-    <PressableCard
-      className="mb-2"
-      onPress={() => tabRouter.pushKanji(kanji.literal)}
-    >
+    <PressableCard className="mb-2" onPress={() => tabRouter.pushKanji(kanji.literal)}>
       <View className="flex-row items-start gap-3">
         <Text className="text-3xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
         <View className="flex-1">
@@ -45,4 +42,4 @@ export function KanjiCard({ kanji }: KanjiCardProps) {
       </View>
     </PressableCard>
   );
-}
+});

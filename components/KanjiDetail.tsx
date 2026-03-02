@@ -1,5 +1,13 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { View, ScrollView, Pressable, Linking, TextInput, Platform } from "react-native";
+import {
+  View,
+  ScrollView,
+  Pressable,
+  Linking,
+  TextInput,
+  Platform,
+  InteractionManager,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTabRouter } from "@/lib/navigation";
@@ -36,7 +44,8 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const { dictDb, isReady } = useDatabase();
   const router = useRouter();
   const tabRouter = useTabRouter();
-  const { setSearchMode, setSelectedRadicals } = useSearchStore();
+  const setSearchMode = useSearchStore((s) => s.setSearchMode);
+  const setSelectedRadicals = useSearchStore((s) => s.setSelectedRadicals);
   const [kanji, setKanji] = useState<KanjiCharacter | null>(null);
   const [similar, setSimilar] = useState<SimilarKanji[]>([]);
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
@@ -44,7 +53,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [words, setWords] = useState<DictEntry[]>([]);
   const [usedIn, setUsedIn] = useState<KanjiCharacter[]>([]);
   const [componentKanji, setComponentKanji] = useState<Map<string, KanjiCharacter>>(new Map());
-  const [componentUserKeywords, setComponentUserKeywords] = useState<Map<string, string>>(new Map());
+  const [componentUserKeywords, setComponentUserKeywords] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [editingMnemonic, setEditingMnemonic] = useState(false);
   const [editingKeyword, setEditingKeyword] = useState(false);
   const [mnemonicDraft, setMnemonicDraft] = useState("");
@@ -61,24 +72,27 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
 
-    getKanjiAsync(dictDb, literal)
-      .then(setKanji)
-      .catch(() => {});
-    getSimilarKanjiAsync(dictDb, literal)
-      .then(setSimilar)
-      .catch(() => {});
-    getSimilarByMeaningAsync(dictDb, literal)
-      .then(setSimilarMeaning)
-      .catch((e) => console.warn("similarMeaning query failed:", e));
-    getRadicalsForKanjiAsync(dictDb, literal)
-      .then(setRadicals)
-      .catch(() => {});
-    getWordsForKanjiAsync(dictDb, literal)
-      .then(setWords)
-      .catch(() => {});
-    getKanjiUsingRadicalAsync(dictDb, literal)
-      .then((results) => setUsedIn(results.filter((k) => k.literal !== literal)))
-      .catch(() => {});
+    const task = InteractionManager.runAfterInteractions(() => {
+      getKanjiAsync(dictDb, literal)
+        .then(setKanji)
+        .catch(() => {});
+      getSimilarKanjiAsync(dictDb, literal)
+        .then(setSimilar)
+        .catch(() => {});
+      getSimilarByMeaningAsync(dictDb, literal)
+        .then(setSimilarMeaning)
+        .catch((e) => console.warn("similarMeaning query failed:", e));
+      getRadicalsForKanjiAsync(dictDb, literal)
+        .then(setRadicals)
+        .catch(() => {});
+      getWordsForKanjiAsync(dictDb, literal)
+        .then(setWords)
+        .catch(() => {});
+      getKanjiUsingRadicalAsync(dictDb, literal)
+        .then((results) => setUsedIn(results.filter((k) => k.literal !== literal)))
+        .catch(() => {});
+    });
+    return () => task.cancel();
   }, [dictDb, isReady, literal]);
 
   // Fetch kanji data for each radical/component to show meanings
@@ -112,7 +126,11 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       .catch(() => {});
   }, [userDb, radicals, literal]);
 
-  useFocusEffect(useCallback(() => { loadComponentUserKeywords(); }, [loadComponentUserKeywords]));
+  useFocusEffect(
+    useCallback(() => {
+      loadComponentUserKeywords();
+    }, [loadComponentUserKeywords]),
+  );
 
   // Compute highlighted mnemonic segments
   const mnemonicSegments = useMemo(() => {
@@ -283,9 +301,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                     <Text
                       key={i}
                       className={
-                        seg.type === "primary"
-                          ? "text-blue-500 font-semibold"
-                          : "text-green-600"
+                        seg.type === "primary" ? "text-blue-500 font-semibold" : "text-green-600"
                       }
                     >
                       {seg.text}
@@ -342,36 +358,38 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
           <View className="flex-row flex-wrap gap-2">
-            {radicals.filter((r) => r !== literal).map((r) => {
-              const ck = componentKanji.get(r);
-              const userKw = componentUserKeywords.get(r);
-              const meaning = userKw ?? ck?.heisigKeyword ?? ck?.meanings[0];
-              const meaningColor = userKw
-                ? "text-xs text-blue-500 font-medium"
-                : ck?.heisigKeyword
-                  ? "text-xs text-foreground font-medium"
-                  : "text-xs text-muted-foreground";
-              return (
-                <Pressable
-                  key={r}
-                  onPress={() => {
-                    if (ck) {
-                      tabRouter.pushKanji(r);
-                    } else {
-                      handleRadicalPress(r);
-                    }
-                  }}
-                  className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
-                >
-                  <Text className="text-xl font-bold text-foreground">{r}</Text>
-                  {meaning && (
-                    <Text className={meaningColor} numberOfLines={1}>
-                      {meaning}
-                    </Text>
-                  )}
-                </Pressable>
-              );
-            })}
+            {radicals
+              .filter((r) => r !== literal)
+              .map((r) => {
+                const ck = componentKanji.get(r);
+                const userKw = componentUserKeywords.get(r);
+                const meaning = userKw ?? ck?.heisigKeyword ?? ck?.meanings[0];
+                const meaningColor = userKw
+                  ? "text-xs text-blue-500 font-medium"
+                  : ck?.heisigKeyword
+                    ? "text-xs text-foreground font-medium"
+                    : "text-xs text-muted-foreground";
+                return (
+                  <Pressable
+                    key={r}
+                    onPress={() => {
+                      if (ck) {
+                        tabRouter.pushKanji(r);
+                      } else {
+                        handleRadicalPress(r);
+                      }
+                    }}
+                    className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                  >
+                    <Text className="text-xl font-bold text-foreground">{r}</Text>
+                    {meaning && (
+                      <Text className={meaningColor} numberOfLines={1}>
+                        {meaning}
+                      </Text>
+                    )}
+                  </Pressable>
+                );
+              })}
           </View>
         </Card>
       )}
@@ -460,7 +478,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               onPress={() => {
                 const url = `midori://search?text=${encodeURIComponent(kanji.literal)}`;
                 Linking.openURL(url).catch(() => {
-                  Linking.openURL("https://apps.apple.com/app/midori-japanese-dictionary/id385231773");
+                  Linking.openURL(
+                    "https://apps.apple.com/app/midori-japanese-dictionary/id385231773",
+                  );
                 });
               }}
             />
@@ -493,7 +513,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               onPress={() => {
                 const url = `imiwa://analyser?text=${encodeURIComponent(kanji.literal)}`;
                 Linking.openURL(url).catch(() => {
-                  Linking.openURL("https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125");
+                  Linking.openURL(
+                    "https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125",
+                  );
                 });
               }}
             />

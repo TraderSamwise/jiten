@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, ScrollView, Pressable, TextInput, Platform } from "react-native";
+import { View, ScrollView, Pressable, TextInput, Platform, InteractionManager } from "react-native";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
@@ -45,7 +45,12 @@ export default function ListsIndexScreen() {
   const router = useRouter();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
-  const { lists, setLists, addList, removeList, updateList } = useListsStore();
+  const lists = useListsStore((s) => s.lists);
+  const listsLoaded = useListsStore((s) => s.listsLoaded);
+  const setLists = useListsStore((s) => s.setLists);
+  const addList = useListsStore((s) => s.addList);
+  const removeList = useListsStore((s) => s.removeList);
+  const updateList = useListsStore((s) => s.updateList);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -75,7 +80,9 @@ export default function ListsIndexScreen() {
 
   useEffect(() => {
     if (!userDb) return;
-    (async () => {
+
+    // If lists are already cached, defer refresh to after transition
+    const run = async () => {
       if (dictDb) {
         try {
           const seeded = await seedDefaultListsIfNeeded(userDb, dictDb);
@@ -85,7 +92,17 @@ export default function ListsIndexScreen() {
         }
       }
       await loadLists();
-    })();
+    };
+
+    if (listsLoaded) {
+      // Already have cached data — refresh silently after transition
+      const task = InteractionManager.runAfterInteractions(run);
+      return () => task.cancel();
+    } else {
+      // First load — defer until after transition animation
+      const task = InteractionManager.runAfterInteractions(run);
+      return () => task.cancel();
+    }
   }, [userDb, dictDb]);
 
   async function loadLists() {
@@ -387,18 +404,15 @@ export default function ListsIndexScreen() {
               </Animated.View>
             </Pressable>
 
-            {/* Hidden measure pass */}
-            <View
-              style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
-              onLayout={(e) => {
-                contentHeight.current = e.nativeEvent.layout.height;
-              }}
-            >
-              <View className="pt-2">{defaultLists.map(renderListCard)}</View>
-            </View>
-
             <Animated.View style={animatedContainerStyle}>
-              <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+              <View
+                className="pt-2"
+                onLayout={(e) => {
+                  contentHeight.current = e.nativeEvent.layout.height;
+                }}
+              >
+                {defaultLists.map(renderListCard)}
+              </View>
             </Animated.View>
           </View>
         )}
