@@ -3,7 +3,8 @@ import { View, Pressable, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Check, X, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { EntrySummary } from "@/components/EntrySummary";
-import type { DaySessionDetail, DayEntryResult } from "@/lib/practice-stats";
+import { ConfusionClusters } from "@/components/ConfusionClusters";
+import type { DaySessionDetail, DayEntryResult, ConfusionCluster } from "@/lib/practice-stats";
 import type { DictEntry } from "@/db/types";
 
 interface DayReviewDetailProps {
@@ -15,6 +16,7 @@ interface DayReviewDetailProps {
   onClose: () => void;
   onPressEntry: (entryId: number) => void;
   onPressKanji: (literal: string) => void;
+  confusionClusters?: ConfusionCluster[];
 }
 
 function formatDayHeader(day: string): string {
@@ -67,6 +69,7 @@ export function DayReviewDetail({
   onClose,
   onPressEntry,
   onPressKanji,
+  confusionClusters,
 }: DayReviewDetailProps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -166,6 +169,19 @@ export function DayReviewDetail({
               );
             })}
           </View>
+
+          {/* Mix-ups section */}
+          {confusionClusters && confusionClusters.length > 0 && (
+            <View className="mt-3 pt-3 border-t border-border">
+              <Text className="text-xs font-semibold text-muted-foreground mb-2">Mix-ups</Text>
+              <ConfusionClusters
+                clusters={confusionClusters}
+                entries={entries}
+                onPressEntry={onPressEntry}
+                onPressKanji={onPressKanji}
+              />
+            </View>
+          )}
         </>
       )}
     </View>

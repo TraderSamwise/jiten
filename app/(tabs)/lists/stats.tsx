@@ -24,6 +24,7 @@ import {
   getLeechCards,
   getDaySessionsWithEvents,
   buildConfusionClusters,
+  buildDayConfusionClusters,
   type DailyActivity,
   type SessionSummary,
   type CardDistribution,
@@ -96,12 +97,14 @@ export default function StatsScreen() {
   const [cardDist, setCardDist] = useState<CardDistribution | null>(null);
   const [leeches, setLeeches] = useState<LeechCard[]>([]);
   const [clusters, setClusters] = useState<ConfusionCluster[]>([]);
+  const [todayClusters, setTodayClusters] = useState<ConfusionCluster[]>([]);
   const [entryMap, setEntryMap] = useState<Map<number, DictEntry>>(new Map());
 
   // Day drill-down
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dayDetail, setDayDetail] = useState<DaySessionDetail[]>([]);
   const [dayEntries, setDayEntries] = useState<Map<number, DictEntry>>(new Map());
+  const [dayClusters, setDayClusters] = useState<ConfusionCluster[]>([]);
   const [dayLoading, setDayLoading] = useState(false);
 
   const effectiveListId = scope === "list" ? listId : undefined;
@@ -121,18 +124,21 @@ export default function StatsScreen() {
 
     const lid = scope === "list" ? listId : undefined;
 
-    const [todayData, streakData, activityData, sessionData, confusionData] = await Promise.all([
-      getTodaySummary(userDb, lid),
-      getCurrentStreak(userDb, lid),
-      getDailyActivity(userDb, lid, 90),
-      getRecentSessions(userDb, lid, 15),
-      getTopConfusionPairs(userDb, lid, 20),
-    ]);
+    const [todayData, streakData, activityData, sessionData, confusionData, todayConfClusters] =
+      await Promise.all([
+        getTodaySummary(userDb, lid),
+        getCurrentStreak(userDb, lid),
+        getDailyActivity(userDb, lid, 90),
+        getRecentSessions(userDb, lid, 15),
+        getTopConfusionPairs(userDb, lid, 20),
+        buildDayConfusionClusters(userDb, todayStr, lid),
+      ]);
 
     setTodaySummary(todayData);
     setStreak(streakData);
     setDailyActivity(activityData);
     setSessions(sessionData);
+    setTodayClusters(todayConfClusters);
 
     // Build confusion clusters
     setClusters(buildConfusionClusters(confusionData));
@@ -148,7 +154,7 @@ export default function StatsScreen() {
       setLeeches([]);
     }
 
-    // Resolve entry names for leeches and confusion clusters
+    // Resolve entry names for leeches, confusion clusters, and today's mix-ups
     if (dictDb) {
       const entryIds = new Set<number>();
       if (lid) {
@@ -160,6 +166,11 @@ export default function StatsScreen() {
       for (const cp of confusionData) {
         entryIds.add(cp.entryIdA);
         entryIds.add(cp.entryIdB);
+      }
+      for (const cluster of todayConfClusters) {
+        for (const e of cluster.entries) {
+          if (e.kanjiLiteral == null) entryIds.add(e.entryId);
+        }
       }
       if (entryIds.size > 0) {
         const entries = await getEntries(dictDb, [...entryIds]);
@@ -174,14 +185,23 @@ export default function StatsScreen() {
     if (!userDb) return;
     setDayLoading(true);
 
-    const sessions = await getDaySessionsWithEvents(userDb, day, effectiveListId);
+    const [sessions, dayConfClusters] = await Promise.all([
+      getDaySessionsWithEvents(userDb, day, effectiveListId),
+      buildDayConfusionClusters(userDb, day, effectiveListId),
+    ]);
     setDayDetail(sessions);
+    setDayClusters(dayConfClusters);
 
     // Resolve word entries for display
     if (dictDb) {
       const ids = new Set<number>();
       for (const s of sessions) {
         for (const e of s.entries) {
+          if (e.kanjiLiteral == null) ids.add(e.entryId);
+        }
+      }
+      for (const cluster of dayConfClusters) {
+        for (const e of cluster.entries) {
           if (e.kanjiLiteral == null) ids.add(e.entryId);
         }
       }
@@ -294,6 +314,21 @@ export default function StatsScreen() {
             </Card>
           </Pressable>
 
+          {/* Today's Mix-ups */}
+          {todayClusters.length > 0 && (
+            <Card>
+              <Text className="text-sm font-semibold text-muted-foreground mb-3">
+                Today's Mix-ups
+              </Text>
+              <ConfusionClusters
+                clusters={todayClusters}
+                entries={entryMap}
+                onPressEntry={handlePressEntry}
+                onPressKanji={handlePressKanji}
+              />
+            </Card>
+          )}
+
           {/* Activity Heatmap — tappable cells */}
           <Card>
             <Text className="text-sm font-semibold text-muted-foreground mb-3">
@@ -324,6 +359,7 @@ export default function StatsScreen() {
                 onClose={() => setSelectedDay(null)}
                 onPressEntry={handlePressEntry}
                 onPressKanji={handlePressKanji}
+                confusionClusters={dayClusters}
               />
             </Card>
           )}
