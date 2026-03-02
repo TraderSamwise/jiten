@@ -168,6 +168,7 @@ export const practiceEvents = sqliteTable("practice_events", {
   responseMs: integer("response_ms"),
   typedAnswer: text("typed_answer"),
   reviewedAt: text("reviewed_at").notNull(),
+  assisted: integer("assisted"),
 });
 
 export const practiceSessions = sqliteTable("practice_sessions", {

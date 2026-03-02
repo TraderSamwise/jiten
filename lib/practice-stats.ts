@@ -339,6 +339,7 @@ export interface DayReviewEvent {
   sessionId: string | null;
   practiceMode: string;
   correct: number;
+  assisted: number;
   responseMs: number | null;
   typedAnswer: string | null;
   reviewedAt: string;
@@ -354,7 +355,8 @@ export async function getDayReviewEvents(
   return userDb.getAllAsync<DayReviewEvent>(
     `SELECT entry_id as entryId, kanji_literal as kanjiLiteral,
             session_id as sessionId, practice_mode as practiceMode,
-            correct, response_ms as responseMs, typed_answer as typedAnswer,
+            correct, COALESCE(assisted, 0) as assisted,
+            response_ms as responseMs, typed_answer as typedAnswer,
             reviewed_at as reviewedAt
      FROM practice_events
      WHERE DATE(reviewed_at) = ? ${listFilter}
@@ -370,6 +372,7 @@ export interface DayEntryResult {
   kanjiLiteral: string | null;
   attempts: number;
   correctCount: number;
+  assisted: boolean;
   avgResponseMs: number | null;
   lastTypedAnswer: string | null;
   correct: boolean;
@@ -442,11 +445,14 @@ export async function getDaySessionsWithEvents(
       const lastTypedAnswer =
         failedEvs.length > 0 ? failedEvs[failedEvs.length - 1].typedAnswer : null;
 
+      const wasAssisted = evs.some((e) => e.assisted);
+
       entries.push({
         entryId: first.entryId,
         kanjiLiteral: first.kanjiLiteral,
         attempts,
         correctCount,
+        assisted: wasAssisted,
         avgResponseMs,
         lastTypedAnswer,
         correct: correctCount === attempts,

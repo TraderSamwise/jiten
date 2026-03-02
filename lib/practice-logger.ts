@@ -8,6 +8,7 @@ interface PracticeEvent {
   listId?: string | null;
   practiceMode: PracticeMode;
   correct: boolean;
+  assisted?: boolean;
   responseMs?: number | null;
   typedAnswer?: string | null;
   sessionId?: string | null;
@@ -19,8 +20,8 @@ function generateId(): string {
 
 export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEvent): Promise<void> {
   await userDb.runAsync(
-    `INSERT INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, response_ms, typed_answer, reviewed_at, session_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, assisted, response_ms, typed_answer, reviewed_at, session_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),
       event.entryId,
@@ -28,6 +29,7 @@ export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEve
       event.listId ?? null,
       event.practiceMode,
       event.correct ? 1 : 0,
+      event.assisted ? 1 : 0,
       event.responseMs ?? null,
       event.typedAnswer ?? null,
       new Date().toISOString(),
