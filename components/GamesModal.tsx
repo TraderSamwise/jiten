@@ -18,6 +18,11 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
     router.push(`/lists/typing-game?listId=${listId}`);
   }
 
+  function handleConnectGame() {
+    onClose();
+    router.push(`/lists/connect-game?listId=${listId}`);
+  }
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={onClose}>
@@ -25,18 +30,33 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
           <View className="rounded-2xl border border-border bg-background p-5">
             <Text className="text-lg font-semibold text-foreground mb-4">Games</Text>
 
-            <Pressable
-              onPress={handleTypingGame}
-              className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
-            >
-              <View>
-                <Text className="text-base font-medium text-foreground">Typing Game</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Type readings as words flow by
-                </Text>
-              </View>
-              <ChevronRight size={20} className="text-muted-foreground" />
-            </Pressable>
+            <View className="gap-3">
+              <Pressable
+                onPress={handleTypingGame}
+                className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+              >
+                <View>
+                  <Text className="text-base font-medium text-foreground">Typing Game</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Type readings as words flow by
+                  </Text>
+                </View>
+                <ChevronRight size={20} className="text-muted-foreground" />
+              </Pressable>
+
+              <Pressable
+                onPress={handleConnectGame}
+                className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+              >
+                <View>
+                  <Text className="text-base font-medium text-foreground">Connect Game</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Swipe to match kanji, readings, and meanings
+                  </Text>
+                </View>
+                <ChevronRight size={20} className="text-muted-foreground" />
+              </Pressable>
+            </View>
           </View>
         </Pressable>
       </Pressable>
