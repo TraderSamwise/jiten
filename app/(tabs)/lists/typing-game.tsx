@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   TextInput,
   Pressable,
@@ -373,6 +374,7 @@ export default function TypingGameScreen() {
   const userDb = useUserDb();
   const { dictDb, audioDb } = useDatabase();
 
+  const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
   const [furiganaMode, setFuriganaMode] = useAtom(typingFuriganaModeAtom);
   const [showPitchOpt, setShowPitchOpt] = useAtom(typingShowPitchAtom);
@@ -784,7 +786,13 @@ export default function TypingGameScreen() {
     >
       {/* Header */}
       <View className="flex-row items-center px-4 py-3 border-b border-border">
-        <Pressable onPress={() => goBack()} className="p-1 mr-3">
+        <Pressable
+          onPress={() => {
+            setNavigating(true);
+            setTimeout(() => goBack(), 100);
+          }}
+          className="p-1 mr-3"
+        >
           <X size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-lg font-semibold text-foreground flex-1">Typing Game</Text>
@@ -1025,8 +1033,20 @@ export default function TypingGameScreen() {
                 wordFilter.refresh();
               }}
             />
-            <Button label="Return to List" variant="outline" onPress={() => goBack()} />
+            <Button
+              label="Return to List"
+              variant="outline"
+              onPress={() => {
+                setNavigating(true);
+                setTimeout(() => goBack(), 100);
+              }}
+            />
           </View>
+        </View>
+      )}
+      {navigating && (
+        <View className="absolute inset-0 z-50 bg-background items-center justify-center">
+          <ActivityIndicator size="large" />
         </View>
       )}
     </View>

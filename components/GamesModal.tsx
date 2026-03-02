@@ -1,5 +1,5 @@
-import React from "react";
-import { Modal, Pressable, View } from "react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Modal, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { ChevronRight } from "@/lib/icons";
@@ -12,20 +12,36 @@ interface GamesModalProps {
 
 export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
   const router = useRouter();
+  const [loading, setLoading] = useState<"typing" | "connect" | null>(null);
 
   function handleTypingGame() {
-    onClose();
-    router.push(`/lists/typing-game?listId=${listId}`);
+    setLoading("typing");
+    setTimeout(() => {
+      onClose();
+      router.push(`/lists/typing-game?listId=${listId}`);
+    }, 100);
   }
 
   function handleConnectGame() {
-    onClose();
-    router.push(`/lists/connect-game?listId=${listId}`);
+    setLoading("connect");
+    setTimeout(() => {
+      onClose();
+      router.push(`/lists/connect-game?listId=${listId}`);
+    }, 100);
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      onDismiss={() => setLoading(null)}
+    >
+      <Pressable
+        className="flex-1 justify-center px-6 bg-black/50"
+        onPress={loading ? undefined : onClose}
+      >
         <Pressable onPress={() => {}}>
           <View className="rounded-2xl border border-border bg-background p-5">
             <Text className="text-lg font-semibold text-foreground mb-4">Games</Text>
@@ -33,7 +49,9 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
             <View className="gap-3">
               <Pressable
                 onPress={handleTypingGame}
+                disabled={loading !== null}
                 className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+                style={loading !== null ? { opacity: 0.5 } : undefined}
               >
                 <View>
                   <Text className="text-base font-medium text-foreground">Typing Game</Text>
@@ -41,12 +59,18 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                     Type readings as words flow by
                   </Text>
                 </View>
-                <ChevronRight size={20} className="text-muted-foreground" />
+                {loading === "typing" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                )}
               </Pressable>
 
               <Pressable
                 onPress={handleConnectGame}
+                disabled={loading !== null}
                 className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+                style={loading !== null ? { opacity: 0.5 } : undefined}
               >
                 <View>
                   <Text className="text-base font-medium text-foreground">Connect Game</Text>
@@ -54,7 +78,11 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                     Swipe to match kanji, readings, and meanings
                   </Text>
                 </View>
-                <ChevronRight size={20} className="text-muted-foreground" />
+                {loading === "connect" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                )}
               </Pressable>
             </View>
           </View>
