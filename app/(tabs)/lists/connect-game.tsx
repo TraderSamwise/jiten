@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, useWindowDimensions, AppState } from "react-native";
+import { ActivityIndicator, View, Pressable, useWindowDimensions, AppState } from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +22,7 @@ export default function ConnectGameScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { dictDb } = useDatabase();
 
+  const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -212,7 +213,13 @@ export default function ConnectGameScreen() {
       <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center px-4 py-3 border-b border-border">
-          <Pressable onPress={() => goBack()} className="p-1 mr-3">
+          <Pressable
+            onPress={() => {
+              setNavigating(true);
+              setTimeout(() => goBack(), 100);
+            }}
+            className="p-1 mr-3"
+          >
             <X size={24} className="text-foreground" />
           </Pressable>
           <Text className="text-lg font-semibold text-foreground flex-1">Connect Game</Text>
@@ -303,8 +310,16 @@ export default function ConnectGameScreen() {
             state={gameState}
             endedAt={endedAt}
             onPlayAgain={handlePlayAgain}
-            onReturn={() => goBack()}
+            onReturn={() => {
+              setNavigating(true);
+              setTimeout(() => goBack(), 100);
+            }}
           />
+        )}
+        {navigating && (
+          <View className="absolute inset-0 z-50 bg-background items-center justify-center">
+            <ActivityIndicator size="large" />
+          </View>
         )}
       </View>
     </GestureHandlerRootView>
