@@ -24,6 +24,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
@@ -50,6 +51,7 @@ import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { findReadingConfusion, findMeaningConfusion } from "@/lib/confused-words";
+import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -63,7 +65,6 @@ const INPUT_HEIGHT = 80;
 // ─── Types ───
 
 type Phase = "select" | "playing" | "done";
-type GameMode = "review" | "learn" | "all";
 interface WordState {
   entry: DictEntry;
   completed: boolean;
@@ -390,11 +391,9 @@ export default function TypingGameScreen() {
   const [assistedCount, setAssistedCount] = useState(0);
   const [incorrectCount, setIncorrectCount] = useState(0);
 
-  // Counts for mode selection
-  const [reviewCount, setReviewCount] = useState(0);
-  const [learnCount, setLearnCount] = useState(0);
-  const [allCount, setAllCount] = useState(0);
-  const [allEntryIds, setAllEntryIds] = useState<number[]>([]);
+  // Word filter (SRS-based counts + filtering)
+  const wordFilter = useWordFilter(listId);
+  const [selectedFilter, setSelectedFilter] = useState<WordFilterMode>("all");
 
   // Full shuffled queue (entry IDs) — batches are pulled from front
   const shuffledQueue = useRef<number[]>([]);
@@ -435,41 +434,6 @@ export default function TypingGameScreen() {
     const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
     return Math.max(4, rows * wordsPerRow);
   })();
-
-  // ─── Load counts ───
-
-  const loadCounts = useCallback(async () => {
-    if (!userDb || !listId) return;
-
-    const allRows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ?",
-      [listId],
-    );
-    const entryIds = allRows.map((r) => r.entry_id);
-    setAllEntryIds(entryIds);
-    setAllCount(entryIds.length);
-
-    if (entryIds.length === 0) {
-      setReviewCount(0);
-      setLearnCount(0);
-      return;
-    }
-
-    const placeholders = entryIds.map(() => "?").join(",");
-
-    const reviewRows = await userDb.getAllAsync<{ entry_id: number }>(
-      `SELECT DISTINCT s.entry_id FROM srs_cards s
-       WHERE s.list_id = ? AND s.entry_id IN (${placeholders})
-       AND (s.simple_stage IS NOT NULL OR s.state != 0)`,
-      [listId, ...entryIds],
-    );
-    setReviewCount(reviewRows.length);
-    setLearnCount(entryIds.length - reviewRows.length);
-  }, [userDb, listId]);
-
-  useEffect(() => {
-    loadCounts();
-  }, [loadCounts]);
 
   // ─── Keep input focused during gameplay (web) ───
 
@@ -527,33 +491,10 @@ export default function TypingGameScreen() {
       .map((entry) => ({ entry, completed: false, correct: false, assisted: false }));
   }
 
-  async function startGame(mode: GameMode) {
-    if (!userDb || !dictDb || !listId) return;
+  async function startGame() {
+    if (!dictDb || !listId) return;
 
-    let entryIds: number[];
-
-    if (mode === "all") {
-      entryIds = [...allEntryIds];
-    } else if (mode === "review") {
-      const placeholders = allEntryIds.map(() => "?").join(",");
-      const rows = await userDb.getAllAsync<{ entry_id: number }>(
-        `SELECT DISTINCT s.entry_id FROM srs_cards s
-         WHERE s.list_id = ? AND s.entry_id IN (${placeholders})
-         AND (s.simple_stage IS NOT NULL OR s.state != 0)`,
-        [listId, ...allEntryIds],
-      );
-      entryIds = rows.map((r) => r.entry_id);
-    } else {
-      const placeholders = allEntryIds.map(() => "?").join(",");
-      const reviewRows = await userDb.getAllAsync<{ entry_id: number }>(
-        `SELECT DISTINCT s.entry_id FROM srs_cards s
-         WHERE s.list_id = ? AND s.entry_id IN (${placeholders})
-         AND (s.simple_stage IS NOT NULL OR s.state != 0)`,
-        [listId, ...allEntryIds],
-      );
-      const learnedSet = new Set(reviewRows.map((r) => r.entry_id));
-      entryIds = allEntryIds.filter((id) => !learnedSet.has(id));
-    }
+    const entryIds = wordFilter.getFilteredEntryIds(selectedFilter);
 
     // Shuffle
     for (let i = entryIds.length - 1; i > 0; i--) {
@@ -636,8 +577,11 @@ export default function TypingGameScreen() {
 
       // Reading-based confusion detection on incorrect answers
       if (!isCorrect && converted.length >= 2 && dictDb) {
-        findReadingConfusion(currentEntry.id, converted, allEntryIds, (ids) =>
-          getEntries(dictDb, ids),
+        findReadingConfusion(
+          currentEntry.id,
+          converted,
+          wordFilter.getFilteredEntryIds("all"),
+          (ids) => getEntries(dictDb, ids),
         )
           .then((confused) => {
             if (confused) {
@@ -864,21 +808,15 @@ export default function TypingGameScreen() {
           >
             <View className="flex-row items-center justify-between gap-6">
               <Text className="text-sm text-foreground">Furigana</Text>
-              <View className="flex-row rounded-lg border border-border overflow-hidden">
-                {(["off", "auto", "on"] as const).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    className={`px-2.5 py-1 ${furiganaMode === mode ? "bg-primary" : ""}`}
-                    onPress={() => setFuriganaMode(mode)}
-                  >
-                    <Text
-                      className={`text-xs capitalize ${furiganaMode === mode ? "text-primary-foreground" : "text-foreground"}`}
-                    >
-                      {mode}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <SegmentedControl
+                options={[
+                  { value: "off" as FuriganaMode, label: "Off" },
+                  { value: "auto" as FuriganaMode, label: "Auto" },
+                  { value: "on" as FuriganaMode, label: "On" },
+                ]}
+                value={furiganaMode}
+                onChange={setFuriganaMode}
+              />
             </View>
             <View className="flex-row items-center justify-between gap-6">
               <Text className="text-sm text-foreground">Pitch accent</Text>
@@ -894,47 +832,35 @@ export default function TypingGameScreen() {
 
       {phase === "select" && (
         <View className="flex-1 justify-center px-6">
-          <Text className="text-xl font-bold text-foreground text-center mb-6">Choose a mode</Text>
+          <Text className="text-xl font-bold text-foreground text-center mb-6">Typing Game</Text>
 
-          <View className="gap-3">
-            <Button
-              label={`Review (${reviewCount})`}
-              onPress={() => startGame("review")}
-              disabled={reviewCount === 0}
-            />
-            <Button
-              label={`Learn (${learnCount})`}
-              variant="secondary"
-              onPress={() => startGame("learn")}
-              disabled={learnCount === 0}
-            />
-            <Button
-              label={`All (${allCount})`}
-              variant="outline"
-              onPress={() => startGame("all")}
-              disabled={allCount === 0}
-            />
-          </View>
+          {/* Word filter */}
+          <Text className="text-base font-semibold text-foreground mb-3">Words</Text>
+          <SegmentedControl
+            options={[
+              { value: "review" as WordFilterMode, label: `Review (${wordFilter.reviewCount})` },
+              { value: "learn" as WordFilterMode, label: `Learn (${wordFilter.learnCount})` },
+              { value: "all" as WordFilterMode, label: `All (${wordFilter.allCount})` },
+            ]}
+            value={selectedFilter}
+            onChange={setSelectedFilter}
+            fullWidth
+            className="mb-6"
+          />
 
           {/* Options */}
-          <View className="mt-6 gap-3">
+          <View className="gap-3 mb-6">
             <View className="flex-row items-center justify-between">
               <Text className="text-base text-foreground">Furigana</Text>
-              <View className="flex-row rounded-lg border border-border overflow-hidden">
-                {(["off", "auto", "on"] as const).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    className={`px-3 py-1.5 ${furiganaMode === mode ? "bg-primary" : ""}`}
-                    onPress={() => setFuriganaMode(mode)}
-                  >
-                    <Text
-                      className={`text-sm capitalize ${furiganaMode === mode ? "text-primary-foreground" : "text-foreground"}`}
-                    >
-                      {mode}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <SegmentedControl
+                options={[
+                  { value: "off" as FuriganaMode, label: "Off" },
+                  { value: "auto" as FuriganaMode, label: "Auto" },
+                  { value: "on" as FuriganaMode, label: "On" },
+                ]}
+                value={furiganaMode}
+                onChange={setFuriganaMode}
+              />
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="text-base text-foreground">Show pitch accent</Text>
@@ -945,6 +871,16 @@ export default function TypingGameScreen() {
               <Switch value={playAudioOpt} onValueChange={setPlayAudioOpt} />
             </View>
           </View>
+
+          <Button
+            label="Start"
+            onPress={() => startGame()}
+            disabled={
+              (selectedFilter === "review" && wordFilter.reviewCount === 0) ||
+              (selectedFilter === "learn" && wordFilter.learnCount === 0) ||
+              wordFilter.allCount === 0
+            }
+          />
         </View>
       )}
 
@@ -1086,7 +1022,7 @@ export default function TypingGameScreen() {
                 setPhase("select");
                 setWords([]);
                 setCurrentWordIndex(0);
-                loadCounts();
+                wordFilter.refresh();
               }}
             />
             <Button label="Return to List" variant="outline" onPress={() => goBack()} />
