@@ -127,6 +127,56 @@ ruby rt {
   margin: 0;
 }
 
+#page-jump-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#page-jump-pill {
+  display: flex;
+  align-items: center;
+  background: __BG__;
+  padding: 10px 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+#page-jump-overlay .page-jump-label {
+  font-size: 15px;
+  font-family: -apple-system, "Helvetica Neue", sans-serif;
+  color: __FG__;
+  opacity: 0.6;
+}
+
+#page-jump-overlay #page-jump {
+  width: 3em;
+  font-size: 15px;
+  font-family: -apple-system, "Helvetica Neue", sans-serif;
+  color: __FG__;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid __FG__;
+  text-align: center;
+  outline: none;
+  margin: 0 6px;
+  -moz-appearance: textfield;
+}
+
+#page-jump-overlay #page-jump::-webkit-inner-spin-button,
+#page-jump-overlay #page-jump::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 #content::-webkit-scrollbar {
   display: none;
 }
