@@ -1,49 +1,38 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Pressable, useWindowDimensions, AppState } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { X } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
-import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { PlayField } from "@/components/connect-game/PlayField";
 import { GameOverScreen } from "@/components/connect-game/GameOverScreen";
 import { createInitialState, spawnWave, tick, cleanupBubbles } from "@/lib/connect-game/engine";
+import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
 import type { Phase, GameMode, TimedDuration, GameState } from "@/lib/connect-game/types";
 export default function ConnectGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const userDb = useUserDb();
   const { dictDb } = useDatabase();
 
   const [phase, setPhase] = useState<Phase>("select");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [entryCount, setEntryCount] = useState(0);
   const [endedAt, setEndedAt] = useState(0);
+  const [selectedFilter, setSelectedFilter] = useState<WordFilterMode>("all");
   const gameRef = useRef<GameState | null>(null);
   const rafRef = useRef<number>(0);
   const lastTickRef = useRef(0);
 
-  // Load entry count for display
-  useEffect(() => {
-    if (!userDb || !listId) return;
-    userDb
-      .getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM list_entries WHERE list_id = ?",
-        [listId],
-      )
-      .then((row: { count: number } | null) => {
-        if (row) setEntryCount(row.count);
-      })
-      .catch(() => {});
-  }, [userDb, listId]);
+  // Word filter (SRS-based counts + filtering)
+  const wordFilter = useWordFilter(listId);
 
   // ─── Game loop ───
 
@@ -116,18 +105,45 @@ export default function ConnectGameScreen() {
     return () => sub.remove();
   }, []);
 
+  // ─── Pause on screen blur (in-app navigation) ───
+
+  /* eslint-disable react-hooks/immutability -- imperative game state via ref */
+  useFocusEffect(
+    useCallback(() => {
+      // Screen focused — resume if was paused by blur
+      const state = gameRef.current;
+      if (state?.paused && state.phase === "playing") {
+        const pauseDuration = Date.now() - (lastTickRef.current || Date.now());
+        state.startedAt += pauseDuration;
+        for (const bubble of state.bubbles) {
+          if (!bubble.matched && !bubble.expired) {
+            bubble.spawnedAt += pauseDuration;
+          }
+        }
+        state.paused = false;
+        lastTickRef.current = 0;
+        setNow(Date.now());
+      }
+
+      return () => {
+        // Screen blurred — pause
+        const s = gameRef.current;
+        if (s && s.phase === "playing" && !s.paused) {
+          s.paused = true;
+          setNow(Date.now());
+        }
+      };
+    }, []),
+  );
+  /* eslint-enable react-hooks/immutability */
+
   // ─── Start game ───
 
   const startGame = useCallback(
     async (mode: GameMode, duration: TimedDuration) => {
-      if (!userDb || !dictDb || !listId) return;
+      if (!dictDb || !listId) return;
 
-      // Load all entry IDs from the list
-      const rows = await userDb.getAllAsync<{ entry_id: number }>(
-        "SELECT entry_id FROM list_entries WHERE list_id = ?",
-        [listId],
-      );
-      const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
+      const entryIds = wordFilter.getFilteredEntryIds(selectedFilter);
       if (entryIds.length < 3) return;
 
       const entries = await getEntries(dictDb, entryIds);
@@ -146,7 +162,7 @@ export default function ConnectGameScreen() {
       setGameState(state);
       setPhase("playing");
     },
-    [userDb, dictDb, listId, screenWidth, screenHeight, insets],
+    [dictDb, listId, screenWidth, screenHeight, insets, wordFilter, selectedFilter],
   );
 
   const handleStateChange = useCallback(() => {
@@ -158,8 +174,10 @@ export default function ConnectGameScreen() {
     gameRef.current = null;
     setGameState(null);
     setPhase("select");
-  }, []);
+    wordFilter.refresh();
+  }, [wordFilter]);
 
+  /* eslint-disable react-hooks/immutability -- imperative game state via ref */
   const togglePause = useCallback(() => {
     const state = gameRef.current;
     if (!state || state.phase !== "playing") return;
@@ -178,6 +196,14 @@ export default function ConnectGameScreen() {
     }
     setNow(Date.now());
   }, []);
+  /* eslint-enable react-hooks/immutability */
+
+  const filteredCount =
+    selectedFilter === "review"
+      ? wordFilter.reviewCount
+      : selectedFilter === "learn"
+        ? wordFilter.learnCount
+        : wordFilter.allCount;
 
   // ─── Render ───
 
@@ -207,9 +233,23 @@ export default function ConnectGameScreen() {
               Swipe through matching kanji, readings, and meanings
             </Text>
 
-            {entryCount < 3 && (
+            {/* Word filter */}
+            <Text className="text-base font-semibold text-foreground mb-3">Words</Text>
+            <SegmentedControl
+              options={[
+                { value: "review" as WordFilterMode, label: `Review (${wordFilter.reviewCount})` },
+                { value: "learn" as WordFilterMode, label: `Learn (${wordFilter.learnCount})` },
+                { value: "all" as WordFilterMode, label: `All (${wordFilter.allCount})` },
+              ]}
+              value={selectedFilter}
+              onChange={setSelectedFilter}
+              fullWidth
+              className="mb-6"
+            />
+
+            {filteredCount < 3 && (
               <Text className="text-sm text-red-400 text-center mb-4">
-                Need at least 3 entries in the list to play
+                Need at least 3 entries to play
               </Text>
             )}
 
@@ -220,7 +260,7 @@ export default function ConnectGameScreen() {
                   key={duration}
                   label={`${duration}s`}
                   onPress={() => startGame("timed", duration)}
-                  disabled={entryCount < 3}
+                  disabled={filteredCount < 3}
                   className="flex-1"
                 />
               ))}
@@ -231,11 +271,11 @@ export default function ConnectGameScreen() {
               label="3 Lives"
               variant="secondary"
               onPress={() => startGame("survival", 60)}
-              disabled={entryCount < 3}
+              disabled={filteredCount < 3}
             />
 
             <Text className="text-xs text-muted-foreground text-center mt-6">
-              {entryCount} entries available
+              {filteredCount} entries available
             </Text>
           </View>
         )}
