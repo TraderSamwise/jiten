@@ -5,46 +5,28 @@ import Animated, {
   withTiming,
   withSpring,
   withDelay,
+  withSequence,
   Easing,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
-import type { Bubble as BubbleType, BubbleKind } from "@/lib/connect-game/types";
-
-const KIND_STYLES: Record<BubbleKind, { bg: string; border: string; text: string; glow: string }> =
-  {
-    kanji: {
-      bg: "bg-purple-900/70",
-      border: "border-purple-400",
-      text: "text-purple-100",
-      glow: "rgba(168, 85, 247, 0.4)",
-    },
-    reading: {
-      bg: "bg-blue-900/70",
-      border: "border-blue-400",
-      text: "text-blue-100",
-      glow: "rgba(96, 165, 250, 0.4)",
-    },
-    meaning: {
-      bg: "bg-emerald-900/70",
-      border: "border-emerald-400",
-      text: "text-emerald-100",
-      glow: "rgba(52, 211, 153, 0.4)",
-    },
-  };
+import type { Bubble as BubbleType } from "@/lib/connect-game/types";
 
 interface BubbleProps {
   bubble: BubbleType;
   fieldWidth: number;
   fieldHeight: number;
   now: number;
+  /** Incremented each time this bubble is part of an invalid swipe */
+  invalidTick?: number;
 }
 
-export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps) {
+export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }: BubbleProps) {
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const borderFlash = useSharedValue(0);
 
   const isVisible = now >= bubble.spawnedAt;
-  const style = KIND_STYLES[bubble.kind];
 
   useEffect(() => {
     if (isVisible && !bubble.matched && !bubble.expired) {
@@ -53,6 +35,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps
     }
   }, [isVisible, bubble.matched, bubble.expired, scale, opacity]);
 
+  /* eslint-disable react-hooks/immutability -- reanimated shared value updates */
   useEffect(() => {
     if (bubble.matched) {
       scale.value = withTiming(1.3, { duration: 200, easing: Easing.out(Easing.quad) });
@@ -62,11 +45,37 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps
       opacity.value = withTiming(0, { duration: 400 });
     }
   }, [bubble.matched, bubble.expired, scale, opacity]);
+  /* eslint-enable react-hooks/immutability */
+
+  // Shake animation on invalid swipe
+  useEffect(() => {
+    if (invalidTick && invalidTick > 0) {
+      translateX.value = withSequence(
+        withTiming(-8, { duration: 50 }),
+        withTiming(8, { duration: 50 }),
+        withTiming(-6, { duration: 50 }),
+        withTiming(6, { duration: 50 }),
+        withTiming(-3, { duration: 40 }),
+        withTiming(0, { duration: 40 }),
+      );
+      borderFlash.value = withSequence(
+        withTiming(1, { duration: 50 }),
+        withTiming(0, { duration: 400 }),
+      );
+    }
+  }, [invalidTick, translateX, borderFlash]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [{ translateX: translateX.value }, { scale: scale.value }],
     opacity: opacity.value,
   }));
+
+  const innerStyle = useAnimatedStyle(() => {
+    const flash = borderFlash.value;
+    return {
+      borderColor: flash > 0 ? `rgba(239, 68, 68, ${flash})` : undefined,
+    };
+  });
 
   if (!isVisible) return null;
 
@@ -90,23 +99,23 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps
           top,
           width: bubble.width,
           height: bubble.height,
-          shadowColor: style.glow,
+          shadowColor: "rgba(255, 255, 255, 0.15)",
           shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: bubble.collected ? 1 : 0.6,
-          shadowRadius: bubble.collected ? 12 : 6,
-          elevation: 8,
+          shadowOpacity: bubble.collected ? 1 : 0.4,
+          shadowRadius: bubble.collected ? 10 : 4,
+          elevation: 4,
         },
         animatedStyle,
       ]}
     >
       <Animated.View
-        className={`flex-1 items-center justify-center rounded-2xl border-2 ${style.bg} ${
-          bubble.collected ? "border-yellow-300" : style.border
+        className={`flex-1 items-center justify-center rounded-xl border ${
+          bubble.collected ? "border-yellow-400 bg-yellow-950/40" : "border-zinc-600 bg-zinc-900/80"
         }`}
-        style={{ overflow: "hidden" }}
+        style={[{ overflow: "hidden" }, innerStyle]}
       >
         <Text
-          className={`font-semibold ${textSize} ${bubble.collected ? "text-yellow-100" : style.text}`}
+          className={`font-semibold ${textSize} ${bubble.collected ? "text-yellow-100" : "text-zinc-100"}`}
           numberOfLines={1}
         >
           {bubble.text}
@@ -122,7 +131,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps
               right: 0,
               height: 2,
               backgroundColor:
-                progress > 0.7 ? "rgba(239, 68, 68, 0.7)" : "rgba(255, 255, 255, 0.3)",
+                progress > 0.7 ? "rgba(239, 68, 68, 0.5)" : "rgba(255, 255, 255, 0.15)",
             }}
           >
             <Animated.View
@@ -130,7 +139,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now }: BubbleProps
                 height: "100%",
                 width: `${(1 - progress) * 100}%`,
                 backgroundColor:
-                  progress > 0.7 ? "rgba(239, 68, 68, 0.9)" : "rgba(255, 255, 255, 0.6)",
+                  progress > 0.7 ? "rgba(239, 68, 68, 0.8)" : "rgba(255, 255, 255, 0.4)",
               }}
             />
           </Animated.View>
