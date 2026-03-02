@@ -58,16 +58,28 @@ export default function ListsIndexScreen() {
   const renameInputRef = useRef<TextInput>(null);
   const [importing, setImporting] = useState<number | null>(null);
   const [defaultsExpanded, setDefaultsExpanded] = useState(false);
+  const [defaultsReady, setDefaultsReady] = useState(false);
   const contentHeight = useRef(0);
+  const expandQueued = useRef(false);
   const animatedHeight = useSharedValue(0);
   const chevronRotation = useSharedValue(0);
 
   const toggleDefaults = useCallback(() => {
     const next = !defaultsExpanded;
     setDefaultsExpanded(next);
-    animatedHeight.value = withTiming(next ? contentHeight.current : 0, { duration: 250 });
     chevronRotation.value = withTiming(next ? 180 : 0, { duration: 250 });
-  }, [defaultsExpanded]);
+    if (next) {
+      if (!defaultsReady) {
+        // First open: mount cards, wait for measurement before animating
+        expandQueued.current = true;
+        setDefaultsReady(true);
+        return;
+      }
+      animatedHeight.value = withTiming(contentHeight.current, { duration: 250 });
+    } else {
+      animatedHeight.value = withTiming(0, { duration: 250 });
+    }
+  }, [defaultsExpanded, defaultsReady]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     height: animatedHeight.value,
@@ -404,16 +416,28 @@ export default function ListsIndexScreen() {
               </Animated.View>
             </Pressable>
 
-            <Animated.View style={animatedContainerStyle}>
-              <View
-                className="pt-2"
-                onLayout={(e) => {
-                  contentHeight.current = e.nativeEvent.layout.height;
-                }}
-              >
-                {defaultLists.map(renderListCard)}
-              </View>
-            </Animated.View>
+            {defaultsReady && (
+              <>
+                {/* Measurement pass — positioned outside the animated container
+                    so iOS Yoga lays it out even when animatedHeight is 0 */}
+                <View
+                  style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+                  onLayout={(e) => {
+                    contentHeight.current = e.nativeEvent.layout.height;
+                    if (expandQueued.current) {
+                      expandQueued.current = false;
+                      animatedHeight.value = withTiming(contentHeight.current, { duration: 250 });
+                    }
+                  }}
+                >
+                  <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+                </View>
+
+                <Animated.View style={animatedContainerStyle}>
+                  <View className="pt-2">{defaultLists.map(renderListCard)}</View>
+                </Animated.View>
+              </>
+            )}
           </View>
         )}
       </ScrollView>
