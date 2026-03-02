@@ -63,8 +63,8 @@ export default function ListsIndexScreen() {
   const chevronRotation = useSharedValue(0);
 
   const defaultListCount = lists.filter((l) => l.isDefault).length;
-  // Generous estimate — maxHeight means content takes natural size, overshoot is harmless
-  const expandedMaxHeight = 8 + defaultListCount * 100;
+  // Slightly generous estimate — each card is ~76px, pad a bit for progress bars
+  const expandedMaxHeight = 8 + defaultListCount * 80;
 
   const toggleDefaults = useCallback(() => {
     const next = !defaultsExpanded;
