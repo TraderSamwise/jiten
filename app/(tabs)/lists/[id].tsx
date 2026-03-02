@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Pressable, InteractionManager } from "react-native";
+import { View, Pressable, InteractionManager, ActivityIndicator } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
@@ -285,7 +285,8 @@ export default function ListDetailScreen() {
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <Text className="text-muted-foreground">Loading...</Text>
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">Loading list...</Text>
       </View>
     );
   }

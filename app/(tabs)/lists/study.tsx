@@ -7,6 +7,7 @@ import {
   Modal,
   TextInput,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
@@ -1745,7 +1746,8 @@ export default function StudyScreen() {
         className="flex-1 items-center justify-center bg-background"
         style={{ paddingTop: insets.top }}
       >
-        <Text className="text-muted-foreground">Loading...</Text>
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
       </View>
     );
   }
