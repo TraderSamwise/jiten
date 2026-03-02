@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { View, ScrollView, Pressable, Linking, Platform, InteractionManager } from "react-native";
+import {
+  View,
+  ScrollView,
+  Pressable,
+  Linking,
+  Platform,
+  InteractionManager,
+  ActivityIndicator,
+} from "react-native";
 import { useNavigation } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
@@ -53,7 +61,8 @@ export function WordDetail({ entryId }: WordDetailProps) {
   if (!entry) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <Text className="text-muted-foreground">Loading...</Text>
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">Loading entry...</Text>
       </View>
     );
   }

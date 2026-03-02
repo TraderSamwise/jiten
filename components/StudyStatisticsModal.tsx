@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, View, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "@/lib/icons";
@@ -187,7 +187,7 @@ export function StudyStatisticsModal({
             <Text className="text-lg font-semibold text-foreground mb-4">Statistics</Text>
 
             {loading ? (
-              <Text className="text-muted-foreground text-center py-4">Loading...</Text>
+              <ActivityIndicator className="py-4" />
             ) : addOrderStats ? (
               <View className="mb-4">
                 <Text className="text-xs font-semibold text-muted-foreground tracking-wider mb-2">

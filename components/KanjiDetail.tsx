@@ -7,6 +7,7 @@ import {
   TextInput,
   Platform,
   InteractionManager,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -170,7 +171,8 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   if (!kanji) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <Text className="text-muted-foreground">Loading...</Text>
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">Loading kanji...</Text>
       </View>
     );
   }
