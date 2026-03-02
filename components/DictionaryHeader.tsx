@@ -40,7 +40,10 @@ const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
 export function DictionaryHeader({ back, options, route }: NativeStackHeaderProps) {
   const insets = useSafeAreaInsets();
   const goBack = useSafeGoBack("/dictionary");
-  const { query, setQuery, searchMode, setSearchMode } = useSearchStore();
+  const query = useSearchStore((s) => s.query);
+  const setQuery = useSearchStore((s) => s.setQuery);
+  const searchMode = useSearchStore((s) => s.searchMode);
+  const setSearchMode = useSearchStore((s) => s.setSearchMode);
   const { extendedDb } = useDatabase();
   const isWordDetail = route.name === "word/[id]" || route.name === "gloss-group";
   const isKanjiDetail = route.name === "kanji/[literal]";

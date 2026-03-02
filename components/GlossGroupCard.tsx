@@ -13,7 +13,7 @@ interface GlossGroupCardProps {
   group: GlossGroup;
 }
 
-export function GlossGroupCard({ group }: GlossGroupCardProps) {
+export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: GlossGroupCardProps) {
   const router = useRouter();
   const setSelectedGlossGroup = useSearchStore((s) => s.setSelectedGlossGroup);
   const isMulti = group.entries.length > 1;
@@ -72,4 +72,4 @@ export function GlossGroupCard({ group }: GlossGroupCardProps) {
       </View>
     </PressableCard>
   );
-}
+});

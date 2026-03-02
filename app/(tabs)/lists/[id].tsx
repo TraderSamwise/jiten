@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, FlatList, Pressable } from "react-native";
+import { View, Pressable, InteractionManager } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
@@ -75,7 +76,10 @@ export default function ListDetailScreen() {
   }, [list?.name]);
 
   useEffect(() => {
-    loadEntries();
+    const task = InteractionManager.runAfterInteractions(() => {
+      loadEntries();
+    });
+    return () => task.cancel();
   }, [userDb, dictDb, id]);
 
   useEffect(() => {
@@ -299,10 +303,11 @@ export default function ListDetailScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <FlatList
+      <FlashList
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
+        estimatedItemSize={56}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,

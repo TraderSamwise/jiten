@@ -8,7 +8,7 @@ interface EntryCardProps {
   entry: DictEntry;
 }
 
-export function EntryCard({ entry }: EntryCardProps) {
+export const EntryCard = React.memo(function EntryCard({ entry }: EntryCardProps) {
   const tabRouter = useTabRouter();
 
   return (
@@ -16,4 +16,4 @@ export function EntryCard({ entry }: EntryCardProps) {
       <EntrySummary entry={entry} />
     </PressableCard>
   );
-}
+});

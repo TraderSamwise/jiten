@@ -23,6 +23,7 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: activeTint,
         headerShown: true,
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen

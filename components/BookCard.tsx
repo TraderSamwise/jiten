@@ -8,7 +8,7 @@ interface BookCardProps {
   onPress: () => void;
 }
 
-export function BookCard({ book, onPress }: BookCardProps) {
+export const BookCard = React.memo(function BookCard({ book, onPress }: BookCardProps) {
   const progress = Math.round(book.scrollPosition * 100);
   const lastRead = book.lastReadAt ? new Date(book.lastReadAt).toLocaleDateString() : null;
 
@@ -23,4 +23,4 @@ export function BookCard({ book, onPress }: BookCardProps) {
       </View>
     </PressableCard>
   );
-}
+});
