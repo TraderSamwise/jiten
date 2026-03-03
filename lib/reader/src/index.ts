@@ -1,14 +1,17 @@
 import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { guessWordLength, guessWordStart } from "./japanese";
-import {
-  nodeOffsetToAbsolute,
-  absoluteToNodeOffset,
-  getTextFromPosition,
-  getTextBeforePosition,
-} from "./text";
+import { nodeOffsetToAbsolute, getTextFromPosition, getTextBeforePosition } from "./text";
 import { clearHighlight, applyHighlight } from "./highlight";
-import { setupContent, updateSizing, paginate, goToPage, nextPage, prevPage } from "./pagination";
+import {
+  setupContent,
+  updateSizing,
+  paginate,
+  alignToTargetChar,
+  goToPage,
+  nextPage,
+  prevPage,
+} from "./pagination";
 import { setupTouchHandlers } from "./touch";
 import { setupMouseHandlers } from "./mouse";
 import { setupMessageListener } from "./bridge";
@@ -229,6 +232,12 @@ declare const window: Window & {
   state.totalChars = window.__READER_CONFIG__.totalChars || 0;
   const targetLocalChar = window.__READER_CONFIG__.targetLocalChar || 0;
 
+  // Set canonical global offset — preserved until user navigates to a new page.
+  // This prevents drift from spacer/prepend shifting column boundaries on reload.
+  if (targetLocalChar > 0 || state.sliceCharOffset > 0) {
+    state.canonicalCharOffset = state.sliceCharOffset + targetLocalChar;
+  }
+
   // Initial setup
   setupContent();
   updateSizing();
@@ -237,41 +246,7 @@ declare const window: Window & {
     updateSizing();
     paginate();
     if (targetLocalChar > 0) {
-      // Measure distance from right edge to target char
-      state.pageEl!.scrollLeft = 0;
-      const pos = absoluteToNodeOffset(targetLocalChar);
-      const dbg = document.getElementById("debug-overlay");
-      if (dbg)
-        dbg.textContent = `INIT: targetLocal=${targetLocalChar} sliceOff=${state.sliceCharOffset} totalChars=${state.totalChars} pos=${pos ? "found" : "null"}`;
-      if (pos) {
-        const charAtPos = pos.node.textContent!.charAt(pos.offset);
-        const range = document.createRange();
-        range.setStart(pos.node, pos.offset);
-        range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
-        const rect = range.getBoundingClientRect();
-        const pageRect = state.pageEl!.getBoundingClientRect();
-        const D = pageRect.right - rect.right;
-
-        if (dbg)
-          dbg.textContent += `\nchar='${charAtPos}' D=${D.toFixed(1)} colW=${state.columnWidth} pageR=${pageRect.right.toFixed(0)} charR=${rect.right.toFixed(0)}`;
-
-        state.totalPrependWidth = D;
-        const remainder = D % state.columnWidth;
-        const spacerWidth = remainder > 1 ? Math.round(state.columnWidth - remainder) : 0;
-        if (spacerWidth > 0) {
-          const spacer = document.createElement("div");
-          spacer.className = "back-spacer";
-          spacer.style.width = spacerWidth + "px";
-          spacer.style.overflow = "hidden";
-          state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
-        }
-        state.prependedPages = Math.round((D + spacerWidth) / state.columnWidth);
-        state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
-        state.currentPage = state.prependedPages + 1;
-        if (dbg)
-          dbg.textContent += `\nspacer=${spacerWidth} rem=${remainder.toFixed(1)} prepPg=${state.prependedPages} curPg=${state.currentPage} totalPg=${state.totalPages}`;
-      }
-      goToPage(state.currentPage);
+      alignToTargetChar(targetLocalChar);
     } else if (savedPos > 0 && state.totalPages > 1) {
       state.currentPage = Math.round(savedPos * (state.totalPages - 1)) + 1;
       goToPage(state.currentPage);

@@ -86,7 +86,7 @@ export function parseAozoraToHtml(rawText: string, { strip = true } = {}): strin
     htmlParts.push(`<p>${toFullwidthPunctuation(processed)}</p>`);
   }
 
-  return htmlParts.join("\n");
+  return htmlParts.join("");
 }
 
 /**
@@ -98,7 +98,7 @@ export function plainTextToHtml(text: string): string {
     .split(/\r?\n/)
     .filter((line) => line.trim() !== "")
     .map((line) => `<p>${toFullwidthPunctuation(line)}</p>`)
-    .join("\n");
+    .join("");
 }
 
 /**
