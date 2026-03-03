@@ -7,15 +7,12 @@ function toFullwidthPunctuation(text: string): string {
 }
 
 /**
- * Converts Aozora Bunko markup to HTML with ruby annotations.
- * Also handles plain text gracefully.
+ * Strip Aozora bibliographic header and footer.
  */
-export function parseAozoraToHtml(rawText: string): string {
-  // Strip Aozora bibliographic header (before first horizontal rule)
+export function stripAozoraBoilerplate(rawText: string): string {
   let text = rawText;
   const headerSep = text.indexOf("-------------------------------------------------------");
   if (headerSep !== -1) {
-    // Find the second separator (end of header section)
     const secondSep = text.indexOf(
       "-------------------------------------------------------",
       headerSep + 1,
@@ -26,14 +23,19 @@ export function parseAozoraToHtml(rawText: string): string {
       );
     }
   }
-
-  // Strip trailing bibliographic footer
   const footerSep = text.lastIndexOf("底本：");
   if (footerSep !== -1) {
     text = text.slice(0, footerSep);
   }
+  return text.trim();
+}
 
-  text = text.trim();
+/**
+ * Converts Aozora Bunko markup to HTML with ruby annotations.
+ * Also handles plain text gracefully.
+ */
+export function parseAozoraToHtml(rawText: string, { strip = true } = {}): string {
+  const text = strip ? stripAozoraBoilerplate(rawText) : rawText;
 
   const lines = text.split(/\r?\n/);
   const htmlParts: string[] = [];

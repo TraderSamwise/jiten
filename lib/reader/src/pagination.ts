@@ -45,7 +45,9 @@ export function paginate(): void {
 }
 
 function updatePageInfo(): void {
-  state.pageNumEl!.textContent = state.currentPage + " / " + state.totalPages;
+  const displayPage = state.currentPage + state.pageOffset;
+  const displayTotal = state.overrideTotalPages || state.totalPages;
+  state.pageNumEl!.textContent = displayPage + " / " + displayTotal;
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
 }
@@ -98,7 +100,9 @@ export function resetPageShift(): void {
 }
 
 export function reportScroll(): void {
-  const pos = state.totalPages > 1 ? (state.currentPage - 1) / (state.totalPages - 1) : 0;
+  const displayPage = state.currentPage + state.pageOffset;
+  const displayTotal = state.overrideTotalPages || state.totalPages;
+  const pos = displayTotal > 1 ? (displayPage - 1) / (displayTotal - 1) : 0;
   window.ReactNativeWebView.postMessage(
     JSON.stringify({
       type: "scroll",
