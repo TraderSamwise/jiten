@@ -9,7 +9,7 @@ import { setupMouseHandlers } from "./mouse";
 import { setupMessageListener } from "./bridge";
 
 declare const window: Window & {
-  __READER_CONFIG__: { scrollPosition: number };
+  __READER_CONFIG__: { scrollPosition: number; pageOffset?: number; totalPages?: number };
   ReactNativeWebView: { postMessage(msg: string): void };
 };
 
@@ -213,6 +213,10 @@ declare const window: Window & {
 
   // Message listener (React Native bridge)
   setupMessageListener();
+
+  // Virtual pagination config
+  state.pageOffset = window.__READER_CONFIG__.pageOffset || 0;
+  state.overrideTotalPages = window.__READER_CONFIG__.totalPages || 0;
 
   // Initial setup
   setupContent();

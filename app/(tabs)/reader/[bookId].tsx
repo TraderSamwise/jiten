@@ -11,7 +11,18 @@ import { ChevronLeft, ChevronDown, SlidersHorizontal, BookText, User } from "@/l
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
-import { parseAozoraToHtml, hasAozoraMarkup, plainTextToHtml } from "@/lib/aozora-parser";
+import {
+  parseAozoraToHtml,
+  hasAozoraMarkup,
+  plainTextToHtml,
+  stripAozoraBoilerplate,
+} from "@/lib/aozora-parser";
+import {
+  type BookFormat,
+  parseBookContent,
+  sliceContent,
+  calcCharsPerPage,
+} from "@/lib/reader-model";
 import {
   smartLookup,
   smartLookupWithOffset,
@@ -215,17 +226,45 @@ export default function BookReaderScreen() {
       if (b.rawContent) {
         // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
         const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
-        const bookHtml = hasRubyTags
-          ? b.rawContent
-          : hasAozoraMarkup(b.rawContent)
-            ? parseAozoraToHtml(b.rawContent)
-            : plainTextToHtml(b.rawContent);
-        const readerHtml = generateReaderHtml(bookHtml, {
-          fontSize: b.fontSize,
-          isDark,
-          scrollPosition: b.scrollPosition,
-        });
-        setHtml(readerHtml);
+
+        if (hasRubyTags) {
+          // Pre-formatted HTML — send entire content (no slicing)
+          const readerHtml = generateReaderHtml(b.rawContent, {
+            fontSize: b.fontSize,
+            isDark,
+            scrollPosition: b.scrollPosition,
+          });
+          setHtml(readerHtml);
+        } else {
+          // Aozora or plain text — slice ~3 pages from scroll position
+          const isAozora = hasAozoraMarkup(b.rawContent);
+          const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
+          const format: BookFormat = isAozora ? "aozora" : "plain";
+          const model = parseBookContent(stripped, format);
+
+          const screen = Dimensions.get("window");
+          const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, false);
+          const budget = cpp * 3;
+
+          // Convert scroll position (0-1 ratio) to visible char offset
+          const estimatedTotalPages = Math.max(1, Math.ceil(model.totalChars / cpp));
+          const startChar = Math.round((b.scrollPosition || 0) * model.totalChars);
+          const pageOffset = Math.round((b.scrollPosition || 0) * (estimatedTotalPages - 1));
+          const slice = sliceContent(model, startChar, budget);
+
+          const sliceHtml = isAozora
+            ? parseAozoraToHtml(slice.text, { strip: false })
+            : plainTextToHtml(slice.text);
+
+          const readerHtml = generateReaderHtml(sliceHtml, {
+            fontSize: b.fontSize,
+            isDark,
+            scrollPosition: 0,
+            pageOffset,
+            totalPages: estimatedTotalPages,
+          });
+          setHtml(readerHtml);
+        }
       }
 
       // Update last_read_at

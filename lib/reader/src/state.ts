@@ -21,4 +21,8 @@ export const state = {
   btnPrev: null as HTMLButtonElement | null,
 
   controlsH: 44,
+
+  // Virtual pagination: offset so WebView reports global page numbers
+  pageOffset: 0, // 0-based: local page 1 = global page (pageOffset + 1)
+  overrideTotalPages: 0, // if >0, use this instead of measured totalPages for display/scroll
 };
