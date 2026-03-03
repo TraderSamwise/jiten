@@ -4,12 +4,20 @@ export interface ReaderOptions {
   fontSize: number;
   isDark: boolean;
   scrollPosition?: number;
-  pageOffset?: number;
-  totalPages?: number;
+  targetLocalChar?: number;
+  sliceCharOffset?: number;
+  totalChars?: number;
 }
 
 export function generateReaderHtml(content: string, options: ReaderOptions): string {
-  const { fontSize, isDark, scrollPosition = 0, pageOffset = 0, totalPages = 0 } = options;
+  const {
+    fontSize,
+    isDark,
+    scrollPosition = 0,
+    targetLocalChar = 0,
+    sliceCharOffset = 0,
+    totalChars = 0,
+  } = options;
   const bg = isDark ? "#18181b" : "#fafaf9";
   const fg = isDark ? "#fafafa" : "#18181b";
   const rubyColor = isDark ? "#a1a1aa" : "#71717a";
@@ -41,7 +49,7 @@ ${css}</style>
   <span id="page-num"></span>
   <button id="btn-prev" aria-label="Previous page">\u203A</button>
 </div>
-<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},pageOffset:${pageOffset},totalPages:${totalPages}}</script>
+<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars}}</script>
 <script>${readerBundle}</script>
 </body>
 </html>`;

@@ -9,7 +9,10 @@ interface BookCardProps {
 }
 
 export const BookCard = React.memo(function BookCard({ book, onPress }: BookCardProps) {
-  const progress = Math.round(book.scrollPosition * 100);
+  const progress =
+    book.totalChars > 0
+      ? Math.round((book.charOffset / book.totalChars) * 100)
+      : Math.round(book.scrollPosition * 100);
   const lastRead = book.lastReadAt ? new Date(book.lastReadAt).toLocaleDateString() : null;
 
   return (
@@ -18,7 +21,9 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
       {book.author ? <CardDescription numberOfLines={1}>{book.author}</CardDescription> : null}
       <View className="flex-row items-center gap-3 mt-1">
         {lastRead && <CardDescription>{lastRead}</CardDescription>}
-        {book.scrollPosition > 0 && <CardDescription>{progress}%</CardDescription>}
+        {(book.charOffset > 0 || book.scrollPosition > 0) && (
+          <CardDescription>{progress}%</CardDescription>
+        )}
         <CardDescription className="capitalize">{book.source}</CardDescription>
       </View>
     </PressableCard>

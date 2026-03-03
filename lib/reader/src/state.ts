@@ -22,9 +22,9 @@ export const state = {
 
   controlsH: 44,
 
-  // Virtual pagination: offset so WebView reports global page numbers
-  pageOffset: 0, // 0-based: local page 1 = global page (pageOffset + 1)
-  overrideTotalPages: 0, // if >0, use this instead of measured totalPages for display/scroll
+  // Char-offset tracking for percentage display
+  sliceCharOffset: 0, // global char index of first char in WebView
+  totalChars: 0, // total chars in book (for percentage)
 
   // Backward prepend tracking
   totalPrependWidth: 0, // accumulated width of all backward prepends (no spacer)

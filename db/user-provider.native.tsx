@@ -157,6 +157,8 @@ const USER_DB_MIGRATIONS = [
     confused_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_confusion_events_date ON confusion_events(confused_at)`,
+  `ALTER TABLE books ADD COLUMN char_offset INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE books ADD COLUMN total_chars INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export function UserDatabaseProvider({
