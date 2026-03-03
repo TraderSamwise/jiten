@@ -50,6 +50,98 @@ export function paginate(): void {
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 }
 
+// Iteratively align a target char's column to a page boundary.
+// After alignment, updates canonicalCharOffset to the actual column-top
+// (MFVC), which may differ from targetLocalChar by a few chars.
+// Saving the column-top ensures reload stability: a column-top char
+// will align to the same column-top on next load.
+export function alignToTargetChar(targetLocalChar: number): void {
+  const cW = state.columnWidth;
+  const dbg = document.getElementById("debug-overlay");
+  let spacerWidth = 0;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    // Remove existing spacer
+    const oldSpacer = state.pageEl!.querySelector(".back-spacer");
+    if (oldSpacer) oldSpacer.remove();
+
+    // Insert current spacer
+    if (spacerWidth > 0) {
+      const spacer = document.createElement("div");
+      spacer.className = "back-spacer";
+      spacer.style.width = spacerWidth + "px";
+      spacer.style.overflow = "hidden";
+      state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
+    }
+
+    // Repaginate
+    state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
+
+    // Find target char position (scrollLeft=0 shows rightmost content)
+    state.pageEl!.scrollLeft = 0;
+    const pos = absoluteToNodeOffset(targetLocalChar);
+    if (!pos) break;
+
+    const range = document.createRange();
+    range.setStart(pos.node, pos.offset);
+    range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
+    const charRect = range.getBoundingClientRect();
+    const pageRight = state.pageEl!.getBoundingClientRect().right;
+
+    // D = total distance from right edge to target char (includes spacer)
+    const D = pageRight - charRect.right;
+    const remainder = D % cW;
+
+    if (dbg) {
+      const charAtPos = pos.node.textContent!.charAt(pos.offset);
+      dbg.textContent = `ALIGN[${attempt}]: char='${charAtPos}' D=${D.toFixed(1)} rem=${remainder.toFixed(1)} spacer=${spacerWidth} cW=${cW}`;
+    }
+
+    if (remainder < 5) {
+      // Aligned — char is at/just inside the page start
+      state.totalPrependWidth = D - spacerWidth;
+      state.prependedPages = Math.round(D / cW);
+      state.currentPage = state.prependedPages + 1;
+      break;
+    }
+
+    // Not aligned — increase spacer to push char past the next column boundary.
+    spacerWidth += Math.ceil(cW - remainder);
+  }
+
+  // Final state update
+  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
+
+  // The target char sits right at a column boundary. Try both candidate pages
+  // and pick the one where MFVC is closest to (but ≤) the target.
+  const candidatePage = state.currentPage;
+  let bestPage = candidatePage;
+  let bestMfvc = -1;
+
+  for (const pg of [candidatePage, candidatePage - 1]) {
+    if (pg < 1 || pg > state.totalPages) continue;
+    state.pageEl!.scrollLeft = -((pg - 1) * cW);
+    const mfvc = measureFirstVisibleChar();
+    // Pick the page whose column-top is closest to target without overshooting
+    if (mfvc <= targetLocalChar && mfvc > bestMfvc) {
+      bestPage = pg;
+      bestMfvc = mfvc;
+    }
+  }
+
+  state.currentPage = bestPage;
+  state.prependedPages = bestPage - 1;
+  // Do NOT update canonicalCharOffset here — keep it at the DB value
+  // (set in index.ts). This ensures charOffset doesn't change on reload,
+  // so startChar → content → layout → page are all identical next time.
+
+  if (dbg) {
+    dbg.textContent += `\nVERIFY: target=${targetLocalChar} mfvc=${bestMfvc} pg=${bestPage} canonical=${state.canonicalCharOffset}`;
+  }
+
+  goToPage(state.currentPage);
+}
+
 // Measure the last visible character on the current page.
 // Returns a 0-based char index within the WebView's current content,
 // or -1 if nothing is measurable.
@@ -80,7 +172,8 @@ export function measureLastVisibleChar(): number {
     const nodeRect = range.getBoundingClientRect();
 
     // Skip non-rendered nodes (whitespace between elements)
-    if (nodeRect.width === 0 && nodeRect.height === 0) {
+    // Use < 1 threshold for subpixel values that round to 0
+    if (nodeRect.width < 1 && nodeRect.height < 1) {
       charCount += len;
       continue;
     }
@@ -105,7 +198,7 @@ export function measureLastVisibleChar(): number {
       range.setStart(node, i);
       range.setEnd(node, i + 1);
       const charRect = range.getBoundingClientRect();
-      if (charRect.width === 0 && charRect.height === 0) continue; // skip non-rendered chars
+      if (charRect.width < 1 && charRect.height < 1) continue; // skip non-rendered chars
       // Character is visible if its horizontal center is within the viewport
       const cx = (charRect.left + charRect.right) / 2;
       if (cx >= viewRect.left && cx <= viewRect.right) {
@@ -149,6 +242,12 @@ export function measureFirstVisibleChar(): number {
     }
     nodeIdx++;
 
+    // Skip non-rendered nodes (whitespace between elements)
+    if (nodeRect.width < 1 && nodeRect.height < 1) {
+      charCount += len;
+      continue;
+    }
+
     // In vertical-rl, text flows right-to-left.
     // Entirely to the left of the viewport = past what we've read
     if (nodeRect.right < viewRect.left) {
@@ -167,7 +266,7 @@ export function measureFirstVisibleChar(): number {
       range.setStart(node, i);
       range.setEnd(node, i + 1);
       const charRect = range.getBoundingClientRect();
-      if (charRect.width === 0 && charRect.height === 0) continue; // skip non-rendered chars
+      if (charRect.width < 1 && charRect.height < 1) continue; // skip non-rendered chars
       const cx = (charRect.left + charRect.right) / 2;
       if (cx >= viewRect.left && cx <= viewRect.right) {
         window.ReactNativeWebView.postMessage(
@@ -241,6 +340,11 @@ function updatePageInfo(): void {
 // Navigation
 export function goToPage(page: number): void {
   page = Math.max(1, Math.min(page, state.totalPages));
+  // Clear canonical offset when navigating to a different page (user action).
+  // Internal calls (alignment, prepend, resize) set currentPage first, so page === currentPage.
+  if (page !== state.currentPage) {
+    state.canonicalCharOffset = -1;
+  }
   state.currentPage = page;
   state.pageEl!.scrollLeft = -((page - 1) * state.columnWidth);
   updatePageInfo();
@@ -260,10 +364,12 @@ export function goToPage(page: number): void {
 }
 
 export function nextPage(): void {
+  state.canonicalCharOffset = -1; // user navigated — use MFVC from now on
   goToPage(state.currentPage + 1);
 }
 
 export function prevPage(): void {
+  state.canonicalCharOffset = -1; // user navigated — use MFVC from now on
   goToPage(state.currentPage - 1);
 }
 
@@ -299,12 +405,15 @@ export function resetPageShift(): void {
 
 export function reportScroll(): void {
   const firstChar = measureFirstVisibleChar();
-  const globalChar = state.sliceCharOffset + firstChar;
+  // Use canonical global offset (from DB) until user navigates to a new page.
+  // This prevents drift from spacer/prepend shifting column boundaries.
+  const globalChar =
+    state.canonicalCharOffset >= 0 ? state.canonicalCharOffset : state.sliceCharOffset + firstChar;
   window.ReactNativeWebView.postMessage(
     JSON.stringify({
       type: "scroll",
       charOffset: globalChar,
-      _dbg: `pg=${state.currentPage} scrollL=${state.pageEl!.scrollLeft} firstLocal=${firstChar} global=${globalChar}`,
+      _dbg: `pg=${state.currentPage} scrollL=${state.pageEl!.scrollLeft} firstLocal=${firstChar} canonical=${state.canonicalCharOffset} global=${globalChar}`,
     }),
   );
 }
@@ -348,6 +457,8 @@ export function prependBackSlice(html: string, charCount?: number): void {
   state.prependedPages = totalPrepPages;
   state.currentPage = savedPage + pagesAdded;
   if (charCount != null) state.sliceCharOffset -= charCount;
+  // NOTE: canonicalCharOffset is intentionally NOT cleared here — it's a global
+  // value that stays valid regardless of slice offset changes.
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 
   // 7. Scroll to correct position and notify

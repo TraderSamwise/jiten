@@ -29,4 +29,9 @@ export const state = {
   // Backward prepend tracking
   totalPrependWidth: 0, // accumulated width of all backward prepends (no spacer)
   prependedPages: 0, // total pages occupied by prepends + spacer
+
+  // Global char offset from DB, preserved until user navigates to a new page.
+  // Prevents drift: spacer/prepend shift column boundaries, but we save this
+  // stable value instead of MFVC until the user explicitly moves.
+  canonicalCharOffset: -1,
 };
