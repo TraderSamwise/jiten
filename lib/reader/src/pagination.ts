@@ -1,4 +1,5 @@
 import { state } from "./state";
+import { textWalker, absoluteToNodeOffset } from "./text";
 
 declare const window: Window & {
   __READER_CONFIG__: { scrollPosition: number };
@@ -44,6 +45,92 @@ export function paginate(): void {
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 }
 
+// Measure the last visible character on the current page.
+// Returns a 0-based char index within the WebView's current content,
+// or -1 if nothing is measurable.
+export function measureLastVisibleChar(): number {
+  const pageRect = state.pageEl!.getBoundingClientRect();
+  // In vertical-rl the visible viewport is a horizontal strip:
+  //   left edge  = pageRect.left + scrollLeft (but scrollLeft is negative)
+  //   right edge = left edge + columnWidth
+  // Because scrollLeft is negative, the visible right edge = pageRect.right + scrollLeft
+  // But it's simpler to use the content element's rect which IS the visible viewport.
+  const viewRect = state.contentEl!.getBoundingClientRect();
+
+  const walker = textWalker(state.pageEl!);
+  let charCount = 0;
+  let lastVisible = -1;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const len = node.textContent!.length;
+    if (len === 0) {
+      charCount += len;
+      continue;
+    }
+
+    // Get the bounding rect of the whole text node
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const nodeRect = range.getBoundingClientRect();
+
+    // In vertical-rl, text flows right-to-left. Nodes further in the document
+    // have smaller left values. The visible area is bounded by viewRect.
+    // Entirely to the left of the viewport = offscreen (past what we've read)
+    if (nodeRect.right < viewRect.left) {
+      charCount += len;
+      // Past the visible area — all subsequent nodes are even further left
+      break;
+    }
+
+    // Entirely to the right of viewport = not yet visible (before current page)
+    if (nodeRect.left > viewRect.right) {
+      charCount += len;
+      continue;
+    }
+
+    // Node is at least partially visible — check each char
+    for (let i = 0; i < len; i++) {
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const charRect = range.getBoundingClientRect();
+      // Character is visible if its horizontal center is within the viewport
+      const cx = (charRect.left + charRect.right) / 2;
+      if (cx >= viewRect.left && cx <= viewRect.right) {
+        lastVisible = charCount + i;
+      }
+    }
+
+    charCount += len;
+  }
+
+  return lastVisible;
+}
+
+// Replace content after localCharIndex with new HTML.
+// localCharIndex is 0-based within the current WebView content.
+export function replaceOffscreenContent(localCharIndex: number, newHtml: string): void {
+  const pos = absoluteToNodeOffset(localCharIndex);
+  if (!pos) return;
+
+  // Delete everything from this position to end of #page
+  const range = document.createRange();
+  range.setStart(pos.node, pos.offset);
+  range.setEndAfter(state.pageEl!.lastChild!);
+  range.deleteContents();
+
+  // Parse new HTML and append children to #page
+  const temp = document.createElement("div");
+  temp.innerHTML = newHtml;
+  while (temp.firstChild) {
+    state.pageEl!.appendChild(temp.firstChild);
+  }
+
+  // Recalculate pagination
+  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+  updatePageInfo();
+}
+
 function updatePageInfo(): void {
   const displayPage = state.currentPage + state.pageOffset;
   const displayTotal = state.overrideTotalPages || state.totalPages;
@@ -59,6 +146,17 @@ export function goToPage(page: number): void {
   state.pageEl!.scrollLeft = -((page - 1) * state.columnWidth);
   updatePageInfo();
   reportScroll();
+
+  // Report last visible char so RN can prefetch next content
+  const lastChar = measureLastVisibleChar();
+  if (lastChar >= 0) {
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({
+        type: "pageRendered",
+        lastCharIndex: lastChar,
+      }),
+    );
+  }
 }
 
 export function nextPage(): void {

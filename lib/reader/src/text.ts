@@ -11,7 +11,7 @@ function isInsideRt(node: Node): boolean {
 }
 
 /** Create a TreeWalker that skips text nodes inside <rt> elements. */
-function textWalker(root: Node): TreeWalker {
+export function textWalker(root: Node): TreeWalker {
   return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node: Node) {
       return isInsideRt(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
