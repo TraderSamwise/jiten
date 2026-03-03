@@ -133,6 +133,8 @@ export interface Book {
   rawContent: string | null;
   htmlContent: string | null;
   scrollPosition: number;
+  charOffset: number;
+  totalChars: number;
   fontSize: number;
   createdAt: string;
   updatedAt: string;

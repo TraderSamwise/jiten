@@ -30,6 +30,8 @@ function parseBookRow(row: any): Book {
     rawContent: row.raw_content ?? null,
     htmlContent: row.html_content ?? null,
     scrollPosition: row.scroll_position ?? 0,
+    charOffset: row.char_offset ?? 0,
+    totalChars: row.total_chars ?? 0,
     fontSize: row.font_size ?? 22,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -29,7 +29,7 @@ export function setupMessageListener(): void {
       } else if (msg.type === "setNextContent") {
         replaceOffscreenContent(msg.replaceFromChar, msg.html);
       } else if (msg.type === "setPrevContent") {
-        prependBackSlice(msg.html);
+        prependBackSlice(msg.html, msg.charCount);
       } else if (msg.type === "debug") {
         const el = document.getElementById("debug-overlay");
         if (el) {

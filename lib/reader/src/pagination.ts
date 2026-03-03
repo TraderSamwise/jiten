@@ -2,7 +2,12 @@ import { state } from "./state";
 import { textWalker, absoluteToNodeOffset } from "./text";
 
 declare const window: Window & {
-  __READER_CONFIG__: { scrollPosition: number };
+  __READER_CONFIG__: {
+    scrollPosition: number;
+    targetLocalChar?: number;
+    sliceCharOffset?: number;
+    totalChars?: number;
+  };
   ReactNativeWebView: { postMessage(msg: string): void };
 };
 
@@ -74,6 +79,12 @@ export function measureLastVisibleChar(): number {
     range.selectNodeContents(node);
     const nodeRect = range.getBoundingClientRect();
 
+    // Skip non-rendered nodes (whitespace between elements)
+    if (nodeRect.width === 0 && nodeRect.height === 0) {
+      charCount += len;
+      continue;
+    }
+
     // In vertical-rl, text flows right-to-left. Nodes further in the document
     // have smaller left values. The visible area is bounded by viewRect.
     // Entirely to the left of the viewport = offscreen (past what we've read)
@@ -94,6 +105,7 @@ export function measureLastVisibleChar(): number {
       range.setStart(node, i);
       range.setEnd(node, i + 1);
       const charRect = range.getBoundingClientRect();
+      if (charRect.width === 0 && charRect.height === 0) continue; // skip non-rendered chars
       // Character is visible if its horizontal center is within the viewport
       const cx = (charRect.left + charRect.right) / 2;
       if (cx >= viewRect.left && cx <= viewRect.right) {
@@ -105,6 +117,79 @@ export function measureLastVisibleChar(): number {
   }
 
   return lastVisible;
+}
+
+// Measure the first visible character on the current page.
+// Returns a 0-based char index within the WebView's current content,
+// or 0 if nothing is measurable.
+export function measureFirstVisibleChar(): number {
+  const viewRect = state.contentEl!.getBoundingClientRect();
+  const pageRect = state.pageEl!.getBoundingClientRect();
+
+  const walker = textWalker(state.pageEl!);
+  let charCount = 0;
+  let nodeIdx = 0;
+  let dbgNodes = "";
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const len = node.textContent!.length;
+    if (len === 0) {
+      charCount += len;
+      continue;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const nodeRect = range.getBoundingClientRect();
+
+    // Log first 5 nodes
+    if (nodeIdx < 5) {
+      dbgNodes += ` n${nodeIdx}[${charCount}..${charCount + len}]L=${nodeRect.left.toFixed(0)}R=${nodeRect.right.toFixed(0)}`;
+    }
+    nodeIdx++;
+
+    // In vertical-rl, text flows right-to-left.
+    // Entirely to the left of the viewport = past what we've read
+    if (nodeRect.right < viewRect.left) {
+      charCount += len;
+      break;
+    }
+
+    // Entirely to the right of viewport = not yet visible
+    if (nodeRect.left > viewRect.right) {
+      charCount += len;
+      continue;
+    }
+
+    // Node is at least partially visible — find first visible char
+    for (let i = 0; i < len; i++) {
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const charRect = range.getBoundingClientRect();
+      if (charRect.width === 0 && charRect.height === 0) continue; // skip non-rendered chars
+      const cx = (charRect.left + charRect.right) / 2;
+      if (cx >= viewRect.left && cx <= viewRect.right) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            type: "mfvcDebug",
+            msg: `pg=${state.currentPage} view=[${viewRect.left.toFixed(0)},${viewRect.right.toFixed(0)}] page=[${pageRect.left.toFixed(0)},${pageRect.right.toFixed(0)}] scrollL=${state.pageEl!.scrollLeft} result=${charCount + i}${dbgNodes}`,
+          }),
+        );
+        return charCount + i;
+      }
+    }
+
+    charCount += len;
+  }
+
+  window.ReactNativeWebView.postMessage(
+    JSON.stringify({
+      type: "mfvcDebug",
+      msg: `pg=${state.currentPage} FALLBACK=0 nodes=${nodeIdx} chars=${charCount} view=[${viewRect.left.toFixed(0)},${viewRect.right.toFixed(0)}]${dbgNodes}`,
+    }),
+  );
+  return 0;
 }
 
 // Replace content after localCharIndex with new HTML.
@@ -135,7 +220,7 @@ function updateDebug(extra?: string): void {
   const el = document.getElementById("debug-overlay");
   if (!el) return;
   const lines = [
-    `local: ${state.currentPage}/${state.totalPages}  offset: ${state.pageOffset}  display: ${state.currentPage + state.pageOffset}/${state.overrideTotalPages || state.totalPages}`,
+    `local: ${state.currentPage}/${state.totalPages}  sliceOff: ${state.sliceCharOffset}  totalChars: ${state.totalChars}`,
     `colW: ${state.columnWidth}  scrollW: ${state.pageEl!.scrollWidth}  scrollL: ${state.pageEl!.scrollLeft}`,
     `prepW: ${state.totalPrependWidth}  prepPg: ${state.prependedPages}  spacer: ${state.pageEl!.querySelector(".back-spacer") ? (state.pageEl!.querySelector(".back-spacer") as HTMLElement).style.width : "none"}`,
   ];
@@ -144,9 +229,10 @@ function updateDebug(extra?: string): void {
 }
 
 function updatePageInfo(): void {
-  const displayPage = state.currentPage + state.pageOffset;
-  const displayTotal = state.overrideTotalPages || state.totalPages;
-  state.pageNumEl!.textContent = displayPage + " / " + displayTotal;
+  const firstChar = measureFirstVisibleChar();
+  const globalChar = state.sliceCharOffset + firstChar;
+  const pct = state.totalChars > 0 ? ((globalChar / state.totalChars) * 100).toFixed(1) : "0.0";
+  state.pageNumEl!.textContent = pct + "%";
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
   updateDebug();
@@ -212,18 +298,18 @@ export function resetPageShift(): void {
 }
 
 export function reportScroll(): void {
-  const displayPage = state.currentPage + state.pageOffset;
-  const displayTotal = state.overrideTotalPages || state.totalPages;
-  const pos = displayTotal > 1 ? (displayPage - 1) / (displayTotal - 1) : 0;
+  const firstChar = measureFirstVisibleChar();
+  const globalChar = state.sliceCharOffset + firstChar;
   window.ReactNativeWebView.postMessage(
     JSON.stringify({
       type: "scroll",
-      position: pos,
+      charOffset: globalChar,
+      _dbg: `pg=${state.currentPage} scrollL=${state.pageEl!.scrollLeft} firstLocal=${firstChar} global=${globalChar}`,
     }),
   );
 }
 
-export function prependBackSlice(html: string): void {
+export function prependBackSlice(html: string, charCount?: number): void {
   const savedPage = state.currentPage;
 
   // 1. Remove existing spacer (if any)
@@ -261,7 +347,7 @@ export function prependBackSlice(html: string): void {
   const pagesAdded = totalPrepPages - state.prependedPages;
   state.prependedPages = totalPrepPages;
   state.currentPage = savedPage + pagesAdded;
-  state.pageOffset -= pagesAdded;
+  if (charCount != null) state.sliceCharOffset -= charCount;
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 
   // 7. Scroll to correct position and notify

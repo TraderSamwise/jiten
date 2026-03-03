@@ -208,8 +208,6 @@ export default function BookReaderScreen() {
   const sliceCharOffsetRef = useRef(0);
   const isAozoraRef = useRef(false);
   const backPrefetchingRef = useRef(false);
-  const estimatedTotalPagesRef = useRef(1);
-
   useEffect(() => {
     nameModeRef.current = nameMode;
   }, [nameMode]);
@@ -244,7 +242,7 @@ export default function BookReaderScreen() {
           });
           setHtml(readerHtml);
         } else {
-          // Aozora or plain text — slice ~3 pages from scroll position
+          // Aozora or plain text — slice ~3 pages from char offset
           const isAozora = hasAozoraMarkup(b.rawContent);
           const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
           const format: BookFormat = isAozora ? "aozora" : "plain";
@@ -253,27 +251,33 @@ export default function BookReaderScreen() {
           const screen = Dimensions.get("window");
           const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, false);
 
-          // Include ~10 pages backward buffer so backward prefetch is rarely needed
-          const backBudget = cpp * 10;
-          const scrollPositionChar = Math.round((b.scrollPosition || 0) * model.totalChars);
-          const startChar = Math.max(0, scrollPositionChar - backBudget);
-          const forwardBudget = cpp * 3;
-          const totalBudget = scrollPositionChar - startChar + forwardBudget;
+          // Legacy conversion: scroll_position → char_offset
+          let charOffset = b.charOffset;
+          if (charOffset === 0 && b.scrollPosition > 0) {
+            charOffset = Math.round(b.scrollPosition * model.totalChars);
+          }
+
+          const startChar = Math.max(0, charOffset - cpp * 10);
+          const totalBudget = charOffset - startChar + cpp * 3;
           const slice = sliceContent(model, startChar, totalBudget);
+          const targetLocalChar = charOffset - startChar;
 
-          // Local scroll ratio so WebView opens at ~page 10
-          const sliceVisibleChars = scrollPositionChar - startChar + forwardBudget;
-          const localScrollRatio =
-            sliceVisibleChars > 0 ? (scrollPositionChar - startChar) / sliceVisibleChars : 0;
-
-          const estimatedTotalPages = Math.max(1, Math.ceil(model.totalChars / cpp));
-          const pageOffset = Math.round((startChar / model.totalChars) * (estimatedTotalPages - 1));
+          console.log(
+            `[READER LOAD] charOffset=${charOffset} startChar=${startChar} targetLocalChar=${targetLocalChar} cpp=${cpp} sliceLen=${slice.text.length} totalChars=${model.totalChars}`,
+          );
 
           // Store refs for streaming prefetch
           modelRef.current = model;
           sliceCharOffsetRef.current = startChar;
           isAozoraRef.current = isAozora;
-          estimatedTotalPagesRef.current = estimatedTotalPages;
+
+          // Save total_chars on first load
+          if (b.totalChars === 0) {
+            userDb.runAsync("UPDATE books SET total_chars = ? WHERE id = ?", [
+              model.totalChars,
+              bookId,
+            ]);
+          }
 
           const sliceHtml = isAozora
             ? parseAozoraToHtml(slice.text, { strip: false })
@@ -282,9 +286,9 @@ export default function BookReaderScreen() {
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: b.fontSize,
             isDark,
-            scrollPosition: localScrollRatio,
-            pageOffset,
-            totalPages: estimatedTotalPages,
+            targetLocalChar,
+            sliceCharOffset: startChar,
+            totalChars: model.totalChars,
           });
           setHtml(readerHtml);
         }
@@ -300,11 +304,11 @@ export default function BookReaderScreen() {
     })();
   }, [userDb, bookId, isDark]);
 
-  // Save scroll position on unmount
+  // Save char offset on unmount
   useEffect(() => {
     return () => {
       if (userDb && bookId && scrollPosRef.current > 0) {
-        userDb.runAsync("UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?", [
+        userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
           scrollPosRef.current,
           new Date().toISOString(),
           bookId,
@@ -401,11 +405,11 @@ export default function BookReaderScreen() {
           setLookupError(msg.message || "An error occurred");
           setShowPopup(true);
         } else if (msg.type === "scroll") {
-          scrollPosRef.current = msg.position;
-          // Debounced save to DB
+          console.log(`[READER SAVE] charOffset=${msg.charOffset} ${msg._dbg || ""}`);
+          scrollPosRef.current = msg.charOffset;
           if (userDb && bookId) {
-            userDb.runAsync("UPDATE books SET scroll_position = ?, updated_at = ? WHERE id = ?", [
-              msg.position,
+            userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
+              msg.charOffset,
               new Date().toISOString(),
               bookId,
             ]);
@@ -457,6 +461,7 @@ export default function BookReaderScreen() {
                 JSON.stringify({
                   type: "setPrevContent",
                   html: backHtml,
+                  charCount: backChars,
                 }),
               );
               sliceCharOffsetRef.current = backStart;
@@ -466,6 +471,8 @@ export default function BookReaderScreen() {
           }
         } else if (msg.type === "backPrefetchDone") {
           backPrefetchingRef.current = false;
+        } else if (msg.type === "mfvcDebug") {
+          console.log(`[MFVC] ${msg.msg}`);
         }
       } catch {}
     },
