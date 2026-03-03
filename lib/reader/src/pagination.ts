@@ -131,12 +131,25 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
   updatePageInfo();
 }
 
+function updateDebug(extra?: string): void {
+  const el = document.getElementById("debug-overlay");
+  if (!el) return;
+  const lines = [
+    `local: ${state.currentPage}/${state.totalPages}  offset: ${state.pageOffset}  display: ${state.currentPage + state.pageOffset}/${state.overrideTotalPages || state.totalPages}`,
+    `colW: ${state.columnWidth}  scrollW: ${state.pageEl!.scrollWidth}  scrollL: ${state.pageEl!.scrollLeft}`,
+    `prepW: ${state.totalPrependWidth}  prepPg: ${state.prependedPages}  spacer: ${state.pageEl!.querySelector(".back-spacer") ? (state.pageEl!.querySelector(".back-spacer") as HTMLElement).style.width : "none"}`,
+  ];
+  if (extra) lines.push(extra);
+  el.textContent = lines.join("\n");
+}
+
 function updatePageInfo(): void {
   const displayPage = state.currentPage + state.pageOffset;
   const displayTotal = state.overrideTotalPages || state.totalPages;
   state.pageNumEl!.textContent = displayPage + " / " + displayTotal;
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
+  updateDebug();
 }
 
 // Navigation
@@ -154,6 +167,7 @@ export function goToPage(page: number): void {
       JSON.stringify({
         type: "pageRendered",
         lastCharIndex: lastChar,
+        localPage: state.currentPage,
       }),
     );
   }
@@ -207,4 +221,55 @@ export function reportScroll(): void {
       position: pos,
     }),
   );
+}
+
+export function prependBackSlice(html: string): void {
+  const savedPage = state.currentPage;
+
+  // 1. Remove existing spacer (if any)
+  const existingSpacer = state.pageEl!.querySelector(".back-spacer");
+  if (existingSpacer) existingSpacer.remove();
+
+  // 2. Record scrollWidth before prepending
+  const swBefore = state.pageEl!.scrollWidth;
+
+  // 3. Prepend HTML
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  const frag = document.createDocumentFragment();
+  while (temp.firstChild) frag.appendChild(temp.firstChild);
+  state.pageEl!.insertBefore(frag, state.pageEl!.firstChild);
+
+  // 4. Measure new content width
+  const swAfter = state.pageEl!.scrollWidth;
+  const newContentWidth = swAfter - swBefore;
+  state.totalPrependWidth += newContentWidth;
+
+  // 5. Calculate spacer for page alignment
+  const remainder = state.totalPrependWidth % state.columnWidth;
+  const spacerWidth = remainder > 1 ? Math.round(state.columnWidth - remainder) : 0;
+  if (spacerWidth > 0) {
+    const spacer = document.createElement("div");
+    spacer.className = "back-spacer";
+    spacer.style.width = spacerWidth + "px";
+    spacer.style.overflow = "hidden";
+    state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
+  }
+
+  // 6. Update state
+  const totalPrepPages = Math.round((state.totalPrependWidth + spacerWidth) / state.columnWidth);
+  const pagesAdded = totalPrepPages - state.prependedPages;
+  state.prependedPages = totalPrepPages;
+  state.currentPage = savedPage + pagesAdded;
+  state.pageOffset -= pagesAdded;
+  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+
+  // 7. Scroll to correct position and notify
+  updateDebug(
+    `prepend: +${newContentWidth}px  rem:${remainder}  spacer:${spacerWidth}  +${pagesAdded}pg`,
+  );
+  goToPage(state.currentPage);
+
+  // 8. Notify RN that prepend is done
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: "backPrefetchDone" }));
 }
