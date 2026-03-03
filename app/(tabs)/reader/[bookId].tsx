@@ -19,6 +19,7 @@ import {
 } from "@/lib/aozora-parser";
 import {
   type BookFormat,
+  type TextModel,
   parseBookContent,
   sliceContent,
   calcCharsPerPage,
@@ -202,6 +203,11 @@ export default function BookReaderScreen() {
   const [nameMode, setNameMode] = useState(false);
   const nameModeRef = useRef(false);
 
+  // Streaming prefetch refs — used by handleMessage for pageRendered
+  const modelRef = useRef<TextModel | null>(null);
+  const sliceCharOffsetRef = useRef(0);
+  const isAozoraRef = useRef(false);
+
   useEffect(() => {
     nameModeRef.current = nameMode;
   }, [nameMode]);
@@ -251,6 +257,11 @@ export default function BookReaderScreen() {
           const startChar = Math.round((b.scrollPosition || 0) * model.totalChars);
           const pageOffset = Math.round((b.scrollPosition || 0) * (estimatedTotalPages - 1));
           const slice = sliceContent(model, startChar, budget);
+
+          // Store refs for streaming prefetch
+          modelRef.current = model;
+          sliceCharOffsetRef.current = startChar;
+          isAozoraRef.current = isAozora;
 
           const sliceHtml = isAozora
             ? parseAozoraToHtml(slice.text, { strip: false })
@@ -387,10 +398,29 @@ export default function BookReaderScreen() {
               bookId,
             ]);
           }
+        } else if (msg.type === "pageRendered") {
+          const model = modelRef.current;
+          if (!model) return;
+          const globalLastChar = sliceCharOffsetRef.current + msg.lastCharIndex;
+          const nextStart = globalLastChar + 1;
+          if (nextStart >= model.totalChars) return; // end of book
+          const screen = Dimensions.get("window");
+          const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
+          const nextSlice = sliceContent(model, nextStart, cpp * 3);
+          const nextHtml = isAozoraRef.current
+            ? parseAozoraToHtml(nextSlice.text, { strip: false })
+            : plainTextToHtml(nextSlice.text);
+          readerRef.current?.postMessage(
+            JSON.stringify({
+              type: "setNextContent",
+              html: nextHtml,
+              replaceFromChar: msg.lastCharIndex + 1,
+            }),
+          );
         }
       } catch {}
     },
-    [dictDb, extendedDb, userDb, bookId],
+    [dictDb, extendedDb, userDb, bookId, fontSize],
   );
 
   const handleCopy = useCallback(() => {

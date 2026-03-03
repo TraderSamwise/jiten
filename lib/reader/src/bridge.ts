@@ -1,6 +1,6 @@
 import { state } from "./state";
 import { clearHighlight, applyHighlight } from "./highlight";
-import { paginate, goToPage } from "./pagination";
+import { paginate, goToPage, replaceOffscreenContent } from "./pagination";
 
 // Listen for messages from React Native
 export function setupMessageListener(): void {
@@ -26,6 +26,8 @@ export function setupMessageListener(): void {
         applyHighlight(msg.start || 0, msg.length || 0);
       } else if (msg.type === "clearHighlight") {
         clearHighlight();
+      } else if (msg.type === "setNextContent") {
+        replaceOffscreenContent(msg.replaceFromChar, msg.html);
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");
