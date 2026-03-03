@@ -207,6 +207,8 @@ export default function BookReaderScreen() {
   const modelRef = useRef<TextModel | null>(null);
   const sliceCharOffsetRef = useRef(0);
   const isAozoraRef = useRef(false);
+  const backPrefetchingRef = useRef(false);
+  const estimatedTotalPagesRef = useRef(1);
 
   useEffect(() => {
     nameModeRef.current = nameMode;
@@ -250,18 +252,28 @@ export default function BookReaderScreen() {
 
           const screen = Dimensions.get("window");
           const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, false);
-          const budget = cpp * 3;
 
-          // Convert scroll position (0-1 ratio) to visible char offset
+          // Include ~10 pages backward buffer so backward prefetch is rarely needed
+          const backBudget = cpp * 10;
+          const scrollPositionChar = Math.round((b.scrollPosition || 0) * model.totalChars);
+          const startChar = Math.max(0, scrollPositionChar - backBudget);
+          const forwardBudget = cpp * 3;
+          const totalBudget = scrollPositionChar - startChar + forwardBudget;
+          const slice = sliceContent(model, startChar, totalBudget);
+
+          // Local scroll ratio so WebView opens at ~page 10
+          const sliceVisibleChars = scrollPositionChar - startChar + forwardBudget;
+          const localScrollRatio =
+            sliceVisibleChars > 0 ? (scrollPositionChar - startChar) / sliceVisibleChars : 0;
+
           const estimatedTotalPages = Math.max(1, Math.ceil(model.totalChars / cpp));
-          const startChar = Math.round((b.scrollPosition || 0) * model.totalChars);
-          const pageOffset = Math.round((b.scrollPosition || 0) * (estimatedTotalPages - 1));
-          const slice = sliceContent(model, startChar, budget);
+          const pageOffset = Math.round((startChar / model.totalChars) * (estimatedTotalPages - 1));
 
           // Store refs for streaming prefetch
           modelRef.current = model;
           sliceCharOffsetRef.current = startChar;
           isAozoraRef.current = isAozora;
+          estimatedTotalPagesRef.current = estimatedTotalPages;
 
           const sliceHtml = isAozora
             ? parseAozoraToHtml(slice.text, { strip: false })
@@ -270,7 +282,7 @@ export default function BookReaderScreen() {
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: b.fontSize,
             isDark,
-            scrollPosition: 0,
+            scrollPosition: localScrollRatio,
             pageOffset,
             totalPages: estimatedTotalPages,
           });
@@ -403,20 +415,57 @@ export default function BookReaderScreen() {
           if (!model) return;
           const globalLastChar = sliceCharOffsetRef.current + msg.lastCharIndex;
           const nextStart = globalLastChar + 1;
-          if (nextStart >= model.totalChars) return; // end of book
-          const screen = Dimensions.get("window");
-          const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
-          const nextSlice = sliceContent(model, nextStart, cpp * 3);
-          const nextHtml = isAozoraRef.current
-            ? parseAozoraToHtml(nextSlice.text, { strip: false })
-            : plainTextToHtml(nextSlice.text);
+          if (nextStart < model.totalChars) {
+            // Forward prefetch
+            const screen = Dimensions.get("window");
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
+            const nextSlice = sliceContent(model, nextStart, cpp * 3);
+            const nextHtml = isAozoraRef.current
+              ? parseAozoraToHtml(nextSlice.text, { strip: false })
+              : plainTextToHtml(nextSlice.text);
+            readerRef.current?.postMessage(
+              JSON.stringify({
+                type: "setNextContent",
+                html: nextHtml,
+                replaceFromChar: msg.lastCharIndex + 1,
+              }),
+            );
+          }
+
+          // Send debug info to WebView
           readerRef.current?.postMessage(
             JSON.stringify({
-              type: "setNextContent",
-              html: nextHtml,
-              replaceFromChar: msg.lastCharIndex + 1,
+              type: "debug",
+              text: `sliceOff: ${sliceCharOffsetRef.current}  globalLast: ${globalLastChar}/${modelRef.current?.totalChars}  fwd: ${nextStart < model.totalChars ? "yes" : "end"}`,
             }),
           );
+
+          // Backward prefetch trigger
+          const localPage = msg.localPage ?? 1;
+          if (localPage <= 2 && sliceCharOffsetRef.current > 0 && !backPrefetchingRef.current) {
+            backPrefetchingRef.current = true;
+            const screen = Dimensions.get("window");
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
+            const backStart = Math.max(0, sliceCharOffsetRef.current - cpp * 10);
+            const backChars = sliceCharOffsetRef.current - backStart;
+            if (backChars > 0) {
+              const backSlice = sliceContent(model, backStart, backChars);
+              const backHtml = isAozoraRef.current
+                ? parseAozoraToHtml(backSlice.text, { strip: false })
+                : plainTextToHtml(backSlice.text);
+              readerRef.current?.postMessage(
+                JSON.stringify({
+                  type: "setPrevContent",
+                  html: backHtml,
+                }),
+              );
+              sliceCharOffsetRef.current = backStart;
+            } else {
+              backPrefetchingRef.current = false;
+            }
+          }
+        } else if (msg.type === "backPrefetchDone") {
+          backPrefetchingRef.current = false;
         }
       } catch {}
     },

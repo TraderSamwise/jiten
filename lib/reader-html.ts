@@ -35,6 +35,7 @@ ${css}</style>
 <div id="content">
   <div id="page"></div>
 </div>
+<div id="debug-overlay"></div>
 <div id="page-controls">
   <button id="btn-next" aria-label="Next page">\u2039</button>
   <span id="page-num"></span>
