@@ -34,6 +34,14 @@ import {
 } from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
 import { readerFuriganaLevelsAtom, type FuriganaLevel } from "@/stores/settings";
+import {
+  buildFuriganaKanjiSet,
+  extractSurfacesFromHtml,
+  resolveFuriganaBatch,
+  applyFuriganaToHtml,
+  type FuriganaKanjiSet,
+  type FuriganaEntry,
+} from "@/lib/reader-furigana";
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
@@ -211,6 +219,15 @@ export default function BookReaderScreen() {
   const sliceCharOffsetRef = useRef(0);
   const isAozoraRef = useRef(false);
   const backPrefetchingRef = useRef(false);
+
+  // Furigana refs
+  const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
+  const furiganaLevelsRef = useRef(furiganaLevels);
+  const furiganaActive = Object.values(furiganaLevels).some(Boolean);
+
+  useEffect(() => {
+    furiganaLevelsRef.current = furiganaLevels;
+  }, [furiganaLevels]);
   useEffect(() => {
     nameModeRef.current = nameMode;
   }, [nameMode]);
@@ -252,7 +269,8 @@ export default function BookReaderScreen() {
           const model = parseBookContent(stripped, format);
 
           const screen = Dimensions.get("window");
-          const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, false);
+          const hasFuri = Object.values(furiganaLevels).some(Boolean);
+          const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
 
           // Legacy conversion: scroll_position → char_offset
           let charOffset = b.charOffset;
@@ -282,9 +300,23 @@ export default function BookReaderScreen() {
             ]);
           }
 
-          const sliceHtml = isAozora
+          let sliceHtml = isAozora
             ? parseAozoraToHtml(slice.text, { strip: false })
             : plainTextToHtml(slice.text);
+
+          // Apply furigana if any levels are enabled
+          if (hasFuri && dictDb) {
+            const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
+            kanjiSetRef.current = kanjiSet;
+            const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
+            if (surfaces.length > 0) {
+              const readings = await resolveFuriganaBatch(surfaces, dictDb);
+              const fMap = new Map<string, FuriganaEntry>(
+                Object.entries(readings) as [string, FuriganaEntry][],
+              );
+              sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet);
+            }
+          }
 
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: b.fontSize,
@@ -292,6 +324,7 @@ export default function BookReaderScreen() {
             targetLocalChar,
             sliceCharOffset: startChar,
             totalChars: model.totalChars,
+            hasFurigana: hasFuri,
           });
           setHtml(readerHtml);
         }
@@ -306,6 +339,64 @@ export default function BookReaderScreen() {
       ]);
     })();
   }, [userDb, bookId, isDark]);
+
+  // Re-apply furigana when levels change
+  useEffect(() => {
+    if (!book || !dictDb || !modelRef.current || html === null) return;
+    const model = modelRef.current;
+    const isAozora = isAozoraRef.current;
+    const hasFuri = Object.values(furiganaLevels).some(Boolean);
+
+    (async () => {
+      // Build kanji set (or clear it)
+      if (hasFuri) {
+        const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
+        kanjiSetRef.current = kanjiSet;
+      } else {
+        kanjiSetRef.current = null;
+      }
+
+      // Re-slice from current position
+      const charOffset = scrollPosRef.current || 0;
+      const screen = Dimensions.get("window");
+      const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
+      const startChar = Math.max(0, charOffset - cpp * 10);
+      const totalBudget = charOffset - startChar + cpp * 3;
+      const slice = sliceContent(model, startChar, totalBudget);
+      const targetLocalChar = charOffset - startChar;
+
+      // Update slice offset ref
+      sliceCharOffsetRef.current = startChar;
+      backPrefetchingRef.current = false;
+
+      let sliceHtml = isAozora
+        ? parseAozoraToHtml(slice.text, { strip: false })
+        : plainTextToHtml(slice.text);
+
+      if (hasFuri && kanjiSetRef.current) {
+        const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
+        if (surfaces.length > 0) {
+          const readings = await resolveFuriganaBatch(surfaces, dictDb);
+          const fMap = new Map<string, FuriganaEntry>(
+            Object.entries(readings) as [string, FuriganaEntry][],
+          );
+          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current);
+        }
+      }
+
+      // Send reload to WebView
+      readerRef.current?.postMessage(
+        JSON.stringify({
+          type: "reloadContent",
+          html: sliceHtml,
+          sliceCharOffset: startChar,
+          targetLocalChar,
+          lineHeight: hasFuri ? 2.0 : 1.5,
+        }),
+      );
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [furiganaLevels, dictDb]);
 
   // Save char offset on unmount
   useEffect(() => {
@@ -424,12 +515,23 @@ export default function BookReaderScreen() {
           const nextStart = globalLastChar + 1;
           if (nextStart < model.totalChars) {
             // Forward prefetch
+            const hasFuri = kanjiSetRef.current != null;
             const screen = Dimensions.get("window");
-            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
-            const nextHtml = isAozoraRef.current
+            let nextHtml = isAozoraRef.current
               ? parseAozoraToHtml(nextSlice.text, { strip: false })
               : plainTextToHtml(nextSlice.text);
+            if (kanjiSetRef.current && dictDb) {
+              const surfaces = extractSurfacesFromHtml(nextHtml, kanjiSetRef.current);
+              if (surfaces.length > 0) {
+                const readings = await resolveFuriganaBatch(surfaces, dictDb);
+                const fMap = new Map<string, FuriganaEntry>(
+                  Object.entries(readings) as [string, FuriganaEntry][],
+                );
+                nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current);
+              }
+            }
             readerRef.current?.postMessage(
               JSON.stringify({
                 type: "setNextContent",
@@ -451,15 +553,26 @@ export default function BookReaderScreen() {
           const localPage = msg.localPage ?? 1;
           if (localPage <= 2 && sliceCharOffsetRef.current > 0 && !backPrefetchingRef.current) {
             backPrefetchingRef.current = true;
+            const hasFuri = kanjiSetRef.current != null;
             const screen = Dimensions.get("window");
-            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, false);
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const backStart = Math.max(0, sliceCharOffsetRef.current - cpp * 10);
             const backChars = sliceCharOffsetRef.current - backStart;
             if (backChars > 0) {
               const backSlice = sliceContent(model, backStart, backChars);
-              const backHtml = isAozoraRef.current
+              let backHtml = isAozoraRef.current
                 ? parseAozoraToHtml(backSlice.text, { strip: false })
                 : plainTextToHtml(backSlice.text);
+              if (kanjiSetRef.current && dictDb) {
+                const surfaces = extractSurfacesFromHtml(backHtml, kanjiSetRef.current);
+                if (surfaces.length > 0) {
+                  const readings = await resolveFuriganaBatch(surfaces, dictDb);
+                  const fMap = new Map<string, FuriganaEntry>(
+                    Object.entries(readings) as [string, FuriganaEntry][],
+                  );
+                  backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current);
+                }
+              }
               readerRef.current?.postMessage(
                 JSON.stringify({
                   type: "setPrevContent",

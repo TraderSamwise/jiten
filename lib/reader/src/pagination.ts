@@ -43,7 +43,7 @@ export function updateSizing(): void {
 export function paginate(): void {
   const cW = getContentW();
   const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-  const lineW = fontSize * 1.5; // line-height is 1.5
+  const lineW = parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5;
   // Snap page width to whole lines so page boundaries never cut through text
   state.columnWidth = Math.floor(cW / lineW) * lineW;
   state.pageEl!.style.width = state.columnWidth + "px";

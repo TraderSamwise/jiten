@@ -18,7 +18,7 @@ body {
   writing-mode: vertical-rl;
   font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
   font-size: __FONT_SIZE__px;
-  line-height: 1.5;
+  line-height: __LINE_HEIGHT__;
   padding: 16px;
   width: 100%;
   height: calc(100vh - 44px);
@@ -34,21 +34,6 @@ p {
 ruby rt {
   font-size: 0.5em;
   color: __RUBY_COLOR__;
-}
-
-ruby[data-furigana] {
-  display: inline;
-  position: relative;
-}
-
-ruby[data-furigana] rt {
-  display: block;
-  position: absolute;
-  top: 0;
-  right: -0.25em;
-  line-height: 1;
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 .bouten {
