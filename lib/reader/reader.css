@@ -36,6 +36,21 @@ ruby rt {
   color: __RUBY_COLOR__;
 }
 
+ruby[data-furigana] {
+  display: inline;
+  position: relative;
+}
+
+ruby[data-furigana] rt {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: -0.25em;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .bouten {
   font-style: normal;
   -webkit-text-emphasis: filled dot;
