@@ -6,14 +6,26 @@ import { focusAtom } from "jotai-optics";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
+export type FuriganaLevel = "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
 
 // ─── Defaults ───
+
+export const defaultFuriganaLevels: Record<FuriganaLevel, boolean> = {
+  n5: false,
+  n4: false,
+  n3: false,
+  n2: false,
+  n1: false,
+  nonJouyou: false,
+  all: false,
+};
 
 export const defaultSettings = Object.freeze({
   theme: "system" as ThemePreference,
   typingFuriganaMode: "auto" as FuriganaMode,
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
+  readerFuriganaLevels: defaultFuriganaLevels as Record<FuriganaLevel, boolean>,
 });
 
 export type AppSettings = typeof defaultSettings;
@@ -52,3 +64,6 @@ export const themeAtom = focusAtom(settingsAtom, (o) => o.prop("theme"));
 export const typingFuriganaModeAtom = focusAtom(settingsAtom, (o) => o.prop("typingFuriganaMode"));
 export const typingShowPitchAtom = focusAtom(settingsAtom, (o) => o.prop("typingShowPitch"));
 export const typingPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("typingPlayAudio"));
+export const readerFuriganaLevelsAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerFuriganaLevels"),
+);
