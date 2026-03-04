@@ -528,3 +528,16 @@ function advanceHtmlPastChars(html: string, start: number, count: number): numbe
   }
   return i;
 }
+
+// ─── Ruby spacer injection ───
+
+const RUBY_SPACER = '<ruby class="rs">\u200B<rt>\u3000</rt></ruby>';
+
+/**
+ * Inject a hidden ruby spacer after every opening <p> tag.
+ * Forces the browser to allocate ruby annotation space on every column
+ * in vertical-rl, ensuring uniform column widths.
+ */
+export function injectRubySpacers(html: string): string {
+  return html.replace(/<p>/g, "<p>" + RUBY_SPACER);
+}
