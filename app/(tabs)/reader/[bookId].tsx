@@ -457,87 +457,93 @@ export default function BookReaderScreen() {
     if (!userDb || !bookId) return;
     (async () => {
       const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
-      if (!row) return;
+      if (!row) {
+        goBack();
+        return;
+      }
       const b = parseBookRow(row);
       setBook(b);
       setFontSize(b.fontSize);
 
-      if (b.rawContent) {
-        // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
-        const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
+      if (!b.rawContent) {
+        goBack();
+        return;
+      }
 
-        if (hasRubyTags) {
-          // Pre-formatted HTML — send entire content (no slicing)
-          const readerHtml = generateReaderHtml(b.rawContent, {
-            fontSize: b.fontSize,
-            isDark,
-            scrollPosition: b.scrollPosition,
-          });
-          setHtml(readerHtml);
-        } else {
-          // Aozora or plain text — slice ~3 pages from char offset
-          const isAozora = hasAozoraMarkup(b.rawContent);
-          const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
-          const format: BookFormat = isAozora ? "aozora" : "plain";
-          const model = parseBookContent(stripped, format);
+      // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
+      const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
 
-          const screen = Dimensions.get("window");
-          const hasFuri = Object.values(furiganaLevels).some(Boolean);
-          const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
+      if (hasRubyTags) {
+        // Pre-formatted HTML — send entire content (no slicing)
+        const readerHtml = generateReaderHtml(b.rawContent, {
+          fontSize: b.fontSize,
+          isDark,
+          scrollPosition: b.scrollPosition,
+        });
+        setHtml(readerHtml);
+      } else {
+        // Aozora or plain text — slice ~3 pages from char offset
+        const isAozora = hasAozoraMarkup(b.rawContent);
+        const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
+        const format: BookFormat = isAozora ? "aozora" : "plain";
+        const model = parseBookContent(stripped, format);
 
-          // Legacy conversion: scroll_position → char_offset
-          let charOffset = b.charOffset;
-          if (charOffset === 0 && b.scrollPosition > 0) {
-            charOffset = Math.round(b.scrollPosition * model.totalChars);
-          }
+        const screen = Dimensions.get("window");
+        const hasFuri = Object.values(furiganaLevels).some(Boolean);
+        const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
 
-          const startChar = Math.max(0, charOffset - cpp * 10);
-          const totalBudget = charOffset - startChar + cpp * 3;
-          const slice = sliceContent(model, startChar, totalBudget);
-          const targetLocalChar = charOffset - startChar;
-
-          // Store refs for streaming prefetch
-          modelRef.current = model;
-          sliceCharOffsetRef.current = startChar;
-          isAozoraRef.current = isAozora;
-
-          // Save total_chars on first load
-          if (b.totalChars === 0) {
-            userDb.runAsync("UPDATE books SET total_chars = ? WHERE id = ?", [
-              model.totalChars,
-              bookId,
-            ]);
-          }
-
-          let sliceHtml = isAozora
-            ? parseAozoraToHtml(slice.text, { strip: false })
-            : plainTextToHtml(slice.text);
-
-          // Apply furigana if any levels are enabled
-          if (hasFuri && dictDb) {
-            const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
-            kanjiSetRef.current = kanjiSet;
-            const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
-            if (surfaces.length > 0) {
-              const readings = await resolveFuriganaBatch(surfaces, dictDb);
-              const fMap = new Map<string, FuriganaEntry>(
-                Object.entries(readings) as [string, FuriganaEntry][],
-              );
-              sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet);
-            }
-            sliceHtml = injectRubySpacers(sliceHtml);
-          }
-
-          const readerHtml = generateReaderHtml(sliceHtml, {
-            fontSize: b.fontSize,
-            isDark,
-            targetLocalChar,
-            sliceCharOffset: startChar,
-            totalChars: model.totalChars,
-            hasFurigana: hasFuri,
-          });
-          setHtml(readerHtml);
+        // Legacy conversion: scroll_position → char_offset
+        let charOffset = b.charOffset;
+        if (charOffset === 0 && b.scrollPosition > 0) {
+          charOffset = Math.round(b.scrollPosition * model.totalChars);
         }
+
+        const startChar = Math.max(0, charOffset - cpp * 10);
+        const totalBudget = charOffset - startChar + cpp * 3;
+        const slice = sliceContent(model, startChar, totalBudget);
+        const targetLocalChar = charOffset - startChar;
+
+        // Store refs for streaming prefetch
+        modelRef.current = model;
+        sliceCharOffsetRef.current = startChar;
+        isAozoraRef.current = isAozora;
+
+        // Save total_chars on first load
+        if (b.totalChars === 0) {
+          userDb.runAsync("UPDATE books SET total_chars = ? WHERE id = ?", [
+            model.totalChars,
+            bookId,
+          ]);
+        }
+
+        let sliceHtml = isAozora
+          ? parseAozoraToHtml(slice.text, { strip: false })
+          : plainTextToHtml(slice.text);
+
+        // Apply furigana if any levels are enabled
+        if (hasFuri && dictDb) {
+          const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
+          kanjiSetRef.current = kanjiSet;
+          const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
+          if (surfaces.length > 0) {
+            const readings = await resolveFuriganaBatch(surfaces, dictDb);
+            const fMap = new Map<string, FuriganaEntry>(
+              Object.entries(readings) as [string, FuriganaEntry][],
+            );
+            sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet);
+          }
+          sliceHtml = injectRubySpacers(sliceHtml);
+        }
+
+        const readerHtml = generateReaderHtml(sliceHtml, {
+          fontSize: b.fontSize,
+          isDark,
+          targetLocalChar,
+          sliceCharOffset: startChar,
+          totalChars: model.totalChars,
+          hasFurigana: hasFuri,
+        });
+        setHtml(readerHtml);
       }
 
       // Update last_read_at
