@@ -544,27 +544,6 @@ export default function BookReaderScreen() {
         </Pressable>
       </View>
 
-      {/* Settings panel */}
-      {showSettings && (
-        <View className="px-4 py-3 border-b border-border bg-background">
-          <View className="flex-row items-center justify-center gap-4">
-            <Pressable
-              onPress={() => handleFontSizeChange(Math.max(14, fontSize - 2))}
-              className="h-10 w-10 items-center justify-center rounded-lg border border-border"
-            >
-              <Text className="text-lg text-foreground">A-</Text>
-            </Pressable>
-            <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
-            <Pressable
-              onPress={() => handleFontSizeChange(Math.min(32, fontSize + 2))}
-              className="h-10 w-10 items-center justify-center rounded-lg border border-border"
-            >
-              <Text className="text-lg text-foreground">A+</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
       {/* Reader content */}
       <View
         style={{ flex: 1 }}
@@ -573,6 +552,29 @@ export default function BookReaderScreen() {
         }}
       >
         <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+        {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
+        {showSettings && (
+          <View
+            className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background"
+            style={{ zIndex: 10 }}
+          >
+            <View className="flex-row items-center justify-center gap-4">
+              <Pressable
+                onPress={() => handleFontSizeChange(Math.max(14, fontSize - 2))}
+                className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+              >
+                <Text className="text-lg text-foreground">A-</Text>
+              </Pressable>
+              <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
+              <Pressable
+                onPress={() => handleFontSizeChange(Math.min(32, fontSize + 2))}
+                className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+              >
+                <Text className="text-lg text-foreground">A+</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
