@@ -26,23 +26,26 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
             <CardDescription className="text-xs">{lastRead}</CardDescription>
           </View>
         )}
-        {(book.charOffset > 0 || book.scrollPosition > 0) && (
-          <View className="rounded-full bg-muted px-2 py-0.5">
-            <CardDescription className="text-xs">
-              {progress}%
-              {book.totalChars > 0 &&
-                (() => {
-                  const charsPerPage = 500;
-                  const totalPages = Math.ceil(book.totalChars / charsPerPage);
-                  const currentPage = Math.round((progress / 100) * totalPages);
-                  return ` ≈ ${currentPage} / ${totalPages} pages`;
-                })()}
-            </CardDescription>
-          </View>
-        )}
         <View className="rounded-full bg-muted px-2 py-0.5">
           <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
         </View>
+        {(book.charOffset > 0 || book.scrollPosition > 0) && (
+          <>
+            <View className="flex-1" />
+            <View className="rounded-full bg-muted px-2 py-0.5">
+              <CardDescription className="text-xs">
+                {progress}%
+                {book.totalChars > 0 &&
+                  (() => {
+                    const charsPerPage = 500;
+                    const totalPages = Math.ceil(book.totalChars / charsPerPage);
+                    const currentPage = Math.round((progress / 100) * totalPages);
+                    return ` ≈ ${currentPage} / ${totalPages} pages`;
+                  })()}
+              </CardDescription>
+            </View>
+          </>
+        )}
       </View>
       {progress > 0 && <ProgressBar percent={progress} />}
     </PressableCard>
