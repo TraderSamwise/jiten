@@ -50,16 +50,51 @@ export function paginate(): void {
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 }
 
+// Find the nearest char to absOffset that has a non-zero bounding rect.
+// Scans forward first (up to 50 chars), then backward.
+function findRenderedChar(absOffset: number): number {
+  const range = document.createRange();
+  // Try forward
+  for (let delta = 0; delta <= 50; delta++) {
+    const pos = absoluteToNodeOffset(absOffset + delta);
+    if (!pos) break;
+    range.setStart(pos.node, pos.offset);
+    range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
+    const r = range.getBoundingClientRect();
+    if (r.width > 0 || r.height > 0) return absOffset + delta;
+  }
+  // Try backward
+  for (let delta = 1; delta <= 50; delta++) {
+    if (absOffset - delta < 0) break;
+    const pos = absoluteToNodeOffset(absOffset - delta);
+    if (!pos) break;
+    range.setStart(pos.node, pos.offset);
+    range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
+    const r = range.getBoundingClientRect();
+    if (r.width > 0 || r.height > 0) return absOffset - delta;
+  }
+  return absOffset; // give up, use original
+}
+
 // Align so the column containing targetLocalChar is the rightmost visible column.
 // Outer loop: align target → measure MFVC (column-top) → re-align to column-top → converge.
 // Inner loop: adjust spacer width so D (right edge to target) is a multiple of columnWidth.
 export function alignToTargetChar(targetLocalChar: number): void {
   const cW = state.columnWidth;
-  let alignTarget = targetLocalChar;
+  // If target char is non-rendered (whitespace, bracket, etc.), find nearest rendered char
+  let alignTarget = findRenderedChar(targetLocalChar);
+
+  window.ReactNativeWebView.postMessage(
+    JSON.stringify({
+      type: "alignDebug",
+      msg: `START target=${targetLocalChar} rendered=${alignTarget} cW=${cW}`,
+    }),
+  );
 
   for (let round = 0; round < 5; round++) {
     // --- Phase 1: spacer adjustment to put alignTarget on a column boundary ---
     let spacerWidth = 0;
+    let phase1Done = false;
     for (let attempt = 0; attempt < 5; attempt++) {
       const oldSpacer = state.pageEl!.querySelector(".back-spacer");
       if (oldSpacer) oldSpacer.remove();
@@ -81,6 +116,19 @@ export function alignToTargetChar(targetLocalChar: number): void {
       range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
       const charRect = range.getBoundingClientRect();
       const pageRight = state.pageEl!.getBoundingClientRect().right;
+
+      // Zero-rect means non-rendered char — shouldn't happen after findRenderedChar
+      // but guard anyway: break out and use fallback
+      if (charRect.right === 0 && charRect.left === 0) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            type: "alignDebug",
+            msg: `R${round}P1[${attempt}] ZERO RECT for target=${alignTarget} — using fallback`,
+          }),
+        );
+        break;
+      }
+
       const D = pageRight - charRect.right;
       const remainder = D % cW;
 
@@ -95,6 +143,7 @@ export function alignToTargetChar(targetLocalChar: number): void {
         state.totalPrependWidth = D - spacerWidth;
         state.prependedPages = Math.round(D / cW);
         state.currentPage = state.prependedPages + 1;
+        phase1Done = true;
         window.ReactNativeWebView.postMessage(
           JSON.stringify({
             type: "alignDebug",
@@ -104,6 +153,27 @@ export function alignToTargetChar(targetLocalChar: number): void {
         break;
       }
       spacerWidth += Math.ceil(cW - remainder);
+    }
+
+    // If Phase 1 failed (zero rect or didn't converge), use ratio-based fallback
+    if (!phase1Done) {
+      // Clean up any spacer from failed attempts
+      const oldSpacer = state.pageEl!.querySelector(".back-spacer");
+      if (oldSpacer) oldSpacer.remove();
+      state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
+      // Estimate page from char position ratio
+      const totalChars = state.pageEl!.textContent!.length;
+      const ratio = totalChars > 0 ? alignTarget / totalChars : 0;
+      state.currentPage = Math.max(1, Math.round(ratio * state.totalPages));
+      state.prependedPages = state.currentPage - 1;
+      state.totalPrependWidth = state.prependedPages * cW;
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type: "alignDebug",
+          msg: `R${round} FALLBACK ratio=${ratio.toFixed(3)} pg=${state.currentPage}/${state.totalPages}`,
+        }),
+      );
+      break;
     }
 
     // --- Phase 2: navigate to page, measure actual column-top ---
@@ -118,13 +188,24 @@ export function alignToTargetChar(targetLocalChar: number): void {
       }),
     );
 
-    if (mfvc === alignTarget) {
+    // The MFVC might be a char that Phase 1 can't measure (zero rect at scrollLeft=0),
+    // e.g. a bracket 「 that renders at the actual scroll position but not at scrollLeft=0.
+    // Compare using rendered proxies so we don't re-align to an unmeasurable char.
+    const renderedMfvc = findRenderedChar(mfvc);
+
+    if (renderedMfvc === alignTarget) {
       state.canonicalCharOffset = state.sliceCharOffset + mfvc;
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type: "alignDebug",
+          msg: `R${round}P2 CONVERGED mfvc=${mfvc} renderedMfvc=${renderedMfvc} target=${alignTarget}`,
+        }),
+      );
       break;
     }
 
-    // Re-align to the actual column-top
-    alignTarget = mfvc;
+    // Re-align to the rendered proxy of the actual column-top
+    alignTarget = renderedMfvc;
   }
 
   goToPage(state.currentPage);
