@@ -199,8 +199,6 @@ export function measureFirstVisibleChar(): number {
 
   const walker = textWalker(state.pageEl!);
   let charCount = 0;
-  let nodeIdx = 0;
-  let dbgNodes = "";
 
   while (walker.nextNode()) {
     const node = walker.currentNode as Text;
@@ -213,12 +211,6 @@ export function measureFirstVisibleChar(): number {
     const range = document.createRange();
     range.selectNodeContents(node);
     const nodeRect = range.getBoundingClientRect();
-
-    // Log first 5 nodes
-    if (nodeIdx < 5) {
-      dbgNodes += ` n${nodeIdx}[${charCount}..${charCount + len}]L=${nodeRect.left.toFixed(0)}R=${nodeRect.right.toFixed(0)}`;
-    }
-    nodeIdx++;
 
     // Skip non-rendered nodes (whitespace between elements)
     if (nodeRect.width < 1 && nodeRect.height < 1) {
@@ -247,12 +239,6 @@ export function measureFirstVisibleChar(): number {
       if (charRect.width < 1 && charRect.height < 1) continue; // skip non-rendered chars
       const cx = (charRect.left + charRect.right) / 2;
       if (cx >= viewRect.left && cx <= viewRect.right) {
-        window.ReactNativeWebView.postMessage(
-          JSON.stringify({
-            type: "mfvcDebug",
-            msg: `pg=${state.currentPage} view=[${viewRect.left.toFixed(0)},${viewRect.right.toFixed(0)}] page=[${pageRect.left.toFixed(0)},${pageRect.right.toFixed(0)}] scrollL=${state.pageEl!.scrollLeft} result=${charCount + i}${dbgNodes}`,
-          }),
-        );
         return charCount + i;
       }
     }
@@ -260,12 +246,6 @@ export function measureFirstVisibleChar(): number {
     charCount += len;
   }
 
-  window.ReactNativeWebView.postMessage(
-    JSON.stringify({
-      type: "mfvcDebug",
-      msg: `pg=${state.currentPage} FALLBACK=0 nodes=${nodeIdx} chars=${charCount} view=[${viewRect.left.toFixed(0)},${viewRect.right.toFixed(0)}]${dbgNodes}`,
-    }),
-  );
   return 0;
 }
 
@@ -378,7 +358,6 @@ export function reportScroll(): void {
     JSON.stringify({
       type: "scroll",
       charOffset: globalChar,
-      _dbg: `pg=${state.currentPage} scrollL=${state.pageEl!.scrollLeft} firstLocal=${firstChar} canonical=${state.canonicalCharOffset} global=${globalChar}`,
     }),
   );
 }
