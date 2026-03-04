@@ -22,7 +22,16 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
       <View className="flex-row items-center gap-3 mt-1">
         {lastRead && <CardDescription>{lastRead}</CardDescription>}
         {(book.charOffset > 0 || book.scrollPosition > 0) && (
-          <CardDescription>{progress}%</CardDescription>
+          <CardDescription>
+            {progress}%
+            {book.totalChars > 0 &&
+              (() => {
+                const charsPerPage = 500;
+                const totalPages = Math.ceil(book.totalChars / charsPerPage);
+                const currentPage = Math.round((progress / 100) * totalPages);
+                return ` ≈ ${currentPage} / ${totalPages} pages`;
+              })()}
+          </CardDescription>
         )}
         <CardDescription className="capitalize">{book.source}</CardDescription>
       </View>
