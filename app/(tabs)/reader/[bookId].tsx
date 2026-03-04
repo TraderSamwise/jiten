@@ -609,7 +609,11 @@ export default function BookReaderScreen() {
     (newSize: number) => {
       const rounded = Math.round(newSize);
       setFontSize(rounded);
-      readerRef.current?.postMessage(JSON.stringify({ type: "setFontSize", size: rounded }));
+      const hasFuri = kanjiSetRef.current != null;
+      const lineHeight = hasFuri ? `${rounded * 2}px` : "1.5";
+      readerRef.current?.postMessage(
+        JSON.stringify({ type: "setFontSize", size: rounded, lineHeight }),
+      );
       if (userDb && bookId) {
         userDb.runAsync("UPDATE books SET font_size = ?, updated_at = ? WHERE id = ?", [
           rounded,

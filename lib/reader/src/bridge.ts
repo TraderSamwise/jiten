@@ -18,6 +18,7 @@ export function setupMessageListener(): void {
         // Capture current reading position before font change
         const charBefore = measureFirstVisibleChar();
         state.contentEl!.style.fontSize = msg.size + "px";
+        if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
         requestAnimationFrame(function () {
           paginate();
           alignToTargetChar(charBefore);
