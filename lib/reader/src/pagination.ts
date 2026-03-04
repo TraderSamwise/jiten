@@ -120,6 +120,8 @@ export function alignToTargetChar(targetLocalChar: number): void {
   state.pageEl!.scrollLeft = -colOffset;
   state.currentPage = Math.max(1, Math.round(colOffset / cW) + 1);
   state.canonicalCharOffset = state.sliceCharOffset + alignTarget;
+  updatePageInfo();
+  reportScroll();
 }
 
 // Measure the last visible character on the current page.
