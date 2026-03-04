@@ -50,93 +50,81 @@ export function paginate(): void {
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 }
 
-// Iteratively align a target char's column to a page boundary.
-// After alignment, updates canonicalCharOffset to the actual column-top
-// (MFVC), which may differ from targetLocalChar by a few chars.
-// Saving the column-top ensures reload stability: a column-top char
-// will align to the same column-top on next load.
+// Align so the column containing targetLocalChar is the rightmost visible column.
+// Outer loop: align target → measure MFVC (column-top) → re-align to column-top → converge.
+// Inner loop: adjust spacer width so D (right edge to target) is a multiple of columnWidth.
 export function alignToTargetChar(targetLocalChar: number): void {
   const cW = state.columnWidth;
-  const dbg = document.getElementById("debug-overlay");
-  let spacerWidth = 0;
+  let alignTarget = targetLocalChar;
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    // Remove existing spacer
-    const oldSpacer = state.pageEl!.querySelector(".back-spacer");
-    if (oldSpacer) oldSpacer.remove();
+  for (let round = 0; round < 5; round++) {
+    // --- Phase 1: spacer adjustment to put alignTarget on a column boundary ---
+    let spacerWidth = 0;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const oldSpacer = state.pageEl!.querySelector(".back-spacer");
+      if (oldSpacer) oldSpacer.remove();
+      if (spacerWidth > 0) {
+        const spacer = document.createElement("div");
+        spacer.className = "back-spacer";
+        spacer.style.width = spacerWidth + "px";
+        spacer.style.overflow = "hidden";
+        state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
+      }
+      state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
+      state.pageEl!.scrollLeft = 0;
 
-    // Insert current spacer
-    if (spacerWidth > 0) {
-      const spacer = document.createElement("div");
-      spacer.className = "back-spacer";
-      spacer.style.width = spacerWidth + "px";
-      spacer.style.overflow = "hidden";
-      state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
+      const pos = absoluteToNodeOffset(alignTarget);
+      if (!pos) return;
+
+      const range = document.createRange();
+      range.setStart(pos.node, pos.offset);
+      range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
+      const charRect = range.getBoundingClientRect();
+      const pageRight = state.pageEl!.getBoundingClientRect().right;
+      const D = pageRight - charRect.right;
+      const remainder = D % cW;
+
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type: "alignDebug",
+          msg: `R${round}P1[${attempt}] target=${alignTarget} spacer=${spacerWidth} charR=${charRect.right.toFixed(1)} pageR=${pageRight.toFixed(1)} D=${D.toFixed(1)} rem=${remainder.toFixed(1)}`,
+        }),
+      );
+
+      if (remainder < 5) {
+        state.totalPrependWidth = D - spacerWidth;
+        state.prependedPages = Math.round(D / cW);
+        state.currentPage = state.prependedPages + 1;
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            type: "alignDebug",
+            msg: `R${round}P1 DONE spacer=${spacerWidth} prepPg=${state.prependedPages} curPg=${state.currentPage}`,
+          }),
+        );
+        break;
+      }
+      spacerWidth += Math.ceil(cW - remainder);
     }
 
-    // Repaginate
+    // --- Phase 2: navigate to page, measure actual column-top ---
     state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
+    state.pageEl!.scrollLeft = -((state.currentPage - 1) * cW);
+    const mfvc = measureFirstVisibleChar();
 
-    // Find target char position (scrollLeft=0 shows rightmost content)
-    state.pageEl!.scrollLeft = 0;
-    const pos = absoluteToNodeOffset(targetLocalChar);
-    if (!pos) break;
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({
+        type: "alignDebug",
+        msg: `R${round}P2 mfvc=${mfvc} target=${alignTarget} diff=${mfvc - alignTarget} pg=${state.currentPage}`,
+      }),
+    );
 
-    const range = document.createRange();
-    range.setStart(pos.node, pos.offset);
-    range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
-    const charRect = range.getBoundingClientRect();
-    const pageRight = state.pageEl!.getBoundingClientRect().right;
-
-    // D = total distance from right edge to target char (includes spacer)
-    const D = pageRight - charRect.right;
-    const remainder = D % cW;
-
-    if (dbg) {
-      const charAtPos = pos.node.textContent!.charAt(pos.offset);
-      dbg.textContent = `ALIGN[${attempt}]: char='${charAtPos}' D=${D.toFixed(1)} rem=${remainder.toFixed(1)} spacer=${spacerWidth} cW=${cW}`;
-    }
-
-    if (remainder < 5) {
-      // Aligned — char is at/just inside the page start
-      state.totalPrependWidth = D - spacerWidth;
-      state.prependedPages = Math.round(D / cW);
-      state.currentPage = state.prependedPages + 1;
+    if (mfvc === alignTarget) {
+      state.canonicalCharOffset = state.sliceCharOffset + mfvc;
       break;
     }
 
-    // Not aligned — increase spacer to push char past the next column boundary.
-    spacerWidth += Math.ceil(cW - remainder);
-  }
-
-  // Final state update
-  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / cW));
-
-  // The target char sits right at a column boundary. Try both candidate pages
-  // and pick the one where MFVC is closest to (but ≤) the target.
-  const candidatePage = state.currentPage;
-  let bestPage = candidatePage;
-  let bestMfvc = -1;
-
-  for (const pg of [candidatePage, candidatePage - 1]) {
-    if (pg < 1 || pg > state.totalPages) continue;
-    state.pageEl!.scrollLeft = -((pg - 1) * cW);
-    const mfvc = measureFirstVisibleChar();
-    // Pick the page whose column-top is closest to target without overshooting
-    if (mfvc <= targetLocalChar && mfvc > bestMfvc) {
-      bestPage = pg;
-      bestMfvc = mfvc;
-    }
-  }
-
-  state.currentPage = bestPage;
-  state.prependedPages = bestPage - 1;
-  // Do NOT update canonicalCharOffset here — keep it at the DB value
-  // (set in index.ts). This ensures charOffset doesn't change on reload,
-  // so startChar → content → layout → page are all identical next time.
-
-  if (dbg) {
-    dbg.textContent += `\nVERIFY: target=${targetLocalChar} mfvc=${bestMfvc} pg=${bestPage} canonical=${state.canonicalCharOffset}`;
+    // Re-align to the actual column-top
+    alignTarget = mfvc;
   }
 
   goToPage(state.currentPage);
@@ -146,13 +134,9 @@ export function alignToTargetChar(targetLocalChar: number): void {
 // Returns a 0-based char index within the WebView's current content,
 // or -1 if nothing is measurable.
 export function measureLastVisibleChar(): number {
-  const pageRect = state.pageEl!.getBoundingClientRect();
-  // In vertical-rl the visible viewport is a horizontal strip:
-  //   left edge  = pageRect.left + scrollLeft (but scrollLeft is negative)
-  //   right edge = left edge + columnWidth
-  // Because scrollLeft is negative, the visible right edge = pageRect.right + scrollLeft
-  // But it's simpler to use the content element's rect which IS the visible viewport.
-  const viewRect = state.contentEl!.getBoundingClientRect();
+  // Use pageEl (the actual visible column) not contentEl (which includes padding).
+  const viewRect = state.pageEl!.getBoundingClientRect();
+  const pageRect = viewRect;
 
   const walker = textWalker(state.pageEl!);
   let charCount = 0;
@@ -216,8 +200,10 @@ export function measureLastVisibleChar(): number {
 // Returns a 0-based char index within the WebView's current content,
 // or 0 if nothing is measurable.
 export function measureFirstVisibleChar(): number {
-  const viewRect = state.contentEl!.getBoundingClientRect();
-  const pageRect = state.pageEl!.getBoundingClientRect();
+  // Use pageEl (the actual visible column) not contentEl (which includes padding
+  // and would pick up chars from adjacent clipped columns).
+  const viewRect = state.pageEl!.getBoundingClientRect();
+  const pageRect = viewRect;
 
   const walker = textWalker(state.pageEl!);
   let charCount = 0;
