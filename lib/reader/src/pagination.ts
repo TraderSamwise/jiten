@@ -152,7 +152,7 @@ export function alignToTargetChar(targetLocalChar: number): void {
         );
         break;
       }
-      spacerWidth += Math.ceil(cW - remainder);
+      spacerWidth = Math.round((spacerWidth + (cW - remainder)) / cW) * cW;
     }
 
     // If Phase 1 failed (zero rect or didn't converge), use ratio-based fallback
@@ -494,9 +494,9 @@ export function prependBackSlice(html: string, charCount?: number): void {
   const newContentWidth = swAfter - swBefore;
   state.totalPrependWidth += newContentWidth;
 
-  // 5. Calculate spacer for page alignment
+  // 5. Calculate spacer for page alignment (quantized to columnWidth)
   const remainder = state.totalPrependWidth % state.columnWidth;
-  const spacerWidth = remainder > 1 ? Math.round(state.columnWidth - remainder) : 0;
+  const spacerWidth = remainder > 1 ? state.columnWidth : 0;
   if (spacerWidth > 0) {
     const spacer = document.createElement("div");
     spacer.className = "back-spacer";
