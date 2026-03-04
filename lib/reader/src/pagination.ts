@@ -382,18 +382,6 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
   updatePageInfo();
 }
 
-function updateDebug(extra?: string): void {
-  const el = document.getElementById("debug-overlay");
-  if (!el) return;
-  const lines = [
-    `local: ${state.currentPage}/${state.totalPages}  sliceOff: ${state.sliceCharOffset}  totalChars: ${state.totalChars}`,
-    `colW: ${state.columnWidth}  scrollW: ${state.pageEl!.scrollWidth}  scrollL: ${state.pageEl!.scrollLeft}`,
-    `prepW: ${state.totalPrependWidth}  prepPg: ${state.prependedPages}  spacer: ${state.pageEl!.querySelector(".back-spacer") ? (state.pageEl!.querySelector(".back-spacer") as HTMLElement).style.width : "none"}`,
-  ];
-  if (extra) lines.push(extra);
-  el.textContent = lines.join("\n");
-}
-
 function updatePageInfo(): void {
   const firstChar = measureFirstVisibleChar();
   const globalChar = state.sliceCharOffset + firstChar;
@@ -401,7 +389,6 @@ function updatePageInfo(): void {
   state.pageNumEl!.textContent = pct + "%";
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
-  updateDebug();
 }
 
 // Navigation
@@ -529,9 +516,6 @@ export function prependBackSlice(html: string, charCount?: number): void {
   state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
 
   // 7. Scroll to correct position and notify
-  updateDebug(
-    `prepend: +${newContentWidth}px  rem:${remainder}  spacer:${spacerWidth}  +${pagesAdded}pg`,
-  );
   goToPage(state.currentPage);
 
   // 8. Notify RN that prepend is done
