@@ -284,10 +284,6 @@ export default function BookReaderScreen() {
           const slice = sliceContent(model, startChar, totalBudget);
           const targetLocalChar = charOffset - startChar;
 
-          console.log(
-            `[READER LOAD] charOffset=${charOffset} startChar=${startChar} targetLocalChar=${targetLocalChar} cpp=${cpp} sliceLen=${slice.text.length} totalChars=${model.totalChars}`,
-          );
-
           // Store refs for streaming prefetch
           modelRef.current = model;
           sliceCharOffsetRef.current = startChar;
@@ -394,7 +390,7 @@ export default function BookReaderScreen() {
           html: sliceHtml,
           sliceCharOffset: startChar,
           targetLocalChar,
-          lineHeight: hasFuri ? 2.0 : 1.5,
+          lineHeight: hasFuri ? `${fontSize * 2}px` : 1.5,
         }),
       );
     })();
@@ -502,7 +498,6 @@ export default function BookReaderScreen() {
           setLookupError(msg.message || "An error occurred");
           setShowPopup(true);
         } else if (msg.type === "scroll") {
-          console.log(`[READER SAVE] charOffset=${msg.charOffset} ${msg._dbg || ""}`);
           scrollPosRef.current = msg.charOffset;
           if (userDb && bookId) {
             userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
@@ -592,10 +587,6 @@ export default function BookReaderScreen() {
           }
         } else if (msg.type === "backPrefetchDone") {
           backPrefetchingRef.current = false;
-        } else if (msg.type === "mfvcDebug") {
-          console.log(`[MFVC] ${msg.msg}`);
-        } else if (msg.type === "alignDebug") {
-          console.log(`[ALIGN] ${msg.msg}`);
         }
       } catch {}
     },
