@@ -329,7 +329,7 @@ export interface FuriganaEntry {
 /**
  * Apply furigana map to an HTML string.
  *
- * Wraps matched kanji substrings in <ruby data-furigana>base<rt>reading</rt></ruby>.
+ * Wraps matched kanji substrings in <ruby>base<rt>reading</rt></ruby>.
  * HTML-aware: skips content inside tags, <ruby>, and <rt> elements.
  * Uses longest-first matching (same logic as the WebView processTextNode).
  *
@@ -443,7 +443,7 @@ export function applyFuriganaToHtml(
 
         const entry = furiganaMap.get(surface)!;
 
-        out += `<ruby data-furigana>${entry.kanjiPart}<rt>${entry.reading}</rt></ruby>`;
+        out += `<ruby>${entry.kanjiPart}<rt>${entry.reading}</rt></ruby>`;
 
         // Emit trailing okurigana (chars after kanjiPart within the matched surface)
         const kanjiPartChars = [...entry.kanjiPart];

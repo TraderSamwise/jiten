@@ -36,6 +36,20 @@ export function setupMessageListener(): void {
         replaceOffscreenContent(msg.replaceFromChar, msg.html);
       } else if (msg.type === "setPrevContent") {
         prependBackSlice(msg.html, msg.charCount);
+      } else if (msg.type === "reloadContent") {
+        const charBefore = measureFirstVisibleChar();
+        if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
+        state.pageEl!.innerHTML = "";
+        const temp = document.createElement("div");
+        temp.innerHTML = msg.html;
+        while (temp.firstChild) state.pageEl!.appendChild(temp.firstChild);
+        if (msg.sliceCharOffset != null) state.sliceCharOffset = msg.sliceCharOffset;
+        state.totalPrependWidth = 0;
+        state.prependedPages = 0;
+        requestAnimationFrame(function () {
+          paginate();
+          alignToTargetChar(msg.targetLocalChar ?? charBefore);
+        });
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");

@@ -7,6 +7,7 @@ export interface ReaderOptions {
   targetLocalChar?: number;
   sliceCharOffset?: number;
   totalChars?: number;
+  hasFurigana?: boolean;
 }
 
 export function generateReaderHtml(content: string, options: ReaderOptions): string {
@@ -17,18 +18,22 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     targetLocalChar = 0,
     sliceCharOffset = 0,
     totalChars = 0,
+    hasFurigana = false,
   } = options;
   const bg = isDark ? "#18181b" : "#fafaf9";
   const fg = isDark ? "#fafafa" : "#18181b";
   const rubyColor = isDark ? "#a1a1aa" : "#71717a";
   const highlightBg = isDark ? "rgba(100, 100, 255, 0.3)" : "rgba(100, 100, 255, 0.2)";
 
+  const lineHeight = hasFurigana ? "2.0" : "1.5";
+
   const css = readerCss
     .replace(/__BG__/g, bg)
     .replace(/__FG__/g, fg)
     .replace(/__RUBY_COLOR__/g, rubyColor)
     .replace(/__HIGHLIGHT_BG__/g, highlightBg)
-    .replace(/__FONT_SIZE__/g, String(fontSize));
+    .replace(/__FONT_SIZE__/g, String(fontSize))
+    .replace(/__LINE_HEIGHT__/g, lineHeight);
 
   return `<!DOCTYPE html>
 <html>

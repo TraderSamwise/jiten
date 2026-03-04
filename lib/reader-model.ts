@@ -381,7 +381,7 @@ export function calcCharsPerPage(
   fontSize: number,
   hasFurigana: boolean,
 ): number {
-  const lineW = fontSize * 1.5;
+  const lineW = fontSize * (hasFurigana ? 2.0 : 1.5);
   const cols = Math.floor((W - 32) / lineW);
   const charsPerCol = Math.floor((H - 32) / fontSize);
   return Math.floor(cols * charsPerCol * (hasFurigana ? 0.6 : 0.8));
