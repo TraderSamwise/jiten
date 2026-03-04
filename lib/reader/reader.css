@@ -36,10 +36,6 @@ ruby rt {
   color: __RUBY_COLOR__;
 }
 
-ruby.rs rt {
-  visibility: hidden;
-}
-
 .bouten {
   font-style: normal;
   -webkit-text-emphasis: filled dot;
