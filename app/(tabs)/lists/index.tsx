@@ -15,30 +15,12 @@ import { useDatabase } from "@/db/provider";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { parseListImport, importListToDb } from "@/lib/list-transfer";
+import { StudyProgressBar } from "@/components/ProgressBar";
 import { seedDefaultListsIfNeeded } from "@/lib/seed-default-lists";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
-
-function ProgressBar({
-  progress,
-  total,
-}: {
-  progress: { learned: number; learning: number; unlearned: number };
-  total: number;
-}) {
-  if (total <= 0) return null;
-  const learnedPct = (progress.learned / total) * 100;
-  const learningPct = (progress.learning / total) * 100;
-
-  return (
-    <View className="mt-2 h-1.5 flex-row rounded-full overflow-hidden bg-muted">
-      {learnedPct > 0 && <View className="bg-green-600" style={{ width: `${learnedPct}%` }} />}
-      {learningPct > 0 && <View className="bg-yellow-500" style={{ width: `${learningPct}%` }} />}
-    </View>
-  );
 }
 
 export default function ListsIndexScreen() {
@@ -326,7 +308,11 @@ export default function ListsIndexScreen() {
         </View>
         {item.studyProgress &&
           (item.studyProgress.learned > 0 || item.studyProgress.learning > 0) && (
-            <ProgressBar progress={item.studyProgress} total={item.entryCount ?? 0} />
+            <StudyProgressBar
+              learned={item.studyProgress.learned}
+              learning={item.studyProgress.learning}
+              total={item.entryCount ?? 0}
+            />
           )}
       </PressableCard>
     );

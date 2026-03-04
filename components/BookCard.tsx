@@ -1,6 +1,7 @@
 import React from "react";
 import { View } from "react-native";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
+import { ProgressBar } from "@/components/ProgressBar";
 import type { Book } from "@/db/types";
 
 interface BookCardProps {
@@ -19,22 +20,31 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
     <PressableCard onPress={onPress} className="mb-2">
       <CardTitle numberOfLines={1}>{book.title}</CardTitle>
       {book.author ? <CardDescription numberOfLines={1}>{book.author}</CardDescription> : null}
-      <View className="flex-row items-center gap-3 mt-1">
-        {lastRead && <CardDescription>{lastRead}</CardDescription>}
-        {(book.charOffset > 0 || book.scrollPosition > 0) && (
-          <CardDescription>
-            {progress}%
-            {book.totalChars > 0 &&
-              (() => {
-                const charsPerPage = 500;
-                const totalPages = Math.ceil(book.totalChars / charsPerPage);
-                const currentPage = Math.round((progress / 100) * totalPages);
-                return ` ≈ ${currentPage} / ${totalPages} pages`;
-              })()}
-          </CardDescription>
+      <View className="flex-row flex-wrap items-center gap-1.5 mt-1.5">
+        {lastRead && (
+          <View className="rounded-full bg-muted px-2 py-0.5">
+            <CardDescription className="text-xs">{lastRead}</CardDescription>
+          </View>
         )}
-        <CardDescription className="capitalize">{book.source}</CardDescription>
+        {(book.charOffset > 0 || book.scrollPosition > 0) && (
+          <View className="rounded-full bg-muted px-2 py-0.5">
+            <CardDescription className="text-xs">
+              {progress}%
+              {book.totalChars > 0 &&
+                (() => {
+                  const charsPerPage = 500;
+                  const totalPages = Math.ceil(book.totalChars / charsPerPage);
+                  const currentPage = Math.round((progress / 100) * totalPages);
+                  return ` ≈ ${currentPage} / ${totalPages} pages`;
+                })()}
+            </CardDescription>
+          </View>
+        )}
+        <View className="rounded-full bg-muted px-2 py-0.5">
+          <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
+        </View>
       </View>
+      {progress > 0 && <ProgressBar percent={progress} />}
     </PressableCard>
   );
 });
