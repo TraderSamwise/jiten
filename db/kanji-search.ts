@@ -348,6 +348,19 @@ export async function getKanjiUsingRadicalAsync(
   return rows.map(rowToKanjiCharacter);
 }
 
+/** Get kanji literals for a JLPT level (null = non-jouyou). */
+export async function getKanjiLiteralsByJlptAsync(
+  db: SQLite.SQLiteDatabase,
+  level: number | null,
+): Promise<string[]> {
+  const sql =
+    level === null
+      ? "SELECT literal FROM kanji_characters WHERE jlpt_level IS NULL"
+      : "SELECT literal FROM kanji_characters WHERE jlpt_level = ?";
+  const rows = await db.getAllAsync<{ literal: string }>(sql, level === null ? [] : [level]);
+  return rows.map((r) => r.literal);
+}
+
 /** Get kanji by RTK lesson number (async). */
 export async function getKanjiByLessonAsync(
   db: SQLite.SQLiteDatabase,

@@ -32,6 +32,8 @@ import {
   nameLookupWithOffset,
   type LookupResult,
 } from "@/lib/smart-lookup";
+import { useAtom } from "jotai";
+import { readerFuriganaLevelsAtom, type FuriganaLevel } from "@/stores/settings";
 import { parseBookRow } from "./index";
 import type { Book } from "@/db/types";
 
@@ -187,6 +189,7 @@ export default function BookReaderScreen() {
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
   const readerRef = useRef<ReaderViewRef>(null);
+  const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
 
   const [book, setBook] = useState<Book | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -555,7 +558,7 @@ export default function BookReaderScreen() {
         {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
         {showSettings && (
           <View
-            className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background"
+            className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
             style={{ zIndex: 10 }}
           >
             <View className="flex-row items-center justify-center gap-4">
@@ -572,6 +575,42 @@ export default function BookReaderScreen() {
               >
                 <Text className="text-lg text-foreground">A+</Text>
               </Pressable>
+            </View>
+
+            {/* Furigana level toggles */}
+            <View>
+              <Text className="text-xs text-muted-foreground text-center mb-2">Furigana</Text>
+              <View className="flex-row flex-wrap justify-center gap-1.5">
+                {(
+                  [
+                    ["n5", "N5"],
+                    ["n4", "N4"],
+                    ["n3", "N3"],
+                    ["n2", "N2"],
+                    ["n1", "N1"],
+                    ["nonJouyou", "Other"],
+                    ["all", "All"],
+                  ] as [FuriganaLevel, string][]
+                ).map(([key, label]) => (
+                  <Pressable
+                    key={key}
+                    onPress={() => setFuriganaLevels((prev) => ({ ...prev, [key]: !prev[key] }))}
+                    className={`px-3 py-1.5 rounded-full border ${
+                      furiganaLevels[key]
+                        ? "bg-foreground border-foreground"
+                        : "bg-transparent border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs font-medium ${
+                        furiganaLevels[key] ? "text-background" : "text-muted-foreground"
+                      }`}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           </View>
         )}
