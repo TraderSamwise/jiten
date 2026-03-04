@@ -36,14 +36,6 @@ export function setupMessageListener(): void {
         replaceOffscreenContent(msg.replaceFromChar, msg.html);
       } else if (msg.type === "setPrevContent") {
         prependBackSlice(msg.html, msg.charCount);
-      } else if (msg.type === "debug") {
-        const el = document.getElementById("debug-overlay");
-        if (el) {
-          const existing = el.textContent || "";
-          const lines = existing.split("\n").slice(0, 3);
-          lines.push(msg.text);
-          el.textContent = lines.join("\n");
-        }
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");
