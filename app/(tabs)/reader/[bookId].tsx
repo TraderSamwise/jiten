@@ -473,6 +473,8 @@ export default function BookReaderScreen() {
           backPrefetchingRef.current = false;
         } else if (msg.type === "mfvcDebug") {
           console.log(`[MFVC] ${msg.msg}`);
+        } else if (msg.type === "alignDebug") {
+          console.log(`[ALIGN] ${msg.msg}`);
         }
       } catch {}
     },
