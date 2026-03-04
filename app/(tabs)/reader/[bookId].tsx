@@ -39,6 +39,7 @@ import {
   extractSurfacesFromHtml,
   resolveFuriganaBatch,
   applyFuriganaToHtml,
+  injectRubySpacers,
   type FuriganaKanjiSet,
   type FuriganaEntry,
 } from "@/lib/reader-furigana";
@@ -316,6 +317,7 @@ export default function BookReaderScreen() {
               );
               sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet);
             }
+            sliceHtml = injectRubySpacers(sliceHtml);
           }
 
           const readerHtml = generateReaderHtml(sliceHtml, {
@@ -382,6 +384,7 @@ export default function BookReaderScreen() {
           );
           sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current);
         }
+        sliceHtml = injectRubySpacers(sliceHtml);
       }
 
       // Send reload to WebView
@@ -531,6 +534,7 @@ export default function BookReaderScreen() {
                 );
                 nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current);
               }
+              nextHtml = injectRubySpacers(nextHtml);
             }
             readerRef.current?.postMessage(
               JSON.stringify({
@@ -572,6 +576,7 @@ export default function BookReaderScreen() {
                   );
                   backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current);
                 }
+                backHtml = injectRubySpacers(backHtml);
               }
               readerRef.current?.postMessage(
                 JSON.stringify({
