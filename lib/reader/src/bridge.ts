@@ -1,6 +1,13 @@
 import { state } from "./state";
 import { clearHighlight, applyHighlight } from "./highlight";
-import { paginate, goToPage, replaceOffscreenContent, prependBackSlice } from "./pagination";
+import {
+  paginate,
+  goToPage,
+  measureFirstVisibleChar,
+  alignToTargetChar,
+  replaceOffscreenContent,
+  prependBackSlice,
+} from "./pagination";
 
 // Listen for messages from React Native
 export function setupMessageListener(): void {
@@ -8,13 +15,12 @@ export function setupMessageListener(): void {
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === "setFontSize") {
+        // Capture current reading position before font change
+        const charBefore = measureFirstVisibleChar();
         state.contentEl!.style.fontSize = msg.size + "px";
         requestAnimationFrame(function () {
-          const ratio = state.totalPages > 1 ? (state.currentPage - 1) / (state.totalPages - 1) : 0;
           paginate();
-          state.currentPage = Math.round(ratio * (state.totalPages - 1)) + 1;
-          state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
-          goToPage(state.currentPage);
+          alignToTargetChar(charBefore);
         });
       } else if (msg.type === "scrollTo") {
         paginate();
