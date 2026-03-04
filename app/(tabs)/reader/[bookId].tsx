@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, ActivityIndicator, Dimensions, Linking, Platform } from "react-native";
+import {
+  View,
+  Pressable,
+  ActivityIndicator,
+  Dimensions,
+  Linking,
+  Platform,
+  GestureResponderEvent,
+} from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -189,6 +197,163 @@ function HighlightToolbar({
   );
 }
 
+function JumpSlider({
+  initialPercent,
+  isDark,
+  onJump,
+  onDismiss,
+}: {
+  initialPercent: number;
+  isDark: boolean;
+  onJump: (percent: number) => void;
+  onDismiss: () => void;
+}) {
+  const [percent, setPercent] = useState(initialPercent);
+  const trackRef = useRef<View>(null);
+  const trackWidthRef = useRef(0);
+  const trackXRef = useRef(0);
+
+  const updateFromPageX = (pageX: number) => {
+    const x = pageX - trackXRef.current;
+    const clamped = Math.max(0, Math.min(x, trackWidthRef.current));
+    // RTL: right edge = 0%, left edge = 100%
+    const pct =
+      trackWidthRef.current > 0
+        ? ((trackWidthRef.current - clamped) / trackWidthRef.current) * 100
+        : 0;
+    setPercent(Math.round(pct));
+  };
+
+  const pctFromTouch = (pageX: number) => {
+    const x = pageX - trackXRef.current;
+    const clamped = Math.max(0, Math.min(x, trackWidthRef.current));
+    return trackWidthRef.current > 0
+      ? Math.round(((trackWidthRef.current - clamped) / trackWidthRef.current) * 100)
+      : 0;
+  };
+
+  const handleTouchStart = (e: GestureResponderEvent) => {
+    const pageX = e.nativeEvent.pageX;
+    setPercent(pctFromTouch(pageX));
+  };
+
+  const handleTouchMove = (e: GestureResponderEvent) => {
+    const pageX = e.nativeEvent.pageX;
+    setPercent(pctFromTouch(pageX));
+  };
+
+  const handleTouchEnd = (e: GestureResponderEvent) => {
+    const pageX = e.nativeEvent.pageX;
+    const pct = pctFromTouch(pageX);
+    setPercent(pct);
+    onJump(pct);
+  };
+
+  const bg = isDark ? "#1c1c1e" : "#f2f2f7";
+  const trackBg = isDark ? "#3a3a3c" : "#d1d1d6";
+  const fillColor = isDark ? "#0a84ff" : "#007aff";
+  const textColor = isDark ? "#fff" : "#000";
+
+  return (
+    <Pressable
+      onPress={onDismiss}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 200,
+        justifyContent: "flex-end",
+      }}
+    >
+      <Pressable
+        onPress={(e) => e.stopPropagation()}
+        style={{
+          backgroundColor: bg,
+          paddingHorizontal: 20,
+          paddingTop: 16,
+          paddingBottom: 40,
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          elevation: 10,
+        }}
+      >
+        <Text
+          style={{
+            color: textColor,
+            fontSize: 28,
+            fontWeight: "700",
+            textAlign: "center",
+            marginBottom: 16,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {percent}%
+        </Text>
+        <View
+          ref={trackRef}
+          onLayout={() => {
+            trackRef.current?.measureInWindow((x, _y, width) => {
+              trackXRef.current = x;
+              trackWidthRef.current = width;
+            });
+          }}
+          style={{
+            height: 36,
+            justifyContent: "center",
+          }}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={handleTouchStart}
+          onResponderMove={handleTouchMove}
+          onResponderRelease={handleTouchEnd}
+        >
+          <View
+            style={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: trackBg,
+              overflow: "hidden",
+              flexDirection: "row-reverse",
+            }}
+          >
+            <View
+              style={{
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: fillColor,
+                width: `${percent}%`,
+              }}
+            />
+          </View>
+          {/* Thumb */}
+          <View
+            style={{
+              position: "absolute",
+              right: `${percent}%`,
+              marginRight: -14,
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: "#fff",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.3,
+              shadowRadius: 3,
+              elevation: 4,
+            }}
+          />
+        </View>
+      </Pressable>
+    </Pressable>
+  );
+}
+
 export default function BookReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const goBack = useSafeGoBack("/reader");
@@ -214,6 +379,7 @@ export default function BookReaderScreen() {
   const [copied, setCopied] = useState(false);
   const [nameMode, setNameMode] = useState(false);
   const nameModeRef = useRef(false);
+  const [showJumpSlider, setShowJumpSlider] = useState(false);
 
   // Streaming prefetch refs — used by handleMessage for pageRendered
   const modelRef = useRef<TextModel | null>(null);
@@ -224,7 +390,6 @@ export default function BookReaderScreen() {
   // Furigana refs
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
   const furiganaLevelsRef = useRef(furiganaLevels);
-  const furiganaActive = Object.values(furiganaLevels).some(Boolean);
 
   useEffect(() => {
     furiganaLevelsRef.current = furiganaLevels;
@@ -232,6 +397,53 @@ export default function BookReaderScreen() {
   useEffect(() => {
     nameModeRef.current = nameMode;
   }, [nameMode]);
+
+  // Reload the reader at a given char offset (used by furigana toggle + jump slider)
+  const reloadAtChar = useCallback(
+    async (charOffset: number) => {
+      const model = modelRef.current;
+      if (!model || !dictDb) return;
+      const isAozora = isAozoraRef.current;
+      const hasFuri = kanjiSetRef.current != null;
+
+      const screen = Dimensions.get("window");
+      const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
+      const startChar = Math.max(0, charOffset - cpp * 10);
+      const totalBudget = charOffset - startChar + cpp * 3;
+      const slice = sliceContent(model, startChar, totalBudget);
+      const targetLocalChar = charOffset - startChar;
+
+      sliceCharOffsetRef.current = startChar;
+      backPrefetchingRef.current = false;
+
+      let sliceHtml = isAozora
+        ? parseAozoraToHtml(slice.text, { strip: false })
+        : plainTextToHtml(slice.text);
+
+      if (hasFuri && kanjiSetRef.current) {
+        const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
+        if (surfaces.length > 0) {
+          const readings = await resolveFuriganaBatch(surfaces, dictDb);
+          const fMap = new Map<string, FuriganaEntry>(
+            Object.entries(readings) as [string, FuriganaEntry][],
+          );
+          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current);
+        }
+        sliceHtml = injectRubySpacers(sliceHtml);
+      }
+
+      readerRef.current?.postMessage(
+        JSON.stringify({
+          type: "reloadContent",
+          html: sliceHtml,
+          sliceCharOffset: startChar,
+          targetLocalChar,
+          lineHeight: hasFuri ? `${fontSize * 2}px` : 1.5,
+        }),
+      );
+    },
+    [dictDb, fontSize],
+  );
 
   // Track scroll position for saving
   const scrollPosRef = useRef(0);
@@ -341,8 +553,6 @@ export default function BookReaderScreen() {
   // Re-apply furigana when levels change
   useEffect(() => {
     if (!book || !dictDb || !modelRef.current || html === null) return;
-    const model = modelRef.current;
-    const isAozora = isAozoraRef.current;
     const hasFuri = Object.values(furiganaLevels).some(Boolean);
 
     (async () => {
@@ -354,45 +564,8 @@ export default function BookReaderScreen() {
         kanjiSetRef.current = null;
       }
 
-      // Re-slice from current position
       const charOffset = scrollPosRef.current || 0;
-      const screen = Dimensions.get("window");
-      const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
-      const startChar = Math.max(0, charOffset - cpp * 10);
-      const totalBudget = charOffset - startChar + cpp * 3;
-      const slice = sliceContent(model, startChar, totalBudget);
-      const targetLocalChar = charOffset - startChar;
-
-      // Update slice offset ref
-      sliceCharOffsetRef.current = startChar;
-      backPrefetchingRef.current = false;
-
-      let sliceHtml = isAozora
-        ? parseAozoraToHtml(slice.text, { strip: false })
-        : plainTextToHtml(slice.text);
-
-      if (hasFuri && kanjiSetRef.current) {
-        const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
-        if (surfaces.length > 0) {
-          const readings = await resolveFuriganaBatch(surfaces, dictDb);
-          const fMap = new Map<string, FuriganaEntry>(
-            Object.entries(readings) as [string, FuriganaEntry][],
-          );
-          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current);
-        }
-        sliceHtml = injectRubySpacers(sliceHtml);
-      }
-
-      // Send reload to WebView
-      readerRef.current?.postMessage(
-        JSON.stringify({
-          type: "reloadContent",
-          html: sliceHtml,
-          sliceCharOffset: startChar,
-          targetLocalChar,
-          lineHeight: hasFuri ? `${fontSize * 2}px` : 1.5,
-        }),
-      );
+      await reloadAtChar(charOffset);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [furiganaLevels, dictDb]);
@@ -587,6 +760,8 @@ export default function BookReaderScreen() {
           }
         } else if (msg.type === "backPrefetchDone") {
           backPrefetchingRef.current = false;
+        } else if (msg.type === "percentTap") {
+          setShowJumpSlider(true);
         }
       } catch {}
     },
@@ -737,6 +912,26 @@ export default function BookReaderScreen() {
           isDark={isDark}
           copied={copied}
           onCopy={handleCopy}
+        />
+      )}
+
+      {/* Jump slider */}
+      {showJumpSlider && modelRef.current && (
+        <JumpSlider
+          initialPercent={
+            modelRef.current.totalChars > 0
+              ? Math.round((scrollPosRef.current / modelRef.current.totalChars) * 100)
+              : 0
+          }
+          isDark={isDark}
+          onJump={async (pct) => {
+            setShowJumpSlider(false);
+            const model = modelRef.current;
+            if (!model) return;
+            const charOffset = Math.round((pct / 100) * model.totalChars);
+            await reloadAtChar(charOffset);
+          }}
+          onDismiss={() => setShowJumpSlider(false)}
         />
       )}
 

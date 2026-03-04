@@ -44,105 +44,11 @@ declare const window: Window & {
     prevPage();
   });
 
-  // Tap page number to jump to a page
+  // Tap page number to open jump slider
   state.pageNumEl!.addEventListener("click", function (e: Event) {
     e.stopPropagation();
-    const current = state.currentPage;
-    const total = state.totalPages;
-    const isMobile = !!(window as any).ReactNativeWebView;
-
-    if (isMobile) {
-      // Mobile: show top-anchored overlay bar above the keyboard
-      const overlay = document.createElement("div");
-      overlay.id = "page-jump-overlay";
-
-      const label = document.createElement("span");
-      label.textContent = "Go to page";
-      label.className = "page-jump-label";
-
-      const input = document.createElement("input");
-      input.type = "number";
-      input.inputMode = "numeric";
-      input.pattern = "[0-9]*";
-      input.value = String(current);
-      input.min = "1";
-      input.max = String(total);
-      input.id = "page-jump";
-
-      const totalLabel = document.createElement("span");
-      totalLabel.textContent = " / " + total;
-      totalLabel.className = "page-jump-label";
-
-      const pill = document.createElement("div");
-      pill.id = "page-jump-pill";
-      pill.appendChild(label);
-      pill.appendChild(input);
-      pill.appendChild(totalLabel);
-      overlay.appendChild(pill);
-      document.body.appendChild(overlay);
-
-      input.focus();
-      input.select();
-
-      function dismiss() {
-        if (overlay.parentNode) overlay.remove();
-      }
-
-      function commit() {
-        const val = parseInt(input.value, 10);
-        if (!isNaN(val) && val >= 1 && val <= total) {
-          goToPage(val);
-        }
-        dismiss();
-      }
-
-      input.addEventListener("keydown", function (ke: KeyboardEvent) {
-        if (ke.key === "Enter") {
-          ke.preventDefault();
-          input.blur();
-        }
-      });
-      input.addEventListener("blur", commit, { once: true });
-      overlay.addEventListener("click", function (oe: Event) {
-        if (oe.target === overlay) {
-          input.blur();
-        }
-      });
-    } else {
-      // Web: inline input in the page-num element
-      const el = state.pageNumEl!;
-
-      const input = document.createElement("input");
-      input.type = "number";
-      input.inputMode = "numeric";
-      input.pattern = "[0-9]*";
-      input.value = String(current);
-      input.min = "1";
-      input.max = String(total);
-      input.id = "page-jump";
-
-      el.textContent = "";
-      el.appendChild(input);
-      input.focus();
-      input.select();
-
-      function commit() {
-        const val = parseInt(input.value, 10);
-        if (!isNaN(val) && val >= 1 && val <= total) {
-          goToPage(val);
-        } else {
-          goToPage(current); // restores display
-        }
-        if (input.parentNode) input.remove();
-      }
-
-      input.addEventListener("keydown", function (ke: KeyboardEvent) {
-        if (ke.key === "Enter") {
-          ke.preventDefault();
-          input.blur();
-        }
-      });
-      input.addEventListener("blur", commit, { once: true });
+    if ((window as any).ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "percentTap" }));
     }
   });
 
