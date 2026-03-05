@@ -54,14 +54,15 @@ function makeTextWalker(): TreeWalker {
 
 export function clearHighlight(): void {
   if (useHighlightAPI) {
+    CSS.highlights!.delete(HIGHLIGHT_NAME);
+    if (activeHighlight) {
+      activeHighlight.clear();
+      activeHighlight = null;
+    }
     for (let i = 0; i < activeRanges.length; i++) {
       activeRanges[i].detach();
     }
     activeRanges = [];
-    if (activeHighlight) {
-      activeHighlight.clear();
-    }
-    CSS.highlights!.delete(HIGHLIGHT_NAME);
   } else {
     clearHighlightSpan();
   }
@@ -75,10 +76,16 @@ export function clearHighlight(): void {
 }
 
 function clearRubyHighlight(): void {
-  const els = state.contentEl!.querySelectorAll("ruby.highlight, ruby.highlight rt.highlight");
-  for (let i = 0; i < els.length; i++) {
-    els[i].classList.remove("highlight", "highlight-cont");
-    (els[i] as HTMLElement).style.boxShadow = "";
+  // Query rt separately so we catch any orphaned rt.highlight even if ruby class already removed
+  const rubies = state.contentEl!.querySelectorAll("ruby.highlight");
+  for (let i = 0; i < rubies.length; i++) {
+    rubies[i].classList.remove("highlight", "highlight-cont");
+    (rubies[i] as HTMLElement).style.boxShadow = "";
+  }
+  const rts = state.contentEl!.querySelectorAll("rt.highlight");
+  for (let i = 0; i < rts.length; i++) {
+    rts[i].classList.remove("highlight", "highlight-cont");
+    (rts[i] as HTMLElement).style.boxShadow = "";
   }
 }
 
