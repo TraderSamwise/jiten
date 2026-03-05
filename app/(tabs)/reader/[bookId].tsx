@@ -872,15 +872,17 @@ export default function BookReaderScreen() {
           >
             <View className="flex-row items-center justify-center gap-4">
               <Pressable
-                onPress={() => handleFontSizeChange(Math.max(14, fontSize - 2))}
-                className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+                onPress={() => handleFontSizeChange(Math.max(14, fontSize - 1))}
+                disabled={fontSize <= 14}
+                className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize <= 14 ? "opacity-30" : ""}`}
               >
                 <Text className="text-lg text-foreground">A-</Text>
               </Pressable>
               <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
               <Pressable
-                onPress={() => handleFontSizeChange(Math.min(32, fontSize + 2))}
-                className="h-10 w-10 items-center justify-center rounded-lg border border-border"
+                onPress={() => handleFontSizeChange(Math.min(32, fontSize + 1))}
+                disabled={fontSize >= 32}
+                className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize >= 32 ? "opacity-30" : ""}`}
               >
                 <Text className="text-lg text-foreground">A+</Text>
               </Pressable>
