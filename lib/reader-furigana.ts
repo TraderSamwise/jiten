@@ -253,7 +253,10 @@ export function extractSurfacesFromHtml(html: string, kanjiSet: FuriganaKanjiSet
   const surfaces: string[] = [];
 
   for (let i = 0; i < chars.length; i++) {
-    if (!kanjiMatches(chars[i], kanjiSet)) continue;
+    if (!isKanji(chars[i])) continue;
+    // Generate surfaces starting from any kanji position (not just filtered ones).
+    // A word like 反省会 needs to be extracted even if only 省 matches the filter,
+    // so the dictionary lookup returns the correct whole-word reading.
     const maxLen = Math.min(chars.length - i, 10);
     for (let len = maxLen; len >= 1; len--) {
       const surface = chars.slice(i, i + len).join("");
@@ -421,8 +424,11 @@ export function applyFuriganaToHtml(
       }
     }
 
-    // Try longest-first match if this char is a matching kanji
-    if (kanjiMatches(ch, kanjiSet)) {
+    // Try longest-first match if this char is a kanji.
+    // We match at any kanji position, but only emit ruby if the matched word
+    // contains at least one kanji from the filter set. This ensures whole-word
+    // context-aware readings (e.g. 反省会 gets はんせいかい, not 省=しょう alone).
+    if (isKanji(ch)) {
       let matched = false;
       const remaining = getVisibleCharsFrom(html, i);
 
@@ -439,6 +445,9 @@ export function applyFuriganaToHtml(
         }
 
         if (!isMatch) continue;
+
+        // Check if any kanji in the matched surface is in the filter set
+        if (!kanjiSet.all && !surfaceChars.some((c) => kanjiSet.chars.has(c))) continue;
 
         const entry = furiganaMap.get(surface)!;
 

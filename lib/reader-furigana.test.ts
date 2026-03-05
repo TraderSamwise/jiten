@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   applyFuriganaToHtml,
   injectRubySpacers,
+  extractSurfacesFromHtml,
   type FuriganaEntry,
   type FuriganaKanjiSet,
 } from "./reader-furigana";
@@ -92,6 +93,48 @@ describe("applyFuriganaToHtml", () => {
     expect(result).toContain("はな</p>");
     expect(result).toContain("<p>や</p>");
     expect(result).toContain("男が傘");
+  });
+
+  it("partial level filter: whole word gets furigana if any kanji matches", () => {
+    // 反省会: 反=N5, 省=N3, 会=N5. With only N3 selected, 省 matches.
+    // The whole word 反省会 should get furigana (はんせいかい), not just 省 alone.
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
+    const map = makeMap([
+      ["反省会", "反省会", "はんせいかい"],
+      ["省", "省", "しょう"],
+    ]);
+    const html = "<p>反省会をする</p>";
+    const result = applyFuriganaToHtml(html, map, n3Only);
+    expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
+    expect(result).not.toContain("<ruby>省<rt>しょう</rt></ruby>");
+  });
+
+  it("partial level filter: extractSurfacesFromHtml includes words containing filtered kanji", () => {
+    // With N3 filter where only 省 matches, we still need to extract "反省会"
+    // as a surface so the dictionary lookup can find the whole word.
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
+    const html = "<p>反省会をする</p>";
+    const surfaces = extractSurfacesFromHtml(html, n3Only);
+    // Must include surfaces starting from 反 (because 省 is nearby and matches)
+    expect(surfaces).toContain("反省会");
+  });
+
+  it("partial level filter: single kanji word still works", () => {
+    // If only the matching kanji appears alone, it should still get furigana
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
+    const map = makeMap([["省", "省", "しょう"]]);
+    const html = "<p>省の</p>";
+    const result = applyFuriganaToHtml(html, map, n3Only);
+    expect(result).toContain("<ruby>省<rt>しょう</rt></ruby>");
+  });
+
+  it("partial level filter: no furigana when no kanji in word matches filter", () => {
+    // 反対 — neither 反(N5) nor 対(N4) matches N3 filter
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
+    const map = makeMap([["反対", "反対", "はんたい"]]);
+    const html = "<p>反対する</p>";
+    const result = applyFuriganaToHtml(html, map, n3Only);
+    expect(result).not.toContain("<ruby>");
   });
 
   it("cross-boundary: long surface consumes chars from next paragraph", () => {
