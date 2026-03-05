@@ -40,6 +40,7 @@ export function setupMessageListener(): void {
       } else if (msg.type === "reloadContent") {
         const charBefore = measureFirstVisibleChar();
         if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
+        state.pageEl!.classList.toggle("furigana-active", !!msg.hasFurigana);
         state.pageEl!.innerHTML = "";
         const temp = document.createElement("div");
         temp.innerHTML = msg.html;
