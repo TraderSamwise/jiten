@@ -76,7 +76,7 @@ export function clearHighlight(): void {
 function clearRubyHighlight(): void {
   const els = state.contentEl!.querySelectorAll("ruby.highlight, ruby.highlight rt.highlight");
   for (let i = 0; i < els.length; i++) {
-    els[i].classList.remove("highlight");
+    els[i].classList.remove("highlight", "highlight-cont");
   }
 }
 
@@ -114,9 +114,11 @@ export function highlightAbsRange(absStart: number, absEnd: number): void {
     // Supplement by adding .highlight class to affected ruby elements.
     if (isSafari) {
       highlightRubyElements(absStart, absEnd);
+      markContinuationRubies();
     }
   } else {
     highlightAbsRangeSpan(absStart, absEnd);
+    markContinuationRubies();
   }
 }
 
@@ -168,6 +170,33 @@ function highlightRubyElements(absStart: number, absEnd: number): void {
     }
     pos += len;
     if (pos >= absEnd) break;
+  }
+}
+
+// ---------- Mark ruby highlights in 2nd+ column of their <p> ----------
+
+function markContinuationRubies(): void {
+  const rubies = state.contentEl!.querySelectorAll("ruby.highlight");
+  if (rubies.length === 0) return;
+  const lineW = parseFloat(getComputedStyle(state.contentEl!).lineHeight) || 24;
+
+  for (let i = 0; i < rubies.length; i++) {
+    const ruby = rubies[i];
+    // Find parent <p>
+    let p: Element | null = ruby.parentElement;
+    while (p && p.tagName !== "P") p = p.parentElement;
+    if (!p) continue;
+
+    const pRect = p.getBoundingClientRect();
+    const rubyRect = ruby.getBoundingClientRect();
+    // In vertical-rl, first column is at the right edge of the <p>.
+    // If the ruby's right edge is more than one line-width from the <p>'s right,
+    // it's in a continuation column.
+    if (pRect.right - rubyRect.right > lineW * 0.5) {
+      ruby.classList.add("highlight-cont");
+      const rts = ruby.getElementsByTagName("rt");
+      for (let j = 0; j < rts.length; j++) rts[j].classList.add("highlight-cont");
+    }
   }
 }
 
