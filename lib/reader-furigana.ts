@@ -14,13 +14,6 @@ const LEVEL_MAP: Record<string, number | null> = {
   nonJouyou: null,
 };
 
-/** True when only "other" (nonJouyou) is selected — no JLPT levels, no "all". */
-export function shouldExcludeCommon(levels: Record<FuriganaLevel, boolean>): boolean {
-  if (levels.all) return false;
-  if (levels.n5 || levels.n4 || levels.n3 || levels.n2 || levels.n1) return false;
-  return levels.nonJouyou;
-}
-
 export interface FuriganaKanjiSet {
   all: boolean;
   chars: Set<string>;
@@ -97,7 +90,6 @@ const BATCH_SIZE = 500;
 interface DictMatch {
   kanjiForm: string;
   kanaForm: string;
-  common: boolean;
 }
 
 async function batchLookup(
@@ -179,7 +171,7 @@ async function batchLookup(
       const kanjiForm = kanjiTexts.find((k) => k === word) || kanjiTexts[0] || word;
 
       if (!bestMatch || (common && !bestCommon)) {
-        bestMatch = { kanjiForm, kanaForm: kana, common };
+        bestMatch = { kanjiForm, kanaForm: kana };
         bestCommon = common;
       }
       if (bestCommon) break;
@@ -200,9 +192,7 @@ async function batchLookup(
 export async function resolveFuriganaBatch(
   surfaces: string[],
   dictDb: SQLite.SQLiteDatabase,
-  options?: { excludeCommon?: boolean },
 ): Promise<Record<string, { kanjiPart: string; reading: string; kanjiPartLen: number }>> {
-  const excludeCommon = options?.excludeCommon ?? false;
   // Deinflect all surfaces, collect unique search words
   const surfaceToDeinflected = new Map<string, string[]>();
   const allSearchWords = new Set<string>();
@@ -225,7 +215,6 @@ export async function resolveFuriganaBatch(
     for (const word of deinflected) {
       const match = lookupMap.get(word);
       if (match && match.kanaForm) {
-        if (excludeCommon && match.common) continue;
         const { kanjiPart, reading, kanjiPartLen } = stripOkurigana(
           match.kanjiForm,
           match.kanaForm,
