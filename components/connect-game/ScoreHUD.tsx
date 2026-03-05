@@ -66,13 +66,14 @@ export function ScoreHUD({ state }: ScoreHUDProps) {
 
       {/* Timer / Lives */}
       <View className="items-end">
-        {state.mode === "timed" ? (
+        {state.mode === "timed" && (
           <Text
             className={`text-xl font-bold ${timeSeconds <= 10 ? "text-red-400" : "text-foreground"}`}
           >
             {minutes}:{seconds.toString().padStart(2, "0")}
           </Text>
-        ) : (
+        )}
+        {state.mode === "survival" && (
           <View className="flex-row gap-1">
             {Array.from({ length: 3 }).map((_, i) => (
               <Text

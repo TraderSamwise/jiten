@@ -28,7 +28,7 @@ import {
   type ConnectBubbleKinds,
   type SpeedPreset,
 } from "@/stores/settings";
-import type { Phase, GameState, BubbleKind } from "@/lib/connect-game/types";
+import type { Phase, GameState, GameMode, BubbleKind } from "@/lib/connect-game/types";
 import type { TimedDuration } from "@/lib/connect-game/types";
 
 export default function ConnectGameScreen() {
@@ -224,7 +224,7 @@ export default function ConnectGameScreen() {
     const fieldWidth = screenWidth;
     const fieldHeight = screenHeight - insets.top - 52 - 60 - insets.bottom; // header + HUD + bottom
 
-    const mode = gameMode === "zen" ? ("zen" as const) : ("timed" as const);
+    const mode = gameMode as GameMode;
     const duration = timedDuration as TimedDuration;
 
     const enabledKinds = new Set<BubbleKind>(
@@ -295,11 +295,11 @@ export default function ConnectGameScreen() {
   }, []);
   /* eslint-enable react-hooks/immutability */
 
-  // ─── Zen mode exit via X button ───
+  // ─── Manual exit via X button (zen/survival) ───
 
   const handleClose = useCallback(async () => {
     const state = gameRef.current;
-    if (state && state.phase === "playing" && state.mode === "zen") {
+    if (state && state.phase === "playing" && (state.mode === "zen" || state.mode === "survival")) {
       state.paused = true;
       setNow(Date.now());
       const shouldEnd = await confirm("End game?", `Your score is ${state.score.toLocaleString()}`);
@@ -368,6 +368,7 @@ export default function ConnectGameScreen() {
                 <SegmentedControl
                   options={[
                     { value: "timed" as ConnectGameMode, label: "Timed" },
+                    { value: "survival" as ConnectGameMode, label: "Survival" },
                     { value: "zen" as ConnectGameMode, label: "Zen" },
                   ]}
                   value={gameMode}
