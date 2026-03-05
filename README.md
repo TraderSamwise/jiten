@@ -45,15 +45,192 @@ Config files: `eslint.config.mjs`, `.prettierrc`
 
 ## Reader Architecture
 
-The ebook reader uses **JS-measured virtualized pagination** (not CSS columns):
+The reader is a vertical Japanese ebook reader with interactive furigana, tap-to-lookup dictionary, and streaming pagination. It supports three content sources: Aozora Bunko (public domain literature), Syosetu (web novels), and plain text file imports.
 
-1. Full HTML content is embedded in a hidden `<div id="raw">` element
-2. On init, JS extracts child elements into a `blockHtmls[]` array
-3. `paginate()` measures which blocks fit per page using an off-screen div
-4. `renderPage(n)` swaps only the current page's blocks into the DOM
-5. Hidden buffer divs (`#buf-prev`, `#buf-next`) hold adjacent page text for word lookup at boundaries
+### High-level flow
 
-No scrolling is involved — page navigation directly swaps DOM content.
+```
+Book content (raw text / Aozora markup / HTML)
+  → aozora-parser.ts (parse markup to HTML)
+  → reader-furigana.ts (inject <ruby> tags based on JLPT level settings)
+  → reader-model.ts (slice into streamable chunks by visible char count)
+  → reader-html.ts (wrap in full HTML document with CSS + JS)
+  → ReaderView.{native,web}.tsx (render in WebView/iframe)
+  → reader/src/*.ts (pagination, gestures, highlight, dictionary lookup bridge)
+```
+
+### Pagination engine (`lib/reader/src/`)
+
+The reader uses **column-based vertical pagination** in a WebView:
+
+1. Content is placed in a `vertical-rl` (right-to-left) writing-mode container
+2. `paginate()` measures `scrollWidth` and divides by column width to get total pages
+3. Navigation sets `scrollLeft` to show the target page (columns flow right-to-left)
+4. `alignToTargetChar()` snaps the scroll position to show a specific character in the rightmost visible column — used to preserve reading position across font size changes and content reloads
+5. Streaming prefetch: `replaceOffscreenContent()` swaps in next-slice HTML into the right (offscreen) side; `prependBackSlice()` prepends content for backward navigation
+
+No virtual DOM or framework — vanilla TypeScript compiled to a single JS bundle embedded in the HTML.
+
+#### Key modules
+
+| File                           | Purpose                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| `lib/reader/src/pagination.ts` | Page measurement, navigation, scroll alignment, streaming content swap             |
+| `lib/reader/src/state.ts`      | Global state: current page, column width, char offsets, DOM refs                   |
+| `lib/reader/src/highlight.ts`  | CSS Highlight API (with Safari `.highlight` class fallback) for word selection     |
+| `lib/reader/src/text.ts`       | Tree walker for visible text (skips `<rt>`), caret resolution from tap position    |
+| `lib/reader/src/touch.ts`      | Swipe detection (page turns), tap (dictionary lookup), long-press drag select      |
+| `lib/reader/src/mouse.ts`      | Click select, drag select, alt-click for context menu                              |
+| `lib/reader/src/bridge.ts`     | `postMessage` listener: font size changes, scroll-to, highlight, content streaming |
+| `lib/reader/src/index.ts`      | Initialization: setup content, attach handlers, apply initial scroll               |
+| `lib/reader/src/reader.css`    | Vertical writing mode, ruby styling, highlight pseudo-element, page controls       |
+
+### Content pipeline
+
+#### Aozora parser (`lib/aozora-parser.ts`)
+
+Converts Aozora Bunko markup to HTML:
+
+- Ruby: `｜漢字《かんじ》` → `<ruby>漢字<rt>かんじ</rt></ruby>`
+- Bouten (emphasis dots): `［＃「text」に傍点］` → `<em class="bouten">text</em>`
+- Strips header/footer boilerplate, heading annotations, indent markers
+- Halfwidth punctuation → fullwidth (for vertical text consistency)
+- `hasAozoraMarkup()` detects format; `plainTextToHtml()` wraps plain text in `<p>` tags
+
+#### Text model & slicing (`lib/reader-model.ts`)
+
+Handles format-aware text measurement and slicing for streaming pagination:
+
+- `parseBookContent()` → `TextModel` with total visible char count
+- `visibleTextLength()` counts chars in HTML (skips tags, `<rt>` content, treats `&amp;` etc. as 1 char)
+- `sliceContent()` extracts a chunk at a visible char offset with format-aware boundary snapping
+- `calcCharsPerPage()` estimates viewport capacity from font size and furigana toggle
+- `calcTotalPages()` derives total pages for the progress bar
+
+#### HTML generation (`lib/reader-html.ts`)
+
+`generateReaderHtml(content, options)` wraps content in a full HTML document:
+
+- Injects CSS (theme colors, font size, line height doubled when furigana active)
+- Embeds content in `<div id="page">`
+- Injects `window.__READER_CONFIG__` with scroll position, char offset, total chars, furigana state
+- Appends the reader JS bundle
+
+### Furigana system (`lib/reader-furigana.ts`)
+
+Generates `<ruby>` annotations for kanji based on user's JLPT level settings. The pipeline:
+
+1. **Build kanji set** — `buildFuriganaKanjiSet()` queries dictionary for kanji at enabled JLPT levels. Returns `{ all: true }` or a `Set<string>` of specific characters.
+
+2. **Extract surfaces** — `extractSurfacesFromHtml()` scans visible text for kanji substrings (up to 10 chars). Also scans backward through preceding kana (up to 4 chars) to capture mixed kana-kanji words like しょう油, お寺, ご飯.
+
+3. **Batch dictionary lookup** — `batchLookup()` runs a three-phase query:
+   - Phase A: Find entry IDs by kanji table search
+   - Phase B: Batch fetch kanji forms, kana readings, common flags
+   - Phase C: Select best match per surface (prefer common entries, deinflect conjugated forms)
+
+4. **Strip okurigana** — `stripOkurigana()` isolates the kanji portion from inflected words (e.g., 食べる → kanji=食, reading=た) so `<ruby>` wraps only the kanji.
+
+5. **Apply to HTML** — `applyFuriganaToHtml()` is a single-pass state machine that:
+   - Skips HTML tags, existing `<ruby>` blocks, `<rt>` content
+   - Uses longest-first matching (しょう油 wins over 油 alone)
+   - Respects paragraph boundaries (never matches across `</p><p>`)
+   - Filters by kanji set (only annotates kanji at the user's selected JLPT levels, but if any kanji in a multi-kanji word matches, the whole word gets furigana)
+
+#### Level filtering behavior
+
+With partial JLPT levels enabled (e.g., only N3):
+
+- A word like 反省会 (反=N5, 省=N3, 会=N5) gets furigana if **any** kanji in the word matches the filter
+- The whole word gets a single `<ruby>` with the full reading, not individual kanji
+- Words where **no** kanji matches the filter get no furigana
+
+### Dictionary lookup in reader
+
+#### Smart lookup (`lib/smart-lookup.ts`)
+
+On tap in the reader:
+
+1. `resolveCaretAt()` maps tap coordinates to a text node + offset (ruby-aware, skips `<rt>`)
+2. Reader sends text window (context before/after tap point) to React Native via `postMessage`
+3. `smartLookup()` finds the longest dictionary match from that position, using deinflection for conjugated verbs
+4. `selectionLookup()` handles drag-selected text, expanding boundaries to find longer matches
+5. `nameLookup()` searches the extended DB for proper nouns (when name mode is enabled)
+6. Result displayed in `DictionaryPopup`; matched text highlighted in reader via bridge message
+
+### Book storage
+
+Books are stored in the user SQLite database:
+
+```sql
+CREATE TABLE books (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'import',  -- 'aozora', 'syosetu', 'import'
+  aozora_id INTEGER,
+  source_id TEXT,
+  raw_content TEXT,                        -- original text (Aozora markup or plain)
+  html_content TEXT,                       -- cached parsed HTML (if pre-processed)
+  scroll_position REAL NOT NULL DEFAULT 0, -- 0.0-1.0 percentage
+  char_offset INTEGER NOT NULL DEFAULT 0,  -- absolute visible char index
+  total_chars INTEGER NOT NULL DEFAULT 0,
+  font_size INTEGER NOT NULL DEFAULT 22,   -- per-book font size (14-32)
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_read_at TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0
+);
+```
+
+Reading position is persisted as both a scroll percentage and an absolute char offset. On resume, `alignToTargetChar()` uses the char offset for pixel-accurate restoration regardless of viewport size changes.
+
+### Reader settings (`stores/settings.ts`)
+
+Persisted via Jotai atoms → AsyncStorage:
+
+- **Furigana levels**: `readerFuriganaLevelsAtom` — toggles for N5, N4, N3, N2, N1, nonJouyou, all
+- **Page animations**: `readerPageAnimationsAtom` — boolean for page turn transitions
+
+Font size is per-book (stored in `books` table). Furigana levels and page animations are global.
+
+### Book discovery
+
+#### Aozora Bunko (`lib/aozora-api.ts`)
+
+- Downloads CSV catalog ZIP (~20K public domain books), caches in memory
+- `searchBooks()` — case-insensitive search on title/author
+- `fetchBookContent()` — downloads XHTML, strips boilerplate, returns raw text
+
+#### Syosetu (`lib/syosetu-api.ts`)
+
+- `searchNovels()` — queries `api.syosetu.com` for web novels by title/author
+- `fetchTableOfContents()` — paginated chapter list from `ncode.syosetu.com`
+- `fetchChapterText()` — scrapes chapter text from novel HTML
+
+#### File import
+
+- Uses `DocumentPicker` (native) or file input (web) for `.txt` files
+- Auto-detects UTF-8, falls back to Shift_JIS if garbled
+- Saved as `raw_content` with `source: 'import'`
+
+### Reader routing (`app/(tabs)/reader/`)
+
+| Route             | Screen         | Purpose                                  |
+| ----------------- | -------------- | ---------------------------------------- |
+| `index`           | Library        | Book list with import/browse/delete      |
+| `browse`          | Aozora search  | Search and download Aozora Bunko books   |
+| `browse-syosetu`  | Syosetu search | Search and browse web novels             |
+| `novel-syosetu`   | Chapter list   | Table of contents for a Syosetu novel    |
+| `[bookId]`        | Reader         | Full-screen reading (headerShown: false) |
+| `word/[id]`       | Word detail    | Dictionary entry from reader lookup      |
+| `kanji/[literal]` | Kanji detail   | Kanji detail from reader lookup          |
+
+### Platform split (`components/ReaderView.{native,web}.tsx`)
+
+- **Native**: Wraps `react-native-webview` WebView
+- **Web**: Creates sandboxed iframe, injects `ReactNativeWebView` shim so the same `postMessage` bridge works on both platforms
+- Both expose `ReaderViewRef` with `postMessage()` for the parent `[bookId].tsx` screen to communicate with the reader JS
 
 ## Navigation
 
