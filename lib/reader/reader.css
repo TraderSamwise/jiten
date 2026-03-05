@@ -19,7 +19,7 @@ body {
   font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
   font-size: __FONT_SIZE__px;
   line-height: __LINE_HEIGHT__;
-  padding: 16px;
+  padding: 16px 8px 16px 2px;
   width: 100%;
   height: calc(100vh - 44px);
   overflow: hidden;
