@@ -385,16 +385,25 @@ export function prevPage(): void {
 // During drag-select near left edge: scroll slightly to reveal next column.
 // Uses actual scrollLeft as base, stores pre-shift position.
 export function expandPageForHighlight(): boolean {
-  if (state.shiftOffset > 0) return false;
-  const currentOffset = -state.pageEl!.scrollLeft;
-  state.preShiftScroll = currentOffset;
+  const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+  const lineW =
+    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || Math.round(fontSize * 1.5);
   const cW = state.columnWidth;
   const maxScroll = (state.totalPages - 1) * cW;
-  const newOffset = Math.min(currentOffset + cW, maxScroll);
+  // Rate-limit: at most one shift per 200ms
+  if (Date.now() - state.lastShiftTime < 200) return false;
+  // Cap total shift at one page width
+  if (state.shiftOffset >= cW) return false;
+  // Save pre-shift position on first call
+  if (state.shiftOffset === 0) {
+    state.preShiftScroll = -state.pageEl!.scrollLeft;
+  }
+  const currentOffset = -state.pageEl!.scrollLeft;
+  const newOffset = Math.min(currentOffset + lineW, maxScroll);
   if (newOffset === currentOffset) return false;
-  state.shiftOffset = newOffset - currentOffset;
+  state.shiftOffset += newOffset - currentOffset;
   state.lastShiftTime = Date.now();
-  state.pageEl!.scrollLeft = -newOffset;
+  state.pageEl!.scrollTo({ left: -newOffset, behavior: "smooth" });
   return true;
 }
 
