@@ -100,6 +100,8 @@ export interface GameState {
   speedBonusThreshold: number;
   /** Speed preset for wave config scaling */
   speedPreset: SpeedPreset;
+  /** Which bubble kinds are enabled for this game */
+  enabledKinds: Set<BubbleKind>;
 }
 
 // ─── Scoring constants ───

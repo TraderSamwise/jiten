@@ -23,10 +23,12 @@ import {
   connectGameModeAtom,
   connectTimedDurationAtom,
   connectSpeedPresetAtom,
+  connectBubbleKindsAtom,
   type ConnectGameMode,
+  type ConnectBubbleKinds,
   type SpeedPreset,
 } from "@/stores/settings";
-import type { Phase, GameState } from "@/lib/connect-game/types";
+import type { Phase, GameState, BubbleKind } from "@/lib/connect-game/types";
 import type { TimedDuration } from "@/lib/connect-game/types";
 
 export default function ConnectGameScreen() {
@@ -53,6 +55,7 @@ export default function ConnectGameScreen() {
   const [gameMode, setGameMode] = useAtom(connectGameModeAtom);
   const [timedDuration, setTimedDuration] = useAtom(connectTimedDurationAtom);
   const [speedPreset, setSpeedPreset] = useAtom(connectSpeedPresetAtom);
+  const [bubbleKinds, setBubbleKinds] = useAtom(connectBubbleKindsAtom);
 
   // Word filter (SRS-based counts + filtering)
   const wordFilter = useWordFilter(listId);
@@ -199,6 +202,16 @@ export default function ConnectGameScreen() {
 
   // ─── Start game ───
 
+  // Bubble kind toggle — enforce at least 2 selected
+  const toggleBubbleKind = useCallback(
+    (kind: keyof ConnectBubbleKinds) => {
+      const enabledCount = Object.values(bubbleKinds).filter(Boolean).length;
+      if (bubbleKinds[kind] && enabledCount <= 2) return; // can't disable if only 2 left
+      setBubbleKinds({ ...bubbleKinds, [kind]: !bubbleKinds[kind] });
+    },
+    [bubbleKinds, setBubbleKinds],
+  );
+
   const startGame = useCallback(async () => {
     if (!dictDb || !listId) return;
 
@@ -214,7 +227,19 @@ export default function ConnectGameScreen() {
     const mode = gameMode === "zen" ? ("zen" as const) : ("timed" as const);
     const duration = timedDuration as TimedDuration;
 
-    const state = createInitialState(mode, duration, entries, fieldWidth, fieldHeight, speedPreset);
+    const enabledKinds = new Set<BubbleKind>(
+      (Object.entries(bubbleKinds) as [BubbleKind, boolean][]).filter(([, v]) => v).map(([k]) => k),
+    );
+
+    const state = createInitialState(
+      mode,
+      duration,
+      entries,
+      fieldWidth,
+      fieldHeight,
+      speedPreset,
+      enabledKinds,
+    );
 
     // Spawn first wave
     const initialBubbles = spawnWave(state, Date.now());
@@ -234,6 +259,7 @@ export default function ConnectGameScreen() {
     gameMode,
     timedDuration,
     speedPreset,
+    bubbleKinds,
   ]);
 
   const handleStateChange = useCallback(() => {
@@ -380,6 +406,42 @@ export default function ConnectGameScreen() {
                   onChange={setSpeedPreset}
                   fullWidth
                 />
+              </View>
+
+              {/* Bubble kinds */}
+              <View>
+                <Text className="text-base font-semibold text-foreground mb-2">Show</Text>
+                <View className="flex-row gap-2">
+                  {(
+                    [
+                      ["kanji", "Kanji"],
+                      ["reading", "Kana"],
+                      ["meaning", "Definition"],
+                    ] as const
+                  ).map(([kind, label]) => {
+                    const enabled = bubbleKinds[kind];
+                    const enabledCount = Object.values(bubbleKinds).filter(Boolean).length;
+                    const locked = enabled && enabledCount <= 2;
+                    return (
+                      <Pressable
+                        key={kind}
+                        onPress={() => toggleBubbleKind(kind)}
+                        className={`flex-1 items-center py-2 rounded-lg border ${
+                          enabled ? "border-primary bg-primary/15" : "border-border bg-muted/30"
+                        }`}
+                        style={locked ? { opacity: 0.6 } : undefined}
+                      >
+                        <Text
+                          className={`text-sm font-medium ${
+                            enabled ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
 
               {/* High score */}
