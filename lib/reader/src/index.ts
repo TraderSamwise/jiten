@@ -1,7 +1,12 @@
 import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { guessWordLength, guessWordStart } from "./japanese";
-import { nodeOffsetToAbsolute, getTextFromPosition, getTextBeforePosition } from "./text";
+import {
+  nodeOffsetToAbsolute,
+  getTextFromPosition,
+  getTextBeforePosition,
+  resolveCaretAt,
+} from "./text";
 import { clearHighlight, applyHighlight } from "./highlight";
 import {
   setupContent,
@@ -94,11 +99,10 @@ declare const window: Window & {
 
     clearHighlight();
 
-    const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    if (!range) return;
-    const node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) return;
-    const offset = range.startOffset;
+    const caret = resolveCaretAt(e.clientX, e.clientY);
+    if (!caret) return;
+    const node = caret.node;
+    const offset = caret.offset;
 
     // Check we actually tapped on a Japanese character
     const charAtTap = node.textContent!.charAt(offset);
