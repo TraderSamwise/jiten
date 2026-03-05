@@ -2,7 +2,7 @@ import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "@/db/user-db";
 import { STARTER_BOOK_CONTENT } from "@/lib/starter-book-content";
 
-const FLAG_KEY = "default_lists_seeded";
+const FLAG_KEY = "default_lists_seeded_v2";
 const VOCAB_FLAG_KEY = "default_vocab_lists_seeded";
 const BOOK_FLAG_KEY = "default_book_seeded";
 
