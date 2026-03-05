@@ -54,6 +54,16 @@ function makeTextWalker(): TreeWalker {
 
 export function clearHighlight(): void {
   if (useHighlightAPI) {
+    // Safari vertical-rl: highlight removal computes wrong repaint rects,
+    // leaving stale painted pixels. Adding a full-content range before
+    // deletion forces WebKit to repaint the entire content area.
+    if (isSafari && activeHighlight && state.pageEl) {
+      try {
+        const fullRange = document.createRange();
+        fullRange.selectNodeContents(state.pageEl);
+        activeHighlight.add(fullRange);
+      } catch {}
+    }
     CSS.highlights!.delete(HIGHLIGHT_NAME);
     if (activeHighlight) {
       activeHighlight.clear();
