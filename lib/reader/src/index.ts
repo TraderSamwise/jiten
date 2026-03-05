@@ -13,6 +13,7 @@ import {
   updateSizing,
   paginate,
   alignToTargetChar,
+  measureFirstVisibleChar,
   goToPage,
   nextPage,
   prevPage,
@@ -168,15 +169,16 @@ declare const window: Window & {
     }
   });
 
-  // Resize handler
+  // Resize handler: align to canonical char instead of page ratio
   window.addEventListener("resize", function () {
-    const ratio = state.totalPages > 1 ? (state.currentPage - 1) / (state.totalPages - 1) : 0;
+    const charBefore =
+      state.canonicalCharOffset >= 0
+        ? state.canonicalCharOffset - state.sliceCharOffset
+        : measureFirstVisibleChar();
     updateSizing();
     requestAnimationFrame(function () {
       paginate();
-      state.currentPage = Math.round(ratio * (state.totalPages - 1)) + 1;
-      state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
-      goToPage(state.currentPage);
+      alignToTargetChar(charBefore);
     });
   });
 

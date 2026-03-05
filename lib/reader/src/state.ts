@@ -12,6 +12,7 @@ export const state = {
   // Highlight-scroll: extra shift when dragging near page edge
   shiftOffset: 0,
   lastShiftTime: 0,
+  preShiftScroll: 0, // scrollLeft before highlight shift, as positive offset
 
   // DOM element refs — set during init
   contentEl: null as HTMLElement | null,

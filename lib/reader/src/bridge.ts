@@ -9,14 +9,20 @@ import {
   prependBackSlice,
 } from "./pagination";
 
+function canonicalOrMFVC(): number {
+  return state.canonicalCharOffset >= 0
+    ? state.canonicalCharOffset - state.sliceCharOffset
+    : measureFirstVisibleChar();
+}
+
 // Listen for messages from React Native
 export function setupMessageListener(): void {
   window.addEventListener("message", function (e: MessageEvent) {
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === "setFontSize") {
-        // Capture current reading position before font change
-        const charBefore = measureFirstVisibleChar();
+        // Use canonical char to prevent drift on repeated font changes
+        const charBefore = canonicalOrMFVC();
         state.contentEl!.style.fontSize = msg.size + "px";
         if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
         requestAnimationFrame(function () {
@@ -24,6 +30,7 @@ export function setupMessageListener(): void {
           alignToTargetChar(charBefore);
         });
       } else if (msg.type === "scrollTo") {
+        state.canonicalCharOffset = -1; // user navigated — MFVC becomes truth
         paginate();
         const page = Math.round(msg.position * (state.totalPages - 1)) + 1;
         goToPage(page);
@@ -38,7 +45,7 @@ export function setupMessageListener(): void {
       } else if (msg.type === "setPrevContent") {
         prependBackSlice(msg.html, msg.charCount);
       } else if (msg.type === "reloadContent") {
-        const charBefore = measureFirstVisibleChar();
+        const charBefore = canonicalOrMFVC();
         if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
         state.pageEl!.classList.toggle("furigana-active", !!msg.hasFurigana);
         state.pageEl!.innerHTML = "";
