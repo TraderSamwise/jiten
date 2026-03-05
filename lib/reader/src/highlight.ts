@@ -12,6 +12,10 @@ interface HighlightRegistry {
   delete(name: string): boolean;
 }
 
+// Safari supports CSS.highlights but ::highlight() doesn't paint inside <ruby>.
+// We use the Highlight API everywhere it's available (including Safari), and
+// supplement with a .highlight class on <ruby> elements for Safari.
+const isSafari = /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 const useHighlightAPI = typeof CSS !== "undefined" && CSS.highlights !== undefined;
 const HIGHLIGHT_NAME = "word-highlight";
 
@@ -28,6 +32,15 @@ function isInsideRt(node: Node): boolean {
   return false;
 }
 
+function isInsideRuby(node: Node): Element | null {
+  let parent = node.parentNode;
+  while (parent && parent !== state.contentEl) {
+    if ((parent as Element).tagName === "RUBY") return parent as Element;
+    parent = parent.parentNode;
+  }
+  return null;
+}
+
 function makeTextWalker(): TreeWalker {
   return document.createTreeWalker(state.contentEl!, NodeFilter.SHOW_TEXT, {
     acceptNode(node: Node) {
@@ -40,7 +53,6 @@ function makeTextWalker(): TreeWalker {
 
 export function clearHighlight(): void {
   if (useHighlightAPI) {
-    // Detach each range and clear the highlight object
     for (let i = 0; i < activeRanges.length; i++) {
       activeRanges[i].detach();
     }
@@ -53,8 +65,18 @@ export function clearHighlight(): void {
     clearHighlightSpan();
   }
 
+  // Always clear ruby highlight classes (used as supplement on Safari)
+  clearRubyHighlight();
+
   if (state.dragMode !== "selecting") {
     animateResetShift();
+  }
+}
+
+function clearRubyHighlight(): void {
+  const els = state.contentEl!.querySelectorAll("ruby.highlight, ruby.highlight rt.highlight");
+  for (let i = 0; i < els.length; i++) {
+    els[i].classList.remove("highlight");
   }
 }
 
@@ -88,6 +110,11 @@ export function highlightAbsRange(absStart: number, absEnd: number): void {
 
   if (useHighlightAPI) {
     highlightAbsRangeAPI(absStart, absEnd);
+    // On Safari, ::highlight() doesn't paint inside <ruby>.
+    // Supplement by adding .highlight class to affected ruby elements.
+    if (isSafari) {
+      highlightRubyElements(absStart, absEnd);
+    }
   } else {
     highlightAbsRangeSpan(absStart, absEnd);
   }
@@ -98,7 +125,6 @@ export function highlightAbsRange(absStart: number, absEnd: number): void {
 function highlightAbsRangeAPI(absStart: number, absEnd: number): void {
   const walker = makeTextWalker();
 
-  // Collect per-node Ranges (skip RT, match span approach's visual behavior)
   const ranges: Range[] = [];
   let pos = 0;
   while (walker.nextNode()) {
@@ -122,6 +148,29 @@ function highlightAbsRangeAPI(absStart: number, absEnd: number): void {
   CSS.highlights!.set(HIGHLIGHT_NAME, activeHighlight);
 }
 
+// ---------- Ruby supplement for Safari ----------
+
+function highlightRubyElements(absStart: number, absEnd: number): void {
+  const walker = makeTextWalker();
+  const rubies = new Set<Element>();
+  let pos = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const len = node.textContent!.length;
+    if (pos + len > absStart && pos < absEnd) {
+      const ruby = isInsideRuby(node);
+      if (ruby && !rubies.has(ruby)) {
+        ruby.classList.add("highlight");
+        const rts = ruby.getElementsByTagName("rt");
+        for (let i = 0; i < rts.length; i++) rts[i].classList.add("highlight");
+        rubies.add(ruby);
+      }
+    }
+    pos += len;
+    if (pos >= absEnd) break;
+  }
+}
+
 // ---------- Span fallback path ----------
 
 function highlightAbsRangeSpan(absStart: number, absEnd: number): void {
@@ -139,9 +188,23 @@ function highlightAbsRangeSpan(absStart: number, absEnd: number): void {
     if (pos >= absEnd) break;
   }
 
+  const wrappedRubies = new Set<Element>();
+
   for (const { node, start } of nodes) {
     const sliceStart = Math.max(0, absStart - start);
     const sliceEnd = Math.min(node.textContent!.length, absEnd - start);
+
+    // If inside a <ruby>, add highlight class directly (no DOM restructuring)
+    const ruby = isInsideRuby(node);
+    if (ruby) {
+      if (!wrappedRubies.has(ruby)) {
+        ruby.classList.add("highlight");
+        const rts = ruby.getElementsByTagName("rt");
+        for (let i = 0; i < rts.length; i++) rts[i].classList.add("highlight");
+        wrappedRubies.add(ruby);
+      }
+      continue;
+    }
 
     let target: Text = node;
     if (sliceStart > 0) {
