@@ -18,6 +18,7 @@ interface HighlightRegistry {
 const isSafari = /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 const useHighlightAPI = typeof CSS !== "undefined" && CSS.highlights !== undefined;
 const HIGHLIGHT_NAME = "word-highlight";
+const highlightBg: string = (window as any).__READER_CONFIG__?.highlightBg || "#2e2e5f";
 
 // Keep references so we can clear ranges directly
 let activeHighlight: Highlight | null = null;
@@ -202,7 +203,7 @@ function markContinuationRubies(): void {
         rts[j].classList.add("highlight-cont");
         const rtRect = rts[j].getBoundingClientRect();
         const shadow = rtRect.right - rubyRect.right;
-        (rts[j] as HTMLElement).style.boxShadow = shadow + "px 0 0 rgba(255, 255, 0, 0.4)";
+        (rts[j] as HTMLElement).style.boxShadow = shadow + "px 0 0 " + highlightBg + "";
       }
     }
   }
