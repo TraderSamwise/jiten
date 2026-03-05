@@ -1,9 +1,11 @@
 import React, { useEffect } from "react";
+import { View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSequence,
   withTiming,
+  Easing,
   runOnJS,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
@@ -19,17 +21,23 @@ interface MatchFlashProps {
 export function MatchFlash({ match, x, y, onDone }: MatchFlashProps) {
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
-  const scale = useSharedValue(0.5);
+  const scale = useSharedValue(0.3);
 
   useEffect(() => {
+    // Punch in big then settle
     scale.value = withSequence(
-      withTiming(1.2, { duration: 150 }),
-      withTiming(1, { duration: 100 }),
+      withTiming(1.5, { duration: 100, easing: Easing.out(Easing.back(2)) }),
+      withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) }),
     );
-    translateY.value = withTiming(-60, { duration: 1200 });
-    opacity.value = withTiming(0, { duration: 1200 }, () => {
-      runOnJS(onDone)();
-    });
+    // Float up
+    translateY.value = withTiming(-70, { duration: 900, easing: Easing.out(Easing.quad) });
+    // Hold fully visible then fade
+    opacity.value = withSequence(
+      withTiming(1, { duration: 450 }),
+      withTiming(0, { duration: 450 }, () => {
+        runOnJS(onDone)();
+      }),
+    );
   }, [translateY, opacity, scale, onDone]);
 
   const style = useAnimatedStyle(() => ({
@@ -37,21 +45,48 @@ export function MatchFlash({ match, x, y, onDone }: MatchFlashProps) {
     opacity: opacity.value,
   }));
 
-  const color = match.type === "triple" ? "text-yellow-300" : "text-green-300";
-  const label = match.type === "triple" ? "TRIPLE!" : "MATCH!";
+  const isTriple = match.type === "triple";
+  const label = isTriple ? "TRIPLE!" : "MATCH!";
+  const bg = isTriple ? "#b45309" : "#15803d";
+  const border = isTriple ? "#fbbf24" : "#4ade80";
 
   return (
     <Animated.View
-      style={[{ position: "absolute", left: x - 50, top: y - 20, width: 100, zIndex: 100 }, style]}
+      style={[
+        {
+          position: "absolute",
+          left: x - 75,
+          top: y - 28,
+          width: 150,
+          zIndex: 100,
+          alignItems: "center",
+        },
+        style,
+      ]}
       pointerEvents="none"
     >
-      <Text className={`text-center font-bold text-lg ${color}`}>{label}</Text>
-      <Text className="text-center font-semibold text-sm text-yellow-200">
-        +{match.totalPoints}
-      </Text>
-      {match.speedBonus > 0 && (
-        <Text className="text-center text-xs text-cyan-300">SPEED +{match.speedBonus}</Text>
-      )}
+      <View
+        style={{
+          backgroundColor: bg,
+          borderWidth: 2,
+          borderColor: border,
+          borderRadius: 12,
+          paddingHorizontal: 16,
+          paddingVertical: 6,
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 22, fontWeight: "900", textAlign: "center" }}>
+          {label}
+        </Text>
+        <Text style={{ color: "#fef08a", fontSize: 16, fontWeight: "700", textAlign: "center" }}>
+          +{match.totalPoints}
+        </Text>
+        {match.speedBonus > 0 && (
+          <Text style={{ color: "#a5f3fc", fontSize: 13, fontWeight: "600", textAlign: "center" }}>
+            SPEED +{match.speedBonus}
+          </Text>
+        )}
+      </View>
     </Animated.View>
   );
 }

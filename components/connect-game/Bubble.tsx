@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,6 +11,100 @@ import Animated, {
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import type { Bubble as BubbleType } from "@/lib/connect-game/types";
+
+// ─── Confetti burst ───
+
+const PARTICLE_COUNT = 10;
+const CONFETTI_COLORS = [
+  "#4ade80", // green-400
+  "#22c55e", // green-500
+  "#86efac", // green-300
+  "#fbbf24", // amber-400
+  "#fde68a", // amber-200
+  "#ffffff",
+];
+
+interface ParticleData {
+  angle: number;
+  distance: number;
+  width: number;
+  height: number;
+  color: string;
+  delay: number;
+  spinDir: number; // +1 or -1
+  initialRotation: number;
+}
+
+function generateParticles(): ParticleData[] {
+  return Array.from({ length: PARTICLE_COUNT }, () => ({
+    angle: Math.random() * Math.PI * 2,
+    distance: 35 + Math.random() * 45,
+    width: 4 + Math.random() * 5,
+    height: 7 + Math.random() * 6,
+    color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    delay: Math.random() * 80,
+    spinDir: Math.random() > 0.5 ? 1 : -1,
+    initialRotation: Math.random() * 360,
+  }));
+}
+
+function useParticleData(): ParticleData[] {
+  const [data] = useState(generateParticles);
+  return data;
+}
+
+function ConfettiParticle({ data, triggered }: { data: ParticleData; triggered: boolean }) {
+  const progress = useSharedValue(0);
+  const particleOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (triggered) {
+      particleOpacity.value = withDelay(
+        data.delay,
+        withSequence(
+          withTiming(1, { duration: 60 }),
+          withDelay(250, withTiming(0, { duration: 350 })),
+        ),
+      );
+      progress.value = withDelay(
+        data.delay,
+        withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) }),
+      );
+    }
+  }, [triggered, progress, particleOpacity, data.delay]);
+
+  const style = useAnimatedStyle(() => {
+    const dx = Math.cos(data.angle) * data.distance * progress.value;
+    const dy = Math.sin(data.angle) * data.distance * progress.value;
+    const rotate = data.initialRotation + progress.value * 360 * data.spinDir;
+    return {
+      transform: [{ translateX: dx }, { translateY: dy }, { rotate: `${rotate}deg` }],
+      opacity: particleOpacity.value,
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          width: data.width,
+          height: data.height,
+          borderRadius: 1.5,
+          backgroundColor: data.color,
+          left: "50%",
+          top: "50%",
+          marginLeft: -data.width / 2,
+          marginTop: -data.height / 2,
+        },
+        style,
+      ]}
+      pointerEvents="none"
+    />
+  );
+}
+
+// ─── Bubble ───
 
 interface BubbleProps {
   bubble: BubbleType;
@@ -27,6 +122,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
   const borderFlash = useSharedValue(0);
 
   const isVisible = now >= bubble.spawnedAt;
+  const particles = useParticleData();
 
   useEffect(() => {
     if (isVisible && !bubble.matched && !bubble.expired) {
@@ -38,8 +134,13 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
   /* eslint-disable react-hooks/immutability -- reanimated shared value updates */
   useEffect(() => {
     if (bubble.matched) {
-      scale.value = withTiming(1.3, { duration: 200, easing: Easing.out(Easing.quad) });
-      opacity.value = withDelay(100, withTiming(0, { duration: 300 }));
+      // Punch up, hold bright green, then expand and dissolve
+      scale.value = withSequence(
+        withTiming(1.5, { duration: 120, easing: Easing.out(Easing.quad) }),
+        withTiming(1.4, { duration: 350 }),
+        withTiming(2, { duration: 300, easing: Easing.out(Easing.quad) }),
+      );
+      opacity.value = withDelay(470, withTiming(0, { duration: 300 }));
     } else if (bubble.expired) {
       scale.value = withTiming(0.3, { duration: 400 });
       opacity.value = withTiming(0, { duration: 400 });
@@ -110,12 +211,18 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
     >
       <Animated.View
         className={`flex-1 items-center justify-center rounded-xl border ${
-          bubble.collected ? "border-yellow-400 bg-yellow-950/40" : "border-zinc-600 bg-zinc-900/80"
+          bubble.matched
+            ? "border-green-400 bg-green-600"
+            : bubble.collected
+              ? "border-yellow-400 bg-yellow-950/40"
+              : "border-zinc-600 bg-zinc-900/80"
         }`}
         style={[{ overflow: "hidden" }, innerStyle]}
       >
         <Text
-          className={`font-semibold ${textSize} ${bubble.collected ? "text-yellow-100" : "text-zinc-100"}`}
+          className={`font-bold ${textSize} ${
+            bubble.matched ? "text-white" : bubble.collected ? "text-yellow-100" : "text-zinc-100"
+          }`}
           numberOfLines={1}
         >
           {bubble.text}
@@ -123,7 +230,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
 
         {/* Lifetime indicator bar */}
         {!bubble.matched && !bubble.expired && (
-          <Animated.View
+          <View
             style={{
               position: "absolute",
               bottom: 0,
@@ -134,7 +241,7 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
                 progress > 0.7 ? "rgba(239, 68, 68, 0.5)" : "rgba(255, 255, 255, 0.15)",
             }}
           >
-            <Animated.View
+            <View
               style={{
                 height: "100%",
                 width: `${(1 - progress) * 100}%`,
@@ -142,9 +249,13 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
                   progress > 0.7 ? "rgba(239, 68, 68, 0.8)" : "rgba(255, 255, 255, 0.4)",
               }}
             />
-          </Animated.View>
+          </View>
         )}
       </Animated.View>
+
+      {/* Confetti burst on match */}
+      {bubble.matched &&
+        particles.map((p, i) => <ConfettiParticle key={i} data={p} triggered={bubble.matched} />)}
     </Animated.View>
   );
 }

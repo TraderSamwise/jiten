@@ -4,9 +4,8 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { BubbleView } from "./Bubble";
 import { SwipeTrail } from "./SwipeTrail";
-import { MatchFlash } from "./MatchFlash";
 import { ScoreHUD } from "./ScoreHUD";
-import type { Bubble, GameState, MatchResult } from "@/lib/connect-game/types";
+import type { Bubble, GameState } from "@/lib/connect-game/types";
 import { evaluateSwipe } from "@/lib/connect-game/matcher";
 import { applyMatch, handleInvalidSwipe } from "@/lib/connect-game/engine";
 
@@ -16,21 +15,12 @@ interface PlayFieldProps {
   onStateChange: () => void;
 }
 
-interface FlashItem {
-  key: number;
-  match: MatchResult;
-  x: number;
-  y: number;
-}
-
 export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
   const [fieldSize, setFieldSize] = useState({ width: 0, height: 0 });
   const [trailPoints, setTrailPoints] = useState<{ x: number; y: number }[]>([]);
   const [isSwipeActive, setIsSwipeActive] = useState(false);
-  const [flashes, setFlashes] = useState<FlashItem[]>([]);
   /** Map of bubbleId → tick counter, incremented on each invalid swipe involving that bubble */
   const [invalidTicks, setInvalidTicks] = useState<Record<string, number>>({});
-  const flashKeyRef = useRef(0);
   const collectedRef = useRef<Set<string>>(new Set());
   const debounceRef = useRef(false);
 
@@ -76,7 +66,7 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
   );
 
   const handlePanEnd = useCallback(
-    (lastX: number, lastY: number) => {
+    (_lastX: number, _lastY: number) => {
       const collected = state.bubbles.filter((b) => collectedRef.current.has(b.id));
       state.totalSwipes++;
 
@@ -84,10 +74,6 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
 
       if (match) {
         applyMatch(state, match);
-
-        // Show flash at swipe end position
-        const key = ++flashKeyRef.current;
-        setFlashes((prev) => [...prev, { key, match, x: lastX, y: lastY }]);
       } else if (isInvalid) {
         handleInvalidSwipe(state);
 
@@ -144,10 +130,6 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
       runOnJS(setIsSwipeActive)(false);
     });
 
-  const removeFlash = useCallback((key: number) => {
-    setFlashes((prev) => prev.filter((f) => f.key !== key));
-  }, []);
-
   return (
     <View className="flex-1">
       <ScoreHUD state={state} />
@@ -175,17 +157,6 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
               isActive={isSwipeActive}
             />
           )}
-
-          {/* Match flashes */}
-          {flashes.map((f) => (
-            <MatchFlash
-              key={f.key}
-              match={f.match}
-              x={f.x}
-              y={f.y}
-              onDone={() => removeFlash(f.key)}
-            />
-          ))}
         </View>
       </GestureDetector>
     </View>
