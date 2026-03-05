@@ -34,7 +34,7 @@ export function findSpawnPosition(
   const minX = EDGE_MARGIN + halfW;
   const maxX = 1 - EDGE_MARGIN - halfW;
   const minY = EDGE_MARGIN + halfH;
-  const maxY = 1 - EDGE_MARGIN - halfH;
+  const maxY = 0.7 - halfH;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const x = minX + Math.random() * (maxX - minX);
