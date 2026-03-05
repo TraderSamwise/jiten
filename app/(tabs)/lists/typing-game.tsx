@@ -47,13 +47,14 @@ import {
   typingFuriganaModeAtom,
   typingShowPitchAtom,
   typingPlayAudioAtom,
+  typingWordFilterAtom,
   type FuriganaMode,
 } from "@/stores/settings";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
 import { playEntryAudio } from "@/lib/audio";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { findReadingConfusion, findMeaningConfusion } from "@/lib/confused-words";
-import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
+import { useWordFilter } from "@/hooks/useWordFilter";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -396,7 +397,7 @@ export default function TypingGameScreen() {
 
   // Word filter (SRS-based counts + filtering)
   const wordFilter = useWordFilter(listId);
-  const [selectedFilter, setSelectedFilter] = useState<WordFilterMode>("all");
+  const [selectedFilter, setSelectedFilter] = useAtom(typingWordFilterAtom);
 
   // Full shuffled queue (entry IDs) — batches are pulled from front
   const shuffledQueue = useRef<number[]>([]);

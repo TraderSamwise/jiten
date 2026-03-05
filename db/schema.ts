@@ -205,3 +205,18 @@ export const confusionEvents = sqliteTable("confusion_events", {
   practiceMode: text("practice_mode"),
   confusedAt: text("confused_at").notNull(),
 });
+
+export const gameScores = sqliteTable("game_scores", {
+  id: text("id").primaryKey(),
+  listId: text("list_id").notNull(),
+  gameType: text("game_type").notNull(),
+  gameMode: text("game_mode").notNull(),
+  speedPreset: text("speed_preset").notNull(),
+  score: integer("score").notNull(),
+  matchesMade: integer("matches_made").notNull(),
+  triplesMade: integer("triples_made").notNull(),
+  maxCombo: integer("max_combo").notNull(),
+  accuracy: integer("accuracy").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  playedAt: text("played_at").notNull(),
+});

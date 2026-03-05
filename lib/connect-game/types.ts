@@ -1,8 +1,9 @@
 import type { DictEntry } from "@/db/types";
+import type { SpeedPreset } from "@/stores/settings";
 
 // ─── Game modes ───
 
-export type GameMode = "timed" | "survival";
+export type GameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type Phase = "select" | "playing" | "done";
 
@@ -97,6 +98,8 @@ export interface GameState {
   paused: boolean;
   /** Speed bonus threshold in ms */
   speedBonusThreshold: number;
+  /** Speed preset for wave config scaling */
+  speedPreset: SpeedPreset;
 }
 
 // ─── Scoring constants ───

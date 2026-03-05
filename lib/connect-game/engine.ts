@@ -1,4 +1,5 @@
 import type { DictEntry } from "@/db/types";
+import type { SpeedPreset } from "@/stores/settings";
 import type {
   Bubble,
   BubbleKind,
@@ -13,14 +14,30 @@ import { estimateBubbleWidth, getBubbleHeight, findSpawnPosition } from "./layou
 
 // ─── Wave configuration ───
 
-export function getWaveConfig(wave: number): WaveConfig {
-  if (wave <= 2) {
-    return { wave, groupCount: 3, lifetime: 12000, driftSpeed: 0, spawnInterval: 800 };
-  } else if (wave <= 4) {
-    return { wave, groupCount: 4, lifetime: 10000, driftSpeed: 0.01, spawnInterval: 700 };
-  } else {
-    return { wave, groupCount: 5, lifetime: 8000, driftSpeed: 0.02, spawnInterval: 600 };
-  }
+const WAVE_TIERS: Record<SpeedPreset, [WaveConfig, WaveConfig, WaveConfig]> = {
+  easy: [
+    { wave: 0, groupCount: 2, lifetime: 20000, driftSpeed: 0, spawnInterval: 1200 },
+    { wave: 0, groupCount: 2, lifetime: 18000, driftSpeed: 0, spawnInterval: 1000 },
+    { wave: 0, groupCount: 3, lifetime: 15000, driftSpeed: 0.005, spawnInterval: 900 },
+  ],
+  normal: [
+    { wave: 0, groupCount: 2, lifetime: 15000, driftSpeed: 0, spawnInterval: 900 },
+    { wave: 0, groupCount: 3, lifetime: 12000, driftSpeed: 0.01, spawnInterval: 800 },
+    { wave: 0, groupCount: 4, lifetime: 10000, driftSpeed: 0.015, spawnInterval: 700 },
+  ],
+  hard: [
+    { wave: 0, groupCount: 3, lifetime: 12000, driftSpeed: 0.01, spawnInterval: 800 },
+    { wave: 0, groupCount: 4, lifetime: 9000, driftSpeed: 0.02, spawnInterval: 600 },
+    { wave: 0, groupCount: 5, lifetime: 7000, driftSpeed: 0.03, spawnInterval: 500 },
+  ],
+};
+
+export function getWaveConfig(wave: number, speedPreset: SpeedPreset, mode?: GameMode): WaveConfig {
+  const tiers = WAVE_TIERS[speedPreset];
+  // Zen mode: always use tier 1 (flat difficulty)
+  const tierIndex = mode === "zen" ? 0 : wave <= 2 ? 0 : wave <= 4 ? 1 : 2;
+  const tier = tiers[tierIndex];
+  return { ...tier, wave };
 }
 
 // ─── Bubble creation ───
@@ -103,6 +120,7 @@ export function createInitialState(
   entries: DictEntry[],
   fieldWidth: number,
   fieldHeight: number,
+  speedPreset: SpeedPreset = "normal",
 ): GameState {
   nextBubbleId = 0;
 
@@ -151,6 +169,7 @@ export function createInitialState(
     fieldHeight,
     paused: false,
     speedBonusThreshold: SCORING.SPEED_BONUS_THRESHOLD,
+    speedPreset,
   };
 }
 
@@ -158,7 +177,7 @@ export function createInitialState(
 
 /** Spawn a new wave of bubbles. Returns bubbles to add. */
 export function spawnWave(state: GameState, now: number): Bubble[] {
-  const config = getWaveConfig(state.wave);
+  const config = getWaveConfig(state.wave, state.speedPreset, state.mode);
   const newBubbles: Bubble[] = [];
 
   for (let i = 0; i < config.groupCount; i++) {
@@ -273,14 +292,18 @@ export function tick(state: GameState, now: number, deltaMs: number): TickResult
       if (remaining.length === 0) {
         // Full group expired = miss
         state.activeEntryIds.delete(entryId);
-        if (state.mode === "survival") {
-          state.lives--;
-          if (state.lives <= 0) {
-            return { expired, needsNewWave: false, gameOver: true };
+        if (state.mode === "zen") {
+          // Zen mode: no miss penalty, no combo reset on expiry
+        } else {
+          if (state.mode === "survival") {
+            state.lives--;
+            if (state.lives <= 0) {
+              return { expired, needsNewWave: false, gameOver: true };
+            }
           }
+          state.combo = 0;
+          state.score = Math.max(0, state.score + SCORING.MISS_PENALTY);
         }
-        state.combo = 0;
-        state.score = Math.max(0, state.score + SCORING.MISS_PENALTY);
       }
     }
   }
