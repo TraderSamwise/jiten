@@ -5,9 +5,39 @@ import { runOnJS } from "react-native-reanimated";
 import { BubbleView } from "./Bubble";
 import { SwipeTrail } from "./SwipeTrail";
 import { ScoreHUD } from "./ScoreHUD";
-import type { Bubble, GameState } from "@/lib/connect-game/types";
+import { FloatingLabel } from "@/components/FloatingLabel";
+import type { Bubble, BubbleKind, GameState } from "@/lib/connect-game/types";
 import { evaluateSwipe } from "@/lib/connect-game/matcher";
 import { applyMatch, handleInvalidSwipe } from "@/lib/connect-game/engine";
+
+interface RevealItem {
+  key: number;
+  text: string;
+  x: number;
+  y: number;
+}
+
+/** Get the text for a bubble kind from an entry */
+function getMissingKindText(
+  state: GameState,
+  entryId: number,
+  matchedKinds: Set<BubbleKind>,
+): string | null {
+  const allKinds: BubbleKind[] = ["kanji", "reading", "meaning"];
+  const missing = allKinds.find((k) => !state.enabledKinds.has(k) && !matchedKinds.has(k));
+  if (!missing) return null;
+
+  const entry = state.entries.get(entryId);
+  if (!entry) return null;
+
+  if (missing === "kanji" && entry.kanji.length > 0) return entry.kanji[0].text;
+  if (missing === "reading" && entry.kana.length > 0) return entry.kana[0].text;
+  if (missing === "meaning") {
+    const gloss = entry.senses[0]?.glosses.find((g) => g.lang === "eng");
+    if (gloss) return gloss.text;
+  }
+  return null;
+}
 
 interface PlayFieldProps {
   state: GameState;
@@ -21,6 +51,8 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
   const [isSwipeActive, setIsSwipeActive] = useState(false);
   /** Map of bubbleId → tick counter, incremented on each invalid swipe involving that bubble */
   const [invalidTicks, setInvalidTicks] = useState<Record<string, number>>({});
+  const [reveals, setReveals] = useState<RevealItem[]>([]);
+  const revealKeyRef = useRef(0);
   const collectedRef = useRef<Set<string>>(new Set());
   const debounceRef = useRef(false);
 
@@ -66,7 +98,7 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
   );
 
   const handlePanEnd = useCallback(
-    (_lastX: number, _lastY: number) => {
+    (lastX: number, lastY: number) => {
       const collected = state.bubbles.filter((b) => collectedRef.current.has(b.id));
       state.totalSwipes++;
 
@@ -74,6 +106,20 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
 
       if (match) {
         applyMatch(state, match);
+
+        // Reveal the missing kind when playing with only 2 kinds
+        if (state.enabledKinds.size === 2) {
+          const matchedKinds = new Set(
+            match.bubbleIds
+              .map((id) => state.bubbles.find((b) => b.id === id)?.kind)
+              .filter((k): k is BubbleKind => k != null),
+          );
+          const text = getMissingKindText(state, match.entryId, matchedKinds);
+          if (text) {
+            const key = ++revealKeyRef.current;
+            setReveals((prev) => [...prev, { key, text, x: lastX, y: lastY }]);
+          }
+        }
       } else if (isInvalid) {
         handleInvalidSwipe(state);
 
@@ -130,6 +176,10 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
       runOnJS(setIsSwipeActive)(false);
     });
 
+  const removeReveal = useCallback((key: number) => {
+    setReveals((prev) => prev.filter((r) => r.key !== key));
+  }, []);
+
   return (
     <View className="flex-1">
       <ScoreHUD state={state} />
@@ -157,6 +207,17 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
               isActive={isSwipeActive}
             />
           )}
+
+          {/* Reveal missing kind on match (pairs mode) */}
+          {reveals.map((r) => (
+            <FloatingLabel
+              key={r.key}
+              text={r.text}
+              screenX={r.x}
+              screenY={r.y}
+              onDone={() => removeReveal(r.key)}
+            />
+          ))}
         </View>
       </GestureDetector>
     </View>

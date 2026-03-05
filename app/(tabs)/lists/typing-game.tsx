@@ -27,6 +27,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { GameSelectScreen } from "@/components/GameSelectScreen";
+import { FloatingLabel } from "@/components/FloatingLabel";
 import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
@@ -304,65 +305,6 @@ function GlowOverlay() {
       ]}
       pointerEvents="none"
     />
-  );
-}
-
-// ─── Coin Animation ───
-
-const COIN_MAX_W = 200;
-const SCREEN_PAD = 16;
-
-function CoinAnimation({
-  gloss,
-  screenX,
-  screenY,
-  onDone,
-}: {
-  gloss: string;
-  screenX: number;
-  screenY: number;
-  onDone: () => void;
-}) {
-  const { width: screenWidth } = useWindowDimensions();
-  const coinY = useSharedValue(0);
-  const coinOpacity = useSharedValue(0);
-  const [textW, setTextW] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (textW === null) return;
-    coinOpacity.value = 1;
-    coinY.value = withTiming(-48, { duration: 3000, easing: Easing.out(Easing.quad) });
-    coinOpacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
-    const timer = setTimeout(onDone, 3100);
-    return () => clearTimeout(timer);
-  }, [textW]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: coinY.value }],
-    opacity: coinOpacity.value,
-  }));
-
-  const w = textW ?? COIN_MAX_W;
-  const idealLeft = screenX - w / 2;
-  const clampedLeft = Math.max(SCREEN_PAD, Math.min(idealLeft, screenWidth - SCREEN_PAD - w));
-
-  return (
-    <Animated.View
-      style={[
-        { position: "absolute", top: screenY - 12, left: clampedLeft, zIndex: 50 },
-        animatedStyle,
-      ]}
-      pointerEvents="none"
-    >
-      <Text
-        className="text-sm font-medium text-primary text-center"
-        style={{ maxWidth: COIN_MAX_W }}
-        numberOfLines={1}
-        onLayout={textW === null ? (e) => setTextW(e.nativeEvent.layout.width) : undefined}
-      >
-        {gloss}
-      </Text>
-    </Animated.View>
   );
 }
 
@@ -968,9 +910,9 @@ export default function TypingGameScreen() {
 
       {/* Floating coins — rendered outside ScrollView to avoid clipping */}
       {floatingCoins.map((coin) => (
-        <CoinAnimation
+        <FloatingLabel
           key={coin.key}
-          gloss={coin.gloss}
+          text={coin.gloss}
           screenX={coin.screenX}
           screenY={coin.screenY}
           onDone={() => removeCoin(coin.key)}

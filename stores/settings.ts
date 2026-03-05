@@ -35,7 +35,7 @@ export const defaultSettings = Object.freeze({
   connectGameMode: "timed" as ConnectGameMode,
   connectTimedDuration: 90 as TimedDuration,
   connectSpeedPreset: "normal" as SpeedPreset,
-  connectBubbleKinds: { kanji: true, reading: true, meaning: true } as ConnectBubbleKinds,
+  connectBubbleKinds: { kanji: true, reading: true, meaning: false } as ConnectBubbleKinds,
   typingWordFilter: "all" as WordFilterMode,
 });
 
