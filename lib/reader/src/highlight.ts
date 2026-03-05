@@ -77,6 +77,7 @@ function clearRubyHighlight(): void {
   const els = state.contentEl!.querySelectorAll("ruby.highlight, ruby.highlight rt.highlight");
   for (let i = 0; i < els.length; i++) {
     els[i].classList.remove("highlight", "highlight-cont");
+    (els[i] as HTMLElement).style.boxShadow = "";
   }
 }
 
@@ -195,7 +196,14 @@ function markContinuationRubies(): void {
     if (pRect.right - rubyRect.right > lineW * 0.5) {
       ruby.classList.add("highlight-cont");
       const rts = ruby.getElementsByTagName("rt");
-      for (let j = 0; j < rts.length; j++) rts[j].classList.add("highlight-cont");
+      // Measure how far the rt extends past the ruby box, then set
+      // box-shadow on the rt to extend 3px past its own right edge.
+      for (let j = 0; j < rts.length; j++) {
+        rts[j].classList.add("highlight-cont");
+        const rtRect = rts[j].getBoundingClientRect();
+        const shadow = rtRect.right - rubyRect.right;
+        (rts[j] as HTMLElement).style.boxShadow = shadow + "px 0 0 rgba(255, 255, 0, 0.4)";
+      }
     }
   }
 }
