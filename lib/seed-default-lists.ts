@@ -2,8 +2,8 @@ import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "@/db/user-db";
 import { STARTER_BOOK_CONTENT } from "@/lib/starter-book-content";
 
-const FLAG_KEY = "default_lists_seeded_v2";
-const VOCAB_FLAG_KEY = "default_vocab_lists_seeded";
+const FLAG_KEY = "default_lists_seeded_v3";
+const VOCAB_FLAG_KEY = "default_vocab_lists_seeded_v2";
 const BOOK_FLAG_KEY = "default_book_seeded";
 
 interface KanjiListDef {
@@ -81,8 +81,20 @@ export async function seedDefaultListsIfNeeded(
     [VOCAB_FLAG_KEY],
   );
   if (!vocabFlag) {
+    // Delete old default vocab lists (JLPT levels changed in v19)
+    const oldVocabListNames = VOCAB_LIST_DEFS.map((d) => d.name);
+    const vph = oldVocabListNames.map(() => "?").join(",");
+    const oldVocabLists = await userDb.getAllAsync<{ id: string }>(
+      `SELECT id FROM lists WHERE name IN (${vph}) AND is_default = 1`,
+      oldVocabListNames,
+    );
+    for (const list of oldVocabLists) {
+      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [list.id]);
+      await userDb.runAsync("DELETE FROM lists WHERE id = ?", [list.id]);
+    }
+
     await seedVocabLists(userDb, dictDb);
-    await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [
+    await userDb.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
       VOCAB_FLAG_KEY,
       "1",
     ]);

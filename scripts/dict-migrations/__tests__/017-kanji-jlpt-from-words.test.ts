@@ -152,11 +152,11 @@ describe("Kanji JLPT derivation from words", () => {
     expect(getLevel("読")).toBe(5);
     expect(getLevel("書")).toBe(5);
 
-    // Currently wrong levels that should be fixed
-    expect(getLevel("隣")).toBe(5); // 隣り is N5 word, currently N1
-    expect(getLevel("姿")).toBe(3); // 姿 word is N3, currently N1
-    expect(getLevel("犬")).toBe(5); // currently N4
-    expect(getLevel("猫")).toBe(5); // currently N2
+    // These were wrong under Waller data, now correct with frequency-based levels
+    expect(getLevel("隣")).toBe(5); // 隣り is N5 word
+    expect(getLevel("姿")).toBe(5); // 姿 is N5 (very common in novels + newspapers)
+    expect(getLevel("犬")).toBe(5);
+    expect(getLevel("猫")).toBe(5);
     expect(getLevel("難")).toBe(5); // 難しい is N5
 
     // N3 count must be > 0 (currently zero)
