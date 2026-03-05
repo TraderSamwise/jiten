@@ -42,11 +42,22 @@ export type AppSettings = typeof defaultSettings;
 // ─── Merging storage adapter ───
 // On read, merges stored partial into defaults so newly-added fields get defaults.
 
+// SSR-safe no-op storage for server-side rendering (Vercel static export).
+// AsyncStorage's web shim accesses `window` at call time, which crashes in Node.
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+const isServer = typeof window === "undefined";
+
 function createMergingStorage() {
-  const base = createJSONStorage<AppSettings>(() => AsyncStorage);
+  const base = createJSONStorage<AppSettings>(() => (isServer ? noopStorage : AsyncStorage) as any);
   return {
     ...base,
     getItem: (key: string, initialValue: AppSettings) => {
+      if (isServer) return Promise.resolve(initialValue);
       const stored = base.getItem(key, initialValue);
       if (stored instanceof Promise) {
         return stored.then((v) => ({ ...initialValue, ...v }));
