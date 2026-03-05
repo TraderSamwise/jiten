@@ -10,6 +10,7 @@
     "build:db": "npx tsx scripts/build-dictionary.ts",
     "build:extended": "npx tsx scripts/build-extended-data.ts",
     "migrate:dict": "npx tsx scripts/migrate-dict.ts",
+    "build:jlpt": "npx tsx scripts/build-jlpt-list.ts",
     "build:reader": "npx tsx lib/reader/build.ts",
     "prestart": "yarn build:reader",
     "prebuild": "yarn build:reader",
