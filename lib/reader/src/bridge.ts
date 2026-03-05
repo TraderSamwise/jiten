@@ -52,6 +52,8 @@ export function setupMessageListener(): void {
           paginate();
           alignToTargetChar(msg.targetLocalChar ?? charBefore);
         });
+      } else if (msg.type === "setPageAnimations") {
+        state.pageAnimations = !!msg.enabled;
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");

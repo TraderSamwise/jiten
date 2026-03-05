@@ -41,7 +41,11 @@ import {
   type LookupResult,
 } from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
-import { readerFuriganaLevelsAtom, type FuriganaLevel } from "@/stores/settings";
+import {
+  readerFuriganaLevelsAtom,
+  readerPageAnimationsAtom,
+  type FuriganaLevel,
+} from "@/stores/settings";
 import {
   buildFuriganaKanjiSet,
   extractSurfacesFromHtml,
@@ -364,6 +368,7 @@ export default function BookReaderScreen() {
   const { dictDb, extendedDb } = useDatabase();
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
+  const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
 
   const [book, setBook] = useState<Book | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -397,6 +402,13 @@ export default function BookReaderScreen() {
   useEffect(() => {
     nameModeRef.current = nameMode;
   }, [nameMode]);
+
+  // Send page animations setting to WebView when it changes
+  useEffect(() => {
+    readerRef.current?.postMessage(
+      JSON.stringify({ type: "setPageAnimations", enabled: pageAnimations }),
+    );
+  }, [pageAnimations]);
 
   // Reload the reader at a given char offset (used by furigana toggle + jump slider)
   const reloadAtChar = useCallback(
@@ -480,6 +492,7 @@ export default function BookReaderScreen() {
           fontSize: b.fontSize,
           isDark,
           scrollPosition: b.scrollPosition,
+          pageAnimations,
         });
         setHtml(readerHtml);
       } else {
@@ -543,6 +556,7 @@ export default function BookReaderScreen() {
           sliceCharOffset: startChar,
           totalChars: model.totalChars,
           hasFurigana: hasFuri,
+          pageAnimations,
         });
         setHtml(readerHtml);
       }
@@ -906,6 +920,26 @@ export default function BookReaderScreen() {
                   </Pressable>
                 ))}
               </View>
+            </View>
+
+            {/* Page animations toggle */}
+            <View className="flex-row items-center justify-center gap-2">
+              <Pressable
+                onPress={() => setPageAnimations(!pageAnimations)}
+                className={`px-3 py-1.5 rounded-full border ${
+                  pageAnimations
+                    ? "bg-foreground border-foreground"
+                    : "bg-transparent border-border"
+                }`}
+              >
+                <Text
+                  className={`text-xs font-medium ${
+                    pageAnimations ? "text-background" : "text-muted-foreground"
+                  }`}
+                >
+                  Page animations
+                </Text>
+              </Pressable>
             </View>
           </View>
         )}

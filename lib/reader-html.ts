@@ -8,6 +8,7 @@ export interface ReaderOptions {
   sliceCharOffset?: number;
   totalChars?: number;
   hasFurigana?: boolean;
+  pageAnimations?: boolean;
 }
 
 export function generateReaderHtml(content: string, options: ReaderOptions): string {
@@ -19,6 +20,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     sliceCharOffset = 0,
     totalChars = 0,
     hasFurigana = false,
+    pageAnimations = true,
   } = options;
   const bg = isDark ? "#18181b" : "#fafaf9";
   const fg = isDark ? "#fafafa" : "#18181b";
@@ -51,7 +53,7 @@ ${css}</style>
   <span id="page-num"></span>
   <button id="btn-prev" aria-label="Previous page">\u203A</button>
 </div>
-<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars},highlightBg:"${highlightBg}"}</script>
+<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars},highlightBg:"${highlightBg}",pageAnimations:${pageAnimations}}</script>
 <script>${readerBundle}</script>
 </body>
 </html>`;

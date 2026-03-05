@@ -22,6 +22,7 @@ declare const window: Window & {
     targetLocalChar?: number;
     sliceCharOffset?: number;
     totalChars?: number;
+    pageAnimations?: boolean;
   };
   ReactNativeWebView: { postMessage(msg: string): void };
 };
@@ -136,6 +137,7 @@ declare const window: Window & {
   // Char-offset config
   state.sliceCharOffset = window.__READER_CONFIG__.sliceCharOffset || 0;
   state.totalChars = window.__READER_CONFIG__.totalChars || 0;
+  state.pageAnimations = window.__READER_CONFIG__.pageAnimations !== false;
   const targetLocalChar = window.__READER_CONFIG__.targetLocalChar || 0;
 
   // Set canonical global offset — preserved until user navigates to a new page.
