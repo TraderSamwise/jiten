@@ -45,7 +45,7 @@ ${css}</style>
 </head>
 <body>
 <div id="raw" style="display:none">${content}</div>
-<div id="content"><div id="page"></div></div>
+<div id="content"><div id="page"${hasFurigana ? ' class="furigana-active"' : ""}></div></div>
 <div id="page-controls">
   <button id="btn-next" aria-label="Next page">\u2039</button>
   <span id="page-num"></span>

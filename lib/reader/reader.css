@@ -37,6 +37,12 @@ ruby rt {
   margin-right: -0.45px;
 }
 
+@supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
+  ruby rt {
+    margin-right: -3px;
+  }
+}
+
 .bouten {
   font-style: normal;
   -webkit-text-emphasis: filled dot;
@@ -52,6 +58,16 @@ ruby rt {
   background: __HIGHLIGHT_BG__;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+
+.furigana-active p {
+  transform: translateX(-0.45px);
+}
+
+@supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
+  .furigana-active p {
+    transform: translateX(-3px);
+  }
 }
 
 .page-break {

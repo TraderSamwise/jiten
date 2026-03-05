@@ -439,6 +439,7 @@ export default function BookReaderScreen() {
           sliceCharOffset: startChar,
           targetLocalChar,
           lineHeight: hasFuri ? `${fontSize * 2}px` : 1.5,
+          hasFurigana: hasFuri,
         }),
       );
     },
