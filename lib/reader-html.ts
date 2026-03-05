@@ -23,7 +23,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   const bg = isDark ? "#18181b" : "#fafaf9";
   const fg = isDark ? "#fafafa" : "#18181b";
   const rubyColor = isDark ? "#a1a1aa" : "#71717a";
-  const highlightBg = isDark ? "rgba(100, 100, 255, 0.3)" : "rgba(100, 100, 255, 0.2)";
+  const highlightBg = isDark ? "#2e2e5f" : "#d5d5eb";
 
   const lineHeight = hasFurigana ? `${fontSize * 2}px` : "1.5";
 
@@ -51,7 +51,7 @@ ${css}</style>
   <span id="page-num"></span>
   <button id="btn-prev" aria-label="Previous page">\u203A</button>
 </div>
-<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars}}</script>
+<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars},highlightBg:"${highlightBg}"}</script>
 <script>${readerBundle}</script>
 </body>
 </html>`;
