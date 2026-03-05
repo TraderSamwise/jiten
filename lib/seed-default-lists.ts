@@ -55,8 +55,23 @@ export async function seedDefaultListsIfNeeded(
     [FLAG_KEY],
   );
   if (!kanjiFlag) {
+    // Delete old default kanji lists (JLPT levels changed in v18)
+    const oldKanjiListNames = KANJI_LIST_DEFS.map((d) => d.name);
+    const ph = oldKanjiListNames.map(() => "?").join(",");
+    const oldLists = await userDb.getAllAsync<{ id: string }>(
+      `SELECT id FROM lists WHERE name IN (${ph}) AND is_default = 1`,
+      oldKanjiListNames,
+    );
+    for (const list of oldLists) {
+      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [list.id]);
+      await userDb.runAsync("DELETE FROM lists WHERE id = ?", [list.id]);
+    }
+
     await seedKanjiLists(userDb, dictDb);
-    await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [FLAG_KEY, "1"]);
+    await userDb.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
+      FLAG_KEY,
+      "1",
+    ]);
     seeded = true;
   }
 
