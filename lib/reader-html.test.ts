@@ -216,7 +216,7 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("scrollPosition:0}");
+    expect(html).toContain("scrollPosition:0,");
   });
 
   test("restores custom scroll position", () => {
@@ -225,7 +225,7 @@ describe("generateReaderHtml", () => {
       isDark: false,
       scrollPosition: 0.75,
     });
-    expect(html).toContain("scrollPosition:0.75}");
+    expect(html).toContain("scrollPosition:0.75,");
   });
 
   // ── Page controls ──

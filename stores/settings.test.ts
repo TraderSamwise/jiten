@@ -29,6 +29,16 @@ describe("defaultSettings", () => {
       typingFuriganaMode: "auto",
       typingShowPitch: true,
       typingPlayAudio: false,
+      readerFuriganaLevels: {
+        all: false,
+        n1: false,
+        n2: false,
+        n3: false,
+        n4: false,
+        n5: false,
+        nonJouyou: false,
+      },
+      readerPageAnimations: true,
     });
   });
 

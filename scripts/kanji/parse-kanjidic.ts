@@ -54,25 +54,6 @@ interface RawCharacter {
   }[];
 }
 
-// JLPT old (1-4) to new (N1-N5) approximate mapping
-// Old level 1 → N1, old level 2 → N2/N3, old level 3 → N3/N4, old level 4 → N4/N5
-// This is approximate; a proper mapping needs the community JLPT N level lists
-function mapJlptOldToNew(old: number | null): number | null {
-  if (old === null) return null;
-  switch (old) {
-    case 1:
-      return 1;
-    case 2:
-      return 2;
-    case 3:
-      return 4;
-    case 4:
-      return 5;
-    default:
-      return null;
-  }
-}
-
 export function parseKanjidic(jsonPath: string): Map<string, KanjidicEntry> {
   console.log(`  Parsing KANJIDIC2 from ${jsonPath}...`);
   const raw: KanjidicRaw = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
@@ -131,7 +112,7 @@ export function parseKanjidic(jsonPath: string): Map<string, KanjidicEntry> {
       strokeCount: ch.misc.strokeCounts[0] || 0,
       frequencyRank: ch.misc.frequency ?? null,
       jlptOld,
-      jlptLevel: mapJlptOldToNew(jlptOld),
+      jlptLevel: null, // Derived from word JLPT data by migration 017
       readingsOn,
       readingsKun,
       meanings,
