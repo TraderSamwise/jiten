@@ -115,7 +115,13 @@ interface BubbleProps {
   invalidTick?: number;
 }
 
-export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }: BubbleProps) {
+export const BubbleView = React.memo(function BubbleView({
+  bubble,
+  fieldWidth,
+  fieldHeight,
+  now,
+  invalidTick,
+}: BubbleProps) {
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
   const translateX = useSharedValue(0);
@@ -200,11 +206,6 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
           top,
           width: bubble.width,
           height: bubble.height,
-          shadowColor: "rgba(255, 255, 255, 0.15)",
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: bubble.collected ? 1 : 0.4,
-          shadowRadius: bubble.collected ? 10 : 4,
-          elevation: 4,
         },
         animatedStyle,
       ]}
@@ -258,4 +259,4 @@ export function BubbleView({ bubble, fieldWidth, fieldHeight, now, invalidTick }
         particles.map((p, i) => <ConfettiParticle key={i} data={p} triggered={bubble.matched} />)}
     </Animated.View>
   );
-}
+});

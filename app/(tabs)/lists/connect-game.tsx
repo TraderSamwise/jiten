@@ -50,6 +50,7 @@ export default function ConnectGameScreen() {
   const gameRef = useRef<GameState | null>(null);
   const rafRef = useRef<number>(0);
   const lastTickRef = useRef(0);
+  const lastRenderRef = useRef(0);
 
   // Persisted settings
   const [gameMode, setGameMode] = useAtom(connectGameModeAtom);
@@ -106,7 +107,11 @@ export default function ConnectGameScreen() {
 
       cleanupBubbles(state, currentTime);
 
-      setNow(currentTime);
+      // Throttle React re-renders to ~15fps (game logic still runs at 60fps via ref)
+      if (currentTime - lastRenderRef.current >= 66) {
+        lastRenderRef.current = currentTime;
+        setNow(currentTime);
+      }
       rafRef.current = requestAnimationFrame(loop);
     }
 
