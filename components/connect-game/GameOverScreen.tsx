@@ -7,11 +7,18 @@ import type { GameState } from "@/lib/connect-game/types";
 interface GameOverScreenProps {
   state: GameState;
   endedAt: number;
+  previousBest?: number | null;
   onPlayAgain: () => void;
   onReturn: () => void;
 }
 
-export function GameOverScreen({ state, endedAt, onPlayAgain, onReturn }: GameOverScreenProps) {
+export function GameOverScreen({
+  state,
+  endedAt,
+  previousBest,
+  onPlayAgain,
+  onReturn,
+}: GameOverScreenProps) {
   const durationMs = endedAt - state.startedAt;
   const durationSeconds = Math.round(durationMs / 1000);
   const minutes = Math.floor(durationSeconds / 60);
@@ -20,6 +27,7 @@ export function GameOverScreen({ state, endedAt, onPlayAgain, onReturn }: GameOv
     state.totalSwipes > 0
       ? Math.round(((state.totalSwipes - state.invalidSwipes) / state.totalSwipes) * 100)
       : 100;
+  const isNewHighScore = previousBest != null && state.score > previousBest;
 
   return (
     <View className="flex-1 justify-center px-6">
@@ -27,6 +35,8 @@ export function GameOverScreen({ state, endedAt, onPlayAgain, onReturn }: GameOv
 
       {state.mode === "timed" ? (
         <Text className="text-base text-muted-foreground text-center mb-6">Time's up!</Text>
+      ) : state.mode === "zen" ? (
+        <Text className="text-base text-muted-foreground text-center mb-6">Good session!</Text>
       ) : (
         <Text className="text-base text-muted-foreground text-center mb-6">Out of lives</Text>
       )}
@@ -35,6 +45,14 @@ export function GameOverScreen({ state, endedAt, onPlayAgain, onReturn }: GameOv
       <View className="items-center mb-6">
         <Text className="text-5xl font-bold text-primary">{state.score}</Text>
         <Text className="text-sm text-muted-foreground mt-1">points</Text>
+        {isNewHighScore && (
+          <Text className="text-base font-bold text-yellow-400 mt-2">New High Score!</Text>
+        )}
+        {previousBest != null && !isNewHighScore && (
+          <Text className="text-sm text-muted-foreground mt-1">
+            Best: {previousBest.toLocaleString()}
+          </Text>
+        )}
       </View>
 
       {/* Stats grid */}

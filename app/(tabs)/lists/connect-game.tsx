@@ -4,23 +4,38 @@ import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useAtom } from "jotai";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { GameSelectScreen } from "@/components/GameSelectScreen";
 import { X } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
+import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { PlayField } from "@/components/connect-game/PlayField";
 import { GameOverScreen } from "@/components/connect-game/GameOverScreen";
 import { createInitialState, spawnWave, tick, cleanupBubbles } from "@/lib/connect-game/engine";
+import { saveGameScore, getHighScore } from "@/lib/game-scores";
+import { confirm } from "@/lib/confirm";
 import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
-import type { Phase, GameMode, TimedDuration, GameState } from "@/lib/connect-game/types";
+import {
+  connectGameModeAtom,
+  connectTimedDurationAtom,
+  connectSpeedPresetAtom,
+  type ConnectGameMode,
+  type SpeedPreset,
+} from "@/stores/settings";
+import type { Phase, GameState } from "@/lib/connect-game/types";
+import type { TimedDuration } from "@/lib/connect-game/types";
+
 export default function ConnectGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { dictDb } = useDatabase();
+  const userDb = useUserDb();
 
   const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
@@ -28,12 +43,28 @@ export default function ConnectGameScreen() {
   const [now, setNow] = useState(() => Date.now());
   const [endedAt, setEndedAt] = useState(0);
   const [selectedFilter, setSelectedFilter] = useState<WordFilterMode>("all");
+  const [highScore, setHighScore] = useState<number | null>(null);
+  const [prevBest, setPrevBest] = useState<number | null>(null);
   const gameRef = useRef<GameState | null>(null);
   const rafRef = useRef<number>(0);
   const lastTickRef = useRef(0);
 
+  // Persisted settings
+  const [gameMode, setGameMode] = useAtom(connectGameModeAtom);
+  const [timedDuration, setTimedDuration] = useAtom(connectTimedDurationAtom);
+  const [speedPreset, setSpeedPreset] = useAtom(connectSpeedPresetAtom);
+
   // Word filter (SRS-based counts + filtering)
   const wordFilter = useWordFilter(listId);
+
+  // ─── Load high score ───
+
+  useEffect(() => {
+    if (!userDb || !listId) return;
+    getHighScore(userDb, listId, "connect", gameMode, speedPreset)
+      .then(setHighScore)
+      .catch(() => {});
+  }, [userDb, listId, gameMode, speedPreset, phase]);
 
   // ─── Game loop ───
 
@@ -60,6 +91,7 @@ export default function ConnectGameScreen() {
         setEndedAt(currentTime);
         setPhase("done");
         setGameState({ ...state });
+        saveScore(state, currentTime);
         return;
       }
 
@@ -80,6 +112,33 @@ export default function ConnectGameScreen() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [phase]);
+
+  // ─── Save score ───
+
+  const saveScore = useCallback(
+    (state: GameState, endTime: number) => {
+      if (!userDb || !listId) return;
+      const durationMs = endTime - state.startedAt;
+      const accuracy =
+        state.totalSwipes > 0
+          ? Math.round(((state.totalSwipes - state.invalidSwipes) / state.totalSwipes) * 100)
+          : 100;
+      setPrevBest(highScore);
+      saveGameScore(userDb, {
+        listId,
+        gameType: "connect",
+        gameMode: state.mode,
+        speedPreset: state.speedPreset,
+        score: state.score,
+        matchesMade: state.matchesMade,
+        triplesMade: state.triplesMade,
+        maxCombo: state.maxCombo,
+        accuracy,
+        durationMs,
+      }).catch(() => {});
+    },
+    [userDb, listId, highScore],
+  );
 
   // ─── Pause on app background ───
 
@@ -140,31 +199,42 @@ export default function ConnectGameScreen() {
 
   // ─── Start game ───
 
-  const startGame = useCallback(
-    async (mode: GameMode, duration: TimedDuration) => {
-      if (!dictDb || !listId) return;
+  const startGame = useCallback(async () => {
+    if (!dictDb || !listId) return;
 
-      const entryIds = wordFilter.getFilteredEntryIds(selectedFilter);
-      if (entryIds.length < 3) return;
+    const entryIds = wordFilter.getFilteredEntryIds(selectedFilter);
+    if (entryIds.length < 3) return;
 
-      const entries = await getEntries(dictDb, entryIds);
+    const entries = await getEntries(dictDb, entryIds);
 
-      // Compute field dimensions (full screen minus header and safe area)
-      const fieldWidth = screenWidth;
-      const fieldHeight = screenHeight - insets.top - 52 - 60 - insets.bottom; // header + HUD + bottom
+    // Compute field dimensions (full screen minus header and safe area)
+    const fieldWidth = screenWidth;
+    const fieldHeight = screenHeight - insets.top - 52 - 60 - insets.bottom; // header + HUD + bottom
 
-      const state = createInitialState(mode, duration, entries, fieldWidth, fieldHeight);
+    const mode = gameMode === "zen" ? ("zen" as const) : ("timed" as const);
+    const duration = timedDuration as TimedDuration;
 
-      // Spawn first wave
-      const initialBubbles = spawnWave(state, Date.now());
-      state.bubbles = initialBubbles;
+    const state = createInitialState(mode, duration, entries, fieldWidth, fieldHeight, speedPreset);
 
-      gameRef.current = state;
-      setGameState(state);
-      setPhase("playing");
-    },
-    [dictDb, listId, screenWidth, screenHeight, insets, wordFilter, selectedFilter],
-  );
+    // Spawn first wave
+    const initialBubbles = spawnWave(state, Date.now());
+    state.bubbles = initialBubbles;
+
+    gameRef.current = state;
+    setGameState(state);
+    setPhase("playing");
+  }, [
+    dictDb,
+    listId,
+    screenWidth,
+    screenHeight,
+    insets,
+    wordFilter,
+    selectedFilter,
+    gameMode,
+    timedDuration,
+    speedPreset,
+  ]);
 
   const handleStateChange = useCallback(() => {
     setNow(Date.now());
@@ -199,6 +269,41 @@ export default function ConnectGameScreen() {
   }, []);
   /* eslint-enable react-hooks/immutability */
 
+  // ─── Zen mode exit via X button ───
+
+  const handleClose = useCallback(async () => {
+    const state = gameRef.current;
+    if (state && state.phase === "playing" && state.mode === "zen") {
+      state.paused = true;
+      setNow(Date.now());
+      const shouldEnd = await confirm("End game?", `Your score is ${state.score.toLocaleString()}`);
+      if (shouldEnd) {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        state.phase = "done";
+        const endTime = Date.now();
+        setEndedAt(endTime);
+        setPhase("done");
+        setGameState({ ...state });
+        saveScore(state, endTime);
+        return;
+      }
+      // Resume
+      const pauseDuration = Date.now() - (lastTickRef.current || Date.now());
+      state.startedAt += pauseDuration;
+      for (const bubble of state.bubbles) {
+        if (!bubble.matched && !bubble.expired) {
+          bubble.spawnedAt += pauseDuration;
+        }
+      }
+      state.paused = false;
+      lastTickRef.current = 0;
+      setNow(Date.now());
+      return;
+    }
+    setNavigating(true);
+    setTimeout(() => goBack(), 100);
+  }, [goBack, saveScore]);
+
   // ─── Render ───
 
   return (
@@ -206,13 +311,7 @@ export default function ConnectGameScreen() {
       <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center px-4 py-3 border-b border-border">
-          <Pressable
-            onPress={() => {
-              setNavigating(true);
-              setTimeout(() => goBack(), 100);
-            }}
-            className="p-1 mr-3"
-          >
+          <Pressable onPress={handleClose} className="p-1 mr-3">
             <X size={24} className="text-foreground" />
           </Pressable>
           <Text className="text-lg font-semibold text-foreground flex-1">Connect Game</Text>
@@ -233,9 +332,64 @@ export default function ConnectGameScreen() {
             wordFilter={wordFilter}
             selectedFilter={selectedFilter}
             onFilterChange={setSelectedFilter}
-            onStart={() => startGame("timed", 90)}
+            onStart={startGame}
             minEntries={3}
-          />
+          >
+            <View className="gap-4 mb-6">
+              {/* Mode */}
+              <View>
+                <Text className="text-base font-semibold text-foreground mb-2">Mode</Text>
+                <SegmentedControl
+                  options={[
+                    { value: "timed" as ConnectGameMode, label: "Timed" },
+                    { value: "zen" as ConnectGameMode, label: "Zen" },
+                  ]}
+                  value={gameMode}
+                  onChange={setGameMode}
+                  fullWidth
+                />
+              </View>
+
+              {/* Duration (timed only) */}
+              {gameMode === "timed" && (
+                <View>
+                  <Text className="text-base font-semibold text-foreground mb-2">Duration</Text>
+                  <SegmentedControl
+                    options={[
+                      { value: "60" as string, label: "60s" },
+                      { value: "90" as string, label: "90s" },
+                      { value: "120" as string, label: "120s" },
+                    ]}
+                    value={String(timedDuration)}
+                    onChange={(v) => setTimedDuration(Number(v) as TimedDuration)}
+                    fullWidth
+                  />
+                </View>
+              )}
+
+              {/* Speed */}
+              <View>
+                <Text className="text-base font-semibold text-foreground mb-2">Speed</Text>
+                <SegmentedControl
+                  options={[
+                    { value: "easy" as SpeedPreset, label: "Easy" },
+                    { value: "normal" as SpeedPreset, label: "Normal" },
+                    { value: "hard" as SpeedPreset, label: "Hard" },
+                  ]}
+                  value={speedPreset}
+                  onChange={setSpeedPreset}
+                  fullWidth
+                />
+              </View>
+
+              {/* High score */}
+              {highScore != null && (
+                <Text className="text-base text-muted-foreground text-center">
+                  Best: {highScore.toLocaleString()}
+                </Text>
+              )}
+            </View>
+          </GameSelectScreen>
         )}
 
         {/* Playing */}
@@ -260,6 +414,7 @@ export default function ConnectGameScreen() {
           <GameOverScreen
             state={gameState}
             endedAt={endedAt}
+            previousBest={prevBest}
             onPlayAgain={handlePlayAgain}
             onReturn={() => {
               setNavigating(true);

@@ -7,6 +7,10 @@ import { focusAtom } from "jotai-optics";
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
 export type FuriganaLevel = "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
+export type ConnectGameMode = "timed" | "zen";
+export type TimedDuration = 60 | 90 | 120;
+export type SpeedPreset = "easy" | "normal" | "hard";
+export type WordFilterMode = "review" | "learn" | "all";
 
 // ─── Defaults ───
 
@@ -27,6 +31,10 @@ export const defaultSettings = Object.freeze({
   typingPlayAudio: false as boolean,
   readerFuriganaLevels: defaultFuriganaLevels as Record<FuriganaLevel, boolean>,
   readerPageAnimations: true as boolean,
+  connectGameMode: "timed" as ConnectGameMode,
+  connectTimedDuration: 90 as TimedDuration,
+  connectSpeedPreset: "normal" as SpeedPreset,
+  typingWordFilter: "all" as WordFilterMode,
 });
 
 export type AppSettings = typeof defaultSettings;
@@ -71,3 +79,9 @@ export const readerFuriganaLevelsAtom = focusAtom(settingsAtom, (o) =>
 export const readerPageAnimationsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerPageAnimations"),
 );
+export const connectGameModeAtom = focusAtom(settingsAtom, (o) => o.prop("connectGameMode"));
+export const connectTimedDurationAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("connectTimedDuration"),
+);
+export const connectSpeedPresetAtom = focusAtom(settingsAtom, (o) => o.prop("connectSpeedPreset"));
+export const typingWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("typingWordFilter"));

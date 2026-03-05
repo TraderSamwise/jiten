@@ -169,6 +169,8 @@ const USER_DB_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_confusion_events_date ON confusion_events(confused_at)`,
   `ALTER TABLE books ADD COLUMN char_offset INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE books ADD COLUMN total_chars INTEGER NOT NULL DEFAULT 0`,
+  `CREATE TABLE IF NOT EXISTS game_scores (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, game_type TEXT NOT NULL, game_mode TEXT NOT NULL, speed_preset TEXT NOT NULL, score INTEGER NOT NULL, matches_made INTEGER NOT NULL, triples_made INTEGER NOT NULL, max_combo INTEGER NOT NULL, accuracy INTEGER NOT NULL, duration_ms INTEGER NOT NULL, played_at TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_game_scores_list ON game_scores(list_id, game_type)`,
 ];
 
 async function openAndMigrateUserDb(): Promise<{
