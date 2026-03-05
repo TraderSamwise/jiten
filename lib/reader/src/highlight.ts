@@ -196,14 +196,13 @@ function markContinuationRubies(): void {
     // it's in a continuation column.
     if (pRect.right - rubyRect.right > lineW * 0.5) {
       ruby.classList.add("highlight-cont");
+      // Use full line-width as box-shadow offset — guaranteed to bridge
+      // to previous column. Solid color just merges with adjacent highlight.
       const rts = ruby.getElementsByTagName("rt");
-      // Measure how far the rt extends past the ruby box, then set
-      // box-shadow on the rt to extend 3px past its own right edge.
       for (let j = 0; j < rts.length; j++) {
         rts[j].classList.add("highlight-cont");
-        const rtRect = rts[j].getBoundingClientRect();
-        const shadow = rtRect.right - rubyRect.right;
-        (rts[j] as HTMLElement).style.boxShadow = shadow + "px 0 0 " + highlightBg + "";
+        // offset-x=5, spread=5: extends ~10px right, 5px top/bottom (fills height), 0px left
+        (rts[j] as HTMLElement).style.boxShadow = "5px 0 0 5px " + highlightBg;
       }
     }
   }
