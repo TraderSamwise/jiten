@@ -60,6 +60,12 @@ ruby rt {
   box-decoration-break: clone;
 }
 
+/* Safari: ::highlight() doesn't paint inside <ruby>, so we add .highlight
+   class directly. Height won't be perfect but avoids DOM manipulation bugs. */
+ruby.highlight {
+  background: __HIGHLIGHT_BG__;
+}
+
 .furigana-active p {
   transform: translateX(-0.45px);
 }
