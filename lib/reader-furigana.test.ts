@@ -137,6 +137,38 @@ describe("applyFuriganaToHtml", () => {
     expect(result).not.toContain("<ruby>");
   });
 
+  it("mixed kana-kanji word: しょう油 gets furigana, not 油=あぶら", () => {
+    const map = makeMap([
+      ["しょう油", "しょう油", "しょうゆ"],
+      ["油", "油", "あぶら"],
+    ]);
+    const html = "<p>しょう油をかける</p>";
+    const result = applyFuriganaToHtml(html, map, allKanji);
+    // Should match しょう油 (longest match), not just 油=あぶら
+    expect(result).toContain("しょうゆ");
+    expect(result).not.toContain("あぶら");
+  });
+
+  it("mixed kana-kanji: お寺 gets furigana", () => {
+    const map = makeMap([
+      ["お寺", "お寺", "おてら"],
+      ["寺", "寺", "てら"],
+    ]);
+    const html = "<p>お寺に行く</p>";
+    const result = applyFuriganaToHtml(html, map, allKanji);
+    expect(result).toContain("おてら");
+    expect(result).not.toContain("<ruby>寺<rt>てら</rt></ruby>");
+  });
+
+  it("mixed kana-kanji: kana before kanji without match falls through", () => {
+    // Random kana before kanji should NOT cause issues if no dictionary match
+    const map = makeMap([["油", "油", "あぶら"]]);
+    const html = "<p>ます油がある</p>";
+    const result = applyFuriganaToHtml(html, map, allKanji);
+    // 油 should still get its own furigana (ます油 not in map)
+    expect(result).toContain("<ruby>油<rt>あぶら</rt></ruby>");
+  });
+
   it("cross-boundary: long surface consumes chars from next paragraph", () => {
     // If the dictionary has surface "花屋" and HTML has "花</p><p>屋根",
     // getVisibleCharsFrom skips the </p><p> and sees "花屋根".

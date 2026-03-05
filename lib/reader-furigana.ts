@@ -247,6 +247,10 @@ function kanjiMatches(ch: string, kanjiSet: FuriganaKanjiSet): boolean {
  * Extract unique kanji substrings from HTML text content for batch lookup.
  * Scans visible text (skips tags and <rt> content), finds all substrings
  * starting with a matching kanji (up to length 10), and returns unique surfaces.
+ *
+ * Also scans backward from kanji through preceding kana (up to 4 chars) to
+ * capture mixed kana-kanji words like しょう油, お寺, ご飯 where the dictionary
+ * entry's kanji form uses full kanji (醤油) but the text uses mixed writing.
  */
 export function extractSurfacesFromHtml(html: string, kanjiSet: FuriganaKanjiSet): string[] {
   const visibleText = extractVisibleText(html);
@@ -254,17 +258,29 @@ export function extractSurfacesFromHtml(html: string, kanjiSet: FuriganaKanjiSet
   const seen = new Set<string>();
   const surfaces: string[] = [];
 
-  for (let i = 0; i < chars.length; i++) {
-    if (!isKanji(chars[i])) continue;
-    // Generate surfaces starting from any kanji position (not just filtered ones).
-    // A word like 反省会 needs to be extracted even if only 省 matches the filter,
-    // so the dictionary lookup returns the correct whole-word reading.
-    const maxLen = Math.min(chars.length - i, 10);
+  const addSurfacesFrom = (start: number) => {
+    const maxLen = Math.min(chars.length - start, 10);
     for (let len = maxLen; len >= 1; len--) {
-      const surface = chars.slice(i, i + len).join("");
+      const surface = chars.slice(start, start + len).join("");
       if (seen.has(surface)) continue;
       seen.add(surface);
       surfaces.push(surface);
+    }
+  };
+
+  for (let i = 0; i < chars.length; i++) {
+    if (!isKanji(chars[i])) continue;
+    // Generate surfaces starting from this kanji position.
+    // A word like 反省会 needs to be extracted even if only 省 matches the filter,
+    // so the dictionary lookup returns the correct whole-word reading.
+    addSurfacesFrom(i);
+
+    // Scan backward through preceding kana (up to 4 chars) to capture
+    // mixed kana-kanji words like しょう油, お寺, ご飯.
+    let back = i - 1;
+    while (back >= 0 && isKana(chars[back]) && i - back <= 4) {
+      addSurfacesFrom(back);
+      back--;
     }
   }
 
@@ -322,6 +338,21 @@ function extractVisibleText(html: string): string {
   }
 
   return result;
+}
+
+/**
+ * Check if a kana character at position `start` is followed by a kanji
+ * within the next 4 visible characters. Used to detect mixed kana-kanji
+ * words like しょう油 where matching should start at the kana.
+ */
+function kanaBeforeKanji(html: string, start: number): boolean {
+  const chars = getVisibleCharsFrom(html, start);
+  // chars[0] is the kana at `start` — check if any of the next 4 chars is kanji
+  for (let j = 1; j < Math.min(chars.length, 5); j++) {
+    if (isKanji(chars[j])) return true;
+    if (!isKana(chars[j])) return false; // hit non-Japanese, stop
+  }
+  return false;
 }
 
 export interface FuriganaEntry {
@@ -426,11 +457,13 @@ export function applyFuriganaToHtml(
       }
     }
 
-    // Try longest-first match if this char is a kanji.
-    // We match at any kanji position, but only emit ruby if the matched word
+    // Try longest-first match if this char is a kanji, OR if it's kana
+    // followed by kanji within 4 chars (mixed kana-kanji words like しょう油).
+    // We match at any position, but only emit ruby if the matched word
     // contains at least one kanji from the filter set. This ensures whole-word
     // context-aware readings (e.g. 反省会 gets はんせいかい, not 省=しょう alone).
-    if (isKanji(ch)) {
+    const tryMatch = isKanji(ch) || (isKana(ch) && kanaBeforeKanji(html, i));
+    if (tryMatch) {
       let matched = false;
       const remaining = getVisibleCharsFrom(html, i);
 
