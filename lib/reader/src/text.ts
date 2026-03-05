@@ -10,6 +10,76 @@ function isInsideRt(node: Node): boolean {
   return false;
 }
 
+/** Find the base (non-rt) text node inside a <ruby> element. */
+function rubyBaseText(ruby: Element): { node: Node; offset: number } | null {
+  const w = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT, {
+    acceptNode(n: Node) {
+      return isInsideRt(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  return w.nextNode() ? { node: w.currentNode, offset: 0 } : null;
+}
+
+/**
+ * Resolve a caret position that may be inside <rt> or on a <ruby> element
+ * to the base kanji text node. Returns null if no resolution needed or possible.
+ */
+export function resolveCaretForRuby(
+  node: Node,
+  offset: number,
+): { node: Node; offset: number } | null {
+  // Case 1: text node inside <rt> — map to the base text in parent <ruby>
+  if (node.nodeType === Node.TEXT_NODE && isInsideRt(node)) {
+    let ruby: Node | null = node.parentNode;
+    while (ruby && (ruby as Element).tagName !== "RUBY") ruby = ruby.parentNode;
+    if (ruby) return rubyBaseText(ruby as Element);
+  }
+  // Case 2: element node (e.g. <ruby> or <rt> element itself)
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const tag = (node as Element).tagName;
+    let ruby: Element | null = null;
+    if (tag === "RUBY") ruby = node as Element;
+    else if (tag === "RT") {
+      ruby = node.parentElement;
+      while (ruby && ruby.tagName !== "RUBY") ruby = ruby.parentElement;
+    }
+    if (ruby) return rubyBaseText(ruby);
+  }
+  return null;
+}
+
+/**
+ * Resolve a caretRangeFromPoint result, using elementFromPoint as fallback
+ * when caret lands at a text node boundary (offset === length) near ruby.
+ */
+export function resolveCaretAt(x: number, y: number): { node: Node; offset: number } | null {
+  const range = document.caretRangeFromPoint(x, y);
+  if (range) {
+    const node = range.startContainer;
+    const offset = range.startOffset;
+    // Try ruby resolution first
+    const res = resolveCaretForRuby(node, offset);
+    if (res) return res;
+    // If offset is at end of text node, caret may have snapped to boundary
+    // next to a ruby element — check elementFromPoint
+    if (node.nodeType === Node.TEXT_NODE && offset === node.textContent!.length) {
+      const el = document.elementFromPoint(x, y);
+      if (el) {
+        const ruby = el.closest("ruby");
+        if (ruby) return rubyBaseText(ruby);
+      }
+    }
+    if (node.nodeType === Node.TEXT_NODE) return { node, offset };
+  }
+  // No range at all — try elementFromPoint
+  const el = document.elementFromPoint(x, y);
+  if (el) {
+    const ruby = el.closest("ruby");
+    if (ruby) return rubyBaseText(ruby);
+  }
+  return null;
+}
+
 /** Create a TreeWalker that skips text nodes inside <rt> elements. */
 export function textWalker(root: Node): TreeWalker {
   return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {

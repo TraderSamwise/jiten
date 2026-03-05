@@ -1,6 +1,6 @@
 import { state } from "./state";
 import { isJapanese } from "./japanese";
-import { nodeOffsetToAbsolute, getAbsText } from "./text";
+import { nodeOffsetToAbsolute, getAbsText, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
 import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
 
@@ -31,11 +31,11 @@ export function setupTouchHandlers(): void {
       state.dragMode = "undecided";
 
       // Get caret at touch point for potential drag selection
-      const range = document.caretRangeFromPoint(touchStartX, touchStartY);
-      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-        const ch = range.startContainer.textContent!.charAt(range.startOffset);
+      const caret = resolveCaretAt(touchStartX, touchStartY);
+      if (caret && caret.node.nodeType === Node.TEXT_NODE) {
+        const ch = caret.node.textContent!.charAt(caret.offset);
         if (isJapanese(ch)) {
-          dragStartAbs = nodeOffsetToAbsolute(range.startContainer, range.startOffset);
+          dragStartAbs = nodeOffsetToAbsolute(caret.node, caret.offset);
         }
       }
     },
@@ -73,9 +73,9 @@ export function setupTouchHandlers(): void {
           expandPageForHighlight();
         }
 
-        const endRange = document.caretRangeFromPoint(cx, cy);
-        if (endRange && endRange.startContainer.nodeType === Node.TEXT_NODE) {
-          const endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
+        const endCaret = resolveCaretAt(cx, cy);
+        if (endCaret && endCaret.node.nodeType === Node.TEXT_NODE) {
+          const endAbs = nodeOffsetToAbsolute(endCaret.node, endCaret.offset);
           clearHighlight();
           const lo = Math.min(dragStartAbs, endAbs);
           const hi = Math.max(dragStartAbs, endAbs);

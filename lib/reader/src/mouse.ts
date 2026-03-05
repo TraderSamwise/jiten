@@ -1,6 +1,6 @@
 import { state } from "./state";
 import { isJapanese } from "./japanese";
-import { nodeOffsetToAbsolute, getAbsText } from "./text";
+import { nodeOffsetToAbsolute, getAbsText, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
 import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
 
@@ -26,11 +26,11 @@ export function setupMouseHandlers(): void {
     mouseStartAbs = -1;
     mouseEndAbs = -1;
     state.dragMode = "undecided";
-    const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-      const ch = range.startContainer.textContent!.charAt(range.startOffset);
+    const caret = resolveCaretAt(e.clientX, e.clientY);
+    if (caret && caret.node.nodeType === Node.TEXT_NODE) {
+      const ch = caret.node.textContent!.charAt(caret.offset);
       if (isJapanese(ch)) {
-        mouseStartAbs = nodeOffsetToAbsolute(range.startContainer, range.startOffset);
+        mouseStartAbs = nodeOffsetToAbsolute(caret.node, caret.offset);
       }
     }
   });
@@ -66,9 +66,9 @@ export function setupMouseHandlers(): void {
         expandPageForHighlight();
       }
 
-      const endRange = document.caretRangeFromPoint(e.clientX, e.clientY);
-      if (!endRange || endRange.startContainer.nodeType !== Node.TEXT_NODE) return;
-      const endAbs = nodeOffsetToAbsolute(endRange.startContainer, endRange.startOffset);
+      const endCaret = resolveCaretAt(e.clientX, e.clientY);
+      if (!endCaret || endCaret.node.nodeType !== Node.TEXT_NODE) return;
+      const endAbs = nodeOffsetToAbsolute(endCaret.node, endCaret.offset);
       clearHighlight();
       const lo = Math.min(mouseStartAbs, endAbs);
       const hi = Math.max(mouseStartAbs, endAbs);
