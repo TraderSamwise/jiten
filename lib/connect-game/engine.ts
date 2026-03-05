@@ -32,12 +32,19 @@ const WAVE_TIERS: Record<SpeedPreset, [WaveConfig, WaveConfig, WaveConfig]> = {
   ],
 };
 
-export function getWaveConfig(wave: number, speedPreset: SpeedPreset, mode?: GameMode): WaveConfig {
+export function getWaveConfig(
+  wave: number,
+  speedPreset: SpeedPreset,
+  mode?: GameMode,
+  pairsOnly?: boolean,
+): WaveConfig {
   const tiers = WAVE_TIERS[speedPreset];
   // Zen mode: always use tier 1 (flat difficulty)
   const tierIndex = mode === "zen" ? 0 : wave <= 2 ? 0 : wave <= 4 ? 1 : 2;
   const tier = tiers[tierIndex];
-  return { ...tier, wave };
+  // 30% more groups when only 2 kinds (fewer bubbles per group)
+  const groupCount = pairsOnly ? Math.ceil(tier.groupCount * 1.3) : tier.groupCount;
+  return { ...tier, groupCount, wave };
 }
 
 // ─── Bubble creation ───
@@ -52,26 +59,29 @@ function createBubblesForEntry(
   fieldHeight: number,
   now: number,
   staggerMs: number,
+  enabledKinds: Set<BubbleKind>,
 ): Bubble[] {
   const bubbles: Bubble[] = [];
   const items: { kind: BubbleKind; text: string }[] = [];
 
   // Kanji (use first kanji text if available)
-  if (entry.kanji.length > 0) {
+  if (enabledKinds.has("kanji") && entry.kanji.length > 0) {
     items.push({ kind: "kanji", text: entry.kanji[0].text });
   }
 
   // Reading (first kana)
-  if (entry.kana.length > 0) {
+  if (enabledKinds.has("reading") && entry.kana.length > 0) {
     items.push({ kind: "reading", text: entry.kana[0].text });
   }
 
   // Meaning (first English gloss, truncated)
-  const firstGloss = entry.senses[0]?.glosses.find((g) => g.lang === "eng");
-  if (firstGloss) {
-    const text =
-      firstGloss.text.length > 20 ? firstGloss.text.slice(0, 18) + ".." : firstGloss.text;
-    items.push({ kind: "meaning", text });
+  if (enabledKinds.has("meaning")) {
+    const firstGloss = entry.senses[0]?.glosses.find((g) => g.lang === "eng");
+    if (firstGloss) {
+      const text =
+        firstGloss.text.length > 20 ? firstGloss.text.slice(0, 18) + ".." : firstGloss.text;
+      items.push({ kind: "meaning", text });
+    }
   }
 
   // Need at least 2 items to form a matchable group
@@ -121,6 +131,7 @@ export function createInitialState(
   fieldWidth: number,
   fieldHeight: number,
   speedPreset: SpeedPreset = "normal",
+  enabledKinds: Set<BubbleKind> = new Set(["kanji", "reading", "meaning"]),
 ): GameState {
   nextBubbleId = 0;
 
@@ -128,11 +139,16 @@ export function createInitialState(
   const entryIds: number[] = [];
 
   for (const e of entries) {
-    // Only include entries that have at least 2 bubble-able fields
+    // Only include entries that have at least 2 of the enabled bubble-able fields
     let fieldCount = 0;
-    if (e.kanji.length > 0) fieldCount++;
-    if (e.kana.length > 0) fieldCount++;
-    if (e.senses.length > 0 && e.senses[0].glosses.some((g) => g.lang === "eng")) fieldCount++;
+    if (enabledKinds.has("kanji") && e.kanji.length > 0) fieldCount++;
+    if (enabledKinds.has("reading") && e.kana.length > 0) fieldCount++;
+    if (
+      enabledKinds.has("meaning") &&
+      e.senses.length > 0 &&
+      e.senses[0].glosses.some((g) => g.lang === "eng")
+    )
+      fieldCount++;
     if (fieldCount >= 2) {
       entryMap.set(e.id, e);
       entryIds.push(e.id);
@@ -170,6 +186,7 @@ export function createInitialState(
     paused: false,
     speedBonusThreshold: SCORING.SPEED_BONUS_THRESHOLD,
     speedPreset,
+    enabledKinds,
   };
 }
 
@@ -177,7 +194,8 @@ export function createInitialState(
 
 /** Spawn a new wave of bubbles. Returns bubbles to add. */
 export function spawnWave(state: GameState, now: number): Bubble[] {
-  const config = getWaveConfig(state.wave, state.speedPreset, state.mode);
+  const pairsOnly = state.enabledKinds.size === 2;
+  const config = getWaveConfig(state.wave, state.speedPreset, state.mode, pairsOnly);
   const newBubbles: Bubble[] = [];
 
   for (let i = 0; i < config.groupCount; i++) {
@@ -210,6 +228,7 @@ export function spawnWave(state: GameState, now: number): Bubble[] {
       state.fieldHeight,
       now,
       stagger,
+      state.enabledKinds,
     );
 
     if (bubbles.length > 0) {

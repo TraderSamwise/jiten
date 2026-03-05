@@ -11,6 +11,7 @@ export type ConnectGameMode = "timed" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
 export type WordFilterMode = "review" | "learn" | "all";
+export type ConnectBubbleKinds = { kanji: boolean; reading: boolean; meaning: boolean };
 
 // ─── Defaults ───
 
@@ -34,6 +35,7 @@ export const defaultSettings = Object.freeze({
   connectGameMode: "timed" as ConnectGameMode,
   connectTimedDuration: 90 as TimedDuration,
   connectSpeedPreset: "normal" as SpeedPreset,
+  connectBubbleKinds: { kanji: true, reading: true, meaning: true } as ConnectBubbleKinds,
   typingWordFilter: "all" as WordFilterMode,
 });
 
@@ -95,4 +97,5 @@ export const connectTimedDurationAtom = focusAtom(settingsAtom, (o) =>
   o.prop("connectTimedDuration"),
 );
 export const connectSpeedPresetAtom = focusAtom(settingsAtom, (o) => o.prop("connectSpeedPreset"));
+export const connectBubbleKindsAtom = focusAtom(settingsAtom, (o) => o.prop("connectBubbleKinds"));
 export const typingWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("typingWordFilter"));
