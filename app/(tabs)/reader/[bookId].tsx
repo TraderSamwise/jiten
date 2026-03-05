@@ -272,8 +272,8 @@ function JumpSlider({
         style={{
           backgroundColor: bg,
           paddingHorizontal: 20,
-          paddingTop: 16,
-          paddingBottom: 40,
+          paddingTop: 12,
+          paddingBottom: 32,
           borderTopLeftRadius: 16,
           borderTopRightRadius: 16,
           shadowColor: "#000",
@@ -286,10 +286,10 @@ function JumpSlider({
         <Text
           style={{
             color: textColor,
-            fontSize: 28,
-            fontWeight: "700",
+            fontSize: 18,
+            fontWeight: "600",
             textAlign: "center",
-            marginBottom: 16,
+            marginBottom: 12,
             fontVariant: ["tabular-nums"],
           }}
         >
