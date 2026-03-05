@@ -34,7 +34,9 @@ export async function buildFuriganaKanjiSet(
   }
   const results = await Promise.all(queries);
   for (const literals of results) {
-    for (const lit of literals) chars.add(lit);
+    for (const lit of literals) {
+      if (isKanji(lit)) chars.add(lit);
+    }
   }
   return { all: false, chars };
 }
