@@ -26,6 +26,7 @@ export const defaultSettings = Object.freeze({
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
   readerFuriganaLevels: defaultFuriganaLevels as Record<FuriganaLevel, boolean>,
+  readerPageAnimations: true as boolean,
 });
 
 export type AppSettings = typeof defaultSettings;
@@ -66,4 +67,7 @@ export const typingShowPitchAtom = focusAtom(settingsAtom, (o) => o.prop("typing
 export const typingPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("typingPlayAudio"));
 export const readerFuriganaLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaLevels"),
+);
+export const readerPageAnimationsAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerPageAnimations"),
 );

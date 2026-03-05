@@ -34,4 +34,7 @@ export const state = {
   // Prevents drift: spacer/prepend shift column boundaries, but we save this
   // stable value instead of MFVC until the user explicitly moves.
   canonicalCharOffset: -1,
+
+  // Page animation setting
+  pageAnimations: true,
 };

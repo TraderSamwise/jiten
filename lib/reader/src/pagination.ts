@@ -293,6 +293,8 @@ export function goToPage(page: number): void {
     state.canonicalCharOffset = -1;
   }
   state.currentPage = page;
+  // Always set scrollLeft directly so virtualization/measurement works immediately.
+  // Animation is handled separately by nextPage/prevPage for user-initiated turns.
   state.pageEl!.scrollLeft = -((page - 1) * state.columnWidth);
   updatePageInfo();
   reportScroll();
@@ -310,14 +312,60 @@ export function goToPage(page: number): void {
   }
 }
 
+let animTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelPageAnimation(): void {
+  if (animTimer !== null) {
+    clearTimeout(animTimer);
+    animTimer = null;
+    // Snap to current page position instantly
+    state.pageEl!.scrollLeft = -((state.currentPage - 1) * state.columnWidth);
+  }
+}
+
+function animatedGoToPage(to: number): void {
+  // Cancel any in-flight animation first
+  cancelPageAnimation();
+  state.currentPage = to;
+  state.pageEl!.scrollTo({
+    left: -((to - 1) * state.columnWidth),
+    behavior: "smooth",
+  });
+  updatePageInfo();
+  animTimer = setTimeout(function () {
+    animTimer = null;
+    reportScroll();
+    const lastChar = measureLastVisibleChar();
+    if (lastChar >= 0) {
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type: "pageRendered",
+          lastCharIndex: lastChar,
+          localPage: state.currentPage,
+        }),
+      );
+    }
+  }, 350);
+}
+
 export function nextPage(): void {
   state.canonicalCharOffset = -1; // user navigated — use MFVC from now on
-  goToPage(state.currentPage + 1);
+  const prev = state.currentPage;
+  if (state.pageAnimations && prev < state.totalPages) {
+    animatedGoToPage(prev + 1);
+  } else {
+    goToPage(state.currentPage + 1);
+  }
 }
 
 export function prevPage(): void {
   state.canonicalCharOffset = -1; // user navigated — use MFVC from now on
-  goToPage(state.currentPage - 1);
+  const prev = state.currentPage;
+  if (state.pageAnimations && prev > 1) {
+    animatedGoToPage(prev - 1);
+  } else {
+    goToPage(state.currentPage - 1);
+  }
 }
 
 // During drag-select near left edge: scroll slightly to reveal next column.
