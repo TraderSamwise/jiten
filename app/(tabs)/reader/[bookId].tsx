@@ -450,7 +450,7 @@ export default function BookReaderScreen() {
           html: sliceHtml,
           sliceCharOffset: startChar,
           targetLocalChar,
-          lineHeight: hasFuri ? `${fontSize * 2}px` : 1.5,
+          lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
           hasFurigana: hasFuri,
         }),
       );
@@ -806,7 +806,7 @@ export default function BookReaderScreen() {
       const rounded = Math.round(newSize);
       setFontSize(rounded);
       const hasFuri = kanjiSetRef.current != null;
-      const lineHeight = hasFuri ? `${rounded * 2}px` : "1.5";
+      const lineHeight = hasFuri ? `${rounded * 2}px` : `${Math.round(rounded * 1.5)}px`;
       readerRef.current?.postMessage(
         JSON.stringify({ type: "setFontSize", size: rounded, lineHeight }),
       );

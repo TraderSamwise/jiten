@@ -43,7 +43,8 @@ export function updateSizing(): void {
 export function paginate(): void {
   const cW = getContentW();
   const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-  const lineW = parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5;
+  const lineW =
+    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || Math.round(fontSize * 1.5);
   // Snap page width to whole lines so page boundaries never cut through text
   state.columnWidth = Math.floor(cW / lineW) * lineW;
   state.pageEl!.style.width = state.columnWidth + "px";
@@ -80,20 +81,45 @@ function findRenderedChar(absOffset: number): number {
 // Sets canonicalCharOffset to prevent drift on repeated layout changes.
 // scrollLeft is set to a line-aligned value (multiple of lineW).
 // currentPage is derived from scrollLeft for display only.
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// Key requirements:
-// - Find targetLocalChar in DOM using findRenderedChar + absoluteToNodeOffset
-// - Reset spacer/prepend state
-// - Measure char position at scrollLeft=0
-// - Compute lineW from getComputedStyle lineHeight
-// - Set scrollLeft = -(floor(D / lineW) * lineW) where D = pageRight - charRect.right
-// - Derive currentPage = round(-scrollLeft / columnWidth) + 1 (display only)
-// - Set canonicalCharOffset = sliceCharOffset + alignTarget
-// - Call updatePageInfo() and reportScroll()
-// - Fallback on ANY failure (null pos, zero rect): goToPage(1), reset canonicalCharOffset = -1
-export function alignToTargetChar(_targetLocalChar: number): void {
-  // STRIPPED — waiting for reimplementation
+export function alignToTargetChar(targetLocalChar: number): void {
+  const alignTarget = findRenderedChar(targetLocalChar);
+  const pos = absoluteToNodeOffset(alignTarget);
+  if (!pos) {
+    goToPage(1);
+    state.canonicalCharOffset = -1;
+    return;
+  }
+
+  // Reset prepend tracking
+  state.totalPrependWidth = 0;
+  state.prependedPages = 0;
+
+  // Measure char position with scrollLeft reset to 0
+  state.pageEl!.scrollLeft = 0;
+  const range = document.createRange();
+  range.setStart(pos.node, pos.offset);
+  range.setEnd(pos.node, Math.min(pos.offset + 1, pos.node.textContent!.length));
+  const charRect = range.getBoundingClientRect();
+
+  if (charRect.width < 1 && charRect.height < 1) {
+    goToPage(1);
+    state.canonicalCharOffset = -1;
+    return;
+  }
+
+  const pageRect = state.pageEl!.getBoundingClientRect();
+  const D = pageRect.right - charRect.right;
+  const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+  const lineW =
+    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || Math.round(fontSize * 1.5);
+  const offset = Math.floor(D / lineW) * lineW;
+
+  state.pageEl!.scrollLeft = -offset;
+  state.currentPage = Math.round(offset / state.columnWidth) + 1;
+  state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
+  state.canonicalCharOffset = state.sliceCharOffset + alignTarget;
+  updatePageInfo();
+  reportScroll();
 }
 
 // Measure the last visible character on the current page.
@@ -272,76 +298,136 @@ function reportPageRendered(): void {
 
 // Navigate to an explicit page number. Used for percent-jump and initial load.
 // Sets scrollLeft from page number (page-grid aligned).
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// - scrollLeft = -((page - 1) * columnWidth)
-// - derive currentPage, call updatePageInfo, reportScroll, reportPageRendered
-export function goToPage(_page: number): void {
-  // STRIPPED — waiting for reimplementation
+export function goToPage(page: number): void {
+  page = Math.max(1, Math.min(page, state.totalPages));
+  state.pageEl!.scrollLeft = -((page - 1) * state.columnWidth);
+  state.currentPage = page;
+  updatePageInfo();
+  reportScroll();
+  reportPageRendered();
 }
 
 let animTimer: ReturnType<typeof setTimeout> | null = null;
-const animTargetScroll = 0;
+let animTargetScroll = 0;
 
 function cancelPageAnimation(): void {
-  // TODO: implement — snap to animTargetScroll, not currentPage * columnWidth
   if (animTimer !== null) {
     clearTimeout(animTimer);
     animTimer = null;
+    state.pageEl!.scrollLeft = -animTargetScroll;
   }
 }
 
 // Scroll to an absolute offset (positive distance from right edge).
 // Handles animated vs instant, derives currentPage, reports to RN.
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// - Set scrollLeft = -offset (instant) or scrollTo with smooth behavior
-// - Derive currentPage = round(offset / columnWidth) + 1
-// - Call updatePageInfo, reportScroll, reportPageRendered
-// - For animated: store animTargetScroll, use timer for deferred reportScroll
-function scrollToOffset(_offset: number): void {
-  // STRIPPED — waiting for reimplementation
+function scrollToOffset(offset: number): void {
+  const cW = state.columnWidth;
+  const maxScroll = (state.totalPages - 1) * cW;
+  offset = Math.max(0, Math.min(offset, maxScroll));
+  animTargetScroll = offset;
+
+  state.currentPage = Math.round(offset / cW) + 1;
+  state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
+
+  if (state.pageAnimations) {
+    // Step-based ease-out animation (~200ms)
+    const startScroll = -state.pageEl!.scrollLeft;
+    const distance = offset - startScroll;
+    const steps = 12;
+    let step = 0;
+    function tick() {
+      step++;
+      // Ease-out: 1 - (1 - t)^2
+      const t = step / steps;
+      const ease = 1 - (1 - t) * (1 - t);
+      const current = startScroll + distance * ease;
+      state.pageEl!.scrollLeft = -current;
+      if (step < steps) {
+        animTimer = setTimeout(tick, 16);
+      } else {
+        animTimer = null;
+        state.pageEl!.scrollLeft = -offset;
+        updatePageInfo();
+        reportScroll();
+        reportPageRendered();
+      }
+    }
+    animTimer = setTimeout(tick, 16);
+    // Update UI immediately for responsiveness
+    updatePageInfo();
+  } else {
+    state.pageEl!.scrollLeft = -offset;
+    updatePageInfo();
+    reportScroll();
+    reportPageRendered();
+  }
 }
 
-// Page turns: scroll-relative (±columnWidth from current scrollLeft).
+// Page turns: scroll-relative (+-columnWidth from current scrollLeft).
 // Clears canonicalCharOffset — after a page turn, MFVC becomes the new anchor.
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// Key requirements:
-// - nextPage: target = -scrollLeft + columnWidth (clamped to max)
-// - prevPage: target = -scrollLeft - columnWidth (clamped to 0)
-// - Call scrollToOffset(target)
-// - Clear canonicalCharOffset = -1
 export function nextPage(): void {
-  // STRIPPED — waiting for reimplementation
+  cancelPageAnimation();
+  state.canonicalCharOffset = -1;
+  const cW = state.columnWidth;
+  const maxScroll = (state.totalPages - 1) * cW;
+  const target = Math.min(-state.pageEl!.scrollLeft + cW, maxScroll);
+  scrollToOffset(target);
 }
 
 export function prevPage(): void {
-  // STRIPPED — waiting for reimplementation
+  cancelPageAnimation();
+  state.canonicalCharOffset = -1;
+  const cW = state.columnWidth;
+  const target = Math.max(-state.pageEl!.scrollLeft - cW, 0);
+  scrollToOffset(target);
 }
 
 // During drag-select near left edge: scroll slightly to reveal next column.
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// Key change: use actual scrollLeft as base, not currentPage * columnWidth.
-// Store pre-shift scrollLeft in state.preShiftScroll.
+// Uses actual scrollLeft as base, stores pre-shift position.
 export function expandPageForHighlight(): boolean {
-  // STRIPPED — waiting for reimplementation
-  return false;
+  if (state.shiftOffset > 0) return false;
+  const currentOffset = -state.pageEl!.scrollLeft;
+  state.preShiftScroll = currentOffset;
+  const cW = state.columnWidth;
+  const maxScroll = (state.totalPages - 1) * cW;
+  const newOffset = Math.min(currentOffset + cW, maxScroll);
+  if (newOffset === currentOffset) return false;
+  state.shiftOffset = newOffset - currentOffset;
+  state.lastShiftTime = Date.now();
+  state.pageEl!.scrollLeft = -newOffset;
+  return true;
 }
 
 // Animate back to pre-shift position after selection ends.
-//
-// TODO: implement — scrollTo state.preShiftScroll
 export function animateResetShift(): void {
-  // STRIPPED — waiting for reimplementation
+  if (state.shiftOffset === 0) return;
+  const target = state.preShiftScroll;
+  state.shiftOffset = 0;
+  const current = -state.pageEl!.scrollLeft;
+  const distance = current - target;
+  const steps = 8;
+  let step = 0;
+  function tick() {
+    step++;
+    const t = step / steps;
+    const ease = 1 - (1 - t) * (1 - t);
+    state.pageEl!.scrollLeft = -(current - distance * ease);
+    if (step < steps) {
+      setTimeout(tick, 16);
+    } else {
+      state.pageEl!.scrollLeft = -target;
+      state.preShiftScroll = 0;
+    }
+  }
+  setTimeout(tick, 16);
 }
 
 // Immediately reset shift (safety net for new gestures).
-//
-// TODO: implement — scrollLeft = state.preShiftScroll
 export function resetPageShift(): void {
-  // STRIPPED — waiting for reimplementation
+  if (state.shiftOffset === 0) return;
+  state.pageEl!.scrollLeft = -state.preShiftScroll;
+  state.shiftOffset = 0;
+  state.preShiftScroll = 0;
 }
 
 export function reportScroll(): void {
@@ -359,25 +445,32 @@ export function reportScroll(): void {
 }
 
 // Prepend content for backward navigation.
-//
-// TODO: implement per plan in twinkly-wandering-scroll.md
-// Key requirements:
-// - Save current scrollLeft before prepend
-// - Prepend HTML to #page
-// - Measure how much scrollWidth grew (newContentWidth)
-// - Adjust scrollLeft by newContentWidth to keep the same content visible
-//   (in vertical-rl, prepending shifts content leftward, so scrollLeft must
-//    become more negative by the same amount)
-// - Update sliceCharOffset -= charCount
-// - Do NOT clear canonicalCharOffset (it's a global value, stays valid)
-// - Recalculate totalPages
-// - Derive currentPage from new scrollLeft
-// - Call updatePageInfo, reportPageRendered
-// - Notify RN with backPrefetchDone
-//
-// NOTE: The old code used page-grid spacers to maintain alignment.
-// The new approach should just adjust scrollLeft by the exact prepend width.
-// No spacers needed since we're scroll-relative now.
-export function prependBackSlice(_html: string, _charCount?: number): void {
-  // STRIPPED — waiting for reimplementation
+// Adjusts scrollLeft by the exact prepend width to keep content stable.
+export function prependBackSlice(html: string, charCount?: number): void {
+  const prevScrollWidth = state.pageEl!.scrollWidth;
+  const prevScrollLeft = state.pageEl!.scrollLeft;
+
+  // Prepend HTML to #page
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  const frag = document.createDocumentFragment();
+  while (temp.firstChild) frag.appendChild(temp.firstChild);
+  state.pageEl!.insertBefore(frag, state.pageEl!.firstChild);
+
+  // Compensate scrollLeft for the added width
+  const newContentWidth = state.pageEl!.scrollWidth - prevScrollWidth;
+  state.pageEl!.scrollLeft = prevScrollLeft - newContentWidth;
+
+  // Update slice tracking
+  if (charCount != null) state.sliceCharOffset -= charCount;
+  state.totalPrependWidth += newContentWidth;
+
+  // Recalculate pagination
+  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+  state.currentPage = Math.round(-state.pageEl!.scrollLeft / state.columnWidth) + 1;
+  state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
+  updatePageInfo();
+  reportPageRendered();
+
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: "backPrefetchDone" }));
 }

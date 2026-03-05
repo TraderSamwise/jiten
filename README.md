@@ -111,7 +111,8 @@ Handles format-aware text measurement and slicing for streaming pagination:
 
 `generateReaderHtml(content, options)` wraps content in a full HTML document:
 
-- Injects CSS (theme colors, font size, line height doubled when furigana active)
+- Injects CSS (theme colors, font size, line height)
+- **Line height must ALWAYS be a whole number of pixels, set explicitly in px units.** Fractional or relative line heights (e.g. `1.5`) cause sub-pixel drift in `columnWidth`/`lineW` calculations, breaking page alignment. Non-furigana: `Math.round(fontSize * 1.5)px`. Furigana: `fontSize * 2px`. This invariant must hold in `reader-html.ts`, `[bookId].tsx` (both `reloadContent` and `setFontSize` messages), and the fallbacks in `pagination.ts`.
 - Embeds content in `<div id="page">`
 - Injects `window.__READER_CONFIG__` with scroll position, char offset, total chars, furigana state
 - Appends the reader JS bundle
