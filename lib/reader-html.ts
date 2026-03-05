@@ -27,7 +27,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   const rubyColor = isDark ? "#a1a1aa" : "#71717a";
   const highlightBg = isDark ? "#2e2e5f" : "#d5d5eb";
 
-  const lineHeight = hasFurigana ? `${fontSize * 2}px` : "1.5";
+  const lineHeight = hasFurigana ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`;
 
   const css = readerCss
     .replace(/__BG__/g, bg)

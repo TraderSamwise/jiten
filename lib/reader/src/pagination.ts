@@ -43,9 +43,7 @@ export function updateSizing(): void {
 export function paginate(): void {
   const cW = getContentW();
   const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-  const lineW = Math.round(
-    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5,
-  );
+  const lineW = parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5;
   // Snap page width to whole lines so page boundaries never cut through text
   state.columnWidth = Math.floor(cW / lineW) * lineW;
   state.pageEl!.style.width = state.columnWidth + "px";
@@ -84,9 +82,7 @@ function findRenderedChar(absOffset: number): number {
 export function alignToTargetChar(targetLocalChar: number): void {
   const cW = state.columnWidth;
   const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-  const lineW = Math.round(
-    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5,
-  );
+  const lineW = parseFloat(getComputedStyle(state.contentEl!).lineHeight) || fontSize * 1.5;
   const alignTarget = findRenderedChar(targetLocalChar);
 
   // Paginate from clean state (no spacer)
