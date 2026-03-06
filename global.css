@@ -15,8 +15,8 @@ body {
   background-color: hsl(240, 10%, 3.9%);
 }
 
-/* Full-width navbar backdrop on web — extends the navigator gray beyond the 960px container */
-body::before {
+/* Full-width navbar backdrop on web — only visible when tab bar is mounted */
+body.has-navbar::before {
   content: "";
   position: fixed;
   top: 0;
@@ -29,7 +29,7 @@ body::before {
   pointer-events: none;
 }
 
-.dark body::before {
+.dark body.has-navbar::before {
   background-color: rgb(1, 1, 1);
   border-bottom-color: hsl(240, 3.7%, 15.9%);
 }

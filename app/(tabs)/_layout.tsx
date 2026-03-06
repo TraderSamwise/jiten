@@ -18,6 +18,12 @@ export default function TabLayout() {
     if (userDb) loadBookmarks(userDb);
   }, [userDb]);
 
+  useEffect(() => {
+    if (!isWeb) return;
+    document.body.classList.add("has-navbar");
+    return () => document.body.classList.remove("has-navbar");
+  }, []);
+
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const activeTint = isDark ? "#fafafa" : "#18181b";
