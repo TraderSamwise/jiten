@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useSignUp } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
@@ -14,6 +14,7 @@ export default function SignUpScreen() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
 
   async function handleSignUp() {
     if (!isLoaded) return;
@@ -46,6 +47,26 @@ export default function SignUpScreen() {
     }
   }
 
+  async function handleResendCode() {
+    if (!isLoaded) return;
+    setError("");
+    setLoading(true);
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setCode("");
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage ?? "Failed to resend code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleBack() {
+    setPendingVerification(false);
+    setCode("");
+    setError("");
+  }
+
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
@@ -65,9 +86,13 @@ export default function SignUpScreen() {
               autoCapitalize="none"
               keyboardType="email-address"
               textContentType="emailAddress"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              blurOnSubmit={false}
             />
 
             <TextInput
+              ref={passwordRef}
               className="h-12 rounded-lg border border-border bg-background px-4 text-foreground mb-3"
               placeholder="Password"
               placeholderTextColor="#9ca3af"
@@ -75,6 +100,8 @@ export default function SignUpScreen() {
               onChangeText={setPassword}
               secureTextEntry
               textContentType="newPassword"
+              returnKeyType="go"
+              onSubmitEditing={handleSignUp}
             />
 
             {error ? <Text className="text-red-500 text-sm mb-3">{error}</Text> : null}
@@ -105,6 +132,8 @@ export default function SignUpScreen() {
               value={code}
               onChangeText={setCode}
               keyboardType="number-pad"
+              returnKeyType="go"
+              onSubmitEditing={handleVerify}
             />
 
             {error ? <Text className="text-red-500 text-sm mb-3">{error}</Text> : null}
@@ -113,6 +142,21 @@ export default function SignUpScreen() {
               label={loading ? "Verifying..." : "Verify Email"}
               onPress={handleVerify}
               disabled={loading}
+            />
+
+            <Button
+              className="mt-2"
+              variant="ghost"
+              label="Resend code"
+              onPress={handleResendCode}
+              disabled={loading}
+            />
+
+            <Button
+              className="mt-1"
+              variant="ghost"
+              label="Use a different email"
+              onPress={handleBack}
             />
           </>
         )}

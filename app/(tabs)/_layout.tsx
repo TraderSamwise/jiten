@@ -20,11 +20,8 @@ export default function TabLayout() {
     if (userDb) loadBookmarks(userDb);
   }, [userDb]);
 
-  useEffect(() => {
-    if (!isWeb) return;
-    document.body.classList.add("has-navbar");
-    return () => document.body.classList.remove("has-navbar");
-  }, []);
+  // Note: the has-navbar body class (web tab bar backdrop) is toggled in
+  // AuthGate (_layout.tsx) based on auth state, not here.
 
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";

@@ -40,6 +40,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [isSignedIn, isLoaded, segments]);
 
+  // Toggle the web navbar backdrop based on auth state. The has-navbar class
+  // drives a CSS ::before pseudo-element for the full-width tab bar backdrop.
+  // This lives here (not in tabs layout) because Expo Router on web mounts
+  // the (tabs) layout even on auth screens.
+  useEffect(() => {
+    if (Platform.OS !== "web" || !isLoaded) return;
+    if (isSignedIn) {
+      document.body.classList.add("has-navbar");
+    } else {
+      document.body.classList.remove("has-navbar");
+    }
+  }, [isSignedIn, isLoaded]);
+
   if (!isLoaded) return null;
 
   if (!isSignedIn) {
