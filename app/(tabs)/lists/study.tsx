@@ -75,6 +75,63 @@ const SWIPE_THRESHOLD = 80;
 const SLIDE_DURATION = 250;
 const FLIP_DURATION = 400;
 
+interface FloatingRating {
+  key: number;
+  label: string;
+  color: string;
+  x: number;
+  y: number;
+}
+
+// ─── Floating rating label (floats up from button and fades) ───
+function RatingFloat({
+  label,
+  color,
+  screenX,
+  screenY,
+  onDone,
+}: {
+  label: string;
+  color: string;
+  screenX: number;
+  screenY: number;
+  onDone: () => void;
+}) {
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    translateY.value = withTiming(-60, { duration: 800, easing: Easing.out(Easing.quad) });
+    opacity.value = withTiming(0, { duration: 800, easing: Easing.in(Easing.quad) });
+    const timer = setTimeout(onDone, 900);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          top: screenY - 8,
+          left: screenX - 40,
+          width: 80,
+          alignItems: "center",
+          zIndex: 100,
+        },
+        style,
+      ]}
+    >
+      <Text style={{ color, fontWeight: "800", fontSize: 18 }}>{label}</Text>
+    </Animated.View>
+  );
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
@@ -845,13 +902,11 @@ function StudyScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
-  const ratingFlashOpacity = useSharedValue(0);
-  const ratingFlashScale = useSharedValue(0.8);
-  const [flashInfo, setFlashInfo] = useState<{ label: string; color: string } | null>(null);
-  const ratingFlashStyle = useAnimatedStyle(() => ({
-    opacity: ratingFlashOpacity.value,
-    transform: [{ scale: ratingFlashScale.value }],
-  }));
+  // Floating rating labels
+  const [floatingRatings, setFloatingRatings] = useState<FloatingRating[]>([]);
+  const floatingKeyRef = useRef(0);
+  const failButtonRef = useRef<View>(null);
+  const passButtonRef = useRef<View>(null);
   const revealedRef = useRef(false);
   const revealTimeRef = useRef(0);
   const sessionIdRef = useRef("");
@@ -1252,13 +1307,13 @@ function StudyScreen() {
   }
 
   function flashRating(which: "fail" | "pass" | "easy") {
-    const label = which === "fail" ? "Fail" : which === "easy" ? "Easy" : "Pass";
+    const label = which === "fail" ? "Fail" : which === "easy" ? "Easy!" : "Pass";
     const color = which === "fail" ? "#ef4444" : which === "easy" ? "#4ade80" : "#22c55e";
-    setFlashInfo({ label, color });
-    ratingFlashOpacity.value = 1;
-    ratingFlashScale.value = 0.8;
-    ratingFlashScale.value = withTiming(1.3, { duration: 300 });
-    ratingFlashOpacity.value = withTiming(0, { duration: 300 });
+    const ref = which === "fail" ? failButtonRef : passButtonRef;
+    ref.current?.measureInWindow((x, y, width, height) => {
+      const key = ++floatingKeyRef.current;
+      setFloatingRatings((prev) => [...prev, { key, label, color, x: x + width / 2, y: y }]);
+    });
   }
 
   // --- moveCursor: replaces advance/goBack/goForward/advanceFrom ---
@@ -2181,6 +2236,7 @@ function StudyScreen() {
       {!sessionDone && (
         <View className="flex-row gap-3 px-4 mt-4 mb-8">
           <Pressable
+            ref={failButtonRef}
             onPress={() => handleFail()}
             className={`flex-1 items-center justify-center rounded-lg h-11 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
           >
@@ -2189,6 +2245,7 @@ function StudyScreen() {
             </Text>
           </Pressable>
           <Pressable
+            ref={passButtonRef}
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
             onPress={handlePassPress}
@@ -2370,35 +2427,17 @@ function StudyScreen() {
         onClearStatistics={loadQueue}
       />
 
-      {/* Rating flash overlay */}
-      {flashInfo && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: "absolute",
-              bottom: 60,
-              left: 0,
-              right: 0,
-              alignItems: "center",
-            },
-            ratingFlashStyle,
-          ]}
-        >
-          <View
-            style={{
-              paddingHorizontal: 24,
-              paddingVertical: 10,
-              borderRadius: 20,
-              backgroundColor: flashInfo.color,
-            }}
-          >
-            <Text style={{ color: "white", fontWeight: "700", fontSize: 16 }}>
-              {flashInfo.label}
-            </Text>
-          </View>
-        </Animated.View>
-      )}
+      {/* Floating rating labels */}
+      {floatingRatings.map((fr) => (
+        <RatingFloat
+          key={fr.key}
+          label={fr.label}
+          color={fr.color}
+          screenX={fr.x}
+          screenY={fr.y}
+          onDone={() => setFloatingRatings((prev) => prev.filter((r) => r.key !== fr.key))}
+        />
+      ))}
 
       {/* Navigation overlay -- covers heavy UI before unmount to prevent frame drops */}
       {navigating && (
