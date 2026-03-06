@@ -15,6 +15,25 @@ body {
   background-color: hsl(240, 10%, 3.9%);
 }
 
+/* Full-width navbar backdrop on web — extends the navigator gray beyond the 960px container */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 137px;
+  background-color: rgb(242, 242, 242);
+  border-bottom: 1.5px solid hsl(240, 5.9%, 90%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.dark body::before {
+  background-color: rgb(1, 1, 1);
+  border-bottom-color: hsl(240, 3.7%, 15.9%);
+}
+
 /* Webkit (Chrome/Safari) thin overlay scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
