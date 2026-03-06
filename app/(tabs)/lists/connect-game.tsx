@@ -8,7 +8,7 @@ import {
   AppState,
 } from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
-import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useSafeGoBack, WEB_BACKDROP_COLORS, WEB_CUSTOM_HEADER_TOP } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -357,7 +357,12 @@ export default function ConnectGameScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View
         className="flex-1 bg-background"
-        style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
+        style={[
+          Platform.OS === "web"
+            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+            : { paddingTop: insets.top },
+          webBgStyle,
+        ]}
       >
         {/* Header */}
         <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>

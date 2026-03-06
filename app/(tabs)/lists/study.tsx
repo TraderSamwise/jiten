@@ -9,7 +9,12 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeGoBack, useTabRouter, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import {
+  useSafeGoBack,
+  useTabRouter,
+  WEB_BACKDROP_COLORS,
+  WEB_CUSTOM_HEADER_TOP,
+} from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -2152,7 +2157,10 @@ function StudyScreen() {
   return (
     <View
       className="flex-1 bg-background"
-      style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
+      style={[
+        Platform.OS === "web" ? { paddingTop: WEB_CUSTOM_HEADER_TOP } : { paddingTop: insets.top },
+        webBgStyle,
+      ]}
     >
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-2" style={webBgStyle}>

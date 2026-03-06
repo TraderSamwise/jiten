@@ -14,7 +14,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useSafeGoBack, WEB_BACKDROP_COLORS, WEB_CUSTOM_HEADER_TOP } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -746,7 +746,10 @@ export default function TypingGameScreen() {
     <View
       ref={gameRef}
       className="flex-1 bg-background"
-      style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
+      style={[
+        Platform.OS === "web" ? { paddingTop: WEB_CUSTOM_HEADER_TOP } : { paddingTop: insets.top },
+        webBgStyle,
+      ]}
       onTouchStart={() => {
         if (phase === "playing") inputRef.current?.focus();
       }}
