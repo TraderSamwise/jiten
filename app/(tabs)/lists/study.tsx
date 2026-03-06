@@ -1959,23 +1959,21 @@ export default function StudyScreen() {
                       >
                         {Array.from(
                           {
-                            length: getCheckCount(
-                              currentItem.srsCard,
-                              list?.flashcardMode ?? "add_order",
-                            ),
+                            length:
+                              list?.flashcardMode === "simple_srs" && currentItem.srsCard
+                                ? (simpleCorrectCountRef.current.get(currentItem.srsCard.id) ??
+                                  getCheckCount(currentItem.srsCard, "simple_srs"))
+                                : getCheckCount(
+                                    currentItem.srsCard,
+                                    list?.flashcardMode ?? "add_order",
+                                  ),
                           },
                           (_, ci) => (
                             <Check
                               key={ci}
                               size={14}
-                              className={
-                                getCheckCount(
-                                  currentItem.srsCard,
-                                  list?.flashcardMode ?? "add_order",
-                                ) === 3
-                                  ? "text-green-500"
-                                  : "text-muted-foreground"
-                              }
+                              className="text-green-500"
+                              style={{ marginRight: -4 }}
                             />
                           ),
                         )}
@@ -1986,6 +1984,7 @@ export default function StudyScreen() {
                               : tabRouter.pushKanji(currentItem.kanji.literal)
                           }
                           hitSlop={8}
+                          style={{ marginLeft: 8 }}
                         >
                           <Info size={18} className="text-muted-foreground" />
                         </Pressable>
