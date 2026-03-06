@@ -79,7 +79,12 @@ export function NavigatingOverlay({
   if (!visible) return null;
   return (
     <View className="absolute inset-0 z-50 bg-background" style={[topPadding, webBgStyle]}>
-      <HeaderPlaceholder py={py} spacerHeight={spacerHeight} />
+      <View
+        className={`${py} ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+        style={webBgStyle}
+      >
+        <View style={{ height: spacerHeight }} />
+      </View>
       <View className="flex-1 items-center justify-center">
         <ActivityIndicator size="large" />
       </View>

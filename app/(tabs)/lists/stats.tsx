@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, ScrollView, Pressable } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLocalSearchParams } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { ChevronLeft } from "@/lib/icons";
@@ -9,7 +8,8 @@ import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
 import { useListsStore } from "@/stores/lists";
-import { useTabRouter } from "@/lib/navigation";
+import { useTabRouter, useSafeGoBack } from "@/lib/navigation";
+import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScreen";
 import { Heatmap } from "@/components/charts/Heatmap";
 import { WeeklyBarChart } from "@/components/charts/WeeklyBarChart";
 import { DayReviewDetail } from "@/components/DayReviewDetail";
@@ -79,9 +79,9 @@ function practiceModeLabel(mode: string): string {
 
 export default function StatsScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
-  const router = useRouter();
   const tabRouter = useTabRouter();
-  const insets = useSafeAreaInsets();
+  const goBack = useSafeGoBack("/lists");
+  const { webBgStyle, insets } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
@@ -226,7 +226,7 @@ export default function StatsScreen() {
   }
 
   function handlePressEntry(entryId: number) {
-    router.push(`/lists/word/${entryId}`);
+    tabRouter.push(`/lists/word/${entryId}` as any);
   }
 
   function handlePressKanji(literal: string) {
@@ -234,10 +234,10 @@ export default function StatsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <CustomHeaderScreen>
       {/* Header */}
-      <View className="flex-row items-center px-4 py-3 border-b border-border">
-        <Pressable onPress={() => router.back()} className="p-1 mr-3">
+      <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
+        <Pressable onPress={goBack} className="p-1 mr-3">
           <ChevronLeft size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-lg font-semibold text-foreground flex-1">Practice Stats</Text>
@@ -488,6 +488,6 @@ export default function StatsScreen() {
           ) : null}
         </ScrollView>
       )}
-    </View>
+    </CustomHeaderScreen>
   );
 }

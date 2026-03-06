@@ -20,13 +20,41 @@ export const WEB_BACKDROP_COLORS = {
 } as const;
 
 /**
+ * Build a URL path from a route's name and params.
+ * Used on web to compute the previous route's path for router.replace().
+ */
+function buildRoutePath(
+  route: { name: string; params?: Record<string, any> },
+  fallback: string,
+): string {
+  if (route.name === "index") return fallback;
+  const params = { ...route.params };
+
+  // Substitute [param] segments with actual values
+  const path = route.name.replace(/\[(\w+)\]/g, (_, key) => {
+    const val = params[key];
+    delete params[key];
+    return encodeURIComponent(String(val ?? ""));
+  });
+
+  // Remove React Navigation internal params
+  delete params.screen;
+  delete params.initial;
+  delete params.params;
+
+  // Remaining params become query string
+  const entries = Object.entries(params).filter(([, v]) => v != null);
+  const query = entries.length
+    ? "?" + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&")
+    : "";
+
+  return `${fallback}/${path}${query}`;
+}
+
+/**
  * Returns a goBack function that checks the current stack's state.
- * If there's a real route to pop to within the stack, it calls router.back().
- * Otherwise, it replaces with the fallback route (the tab's root screen).
- *
- * This handles web page refreshes where canGoBack() is true (because the
- * parent tabs navigator can go back) but the current stack has only one route,
- * so back() would escape to a different tab instead of the tab root.
+ * On native, pops the stack or replaces with fallback.
+ * On web, uses router.replace() to avoid cross-tab browser history issues.
  */
 export function useSafeGoBack(fallback: string) {
   const router = useRouter();
@@ -34,11 +62,34 @@ export function useSafeGoBack(fallback: string) {
 
   return useCallback(() => {
     const state = navigation.getState();
-    if (state && state.index > 0) {
-      router.back();
-    } else {
-      router.replace(fallback as any);
+
+    if (Platform.OS !== "web") {
+      // Native: unchanged
+      if (state && state.index > 0) {
+        router.back();
+      } else {
+        router.replace(fallback as any);
+      }
+      return;
     }
+
+    // Web: never use router.back() — avoid cross-tab browser history
+    if (!state || state.index === 0) {
+      router.replace(fallback as any);
+      return;
+    }
+
+    const prevRoute = state.routes[state.index - 1];
+    const targetPath = buildRoutePath(prevRoute, fallback);
+    const currentRoute = state.routes[state.index];
+    const currentPath = buildRoutePath(currentRoute, fallback);
+
+    if (targetPath === currentPath) {
+      // Phantom duplicate — already at target, no-op
+      return;
+    }
+
+    router.replace(targetPath as any);
   }, [router, navigation, fallback]);
 }
 
@@ -46,9 +97,21 @@ export function useSafeGoBack(fallback: string) {
  * Back button component for use in tab stack layouts.
  * Uses the native HeaderBackButton styling, with useSafeGoBack fallback
  * so it works even after a web page refresh (no stack history).
+ * On web, hides when phantom duplicates make back a no-op.
  */
 export function SafeBackButton({ fallback, tintColor }: { fallback: string; tintColor?: string }) {
   const goBack = useSafeGoBack(fallback);
+  const navigation = useNavigation();
+  const state = navigation.getState();
+
+  // On web, hide when phantom duplicates make back a no-op
+  if (Platform.OS === "web" && state) {
+    if (state.index === 0) return null;
+    const prev = state.routes[state.index - 1];
+    const curr = state.routes[state.index];
+    if (buildRoutePath(prev, fallback) === buildRoutePath(curr, fallback)) return null;
+  }
+
   return React.createElement(HeaderBackButton, { onPress: goBack, tintColor });
 }
 
