@@ -9,9 +9,10 @@ import {
   GestureResponderEvent,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
+import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScreen";
 import { Text } from "@/components/ui/text";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
@@ -821,16 +822,10 @@ export default function BookReaderScreen() {
     [userDb, bookId],
   );
 
-  const webBgStyle =
-    Platform.OS === "web"
-      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
-      : undefined;
+  const { webBgStyle } = useWebBackdrop(15);
 
   return (
-    <View
-      className="flex-1 bg-background"
-      style={[Platform.OS === "web" && { paddingTop: 15 }, webBgStyle]}
-    >
+    <CustomHeaderScreen webTop={15}>
       {/* Header */}
       <View
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
@@ -1009,6 +1004,6 @@ export default function BookReaderScreen() {
           />
         </>
       )}
-    </View>
+    </CustomHeaderScreen>
   );
 }

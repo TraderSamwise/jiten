@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   View,
   TextInput,
   Pressable,
@@ -14,10 +13,14 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { useSafeGoBack, WEB_BACKDROP_COLORS, WEB_CUSTOM_HEADER_TOP } from "@/lib/navigation";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
-import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  CustomHeaderScreen,
+  NavigatingOverlay,
+  useWebBackdrop,
+} from "@/components/CustomHeaderScreen";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -330,14 +333,9 @@ export default function TypingGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight } = useWindowDimensions();
   const containerWidth = useContainerWidth();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const webBgStyle =
-    Platform.OS === "web"
-      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
-      : undefined;
+  const { webBgStyle } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb, audioDb } = useDatabase();
 
@@ -743,13 +741,8 @@ export default function TypingGameScreen() {
   // ─── Render ───
 
   return (
-    <View
+    <CustomHeaderScreen
       ref={gameRef}
-      className="flex-1 bg-background"
-      style={[
-        Platform.OS === "web" ? { paddingTop: WEB_CUSTOM_HEADER_TOP } : { paddingTop: insets.top },
-        webBgStyle,
-      ]}
       onTouchStart={() => {
         if (phase === "playing") inputRef.current?.focus();
       }}
@@ -993,27 +986,7 @@ export default function TypingGameScreen() {
           </View>
         </View>
       )}
-      {navigating && (
-        <View
-          className="absolute inset-0 z-50 bg-background"
-          style={[
-            Platform.OS === "web"
-              ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-              : { paddingTop: insets.top },
-            webBgStyle,
-          ]}
-        >
-          <View
-            className={`py-3 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-            style={webBgStyle}
-          >
-            <View style={{ height: 32 }} />
-          </View>
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" />
-          </View>
-        </View>
-      )}
-    </View>
+      <NavigatingOverlay visible={navigating} />
+    </CustomHeaderScreen>
   );
 }
