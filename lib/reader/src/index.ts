@@ -74,7 +74,7 @@ declare const window: Window & {
   });
 
   // Prevent mouse wheel / trackpad scrolling
-  state.contentEl.addEventListener(
+  state.contentEl!.addEventListener(
     "wheel",
     function (e: WheelEvent) {
       e.preventDefault();
@@ -91,7 +91,7 @@ declare const window: Window & {
   setupMouseHandlers();
 
   // TAP: word lookup (click on text)
-  state.contentEl.addEventListener("click", function (e: MouseEvent) {
+  state.contentEl!.addEventListener("click", function (e: MouseEvent) {
     if (state.swipeHandled) {
       state.swipeHandled = false;
       return;

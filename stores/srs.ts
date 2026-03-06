@@ -18,7 +18,7 @@ export function createNewCard(): Card {
 
 export function reviewCard(card: Card, rating: Rating, now?: Date): RecordLogItem {
   const schedulingCards = f.repeat(card, now ?? new Date());
-  return schedulingCards[rating];
+  return (schedulingCards as any)[rating] as RecordLogItem;
 }
 
 export function getDueCards<T extends { due: string; state: number }>(cards: T[]): T[] {

@@ -17,10 +17,10 @@ export function useSafeGoBack(fallback: string) {
 
   return useCallback(() => {
     const state = navigation.getState();
-    if (state.index > 0) {
+    if (state && state.index > 0) {
       router.back();
     } else {
-      router.replace(fallback);
+      router.replace(fallback as any);
     }
   }, [router, navigation, fallback]);
 }

@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createStore } from "jotai";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Ensure `window` is defined so settings.ts doesn't activate server-side noop storage
+if (typeof globalThis.window === "undefined") {
+  (globalThis as any).window = globalThis;
+}
+
 import {
   defaultSettings,
   settingsAtom,
@@ -39,6 +45,11 @@ describe("defaultSettings", () => {
         nonJouyou: false,
       },
       readerPageAnimations: true,
+      connectGameMode: "timed",
+      connectTimedDuration: 90,
+      connectSpeedPreset: "normal",
+      connectBubbleKinds: { kanji: true, reading: true, meaning: false },
+      typingWordFilter: "all",
     });
   });
 
@@ -61,7 +72,7 @@ describe("settingsAtom", () => {
     store.set(settingsAtom, { ...defaultSettings, theme: "dark" });
 
     // Allow async write to flush
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 200));
 
     const raw = await AsyncStorage.getItem("settings");
     expect(raw).not.toBeNull();
@@ -128,7 +139,7 @@ describe("persistence", () => {
     store.set(typingPlayAudioAtom, true);
 
     // Allow async write to flush
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 200));
 
     const raw = await AsyncStorage.getItem("settings");
     expect(raw).not.toBeNull();
