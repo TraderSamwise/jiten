@@ -1,17 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  View,
-  Pressable,
-  Platform,
-  useWindowDimensions,
-  AppState,
-} from "react-native";
+import { View, Pressable, useWindowDimensions, AppState } from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
-import { useSafeGoBack, WEB_BACKDROP_COLORS, WEB_CUSTOM_HEADER_TOP } from "@/lib/navigation";
+import { useSafeGoBack } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
-import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  CustomHeaderScreen,
+  NavigatingOverlay,
+  useWebBackdrop,
+} from "@/components/CustomHeaderScreen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useAtom } from "jotai";
 import { Text } from "@/components/ui/text";
@@ -44,14 +41,9 @@ export default function ConnectGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight } = useWindowDimensions();
   const containerWidth = useContainerWidth();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const webBgStyle =
-    Platform.OS === "web"
-      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
-      : undefined;
+  const { webBgStyle } = useWebBackdrop();
   const { dictDb } = useDatabase();
   const userDb = useUserDb();
 
@@ -272,7 +264,6 @@ export default function ConnectGameScreen() {
   }, [
     dictDb,
     listId,
-    screenWidth,
     screenHeight,
     insets,
     wordFilter,
@@ -355,15 +346,7 @@ export default function ConnectGameScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View
-        className="flex-1 bg-background"
-        style={[
-          Platform.OS === "web"
-            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-            : { paddingTop: insets.top },
-          webBgStyle,
-        ]}
-      >
+      <CustomHeaderScreen>
         {/* Header */}
         <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
           <Pressable onPress={handleClose} className="p-1 mr-3">
@@ -514,28 +497,8 @@ export default function ConnectGameScreen() {
             }}
           />
         )}
-        {navigating && (
-          <View
-            className="absolute inset-0 z-50 bg-background"
-            style={[
-              Platform.OS === "web"
-                ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-                : { paddingTop: insets.top },
-              webBgStyle,
-            ]}
-          >
-            <View
-              className={`py-3 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-              style={webBgStyle}
-            >
-              <View style={{ height: 32 }} />
-            </View>
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" />
-            </View>
-          </View>
-        )}
-      </View>
+        <NavigatingOverlay visible={navigating} />
+      </CustomHeaderScreen>
     </GestureHandlerRootView>
   );
 }

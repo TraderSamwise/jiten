@@ -9,15 +9,15 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  useSafeGoBack,
-  useTabRouter,
-  WEB_BACKDROP_COLORS,
-  WEB_CUSTOM_HEADER_TOP,
-} from "@/lib/navigation";
+import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
-import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  CustomHeaderScreen,
+  HeaderPlaceholder,
+  NavigatingOverlay,
+  useWebBackdrop,
+} from "@/components/CustomHeaderScreen";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -870,13 +870,6 @@ function getCardStats(srsCard: SrsCardRow | undefined, mode: FlashcardMode): str
 // Lightweight shell -- defers mounting the heavy study UI until after nav animation
 export default function StudyScreenShell() {
   const [ready, setReady] = useState(false);
-  const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const shellBgStyle =
-    Platform.OS === "web"
-      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
-      : undefined;
 
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 100);
@@ -885,25 +878,12 @@ export default function StudyScreenShell() {
 
   if (!ready) {
     return (
-      <View
-        className="flex-1 bg-background"
-        style={[
-          Platform.OS === "web"
-            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-            : { paddingTop: insets.top },
-          shellBgStyle,
-        ]}
-      >
-        <View
-          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-          style={shellBgStyle}
-        >
-          <View style={{ height: 40 }} />
-        </View>
+      <CustomHeaderScreen>
+        <HeaderPlaceholder py="py-2" spacerHeight={40} />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
         </View>
-      </View>
+      </CustomHeaderScreen>
     );
   }
 
@@ -917,12 +897,7 @@ function StudyScreen() {
   const navigateBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const clampedWidth = useContainerWidth();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const webBgStyle =
-    Platform.OS === "web"
-      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
-      : undefined;
+  const { webBgStyle } = useWebBackdrop();
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
@@ -2124,46 +2099,20 @@ function StudyScreen() {
 
   if (loading) {
     return (
-      <View
-        className="flex-1 bg-background"
-        style={[
-          Platform.OS === "web"
-            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-            : { paddingTop: insets.top },
-          webBgStyle,
-        ]}
-      >
-        <View
-          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-          style={webBgStyle}
-        >
-          <View style={{ height: 40 }} />
-        </View>
+      <CustomHeaderScreen>
+        <HeaderPlaceholder py="py-2" spacerHeight={40} />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
           <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
         </View>
-      </View>
+      </CustomHeaderScreen>
     );
   }
 
   if (sessionDone) {
     return (
-      <View
-        className="flex-1 bg-background"
-        style={[
-          Platform.OS === "web"
-            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-            : { paddingTop: insets.top },
-          webBgStyle,
-        ]}
-      >
-        <View
-          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-          style={webBgStyle}
-        >
-          <View style={{ height: 40 }} />
-        </View>
+      <CustomHeaderScreen>
+        <HeaderPlaceholder py="py-2" spacerHeight={40} />
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-4xl mb-4">
             {reviewedCount > 0 ? "All done!" : "Nothing to study!"}
@@ -2185,7 +2134,7 @@ function StudyScreen() {
             }}
           />
         </View>
-      </View>
+      </CustomHeaderScreen>
     );
   }
 
@@ -2200,13 +2149,7 @@ function StudyScreen() {
       : 0;
 
   return (
-    <View
-      className="flex-1 bg-background"
-      style={[
-        Platform.OS === "web" ? { paddingTop: WEB_CUSTOM_HEADER_TOP } : { paddingTop: insets.top },
-        webBgStyle,
-      ]}
-    >
+    <CustomHeaderScreen>
       {/* Header */}
       <View
         className={`flex-row items-center justify-between px-4 py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
@@ -2551,29 +2494,7 @@ function StudyScreen() {
       ))}
 
       {/* Navigation overlay -- covers heavy UI before unmount to prevent frame drops */}
-      {navigating && (
-        <View
-          className="absolute inset-0 z-50 bg-background"
-          style={[
-            Platform.OS === "web"
-              ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
-              : { paddingTop: insets.top },
-            webBgStyle,
-          ]}
-        >
-          <View
-            className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
-            style={webBgStyle}
-          >
-            <View className="p-2">
-              <View style={{ height: 24 }} />
-            </View>
-          </View>
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" />
-          </View>
-        </View>
-      )}
-    </View>
+      <NavigatingOverlay visible={navigating} py="py-2" spacerHeight={40} />
+    </CustomHeaderScreen>
   );
 }
