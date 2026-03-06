@@ -1,4 +1,5 @@
 import React from "react";
+import { Platform } from "react-native";
 import { Stack } from "expo-router";
 import { SafeBackButton } from "@/lib/navigation";
 
@@ -7,6 +8,9 @@ export { ErrorBoundary } from "@/components/ErrorBoundary";
 const backButton = ({ tintColor }: { tintColor?: string }) => (
   <SafeBackButton fallback="/lists" tintColor={tintColor} />
 );
+
+const webHeaderStyle =
+  Platform.OS === "web" ? { borderRadius: 12, marginHorizontal: 8 } : undefined;
 
 // Navigation perf pattern for heavy screens (study, typing-game, connect-game):
 //
@@ -25,7 +29,7 @@ const backButton = ({ tintColor }: { tintColor?: string }) => (
 // Apply this to any new screen with complex UI or heavy data loading.
 export default function ListsLayout() {
   return (
-    <Stack screenOptions={{ headerLeft: backButton }}>
+    <Stack screenOptions={{ headerLeft: backButton, headerStyle: webHeaderStyle }}>
       <Stack.Screen name="index" options={{ title: "Lists", headerLeft: () => null }} />
       <Stack.Screen name="[id]" options={{ title: "List" }} />
       <Stack.Screen name="word/[id]" options={{ title: "Word" }} />

@@ -143,13 +143,15 @@ export default function SettingsScreen() {
         <CardTitle className="text-base">Updates</CardTitle>
         <Separator className="my-2" />
         <Text className="text-sm text-muted-foreground mb-2">{getVersionString()}</Text>
-        <Button
-          variant="outline"
-          size="sm"
-          label={isUpdating ? "Checking..." : "Check for Updates"}
-          onPress={handleCheckForUpdates}
-          disabled={isUpdating}
-        />
+        {Platform.OS !== "web" && (
+          <Button
+            variant="outline"
+            size="sm"
+            label={isUpdating ? "Checking..." : "Check for Updates"}
+            onPress={handleCheckForUpdates}
+            disabled={isUpdating}
+          />
+        )}
       </Card>
 
       <Card className="mb-4">
