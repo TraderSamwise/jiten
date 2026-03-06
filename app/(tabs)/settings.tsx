@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { Platform, ScrollView, Switch, View } from "react-native";
 import { useAtom } from "jotai";
 import { alert } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
@@ -7,7 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PitchAccent } from "@/components/PitchAccent";
-import { themeAtom, type ThemePreference } from "@/stores/settings";
+import {
+  themeAtom,
+  showRomajiAtom,
+  showPitchAccentAtom,
+  showPitchAccentTypeAtom,
+  type ThemePreference,
+} from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
@@ -18,6 +24,9 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 
 export default function SettingsScreen() {
   const [activeTheme, setActiveTheme] = useAtom(themeAtom);
+  const [showRomaji, setShowRomaji] = useAtom(showRomajiAtom);
+  const [showPitchAccent, setShowPitchAccent] = useAtom(showPitchAccentAtom);
+  const [showPitchAccentType, setShowPitchAccentType] = useAtom(showPitchAccentTypeAtom);
   const [isUpdating, setIsUpdating] = useState(false);
 
   function handleThemeChange(theme: ThemePreference) {
@@ -114,8 +123,26 @@ export default function SettingsScreen() {
       </Card>
 
       <Card className="mb-4">
+        <CardTitle className="text-base">Display</CardTitle>
+        <Separator className="my-2" />
+        <View className="flex-row items-center justify-between py-2">
+          <Text className="text-sm text-foreground">Show Romaji</Text>
+          <Switch value={showRomaji} onValueChange={setShowRomaji} />
+        </View>
+        <View className="flex-row items-center justify-between py-2">
+          <Text className="text-sm text-foreground">Show Pitch Accent</Text>
+          <Switch value={showPitchAccent} onValueChange={setShowPitchAccent} />
+        </View>
+        <View className="flex-row items-center justify-between py-2">
+          <Text className="text-sm text-foreground">Show Pitch Accent Type</Text>
+          <Switch value={showPitchAccentType} onValueChange={setShowPitchAccentType} />
+        </View>
+      </Card>
+
+      <Card className="mb-4">
         <CardTitle className="text-base">Updates</CardTitle>
         <Separator className="my-2" />
+        <Text className="text-sm text-muted-foreground mb-2">{getVersionString()}</Text>
         <Button
           variant="outline"
           size="sm"
@@ -136,7 +163,7 @@ export default function SettingsScreen() {
           <View key={ex.label} className="mb-3">
             <Text className="text-sm font-medium text-foreground">{ex.label}</Text>
             <Text className="text-xs text-muted-foreground mb-1">{ex.desc}</Text>
-            <PitchAccent accent={{ reading: ex.reading, pitchNumber: ex.pitch }} />
+            <PitchAccent accent={{ reading: ex.reading, pitchNumber: ex.pitch }} forceShow />
           </View>
         ))}
       </Card>

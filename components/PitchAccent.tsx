@@ -1,6 +1,8 @@
 import React from "react";
 import { View } from "react-native";
+import { useAtomValue } from "jotai";
 import { Text } from "@/components/ui/text";
+import { showPitchAccentAtom, showPitchAccentTypeAtom } from "@/stores/settings";
 import type { PitchAccent as PitchAccentType } from "@/db/types";
 
 interface PitchAccentProps {
@@ -11,6 +13,8 @@ interface PitchAccentProps {
   lineColor?: string;
   /** Custom renderer for each mora's text. Receives (mora, moraIndex). */
   renderMora?: (mora: string, moraIndex: number) => React.ReactNode;
+  /** Ignore global settings and always show lines + type. Used by the settings guide. */
+  forceShow?: boolean;
 }
 
 const DEFAULT_FONT = 14;
@@ -26,7 +30,13 @@ export function PitchAccent({
   fontSize = DEFAULT_FONT,
   lineColor,
   renderMora,
+  forceShow,
 }: PitchAccentProps) {
+  const showLines = useAtomValue(showPitchAccentAtom);
+  const showType = useAtomValue(showPitchAccentTypeAtom);
+  const linesVisible = forceShow || showLines;
+  const typeVisible = forceShow || showType;
+
   const { reading, pitchNumber } = accent;
   const morae = splitMorae(reading);
 
@@ -50,54 +60,56 @@ export function PitchAccent({
         return (
           <View key={i} style={{ overflow: "visible" }}>
             {/* Line area — minimal height, drops overflow into text */}
-            <View
-              style={{
-                height: lineH,
-                marginBottom: -lineH,
-                flexDirection: "row",
-                overflow: "visible",
-              }}
-            >
-              {/* Horizontal line — only render for high morae */}
-              {isHigh && (
-                <View
-                  className={lineColor ? undefined : "bg-foreground"}
-                  style={{
-                    flex: 1,
-                    height: lineH,
-                    ...(lineColor ? { backgroundColor: lineColor } : {}),
-                  }}
-                />
-              )}
-              {/* Vertical drop between this mora and next */}
-              {drops && (
-                <View
-                  className={lineColor ? undefined : "bg-foreground"}
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: 0,
-                    height: dropH,
-                    width: lineH,
-                    ...(lineColor ? { backgroundColor: lineColor } : {}),
-                  }}
-                />
-              )}
-              {/* Trailing drop for odaka */}
-              {trailingDrop && (
-                <View
-                  className={lineColor ? undefined : "bg-foreground"}
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: 0,
-                    height: dropH,
-                    width: lineH,
-                    ...(lineColor ? { backgroundColor: lineColor } : {}),
-                  }}
-                />
-              )}
-            </View>
+            {linesVisible && (
+              <View
+                style={{
+                  height: lineH,
+                  marginBottom: -lineH,
+                  flexDirection: "row",
+                  overflow: "visible",
+                }}
+              >
+                {/* Horizontal line — only render for high morae */}
+                {isHigh && (
+                  <View
+                    className={lineColor ? undefined : "bg-foreground"}
+                    style={{
+                      flex: 1,
+                      height: lineH,
+                      ...(lineColor ? { backgroundColor: lineColor } : {}),
+                    }}
+                  />
+                )}
+                {/* Vertical drop between this mora and next */}
+                {drops && (
+                  <View
+                    className={lineColor ? undefined : "bg-foreground"}
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: 0,
+                      height: dropH,
+                      width: lineH,
+                      ...(lineColor ? { backgroundColor: lineColor } : {}),
+                    }}
+                  />
+                )}
+                {/* Trailing drop for odaka */}
+                {trailingDrop && (
+                  <View
+                    className={lineColor ? undefined : "bg-foreground"}
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: 0,
+                      height: dropH,
+                      width: lineH,
+                      ...(lineColor ? { backgroundColor: lineColor } : {}),
+                    }}
+                  />
+                )}
+              </View>
+            )}
             {/* Mora text */}
             <View style={{ alignItems: "center" }}>
               {renderMora ? (
@@ -118,14 +130,16 @@ export function PitchAccent({
           </View>
         );
       })}
-      <View style={{ justifyContent: "flex-end" }}>
-        <Text
-          style={{ marginLeft: 2 * scale, fontSize: Math.min(Math.round(10 * scale), 16) }}
-          className="text-muted-foreground"
-        >
-          [{pitchNumber}]
-        </Text>
-      </View>
+      {typeVisible && (
+        <View style={{ justifyContent: "flex-end" }}>
+          <Text
+            style={{ marginLeft: 2 * scale, fontSize: Math.min(Math.round(10 * scale), 16) }}
+            className="text-muted-foreground"
+          >
+            [{pitchNumber}]
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
