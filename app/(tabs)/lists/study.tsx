@@ -606,56 +606,51 @@ const StudyCardView = React.memo(function StudyCardView({
   }
 
   return (
-    <Pressable onPress={handleTap} style={{ flex: 1 }}>
-      <Card
-        className="flex-1 items-center justify-center"
-        style={{ position: "relative", overflow: "hidden" }}
-      >
-        {stats && (
-          <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
-            <Text className="text-xs text-muted-foreground">{stats}</Text>
-          </View>
-        )}
-        <View
-          style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-          className="flex-row items-center gap-1"
-        >
-          {Array.from({ length: checkCount }, (_, ci) => (
-            <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
-          ))}
-          <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
-            <Info size={18} className="text-muted-foreground" />
-          </Pressable>
+    <Card
+      className="flex-1 items-center justify-center"
+      style={{ position: "relative", overflow: "hidden" }}
+    >
+      {stats && (
+        <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
+          <Text className="text-xs text-muted-foreground">{stats}</Text>
         </View>
-        {flipped ? (
-          <>
-            <Animated.View
-              style={[
-                frontFaceStyle,
-                {
-                  flex: 1,
-                  width: "100%",
-                  alignItems: "center",
-                  justifyContent: "center",
-                },
-              ]}
-            >
-              {renderFront()}
-            </Animated.View>
-            <Animated.View
-              style={[
-                backFaceStyle,
-                { alignItems: "center", justifyContent: "center", padding: 16 },
-              ]}
-            >
-              {renderBack()}
-            </Animated.View>
-          </>
-        ) : (
-          renderFront()
-        )}
-      </Card>
-    </Pressable>
+      )}
+      <View
+        style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+        className="flex-row items-center gap-1"
+      >
+        {Array.from({ length: checkCount }, (_, ci) => (
+          <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
+        ))}
+        <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
+          <Info size={18} className="text-muted-foreground" />
+        </Pressable>
+      </View>
+      {flipped ? (
+        <>
+          <Animated.View
+            style={[
+              frontFaceStyle,
+              {
+                flex: 1,
+                width: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+              },
+            ]}
+          >
+            {renderFront()}
+          </Animated.View>
+          <Animated.View
+            style={[backFaceStyle, { alignItems: "center", justifyContent: "center", padding: 16 }]}
+          >
+            {renderBack()}
+          </Animated.View>
+        </>
+      ) : (
+        renderFront()
+      )}
+    </Card>
   );
 });
 
@@ -1935,6 +1930,16 @@ function StudyScreen() {
     [hasPrev, hasNext, slideDistance, disableSwipe, cursor],
   );
 
+  const tapGesture = useMemo(
+    () => Gesture.Tap().onEnd(() => runOnJS(handleCardFlip)()),
+    [cursor, revealed],
+  );
+
+  const composedGesture = useMemo(
+    () => Gesture.Exclusive(panGesture, tapGesture),
+    [panGesture, tapGesture],
+  );
+
   // Gesture-triggered cursor move: only updates cursor, no translateX animation
   // (translateX is already handled by the gesture onEnd)
   function moveCursorFromGesture(newCursor: number) {
@@ -1957,9 +1962,14 @@ function StudyScreen() {
     translateX.value = -(cursor * slideDistance);
   }, [slideDistance]);
 
-  // --- Sliding window: only render cards at [cursor-1, cursor, cursor+1] ---
+  // --- Sliding window: render cards around cursor so neighbors stay mounted ---
+  const WINDOW_RADIUS = 3;
   const windowIndices: number[] = [];
-  for (let i = Math.max(0, cursor - 1); i <= Math.min(cards.length - 1, cursor + 1); i++) {
+  for (
+    let i = Math.max(0, cursor - WINDOW_RADIUS);
+    i <= Math.min(cards.length - 1, cursor + WINDOW_RADIUS);
+    i++
+  ) {
     windowIndices.push(i);
   }
 
@@ -2049,7 +2059,7 @@ function StudyScreen() {
       </View>
 
       {/* Carousel -- sliding window rendered, scroll via translateX */}
-      <GestureDetector gesture={panGesture}>
+      <GestureDetector gesture={composedGesture}>
         <View className="flex-1 pt-4" style={{ overflow: "hidden", paddingHorizontal: 16 }}>
           <Animated.View
             style={[
