@@ -821,49 +821,28 @@ export default function BookReaderScreen() {
     [userDb, bookId],
   );
 
-  if (!book || !html) {
-    return (
-      <View
-        className="flex-1 items-center justify-center bg-background"
-        style={[
-          Platform.OS === "web" && {
-            paddingTop: 15,
-            backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
-          },
-        ]}
-      >
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
+  const webBgStyle =
+    Platform.OS === "web"
+      ? { backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)" }
+      : undefined;
 
   return (
     <View
       className="flex-1 bg-background"
-      style={[
-        Platform.OS === "web" && {
-          paddingTop: 15,
-          backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
-        },
-      ]}
+      style={[Platform.OS === "web" && { paddingTop: 15 }, webBgStyle]}
     >
       {/* Header */}
       <View
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
-        style={[
-          { paddingTop: insets.top },
-          Platform.OS === "web" && {
-            backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
-          },
-        ]}
+        style={[{ paddingTop: insets.top }, webBgStyle]}
       >
         <Pressable onPress={() => goBack()} className="p-2">
           <ChevronLeft size={24} className="text-foreground" />
         </Pressable>
         <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
-          {book.title}
+          {book?.title ?? ""}
         </Text>
-        {extendedDb && (
+        {book && extendedDb && (
           <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
             {nameMode ? (
               <User size={20} className="text-primary" />
@@ -872,149 +851,164 @@ export default function BookReaderScreen() {
             )}
           </Pressable>
         )}
-        <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
-          <SlidersHorizontal size={20} className="text-foreground" />
-        </Pressable>
+        {book && (
+          <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
+            <SlidersHorizontal size={20} className="text-foreground" />
+          </Pressable>
+        )}
       </View>
 
-      {/* Reader content */}
-      <View
-        style={{ flex: 1 }}
-        onLayout={(e) => {
-          readerLayoutY.current = e.nativeEvent.layout.y;
-        }}
-      >
-        <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
-        {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
-        {showSettings && (
+      {!book || !html ? (
+        <View
+          className="flex-1 items-center justify-center"
+          style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}
+        >
+          <ActivityIndicator size="large" />
+        </View>
+      ) : (
+        <>
+          {/* Reader content */}
           <View
-            className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
-            style={{ zIndex: 10 }}
+            style={{ flex: 1 }}
+            onLayout={(e) => {
+              readerLayoutY.current = e.nativeEvent.layout.y;
+            }}
           >
-            <View className="flex-row items-center justify-center gap-4">
-              <Pressable
-                onPress={() => handleFontSizeChange(Math.max(14, fontSize - 1))}
-                disabled={fontSize <= 14}
-                className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize <= 14 ? "opacity-30" : ""}`}
+            <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+            {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
+            {showSettings && (
+              <View
+                className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
+                style={{ zIndex: 10 }}
               >
-                <Text className="text-lg text-foreground">A-</Text>
-              </Pressable>
-              <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
-              <Pressable
-                onPress={() => handleFontSizeChange(Math.min(32, fontSize + 1))}
-                disabled={fontSize >= 32}
-                className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize >= 32 ? "opacity-30" : ""}`}
-              >
-                <Text className="text-lg text-foreground">A+</Text>
-              </Pressable>
-            </View>
-
-            {/* Furigana level toggles */}
-            <View>
-              <Text className="text-xs text-muted-foreground text-center mb-2">Furigana</Text>
-              <View className="flex-row flex-wrap justify-center gap-1.5">
-                {(
-                  [
-                    ["n5", "N5"],
-                    ["n4", "N4"],
-                    ["n3", "N3"],
-                    ["n2", "N2"],
-                    ["n1", "N1"],
-                    ["nonJouyou", "Other"],
-                    ["all", "All"],
-                  ] as [FuriganaLevel, string][]
-                ).map(([key, label]) => (
+                <View className="flex-row items-center justify-center gap-4">
                   <Pressable
-                    key={key}
-                    onPress={() => setFuriganaLevels((prev) => ({ ...prev, [key]: !prev[key] }))}
+                    onPress={() => handleFontSizeChange(Math.max(14, fontSize - 1))}
+                    disabled={fontSize <= 14}
+                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize <= 14 ? "opacity-30" : ""}`}
+                  >
+                    <Text className="text-lg text-foreground">A-</Text>
+                  </Pressable>
+                  <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
+                  <Pressable
+                    onPress={() => handleFontSizeChange(Math.min(32, fontSize + 1))}
+                    disabled={fontSize >= 32}
+                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize >= 32 ? "opacity-30" : ""}`}
+                  >
+                    <Text className="text-lg text-foreground">A+</Text>
+                  </Pressable>
+                </View>
+
+                {/* Furigana level toggles */}
+                <View>
+                  <Text className="text-xs text-muted-foreground text-center mb-2">Furigana</Text>
+                  <View className="flex-row flex-wrap justify-center gap-1.5">
+                    {(
+                      [
+                        ["n5", "N5"],
+                        ["n4", "N4"],
+                        ["n3", "N3"],
+                        ["n2", "N2"],
+                        ["n1", "N1"],
+                        ["nonJouyou", "Other"],
+                        ["all", "All"],
+                      ] as [FuriganaLevel, string][]
+                    ).map(([key, label]) => (
+                      <Pressable
+                        key={key}
+                        onPress={() =>
+                          setFuriganaLevels((prev) => ({ ...prev, [key]: !prev[key] }))
+                        }
+                        className={`px-3 py-1.5 rounded-full border ${
+                          furiganaLevels[key]
+                            ? "bg-foreground border-foreground"
+                            : "bg-transparent border-border"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs font-medium ${
+                            furiganaLevels[key] ? "text-background" : "text-muted-foreground"
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Page animations toggle */}
+                <View className="flex-row items-center justify-center gap-2">
+                  <Pressable
+                    onPress={() => setPageAnimations(!pageAnimations)}
                     className={`px-3 py-1.5 rounded-full border ${
-                      furiganaLevels[key]
+                      pageAnimations
                         ? "bg-foreground border-foreground"
                         : "bg-transparent border-border"
                     }`}
                   >
                     <Text
                       className={`text-xs font-medium ${
-                        furiganaLevels[key] ? "text-background" : "text-muted-foreground"
+                        pageAnimations ? "text-background" : "text-muted-foreground"
                       }`}
                     >
-                      {label}
+                      Page animations
                     </Text>
                   </Pressable>
-                ))}
+                </View>
               </View>
-            </View>
-
-            {/* Page animations toggle */}
-            <View className="flex-row items-center justify-center gap-2">
-              <Pressable
-                onPress={() => setPageAnimations(!pageAnimations)}
-                className={`px-3 py-1.5 rounded-full border ${
-                  pageAnimations
-                    ? "bg-foreground border-foreground"
-                    : "bg-transparent border-border"
-                }`}
-              >
-                <Text
-                  className={`text-xs font-medium ${
-                    pageAnimations ? "text-background" : "text-muted-foreground"
-                  }`}
-                >
-                  Page animations
-                </Text>
-              </Pressable>
-            </View>
+            )}
           </View>
-        )}
-      </View>
 
-      {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
-      {Platform.OS !== "web" && copyTooltip && (
-        <HighlightToolbar
-          tooltip={copyTooltip}
-          readerY={readerLayoutY}
-          isDark={isDark}
-          copied={copied}
-          onCopy={handleCopy}
-        />
+          {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
+          {Platform.OS !== "web" && copyTooltip && (
+            <HighlightToolbar
+              tooltip={copyTooltip}
+              readerY={readerLayoutY}
+              isDark={isDark}
+              copied={copied}
+              onCopy={handleCopy}
+            />
+          )}
+
+          {/* Jump slider */}
+          {showJumpSlider && modelRef.current && (
+            <JumpSlider
+              initialPercent={
+                modelRef.current.totalChars > 0
+                  ? Math.round((scrollPosRef.current / modelRef.current.totalChars) * 100)
+                  : 0
+              }
+              isDark={isDark}
+              onJump={async (pct) => {
+                setShowJumpSlider(false);
+                const model = modelRef.current;
+                if (!model) return;
+                const charOffset = Math.round((pct / 100) * model.totalChars);
+                await reloadAtChar(charOffset);
+              }}
+              onDismiss={() => setShowJumpSlider(false)}
+            />
+          )}
+
+          {/* Dictionary popup */}
+          <DictionaryPopup
+            visible={showPopup}
+            loading={lookupLoading}
+            errorMessage={lookupError}
+            onClose={() => {
+              setShowPopup(false);
+              setLookupResults([]);
+              setLookupLoading(false);
+              setLookupError(null);
+              setCopyTooltip(null);
+              setCopied(false);
+              readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
+            }}
+            results={lookupResults}
+          />
+        </>
       )}
-
-      {/* Jump slider */}
-      {showJumpSlider && modelRef.current && (
-        <JumpSlider
-          initialPercent={
-            modelRef.current.totalChars > 0
-              ? Math.round((scrollPosRef.current / modelRef.current.totalChars) * 100)
-              : 0
-          }
-          isDark={isDark}
-          onJump={async (pct) => {
-            setShowJumpSlider(false);
-            const model = modelRef.current;
-            if (!model) return;
-            const charOffset = Math.round((pct / 100) * model.totalChars);
-            await reloadAtChar(charOffset);
-          }}
-          onDismiss={() => setShowJumpSlider(false)}
-        />
-      )}
-
-      {/* Dictionary popup */}
-      <DictionaryPopup
-        visible={showPopup}
-        loading={lookupLoading}
-        errorMessage={lookupError}
-        onClose={() => {
-          setShowPopup(false);
-          setLookupResults([]);
-          setLookupLoading(false);
-          setLookupError(null);
-          setCopyTooltip(null);
-          setCopied(false);
-          readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
-        }}
-        results={lookupResults}
-      />
     </View>
   );
 }
