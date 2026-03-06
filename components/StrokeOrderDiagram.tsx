@@ -1,5 +1,5 @@
 import React from "react";
-import { View, ScrollView } from "react-native";
+import { View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import type { StrokePath } from "@/db/types";
 
@@ -18,31 +18,29 @@ export function StrokeOrderDiagram({ strokes, size = 60 }: StrokeOrderDiagramPro
   if (strokes.length === 0) return null;
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View className="flex-row gap-1">
-        {strokes.map((_, stepIndex) => (
-          <View
-            key={stepIndex}
-            className="rounded bg-secondary"
-            style={{ width: size, height: size }}
-          >
-            <Svg width={size} height={size} viewBox="0 0 109 109">
-              {strokes.slice(0, stepIndex + 1).map((stroke, i) => (
-                <Path
-                  key={i}
-                  d={stroke.d}
-                  fill="none"
-                  strokeWidth={3}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  stroke={i === stepIndex ? "#ef4444" : "#a1a1aa"}
-                  opacity={i === stepIndex ? 1 : 0.4}
-                />
-              ))}
-            </Svg>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
+    <View className="flex-row flex-wrap gap-1">
+      {strokes.map((_, stepIndex) => (
+        <View
+          key={stepIndex}
+          className="rounded bg-secondary"
+          style={{ width: size, height: size }}
+        >
+          <Svg width={size} height={size} viewBox="0 0 109 109">
+            {strokes.slice(0, stepIndex + 1).map((stroke, i) => (
+              <Path
+                key={i}
+                d={stroke.d}
+                fill="none"
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                stroke={i === stepIndex ? "#ef4444" : "#a1a1aa"}
+                opacity={i === stepIndex ? 1 : 0.4}
+              />
+            ))}
+          </Svg>
+        </View>
+      ))}
+    </View>
   );
 }
