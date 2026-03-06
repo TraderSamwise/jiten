@@ -41,7 +41,7 @@ export function PitchAccent({
   const morae = splitMorae(reading);
 
   const scale = fontSize / DEFAULT_FONT;
-  const lineH = Math.max(1, scale);
+  const lineH = scale * 0.6;
   const dropH = Math.round(8 * scale);
 
   // Odaka: last mora is high and pitch drops after it (on particles).
