@@ -37,6 +37,12 @@ export const defaultSettings = Object.freeze({
   connectSpeedPreset: "normal" as SpeedPreset,
   connectBubbleKinds: { kanji: true, reading: true, meaning: false } as ConnectBubbleKinds,
   typingWordFilter: "all" as WordFilterMode,
+  showRomaji: false as boolean,
+  showPitchAccent: true as boolean,
+  showPitchAccentType: false as boolean,
+  flashcardFlipAnimation: true as boolean,
+  flashcardSwipeAnimation: true as boolean,
+  flashcardButtonAnimation: true as boolean,
 });
 
 export type AppSettings = typeof defaultSettings;
@@ -103,3 +109,17 @@ export const connectTimedDurationAtom = focusAtom(settingsAtom, (o) =>
 export const connectSpeedPresetAtom = focusAtom(settingsAtom, (o) => o.prop("connectSpeedPreset"));
 export const connectBubbleKindsAtom = focusAtom(settingsAtom, (o) => o.prop("connectBubbleKinds"));
 export const typingWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("typingWordFilter"));
+export const showRomajiAtom = focusAtom(settingsAtom, (o) => o.prop("showRomaji"));
+export const showPitchAccentAtom = focusAtom(settingsAtom, (o) => o.prop("showPitchAccent"));
+export const showPitchAccentTypeAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("showPitchAccentType"),
+);
+export const flashcardFlipAnimationAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("flashcardFlipAnimation"),
+);
+export const flashcardSwipeAnimationAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("flashcardSwipeAnimation"),
+);
+export const flashcardButtonAnimationAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("flashcardButtonAnimation"),
+);

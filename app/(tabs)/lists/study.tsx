@@ -53,7 +53,13 @@ import {
   dateToSrsEpochDays,
   SIMPLE_SRS_REQUIRED_CORRECT,
 } from "@/stores/simple-srs";
+import { useAtomValue } from "jotai";
 import { useListsStore, parseListRow } from "@/stores/lists";
+import {
+  flashcardFlipAnimationAtom,
+  flashcardSwipeAnimationAtom,
+  flashcardButtonAnimationAtom,
+} from "@/stores/settings";
 import {
   shouldCheckConfusion,
   findConfusedWords,
@@ -69,11 +75,11 @@ const CONFUSION_COOLDOWN_HOURS = 24;
 
 const NEW_CARD_BATCH_SIZE = 5;
 const CARD_PEEK = 40;
-const CARD_GAP = 8;
+const CARD_GAP = 16;
 const SWIPE_THRESHOLD = 50;
 const SWIPE_VELOCITY = 500;
 const SLIDE_DURATION = 250;
-const FLIP_DURATION = 400;
+const FLIP_DURATION = 300;
 
 interface FloatingRating {
   key: number;
@@ -405,7 +411,7 @@ function sortFaces(faces: CardFace[]): CardFace[] {
 }
 
 const BASE_FONT_SIZE = 96;
-const MAX_ENGLISH_FONT_SIZE = 20;
+const MAX_ENGLISH_FONT_SIZE = 18;
 function scaledFontStyle(
   count: number,
   face: CardFace,
@@ -686,14 +692,14 @@ const StudyCardView = React.memo(
             </View>
           ))}
           <View className="mt-6 items-center">
-            <View className="h-px w-32 bg-border mb-4" />
+            <View className="h-px w-48 bg-muted-foreground/30 mb-4" />
             {renderFaceContent(backFaces[0], backFontStyle(backFaces[0]), {
-              numberOfLines: backFaces[0] === "english" ? 3 : undefined,
+              numberOfLines: backFaces[0] === "english" ? 4 : undefined,
             })}
             {backFaces.slice(1).map((face, i) => (
               <View key={`back-${i}`} style={{ marginTop: 4 }}>
                 {renderFaceContent(face, backFontStyle(face), {
-                  numberOfLines: face === "english" ? 3 : undefined,
+                  numberOfLines: face === "english" ? 4 : undefined,
                 })}
               </View>
             ))}
@@ -730,7 +736,10 @@ const StudyCardView = React.memo(
     return (
       <View style={{ flex: 1, position: "relative" }}>
         <Animated.View style={[frontFaceStyle, { flex: 1 }]}>
-          <Card className="flex-1 items-center justify-center" style={{ overflow: "hidden" }}>
+          <Card
+            className="flex-1 items-center justify-center bg-secondary dark:bg-zinc-900"
+            style={{ overflow: "hidden" }}
+          >
             {renderOverlays()}
             {renderFront()}
           </Card>
@@ -739,7 +748,7 @@ const StudyCardView = React.memo(
           style={[backFaceStyle, { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }]}
         >
           <Card
-            className="flex-1 items-center justify-center"
+            className="flex-1 items-center justify-center bg-secondary dark:bg-zinc-900"
             style={{ overflow: "hidden", padding: 16 }}
           >
             {renderOverlays()}
@@ -890,6 +899,9 @@ function StudyScreen() {
 
   const [localList, setLocalList] = useState<typeof storeList>(undefined);
   const list = storeList ?? localList;
+  const flipAnimationEnabled = useAtomValue(flashcardFlipAnimationAtom);
+  const swipeAnimationEnabled = useAtomValue(flashcardSwipeAnimationAtom);
+  const buttonAnimationEnabled = useAtomValue(flashcardButtonAnimationAtom);
 
   // --- Single array + cursor (replaces queue/currentIndex/history/historyIndex/revealed) ---
   const [cards, setCards] = useState<StudyCard[]>([]);
@@ -1319,6 +1331,7 @@ function StudyScreen() {
   }
 
   function flashRating(which: "fail" | "pass" | "easy") {
+    if (!buttonAnimationEnabled) return;
     const label = which === "fail" ? "Fail" : which === "easy" ? "Easy!" : "Pass";
     const color = which === "fail" ? "#ef4444" : which === "easy" ? "#4ade80" : "#22c55e";
     const ref = which === "fail" ? failButtonRef : passButtonRef;
@@ -1337,7 +1350,7 @@ function StudyScreen() {
     revealedRef.current = targetCard?.flipped ?? false;
     // Animate translateX
     const target = -(newCursor * slideDistance);
-    if (list?.disableSwipeAnimation) {
+    if (!swipeAnimationEnabled) {
       translateX.value = target;
     } else {
       translateX.value = withTiming(target, slideConfig);
@@ -1979,7 +1992,7 @@ function StudyScreen() {
   };
 
   // --- Gesture handling ---
-  const disableSwipe = list?.disableSwipeAnimation ?? false;
+  const disableSwipe = !swipeAnimationEnabled;
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -2192,7 +2205,7 @@ function StudyScreen() {
                     item={studyCard.item}
                     status={studyCard.status}
                     initialFlipped={studyCard.flipped}
-                    disableFlipAnimation={!!list?.disableFlipAnimation}
+                    disableFlipAnimation={!flipAnimationEnabled}
                     frontFaces={frontFaces}
                     backFaces={backFaces}
                     flashcardMode={list?.flashcardMode ?? "add_order"}
@@ -2249,7 +2262,10 @@ function StudyScreen() {
 
       {/* Rating buttons -- always visible */}
       {!sessionDone && (
-        <View className="flex-row gap-3 px-4 mt-3">
+        <View
+          className="flex-row gap-3 mt-3"
+          style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
+        >
           <Pressable
             ref={failButtonRef}
             onPress={() => handleFail()}
