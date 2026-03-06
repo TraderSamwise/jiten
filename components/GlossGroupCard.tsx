@@ -60,12 +60,20 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
     );
   }
 
-  const japaneseEntries = group.entries
-    .map((e) => ({
-      label: e.kanji[0]?.text ?? e.kana[0]?.text ?? "",
-      common: e.common,
-    }))
-    .filter((e) => e.label);
+  const japaneseEntries = (() => {
+    const seen = new Map<string, { label: string; common: boolean }>();
+    for (const e of group.entries) {
+      const label = e.kanji[0]?.text ?? e.kana[0]?.text ?? "";
+      if (!label) continue;
+      const existing = seen.get(label);
+      if (existing) {
+        if (e.common) existing.common = true;
+      } else {
+        seen.set(label, { label, common: e.common });
+      }
+    }
+    return [...seen.values()];
+  })();
 
   return (
     <PressableCard className="mb-2" onPress={handlePress}>
