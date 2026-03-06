@@ -370,303 +370,317 @@ interface StudyCardViewProps {
   onInfoPress: () => void;
 }
 
-const StudyCardView = React.memo(function StudyCardView({
-  item,
-  status,
-  initialFlipped,
-  disableFlipAnimation,
-  frontFaces,
-  backFaces,
-  flashcardMode,
-  simpleCorrectCount,
-  voiceStatus,
-  voiceHeard,
-  isListening,
-  typingMode,
-  voiceMode,
-  onFlip,
-  onTypingComplete,
-  onInfoPress,
-}: StudyCardViewProps) {
-  // Per-card flip animation
-  const flipProgress = useSharedValue(initialFlipped ? 1 : 0);
-  const [flipped, setFlipped] = useState(initialFlipped);
-  const prevInitialFlipped = useRef(initialFlipped);
+interface StudyCardViewHandle {
+  toggle: () => void;
+}
 
-  // React to parent changing flip state (voice recognition flip, or re-rate reset)
-  useEffect(() => {
-    if (initialFlipped !== prevInitialFlipped.current) {
-      prevInitialFlipped.current = initialFlipped;
-      if (initialFlipped && !flipped) {
-        // Parent wants us to flip (e.g. voice recognition correct)
-        setFlipped(true);
-        if (disableFlipAnimation) {
-          flipProgress.value = 1;
+const StudyCardView = React.memo(
+  React.forwardRef<StudyCardViewHandle, StudyCardViewProps>(function StudyCardView(
+    {
+      item,
+      status,
+      initialFlipped,
+      disableFlipAnimation,
+      frontFaces,
+      backFaces,
+      flashcardMode,
+      simpleCorrectCount,
+      voiceStatus,
+      voiceHeard,
+      isListening,
+      typingMode,
+      voiceMode,
+      onFlip,
+      onTypingComplete,
+      onInfoPress,
+    },
+    ref,
+  ) {
+    // Per-card flip animation
+    const flipProgress = useSharedValue(initialFlipped ? 1 : 0);
+    const [flipped, setFlipped] = useState(initialFlipped);
+    const prevInitialFlipped = useRef(initialFlipped);
+
+    // React to parent changing flip state (voice recognition flip, or re-rate reset)
+    // Skip if card already matches (e.g. toggle() already flipped us)
+    useEffect(() => {
+      if (initialFlipped !== prevInitialFlipped.current) {
+        prevInitialFlipped.current = initialFlipped;
+        if (initialFlipped === flipped) return; // already in sync
+        if (initialFlipped && !flipped) {
+          // Parent wants us to flip (e.g. voice recognition correct)
+          setFlipped(true);
+          if (disableFlipAnimation) {
+            flipProgress.value = 1;
+          } else {
+            flipProgress.value = 0;
+            flipProgress.value = withTiming(1, {
+              duration: FLIP_DURATION,
+              easing: Easing.inOut(Easing.ease),
+            });
+          }
         } else {
-          flipProgress.value = 0;
-          flipProgress.value = withTiming(1, {
-            duration: FLIP_DURATION,
-            easing: Easing.inOut(Easing.ease),
-          });
+          // Reset (e.g. re-rate unflips future cards)
+          setFlipped(initialFlipped);
+          flipProgress.value = initialFlipped ? 1 : 0;
         }
-      } else {
-        // Reset (e.g. re-rate unflips future cards)
-        setFlipped(initialFlipped);
-        flipProgress.value = initialFlipped ? 1 : 0;
       }
+    }, [initialFlipped]);
+
+    function toggle() {
+      const wasFlipped = flipped;
+      setFlipped(!wasFlipped);
+      if (disableFlipAnimation) {
+        flipProgress.value = wasFlipped ? 0 : 1;
+      } else {
+        flipProgress.value = wasFlipped ? 1 : 0;
+        flipProgress.value = withTiming(wasFlipped ? 0 : 1, {
+          duration: FLIP_DURATION,
+          easing: Easing.inOut(Easing.ease),
+        });
+      }
+      if (!wasFlipped) onFlip();
     }
-  }, [initialFlipped]);
 
-  function handleTap() {
-    if (flipped) return;
-    setFlipped(true);
-    if (disableFlipAnimation) {
-      flipProgress.value = 1;
-    } else {
-      flipProgress.value = 0;
-      flipProgress.value = withTiming(1, {
-        duration: FLIP_DURATION,
-        easing: Easing.inOut(Easing.ease),
-      });
-    }
-    onFlip();
-  }
+    React.useImperativeHandle(ref, () => ({ toggle }));
 
-  const frontFaceStyle = useAnimatedStyle(() => {
-    const rotateX = interpolate(flipProgress.value, [0, 0.5], [0, 90]);
-    const opacity = flipProgress.value < 0.5 ? 1 : 0;
-    return {
-      backfaceVisibility: "hidden" as const,
-      transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
-      opacity,
-    };
-  });
+    const frontFaceStyle = useAnimatedStyle(() => {
+      const rotateX = interpolate(flipProgress.value, [0, 0.5], [0, 90]);
+      const opacity = flipProgress.value < 0.5 ? 1 : 0;
+      return {
+        backfaceVisibility: "hidden" as const,
+        transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
+        opacity,
+      };
+    });
 
-  const backFaceStyle = useAnimatedStyle(() => {
-    const rotateX = interpolate(flipProgress.value, [0.5, 1], [-90, 0]);
-    const opacity = flipProgress.value >= 0.5 ? 1 : 0;
-    return {
-      backfaceVisibility: "hidden" as const,
-      transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
-      opacity,
-      position: "absolute" as const,
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-    };
-  });
+    const backFaceStyle = useAnimatedStyle(() => {
+      const rotateX = interpolate(flipProgress.value, [0.5, 1], [-90, 0]);
+      const opacity = flipProgress.value >= 0.5 ? 1 : 0;
+      return {
+        backfaceVisibility: "hidden" as const,
+        transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
+        opacity,
+        position: "absolute" as const,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+      };
+    });
 
-  // Stats & checks
-  const stats = getCardStats(item.srsCard, flashcardMode);
-  const checkCount =
-    flashcardMode === "simple_srs" && item.srsCard
-      ? (simpleCorrectCount ?? getCheckCount(item.srsCard, "simple_srs"))
-      : getCheckCount(item.srsCard, flashcardMode);
+    // Stats & checks
+    const stats = getCardStats(item.srsCard, flashcardMode);
+    const checkCount =
+      flashcardMode === "simple_srs" && item.srsCard
+        ? (simpleCorrectCount ?? getCheckCount(item.srsCard, "simple_srs"))
+        : getCheckCount(item.srsCard, flashcardMode);
 
-  // --- Front content ---
-  function renderFront() {
-    const isTyping = typingMode && status === "pending" && item.kind === "entry";
-    const frontIsKanji =
-      item.kind === "entry" &&
-      frontFaces[0] === "kanji" &&
-      getDisplayText(item.entry) !== getTargetReading(item.entry);
+    // --- Front content ---
+    function renderFront() {
+      const isTyping = typingMode && status === "pending" && item.kind === "entry";
+      const frontIsKanji =
+        item.kind === "entry" &&
+        frontFaces[0] === "kanji" &&
+        getDisplayText(item.entry) !== getTargetReading(item.entry);
 
-    const handleTypingComplete = (wasCorrect: boolean) => {
-      handleTap(); // flip the card
-      onTypingComplete(wasCorrect);
-    };
+      const handleTypingComplete = (wasCorrect: boolean) => {
+        toggle(); // flip the card
+        onTypingComplete(wasCorrect);
+      };
 
-    const faceText =
-      item.kind === "entry"
-        ? getFaceText(item.entry, frontFaces[0])
-        : getKanjiFaceText(item.kanji, frontFaces[0]);
+      const faceText =
+        item.kind === "entry"
+          ? getFaceText(item.entry, frontFaces[0])
+          : getKanjiFaceText(item.kanji, frontFaces[0]);
 
-    const frontCount = frontFaces.length;
-    const secondaryFaces = frontFaces.slice(1).map((face, i) => (
-      <Text
-        key={`front-${i}`}
-        style={{ ...scaledFontStyle(frontCount, face), marginTop: 4 }}
-        className="text-foreground"
-        numberOfLines={face === "english" ? 3 : 1}
-        adjustsFontSizeToFit={face !== "english"}
-      >
-        {item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face)}
-      </Text>
-    ));
-
-    return (
-      <View className="items-center justify-center flex-1">
-        {isTyping && frontIsKanji && item.kind === "entry" ? (
-          <TypingInput
-            key={item.entry.id}
-            entry={item.entry}
-            frontFaceIsKanji
-            onComplete={handleTypingComplete}
-          />
-        ) : (
-          <>
-            <Text
-              style={{ ...scaledFontStyle(frontCount, frontFaces[0]) }}
-              className="text-foreground"
-              numberOfLines={frontFaces[0] === "english" ? 3 : 1}
-              adjustsFontSizeToFit={frontFaces[0] !== "english"}
-            >
-              {faceText}
-            </Text>
-            {isTyping && item.kind === "entry" && (
-              <View className="mt-6 items-center w-full px-4">
-                <TypingInput
-                  key={item.entry.id}
-                  entry={item.entry}
-                  frontFaceIsKanji={false}
-                  onComplete={handleTypingComplete}
-                />
-              </View>
-            )}
-          </>
-        )}
-        {secondaryFaces}
-        {!isTyping && voiceMode && item.kind === "entry" && (
-          <View className="mt-6 items-center">
-            {voiceStatus === "correct" ? (
-              <Text className="text-lg font-bold text-green-500">Correct!</Text>
-            ) : voiceStatus === "wrong" ? (
-              <>
-                <Text className="text-lg font-bold text-red-500">Try again</Text>
-                {voiceHeard && (
-                  <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
-                )}
-              </>
-            ) : (
-              <>
-                <Mic size={24} className={isListening ? "text-primary" : "text-muted-foreground"} />
-                <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
-              </>
-            )}
-          </View>
-        )}
-      </View>
-    );
-  }
-
-  // --- Back content ---
-  function renderBack() {
-    const frontText =
-      item.kind === "entry"
-        ? getFaceText(item.entry, frontFaces[0])
-        : getKanjiFaceText(item.kanji, frontFaces[0]);
-    const backText =
-      item.kind === "entry"
-        ? getFaceText(item.entry, backFaces[0])
-        : getKanjiFaceText(item.kanji, backFaces[0]);
-
-    const totalFaceCount = frontFaces.length + backFaces.length;
-
-    return (
-      <View className="items-center justify-center flex-1">
+      const frontCount = frontFaces.length;
+      const secondaryFaces = frontFaces.slice(1).map((face, i) => (
         <Text
-          style={{ ...scaledFontStyle(totalFaceCount, frontFaces[0]) }}
+          key={`front-${i}`}
+          style={{ ...scaledFontStyle(frontCount, face), marginTop: 4 }}
           className="text-foreground"
-          numberOfLines={frontFaces[0] === "english" ? 3 : 1}
-          adjustsFontSizeToFit={frontFaces[0] !== "english"}
+          numberOfLines={face === "english" ? 3 : 1}
+          adjustsFontSizeToFit={face !== "english"}
+          minimumFontScale={0.5}
         >
-          {frontText}
+          {item.kind === "entry"
+            ? getFaceText(item.entry, face)
+            : getKanjiFaceText(item.kanji, face)}
         </Text>
-        {frontFaces.slice(1).map((face, i) => (
-          <Text
-            key={`front-${i}`}
-            style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
-            className="text-foreground"
-            numberOfLines={face === "english" ? 3 : 1}
-            adjustsFontSizeToFit={face !== "english"}
-          >
-            {item.kind === "entry"
-              ? getFaceText(item.entry, face)
-              : getKanjiFaceText(item.kanji, face)}
+      ));
+
+      return (
+        <View className="items-center justify-center flex-1">
+          {isTyping && frontIsKanji && item.kind === "entry" ? (
+            <TypingInput
+              key={item.entry.id}
+              entry={item.entry}
+              frontFaceIsKanji
+              onComplete={handleTypingComplete}
+            />
+          ) : (
+            <>
+              <Text
+                style={{ ...scaledFontStyle(frontCount, frontFaces[0]) }}
+                className="text-foreground"
+                numberOfLines={frontFaces[0] === "english" ? 3 : 1}
+                adjustsFontSizeToFit={frontFaces[0] !== "english"}
+                minimumFontScale={0.5}
+              >
+                {faceText}
+              </Text>
+              {isTyping && item.kind === "entry" && (
+                <View className="mt-6 items-center w-full px-4">
+                  <TypingInput
+                    key={item.entry.id}
+                    entry={item.entry}
+                    frontFaceIsKanji={false}
+                    onComplete={handleTypingComplete}
+                  />
+                </View>
+              )}
+            </>
+          )}
+          {secondaryFaces}
+          {!isTyping && voiceMode && item.kind === "entry" && (
+            <View className="mt-6 items-center">
+              {voiceStatus === "correct" ? (
+                <Text className="text-lg font-bold text-green-500">Correct!</Text>
+              ) : voiceStatus === "wrong" ? (
+                <>
+                  <Text className="text-lg font-bold text-red-500">Try again</Text>
+                  {voiceHeard && (
+                    <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Mic
+                    size={24}
+                    className={isListening ? "text-primary" : "text-muted-foreground"}
+                  />
+                  <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // --- Back content ---
+    function renderBack() {
+      const frontText =
+        item.kind === "entry"
+          ? getFaceText(item.entry, frontFaces[0])
+          : getKanjiFaceText(item.kanji, frontFaces[0]);
+      const backText =
+        item.kind === "entry"
+          ? getFaceText(item.entry, backFaces[0])
+          : getKanjiFaceText(item.kanji, backFaces[0]);
+
+      const totalFaceCount = frontFaces.length + backFaces.length;
+
+      // Back face uses fixed smaller sizes — no adjustsFontSizeToFit needed
+      const backKanjiSize = 28;
+      const backEnglishSize = MAX_ENGLISH_FONT_SIZE;
+
+      function backFontStyle(face: CardFace) {
+        const size = face === "english" ? backEnglishSize : face === "kana" ? 22 : backKanjiSize;
+        return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
+      }
+
+      return (
+        <View className="items-center justify-center flex-1">
+          <Text style={backFontStyle(frontFaces[0])} className="text-foreground">
+            {frontText}
           </Text>
-        ))}
-        <View className="mt-6 items-center">
-          <View className="h-px w-32 bg-border mb-4" />
-          <Text
-            style={{ ...scaledFontStyle(totalFaceCount, backFaces[0]) }}
-            className="text-foreground"
-            numberOfLines={backFaces[0] === "english" ? 3 : 1}
-            adjustsFontSizeToFit={backFaces[0] !== "english"}
-          >
-            {backText}
-          </Text>
-          {backFaces.slice(1).map((face, i) => (
+          {frontFaces.slice(1).map((face, i) => (
             <Text
-              key={`back-${i}`}
-              style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
+              key={`front-${i}`}
+              style={{ ...backFontStyle(face), marginTop: 4 }}
               className="text-foreground"
-              numberOfLines={face === "english" ? 3 : 1}
-              adjustsFontSizeToFit={face !== "english"}
             >
               {item.kind === "entry"
                 ? getFaceText(item.entry, face)
                 : getKanjiFaceText(item.kanji, face)}
             </Text>
           ))}
-          {item.kind === "entry" && (
-            <View className="mt-3">
-              <PlayAudioButton entryId={item.entry.id} size={22} />
-            </View>
-          )}
+          <View className="mt-6 items-center">
+            <View className="h-px w-32 bg-border mb-4" />
+            <Text
+              style={backFontStyle(backFaces[0])}
+              className="text-foreground"
+              numberOfLines={backFaces[0] === "english" ? 3 : undefined}
+            >
+              {backText}
+            </Text>
+            {backFaces.slice(1).map((face, i) => (
+              <Text
+                key={`back-${i}`}
+                style={{ ...backFontStyle(face), marginTop: 4 }}
+                className="text-foreground"
+                numberOfLines={face === "english" ? 3 : undefined}
+              >
+                {item.kind === "entry"
+                  ? getFaceText(item.entry, face)
+                  : getKanjiFaceText(item.kanji, face)}
+              </Text>
+            ))}
+            {item.kind === "entry" && (
+              <View className="mt-3">
+                <PlayAudioButton entryId={item.entry.id} size={22} />
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    );
-  }
+      );
+    }
 
-  return (
-    <Card
-      className="flex-1 items-center justify-center"
-      style={{ position: "relative", overflow: "hidden" }}
-    >
-      {stats && (
-        <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
-          <Text className="text-xs text-muted-foreground">{stats}</Text>
-        </View>
-      )}
-      <View
-        style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-        className="flex-row items-center gap-1"
+    return (
+      <Card
+        className="flex-1 items-center justify-center"
+        style={{ position: "relative", overflow: "hidden" }}
       >
-        {Array.from({ length: checkCount }, (_, ci) => (
-          <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
-        ))}
-        <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
-          <Info size={18} className="text-muted-foreground" />
-        </Pressable>
-      </View>
-      {flipped ? (
-        <>
-          <Animated.View
-            style={[
-              frontFaceStyle,
-              {
-                flex: 1,
-                width: "100%",
-                alignItems: "center",
-                justifyContent: "center",
-              },
-            ]}
-          >
-            {renderFront()}
-          </Animated.View>
-          <Animated.View
-            style={[backFaceStyle, { alignItems: "center", justifyContent: "center", padding: 16 }]}
-          >
-            {renderBack()}
-          </Animated.View>
-        </>
-      ) : (
-        renderFront()
-      )}
-    </Card>
-  );
-});
+        {stats && (
+          <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
+            <Text className="text-xs text-muted-foreground">{stats}</Text>
+          </View>
+        )}
+        <View
+          style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+          className="flex-row items-center gap-1"
+        >
+          {Array.from({ length: checkCount }, (_, ci) => (
+            <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
+          ))}
+          <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
+            <Info size={18} className="text-muted-foreground" />
+          </Pressable>
+        </View>
+        <Animated.View
+          style={[
+            frontFaceStyle,
+            {
+              flex: 1,
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "center",
+            },
+          ]}
+        >
+          {renderFront()}
+        </Animated.View>
+        <Animated.View
+          style={[backFaceStyle, { alignItems: "center", justifyContent: "center", padding: 16 }]}
+        >
+          {renderBack()}
+        </Animated.View>
+      </Card>
+    );
+  }),
+);
 
 type QueueItem =
   | { kind: "entry"; entry: DictEntry; srsCard?: SrsCardRow }
@@ -843,6 +857,7 @@ function StudyScreen() {
   const sessionIdRef = useRef("");
   const sessionStartRef = useRef("");
   const sessionCorrectRef = useRef(0);
+  const cursorCardRef = useRef<StudyCardViewHandle>(null);
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
@@ -937,7 +952,7 @@ function StudyScreen() {
         e.stopPropagation();
         if (isBrowsingHistory) return;
         if (!isRevealed) {
-          handleCardFlip();
+          cursorCardRef.current?.toggle();
         } else if (preSelectedRating === "fail") {
           handleFail();
         } else {
@@ -1944,10 +1959,11 @@ function StudyScreen() {
     [hasPrev, hasNext, slideDistance, disableSwipe, cursor],
   );
 
-  const tapGesture = useMemo(
-    () => Gesture.Tap().onEnd(() => runOnJS(handleCardFlip)()),
-    [cursor, revealed],
-  );
+  function handleTapGesture() {
+    cursorCardRef.current?.toggle();
+  }
+
+  const tapGesture = useMemo(() => Gesture.Tap().onEnd(() => runOnJS(handleTapGesture)()), []);
 
   const composedGesture = useMemo(
     () => Gesture.Exclusive(panGesture, tapGesture),
@@ -2102,6 +2118,7 @@ function StudyScreen() {
                   }}
                 >
                   <StudyCardView
+                    ref={isCursor ? cursorCardRef : null}
                     item={studyCard.item}
                     status={studyCard.status}
                     initialFlipped={studyCard.flipped}
