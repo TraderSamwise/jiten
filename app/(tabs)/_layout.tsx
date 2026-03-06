@@ -31,7 +31,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      backBehavior={isWeb ? "none" : undefined}
+      backBehavior="history"
       screenOptions={{
         tabBarActiveTintColor: activeTint,
         headerShown: true,
