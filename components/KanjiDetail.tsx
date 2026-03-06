@@ -118,7 +118,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     const placeholders = filtered.map(() => "?").join(",");
     userDb
       .getAllAsync<{ literal: string; keyword: string }>(
-        `SELECT literal, keyword FROM user_kanji_notes WHERE literal IN (${placeholders}) AND keyword IS NOT NULL AND keyword != ''`,
+        `SELECT literal, keyword FROM user_kanji_notes WHERE literal IN (${placeholders}) AND keyword IS NOT NULL AND keyword != '' AND deleted_at IS NULL`,
         filtered,
       )
       .then((rows: { literal: string; keyword: string }[]) => {

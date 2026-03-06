@@ -1,6 +1,7 @@
 import { createNewCard } from "@/stores/srs";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore } from "@/stores/lists";
+import { softDelete } from "@/db/sync-helpers";
 import type { WrappedUserDb } from "@/db/user-db";
 
 // ---------------------------------------------------------------------------
@@ -76,14 +77,16 @@ export async function addEntryToList(userDb: WrappedUserDb, entryId: number, lis
 }
 
 export async function removeEntryFromList(userDb: WrappedUserDb, entryId: number, listId: string) {
-  await userDb.runAsync(
-    "DELETE FROM list_entries WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
+  await softDelete(
+    userDb,
+    "list_entries",
+    "list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
     [listId, entryId],
   );
-  await userDb.runAsync(
-    "DELETE FROM srs_cards WHERE entry_id = ? AND list_id = ? AND kanji_literal IS NULL",
-    [entryId, listId],
-  );
+  await softDelete(userDb, "srs_cards", "entry_id = ? AND list_id = ? AND kanji_literal IS NULL", [
+    entryId,
+    listId,
+  ]);
 
   // Update list entry count
   const cur = useListsStore.getState().lists.find((l) => l.id === listId);
@@ -101,7 +104,7 @@ export async function removeEntryFromList(userDb: WrappedUserDb, entryId: number
 
 export async function getEntryListIds(userDb: WrappedUserDb, entryId: number): Promise<string[]> {
   const rows = await userDb.getAllAsync<{ list_id: string }>(
-    "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL",
+    "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL",
     [entryId],
   );
   return rows.map((r) => r.list_id);
@@ -156,11 +159,11 @@ export async function removeKanjiFromList(
   kanjiLiteral: string,
   listId: string,
 ) {
-  await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND kanji_literal = ?", [
+  await softDelete(userDb, "list_entries", "list_id = ? AND kanji_literal = ?", [
     listId,
     kanjiLiteral,
   ]);
-  await userDb.runAsync("DELETE FROM srs_cards WHERE kanji_literal = ? AND list_id = ?", [
+  await softDelete(userDb, "srs_cards", "kanji_literal = ? AND list_id = ?", [
     kanjiLiteral,
     listId,
   ]);
@@ -184,7 +187,7 @@ export async function getKanjiListIds(
   kanjiLiteral: string,
 ): Promise<string[]> {
   const rows = await userDb.getAllAsync<{ list_id: string }>(
-    "SELECT list_id FROM list_entries WHERE kanji_literal = ?",
+    "SELECT list_id FROM list_entries WHERE kanji_literal = ? AND deleted_at IS NULL",
     [kanjiLiteral],
   );
   return rows.map((r) => r.list_id);

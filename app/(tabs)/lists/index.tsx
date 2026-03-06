@@ -17,6 +17,8 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { parseListImport, importListToDb } from "@/lib/list-transfer";
 import { StudyProgressBar } from "@/components/ProgressBar";
 import { seedDefaultListsIfNeeded } from "@/lib/seed-default-lists";
+import { softDelete } from "@/db/sync-helpers";
+import { useSync } from "@/db/sync-provider";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
@@ -33,6 +35,7 @@ export default function ListsIndexScreen() {
   const addList = useListsStore((s) => s.addList);
   const removeList = useListsStore((s) => s.removeList);
   const updateList = useListsStore((s) => s.updateList);
+  const { triggerSync } = useSync();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -100,7 +103,8 @@ export default function ListsIndexScreen() {
     if (!userDb) return;
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
-       FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
+       FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id AND le.deleted_at IS NULL
+       WHERE l.deleted_at IS NULL
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
 
@@ -112,6 +116,7 @@ export default function ListsIndexScreen() {
         SUM(CASE WHEN state = 2 OR simple_stage = 1 THEN 1 ELSE 0 END) as learned,
         SUM(CASE WHEN state IN (1, 3) OR simple_stage = 0 THEN 1 ELSE 0 END) as learning
        FROM srs_cards
+       WHERE deleted_at IS NULL
        GROUP BY list_id`,
     );
     const srsMap = new Map<string, SrsProgress>(srsRows.map((r: SrsProgress) => [r.list_id, r]));
@@ -173,6 +178,7 @@ export default function ListsIndexScreen() {
     addList({ ...list, entryCount: 0 });
     setNewName("");
     setShowCreate(false);
+    triggerSync();
   }
 
   function handleRenameStart(item: WordList) {
@@ -198,11 +204,12 @@ export default function ListsIndexScreen() {
 
   async function doDeleteList(id: string) {
     if (!userDb) return;
-    await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ?", [id]);
-    await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ?", [id]);
-    await userDb.runAsync("DELETE FROM lists WHERE id = ?", [id]);
+    await softDelete(userDb, "srs_cards", "list_id = ?", [id]);
+    await softDelete(userDb, "list_entries", "list_id = ?", [id]);
+    await softDelete(userDb, "lists", "id = ?", [id]);
     removeList(id);
     await useBookmarkStore.getState().load(userDb);
+    triggerSync();
   }
 
   async function handleDeleteList(id: string) {

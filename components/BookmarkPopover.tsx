@@ -12,6 +12,7 @@ import {
   addKanjiToList,
   removeKanjiFromList,
 } from "@/lib/quick-bookmark";
+import { useSync } from "@/db/sync-provider";
 import type { WordList } from "@/db/types";
 
 interface BookmarkPopoverProps {
@@ -35,6 +36,7 @@ export function BookmarkPopover({
   const pos = anchorPosition ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
+  const { triggerSync } = useSync();
   const [lists, setLists] = useState<WordList[]>([]);
   const [membershipMap, setMembershipMap] = useState<Set<string>>(new Set());
   const [showNewList, setShowNewList] = useState(false);
@@ -50,19 +52,19 @@ export function BookmarkPopover({
   async function loadData() {
     if (!userDb) return;
     const allLists = await userDb.getAllAsync<WordList>(
-      "SELECT * FROM lists WHERE is_default = 0 ORDER BY name",
+      "SELECT * FROM lists WHERE is_default = 0 AND deleted_at IS NULL ORDER BY name",
     );
     setLists(allLists.map(parseListRow));
 
     if (isKanji) {
       const memberships = await userDb.getAllAsync<{ list_id: string }>(
-        "SELECT list_id FROM list_entries WHERE kanji_literal = ?",
+        "SELECT list_id FROM list_entries WHERE kanji_literal = ? AND deleted_at IS NULL",
         [kanjiLiteral],
       );
       setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
     } else if (entryId != null) {
       const memberships = await userDb.getAllAsync<{ list_id: string }>(
-        "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL",
+        "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL",
         [entryId],
       );
       setMembershipMap(new Set(memberships.map((m: { list_id: string }) => m.list_id)));
@@ -93,6 +95,7 @@ export function BookmarkPopover({
       setMembershipMap((prev) => new Set(prev).add(listId));
       onListToggled?.(listId, true);
     }
+    triggerSync();
   }
 
   async function handleCreateList() {

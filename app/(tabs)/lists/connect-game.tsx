@@ -23,6 +23,7 @@ import { PlayField } from "@/components/connect-game/PlayField";
 import { GameOverScreen } from "@/components/connect-game/GameOverScreen";
 import { createInitialState, spawnWave, tick, cleanupBubbles } from "@/lib/connect-game/engine";
 import { saveGameScore, getHighScore } from "@/lib/game-scores";
+import { useSync } from "@/db/sync-provider";
 import { confirm } from "@/lib/confirm";
 import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
 import {
@@ -40,6 +41,7 @@ import type { TimedDuration } from "@/lib/connect-game/types";
 export default function ConnectGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
+  const { triggerSync } = useSync();
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const containerWidth = useContainerWidth();
@@ -151,9 +153,11 @@ export default function ConnectGameScreen() {
         maxCombo: state.maxCombo,
         accuracy,
         durationMs,
-      }).catch(() => {});
+      })
+        .then(() => triggerSync())
+        .catch(() => {});
     },
-    [userDb, listId, highScore],
+    [userDb, listId, highScore, triggerSync],
   );
 
   // ─── Pause on app background ───

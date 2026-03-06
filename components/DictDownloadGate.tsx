@@ -1,10 +1,35 @@
 import React from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, Platform, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useDatabase } from "@/db/provider";
 import { getVersionString, getVersionCode } from "@/lib/version";
+
+/** On web, gate screens render inside the 960px container but need to
+ *  break out to fill the full viewport (no navbar backdrop is mounted). */
+function FullScreenGate({ children }: { children: React.ReactNode }) {
+  if (Platform.OS !== "web") {
+    return <View className="flex-1 items-center justify-center bg-background">{children}</View>;
+  }
+  return (
+    <View
+      style={{
+        position: "fixed" as any,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: "flex" as any,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      className="bg-background"
+    >
+      {children}
+    </View>
+  );
+}
 
 function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
@@ -16,10 +41,10 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
 
   if (!isReady) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <FullScreenGate>
         <ActivityIndicator size="large" />
         <Text className="mt-4 text-muted-foreground">Loading dictionary...</Text>
-      </View>
+      </FullScreenGate>
     );
   }
 
@@ -30,16 +55,16 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
   // DB was released to another tab — will reacquire on visibility change
   if (isDownloaded && !dictDb) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <FullScreenGate>
         <ActivityIndicator size="large" />
         <Text className="mt-4 text-muted-foreground">Reconnecting...</Text>
-      </View>
+      </FullScreenGate>
     );
   }
 
   return (
-    <View className="flex-1 items-center justify-center bg-background px-6">
-      <Card className="w-full max-w-sm items-center p-6">
+    <FullScreenGate>
+      <Card className="w-full max-w-sm items-center p-6 mx-6">
         <Text className="text-4xl mb-2">辞典</Text>
         <Text className="text-xl font-semibold text-foreground mb-1">Jiten</Text>
         <Text className="text-sm text-muted-foreground text-center mb-6">
@@ -121,6 +146,6 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
           </>
         )}
       </Card>
-    </View>
+    </FullScreenGate>
   );
 }

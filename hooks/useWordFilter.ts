@@ -24,7 +24,7 @@ export function useWordFilter(listId: string | undefined): WordFilterState {
     if (!userDb || !listId) return;
 
     const allRows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ?",
+      "SELECT entry_id FROM list_entries WHERE list_id = ? AND deleted_at IS NULL",
       [listId],
     );
     const entryIds = allRows.map((r: { entry_id: number }) => r.entry_id);
@@ -42,7 +42,7 @@ export function useWordFilter(listId: string | undefined): WordFilterState {
     const reviewRows = await userDb.getAllAsync<{ entry_id: number }>(
       `SELECT DISTINCT s.entry_id FROM srs_cards s
        WHERE s.list_id = ? AND s.entry_id IN (${placeholders})
-       AND (s.simple_stage IS NOT NULL OR s.state != 0)`,
+       AND (s.simple_stage IS NOT NULL OR s.state != 0) AND s.deleted_at IS NULL`,
       [listId, ...entryIds],
     );
 

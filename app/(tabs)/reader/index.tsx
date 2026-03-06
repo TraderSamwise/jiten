@@ -13,6 +13,8 @@ import { Trash2 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { alert, confirm } from "@/lib/confirm";
 import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
+import { softDelete } from "@/db/sync-helpers";
+import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
 
 function generateId(): string {
@@ -44,6 +46,7 @@ export { parseBookRow };
 export default function LibraryScreen() {
   const router = useRouter();
   const userDb = useUserDb();
+  const { triggerSync } = useSync();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -51,7 +54,7 @@ export default function LibraryScreen() {
     if (!userDb) return;
     await seedDefaultBookIfNeeded(userDb);
     const rows = await userDb.getAllAsync<any>(
-      "SELECT * FROM books ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
+      "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
     );
     setBooks(rows.map(parseBookRow));
   }, [userDb]);
@@ -122,6 +125,7 @@ export default function LibraryScreen() {
 
       setLoading(false);
       await loadBooks();
+      triggerSync();
       router.push(`/reader/${id}`);
     } catch (err) {
       setLoading(false);
@@ -133,8 +137,9 @@ export default function LibraryScreen() {
     if (!userDb) return;
     const ok = await confirm("Delete book", "Are you sure?");
     if (!ok) return;
-    await userDb.runAsync("DELETE FROM books WHERE id = ?", [bookId]);
+    await softDelete(userDb, "books", "id = ?", [bookId]);
     setBooks((prev) => prev.filter((b) => b.id !== bookId));
+    triggerSync();
   }
 
   const renderBook = useCallback(

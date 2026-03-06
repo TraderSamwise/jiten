@@ -74,6 +74,8 @@ import {
 } from "@/lib/confused-words";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
+import { useSync } from "@/db/sync-provider";
+import { Banner } from "@/components/Banner";
 import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
@@ -900,9 +902,11 @@ function StudyScreen() {
   const { webBgStyle } = useWebBackdrop();
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
+  const { triggerSync } = useSync();
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const setLists = useListsStore((s) => s.setLists);
   const updateList = useListsStore((s) => s.updateList);
+  const [syncWarning, setSyncWarning] = useState(false);
 
   const [localList, setLocalList] = useState<typeof storeList>(undefined);
   const list = storeList ?? localList;
@@ -1019,6 +1023,7 @@ function StudyScreen() {
         totalItems: reviewedCount,
         correctCount: sessionCorrectRef.current,
       }).catch(() => {});
+      triggerSync();
     }
   }, [sessionDone]);
 
@@ -1068,7 +1073,7 @@ function StudyScreen() {
   useEffect(() => {
     if (storeList || !userDb || !listId) return;
     userDb
-      .getFirstAsync<any>("SELECT * FROM lists WHERE id = ?", [listId])
+      .getFirstAsync<any>("SELECT * FROM lists WHERE id = ? AND deleted_at IS NULL", [listId])
       .then((row: any) => {
         if (row) {
           const parsed = parseListRow(row);
@@ -1080,7 +1085,16 @@ function StudyScreen() {
   }, [userDb, listId, storeList]);
 
   useEffect(() => {
-    if (dictDb && userDb && list) loadQueue();
+    if (!dictDb || !userDb || !list) return;
+    // Attempt sync before loading queue (5s timeout), non-blocking
+    const syncAttempt = Promise.race([
+      triggerSync(),
+      new Promise((r) => setTimeout(r, 5000)),
+    ]).catch(() => {});
+    syncAttempt.then((result: any) => {
+      if (result && !result.ok) setSyncWarning(true);
+      loadQueue();
+    });
   }, [dictDb, userDb, list?.id]);
 
   async function loadQueue() {
@@ -1092,7 +1106,7 @@ function StudyScreen() {
       if (list.flashcardMode === "add_order") {
         let position = list.studyPosition ?? 0;
         let rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
-          "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET ?",
+          "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC LIMIT 10 OFFSET ?",
           [listId, position],
         );
 
@@ -1105,7 +1119,7 @@ function StudyScreen() {
           );
           updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
           rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
-            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC LIMIT 10 OFFSET 0",
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC LIMIT 10 OFFSET 0",
             [listId],
           );
         }
@@ -1163,7 +1177,7 @@ function StudyScreen() {
 
         // Ensure srs_cards exist for all list entries (auto-create if missing)
         const cardCount = await userDb.getFirstAsync<{ c: number }>(
-          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ?",
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL",
           [listId],
         );
         if (!cardCount || cardCount.c === 0) {
@@ -1171,7 +1185,7 @@ function StudyScreen() {
             entry_id: number;
             kanji_literal: string | null;
           }>(
-            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC",
             [listId],
           );
           const now = new Date().toISOString();
@@ -1186,11 +1200,11 @@ function StudyScreen() {
 
         // Load learned/total counts for progress display
         const totalRow = await userDb.getFirstAsync<{ c: number }>(
-          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ?",
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL",
           [listId],
         );
         const learnedRow = await userDb.getFirstAsync<{ c: number }>(
-          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
+          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL AND deleted_at IS NULL",
           [listId],
         );
         setSimpleSrsTotal(totalRow?.c ?? 0);
@@ -1201,7 +1215,7 @@ function StudyScreen() {
         // Due cards: have SRS data and n <= now (n is the due date directly)
         const dueRows = await userDb.getAllAsync<SrsCardRow>(
           `${simpleSrsSelect} FROM srs_cards
-           WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ?
+           WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
            ORDER BY simple_n ASC`,
           [listId, nowDays],
         );
@@ -1209,7 +1223,7 @@ function StudyScreen() {
         // New cards: no SRS data yet (simpleStage IS NULL)
         const newRows = await userDb.getAllAsync<SrsCardRow>(
           `${simpleSrsSelect} FROM srs_cards
-           WHERE list_id = ? AND simple_stage IS NULL
+           WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
            ORDER BY created_at ASC LIMIT ?`,
           [listId, NEW_CARD_BATCH_SIZE],
         );
@@ -1272,12 +1286,12 @@ function StudyScreen() {
           last_confusion_check as lastConfusionCheck`;
 
         const reviewRows = await userDb.getAllAsync<SrsCardRow>(
-          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? ORDER BY due ASC`,
+          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
           [listId, new Date().toISOString()],
         );
 
         const newRows = await userDb.getAllAsync<SrsCardRow>(
-          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 ORDER BY created_at ASC LIMIT ?`,
+          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
           [listId, NEW_CARD_BATCH_SIZE],
         );
 
@@ -1689,7 +1703,7 @@ function StudyScreen() {
 
     // Get all entry_ids in the list (excluding the failed one and kanji entries)
     const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ? AND kanji_literal IS NULL",
+      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ? AND kanji_literal IS NULL AND deleted_at IS NULL",
       [listId, entry.id],
     );
     const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
@@ -1756,7 +1770,7 @@ function StudyScreen() {
         simple_stage as simpleStage, simple_n as simpleN,
         simple_interval as simpleInterval,
         last_confusion_check as lastConfusionCheck
-       FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL`,
+       FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL`,
       [listId, result.entry.id],
     );
 
@@ -2150,6 +2164,13 @@ function StudyScreen() {
 
   return (
     <CustomHeaderScreen>
+      <Banner
+        message="Couldn't sync — reviewing with local data"
+        severity="warning"
+        visible={syncWarning}
+        autoDismissMs={4000}
+        onDismiss={() => setSyncWarning(false)}
+      />
       {/* Header */}
       <View
         className={`flex-row items-center justify-between px-4 py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}

@@ -11,6 +11,7 @@ import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { BackgroundDownloadBanner } from "@/components/BackgroundDownloadBanner";
 import { UserDatabaseProvider } from "@/db/user-provider";
+import { SyncProvider } from "@/db/sync-provider";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { useThemeEffect } from "@/lib/theme-effect";
 import "../global.css";
@@ -68,10 +69,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     <DatabaseProvider>
       <DictDownloadGate>
         <UserDatabaseProvider userId={userId!}>
-          <View style={{ flex: 1 }}>
-            {children}
-            <BackgroundDownloadBanner />
-          </View>
+          <SyncProvider userId={userId!}>
+            <View style={{ flex: 1 }}>
+              {children}
+              <BackgroundDownloadBanner />
+            </View>
+          </SyncProvider>
         </UserDatabaseProvider>
       </DictDownloadGate>
     </DatabaseProvider>

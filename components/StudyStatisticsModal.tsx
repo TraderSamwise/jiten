@@ -71,7 +71,7 @@ export function StudyStatisticsModal({
 
     if (flashcardMode === "add_order") {
       const totalRow = await userDb.getFirstAsync<{ c: number }>(
-        "SELECT COUNT(*) as c FROM list_entries WHERE list_id = ?",
+        "SELECT COUNT(*) as c FROM list_entries WHERE list_id = ? AND deleted_at IS NULL",
         [listId],
       );
       const list = useListsStore.getState().lists.find((l) => l.id === listId);
@@ -95,7 +95,7 @@ export function StudyStatisticsModal({
         dueDays: number;
       }>(
         `SELECT simple_n as dueDays
-         FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL`,
+         FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL AND deleted_at IS NULL`,
         [listId],
       );
       for (const row of rows) {
@@ -107,14 +107,14 @@ export function StudyStatisticsModal({
       // FSRS mode
       // Count new cards (state=0) under Today
       const newRow = await userDb.getFirstAsync<{ c: number }>(
-        "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0",
+        "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
         [listId],
       );
       counts[0] += newRow?.c ?? 0;
 
       // Count review cards by due date
       const rows = await userDb.getAllAsync<{ due: string }>(
-        "SELECT due FROM srs_cards WHERE list_id = ? AND state != 0",
+        "SELECT due FROM srs_cards WHERE list_id = ? AND state != 0 AND deleted_at IS NULL",
         [listId],
       );
       for (const row of rows) {
