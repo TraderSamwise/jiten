@@ -20,6 +20,8 @@ import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { useDatabase } from "@/db/provider";
 import { getEntry } from "@/db/search";
 import { Bookmark } from "@/lib/icons";
+import { useAtomValue } from "jotai";
+import { showRomajiAtom } from "@/stores/settings";
 import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
@@ -42,6 +44,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
   const navigation = useNavigation();
   const tabRouter = useTabRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
+  const showRomaji = useAtomValue(showRomajiAtom);
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entryId}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmark(entryId, isBookmarked);
@@ -136,7 +139,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
                     {k.text}
                   </Text>
                 )}
-                {k.romaji && (
+                {showRomaji && k.romaji && (
                   <Text
                     className={
                       muted ? "text-xs text-muted-foreground/50" : "text-sm text-muted-foreground"
