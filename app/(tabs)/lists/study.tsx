@@ -544,7 +544,8 @@ const StudyCardView = React.memo(
         // Cap font size so all morae fit: card text area ≈ 45% of screen width
         const availableWidth = screenWidth * 0.45;
         const maxFontForFit = Math.floor(availableWidth / moraCount);
-        const fontSize = Math.min(style.fontSize, maxFontForFit);
+        const MAX_PITCH_KANA = 36;
+        const fontSize = Math.min(style.fontSize, maxFontForFit, MAX_PITCH_KANA);
         const lineHeight = Math.round(fontSize * 1.3);
         return (
           <PitchAccent
