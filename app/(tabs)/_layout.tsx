@@ -1,9 +1,8 @@
 import { useEffect } from "react";
-import { Platform, View } from "react-native";
+import { Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
-import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 
@@ -50,21 +49,6 @@ export default function TabLayout() {
             }
           : undefined),
       }}
-      {...(isWeb
-        ? {
-            tabBar: (props: any) => {
-              const DefaultTabBar = require("@react-navigation/bottom-tabs").BottomTabBar;
-              return (
-                <View className="flex-row items-center">
-                  <Text className="text-base font-bold text-foreground px-4">字典</Text>
-                  <View style={{ flex: 1 }}>
-                    <DefaultTabBar {...props} />
-                  </View>
-                </View>
-              );
-            },
-          }
-        : undefined)}
     >
       <Tabs.Screen
         name="dictionary"
@@ -95,9 +79,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
-          ...(isWeb
-            ? { headerStyle: { borderRadius: 12, marginHorizontal: 8, marginBottom: 8 } }
-            : undefined),
+          ...(isWeb ? { headerStyle: { backgroundColor: "transparent" } } : undefined),
         }}
       />
     </Tabs>
