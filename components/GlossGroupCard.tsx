@@ -72,15 +72,18 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
       <View className="flex-row items-center">
         <View className="flex-1">
           <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
-          <View className="flex-row flex-wrap mt-1 gap-1">
+          <View className="flex-row flex-wrap mt-1 gap-1.5">
             {japaneseEntries.map((e, i) => (
-              <Text
-                key={i}
-                className={`text-sm ${e.common ? "text-foreground bg-green-100 dark:bg-green-900 rounded px-1" : "text-muted-foreground"}`}
-              >
-                {e.label}
-                {i < japaneseEntries.length - 1 ? "," : ""}
-              </Text>
+              <View key={i} className="flex-row items-baseline">
+                <Text
+                  className={`text-sm ${e.common ? "text-foreground bg-green-100 dark:bg-green-900 rounded px-1" : "text-muted-foreground"}`}
+                >
+                  {e.label}
+                </Text>
+                {i < japaneseEntries.length - 1 && !e.common && (
+                  <Text className="text-sm text-muted-foreground">, </Text>
+                )}
+              </View>
             ))}
           </View>
         </View>
