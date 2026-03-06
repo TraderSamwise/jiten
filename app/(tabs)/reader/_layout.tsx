@@ -9,8 +9,7 @@ const backButton = ({ tintColor }: { tintColor?: string }) => (
   <SafeBackButton fallback="/reader" tintColor={tintColor} />
 );
 
-const webHeaderStyle =
-  Platform.OS === "web" ? { borderRadius: 12, marginHorizontal: 8 } : undefined;
+const webHeaderStyle = Platform.OS === "web" ? { backgroundColor: "transparent" } : undefined;
 
 export default function ReaderLayout() {
   return (
