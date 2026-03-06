@@ -311,13 +311,12 @@ function getFaceText(entry: DictEntry, face: CardFace): string {
       return entry.kanji[0]?.text ?? entry.kana[0]?.text ?? "";
     case "kana":
       return entry.kana[0]?.text ?? "";
-    case "english":
-      return (
-        entry.senses[0]?.glosses
-          .filter((g) => g.lang === "eng")
-          .map((g) => g.text)
-          .join("; ") ?? ""
-      );
+    case "english": {
+      const glosses =
+        entry.senses[0]?.glosses.filter((g) => g.lang === "eng").map((g) => g.text) ?? [];
+      const sep = glosses.some((g) => g.includes(",")) ? "; " : ", ";
+      return glosses.join(sep);
+    }
   }
 }
 
@@ -342,7 +341,7 @@ function scaledFontStyle(count: number, face: CardFace): { fontSize: number; lin
   const scale = 1 / (1 + (count - 1) * 0.5);
   const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
   const size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
-  return { fontSize: size, lineHeight: Math.round(size * 1.3) };
+  return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
 }
 
 type QueueItem =
