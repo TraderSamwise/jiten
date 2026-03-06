@@ -313,9 +313,8 @@ function getFaceText(entry: DictEntry, face: CardFace): string {
     case "english": {
       const glosses =
         entry.senses[0]?.glosses.filter((g) => g.lang === "eng").map((g) => g.text) ?? [];
-      const capped = glosses.slice(0, 4);
-      const sep = capped.some((g) => g.includes(",")) ? "; " : ", ";
-      return capped.join(sep);
+      const sep = glosses.some((g) => g.includes(",")) ? "; " : ", ";
+      return glosses.join(sep);
     }
   }
 }
@@ -337,13 +336,15 @@ function sortFaces(faces: CardFace[]): CardFace[] {
 }
 
 const BASE_FONT_SIZE = 96;
+const MAX_ENGLISH_FONT_SIZE = 20;
 function scaledFontStyle(
   count: number,
   face: CardFace,
 ): { fontSize: number; lineHeight: number; textAlign: "center" } {
   const scale = 1 / (1 + (count - 1) * 0.5);
   const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
-  const size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
+  let size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
+  if (face === "english") size = Math.min(size, MAX_ENGLISH_FONT_SIZE);
   return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
 }
 
@@ -487,7 +488,7 @@ const StudyCardView = React.memo(function StudyCardView({
         key={`front-${i}`}
         style={{ ...scaledFontStyle(frontCount, face), marginTop: 4 }}
         className="text-foreground"
-        numberOfLines={face === "english" ? 2 : undefined}
+        numberOfLines={face === "english" ? 3 : undefined}
       >
         {item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face)}
       </Text>
@@ -507,7 +508,7 @@ const StudyCardView = React.memo(function StudyCardView({
             <Text
               style={{ ...scaledFontStyle(frontCount, frontFaces[0]) }}
               className="text-foreground"
-              numberOfLines={frontFaces[0] === "english" ? 2 : undefined}
+              numberOfLines={frontFaces[0] === "english" ? 3 : undefined}
             >
               {faceText}
             </Text>
@@ -565,7 +566,7 @@ const StudyCardView = React.memo(function StudyCardView({
         <Text
           style={{ ...scaledFontStyle(totalFaceCount, frontFaces[0]) }}
           className="text-foreground"
-          numberOfLines={frontFaces[0] === "english" ? 2 : undefined}
+          numberOfLines={frontFaces[0] === "english" ? 3 : undefined}
         >
           {frontText}
         </Text>
@@ -574,7 +575,7 @@ const StudyCardView = React.memo(function StudyCardView({
             key={`front-${i}`}
             style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
             className="text-foreground"
-            numberOfLines={face === "english" ? 2 : undefined}
+            numberOfLines={face === "english" ? 3 : undefined}
           >
             {item.kind === "entry"
               ? getFaceText(item.entry, face)
@@ -586,7 +587,7 @@ const StudyCardView = React.memo(function StudyCardView({
           <Text
             style={{ ...scaledFontStyle(totalFaceCount, backFaces[0]) }}
             className="text-foreground"
-            numberOfLines={backFaces[0] === "english" ? 2 : undefined}
+            numberOfLines={backFaces[0] === "english" ? 3 : undefined}
           >
             {backText}
           </Text>
@@ -595,7 +596,7 @@ const StudyCardView = React.memo(function StudyCardView({
               key={`back-${i}`}
               style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
               className="text-foreground"
-              numberOfLines={face === "english" ? 2 : undefined}
+              numberOfLines={face === "english" ? 3 : undefined}
             >
               {item.kind === "entry"
                 ? getFaceText(item.entry, face)
