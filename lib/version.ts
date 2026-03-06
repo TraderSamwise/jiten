@@ -4,8 +4,8 @@
 export const APP_VERSION = {
   version: "1.0.0", // Marketing version for app stores
   buildNumber: 13, // Native build number (increments only for native builds)
-  otaVersion: 121, // OTA update version (increments for JS updates)
-  timestamp: "2026-03-06T06:37:15Z", // Last update timestamp
+  otaVersion: 122, // OTA update version (increments for JS updates)
+  timestamp: "2026-03-06T07:46:15Z", // Last update timestamp
   channel: "testflight", // 'testflight' for TestFlight or 'production' for App Store
 };
 
