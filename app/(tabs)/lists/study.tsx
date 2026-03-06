@@ -871,6 +871,12 @@ function getCardStats(srsCard: SrsCardRow | undefined, mode: FlashcardMode): str
 export default function StudyScreenShell() {
   const [ready, setReady] = useState(false);
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const shellBgStyle =
+    Platform.OS === "web"
+      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
+      : undefined;
 
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 100);
@@ -881,7 +887,12 @@ export default function StudyScreenShell() {
     return (
       <View
         className="flex-1 items-center justify-center bg-background"
-        style={{ paddingTop: insets.top }}
+        style={[
+          Platform.OS === "web"
+            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+            : { paddingTop: insets.top },
+          shellBgStyle,
+        ]}
       >
         <ActivityIndicator size="large" />
       </View>
@@ -2107,7 +2118,12 @@ function StudyScreen() {
     return (
       <View
         className="flex-1 items-center justify-center bg-background"
-        style={{ paddingTop: insets.top }}
+        style={[
+          Platform.OS === "web"
+            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+            : { paddingTop: insets.top },
+          webBgStyle,
+        ]}
       >
         <ActivityIndicator size="large" />
         <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
@@ -2119,7 +2135,12 @@ function StudyScreen() {
     return (
       <View
         className="flex-1 items-center justify-center bg-background px-8"
-        style={{ paddingTop: insets.top }}
+        style={[
+          Platform.OS === "web"
+            ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+            : { paddingTop: insets.top },
+          webBgStyle,
+        ]}
       >
         <Text className="text-4xl mb-4">
           {reviewedCount > 0 ? "All done!" : "Nothing to study!"}
@@ -2507,7 +2528,10 @@ function StudyScreen() {
 
       {/* Navigation overlay -- covers heavy UI before unmount to prevent frame drops */}
       {navigating && (
-        <View className="absolute inset-0 z-50 bg-background items-center justify-center">
+        <View
+          className="absolute inset-0 z-50 bg-background items-center justify-center"
+          style={webBgStyle}
+        >
           <ActivityIndicator size="large" />
         </View>
       )}
