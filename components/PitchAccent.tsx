@@ -24,6 +24,12 @@ const DEFAULT_FONT = 14;
  * Continuous line above text: high position = high pitch.
  * Vertical drops at pitch transitions. Trailing drop for odaka words.
  * All line dimensions scale proportionally with fontSize.
+ *
+ * ⚠️ Layout caveat: this component uses a negative-margin trick
+ * (marginBottom: -lineH) to collapse the line area into the text.
+ * Do NOT place it inside an `items-baseline` (alignItems: "baseline")
+ * container when it's the sole content — the baseline calculation breaks
+ * and the mora text becomes invisible. Use `items-center` instead.
  */
 export function PitchAccent({
   accent,
