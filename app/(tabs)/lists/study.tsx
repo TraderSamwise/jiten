@@ -47,10 +47,11 @@ import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { reviewCard, Rating } from "@/stores/srs";
 import {
-  simpleReviewPass,
+  simpleGraduate,
   simpleReviewFail,
   simpleInitCard,
   dateToSrsEpochDays,
+  SIMPLE_SRS_REQUIRED_CORRECT,
 } from "@/stores/simple-srs";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import {
@@ -437,6 +438,8 @@ export default function StudyScreen() {
   // Simple SRS progress: learned/total (only increments on new cards)
   const [simpleSrsLearned, setSimpleSrsLearned] = useState(0);
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
+  // Simple SRS: track correct-in-a-row per card (need 3 to graduate)
+  const simpleCorrectCountRef = useRef(new Map<string, number>());
 
   // Confused words detection
   const [confusedWordsVisible, setConfusedWordsVisible] = useState(false);
@@ -691,11 +694,11 @@ export default function StudyScreen() {
 
         const nowDays = dateToSrsEpochDays();
 
-        // Due cards: have SRS data and n + interval <= now
+        // Due cards: have SRS data and n <= now (n is the due date directly)
         const dueRows = await userDb.getAllAsync<SrsCardRow>(
           `${simpleSrsSelect} FROM srs_cards
-           WHERE list_id = ? AND simple_stage IS NOT NULL AND (simple_n + simple_interval) <= ?
-           ORDER BY (simple_n + simple_interval) ASC`,
+           WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ?
+           ORDER BY simple_n ASC`,
           [listId, nowDays],
         );
 
@@ -843,7 +846,7 @@ export default function StudyScreen() {
     let reviewLogId: string | null = null;
 
     if (list?.flashcardMode === "simple_srs" && card) {
-      await rateSimpleSrsCard(card, false);
+      await rateSimpleSrsCard(card, "fail");
     } else if (list?.flashcardMode === "srs" && card) {
       reviewLogId = generateId();
       await rateSrsCard(card, Rating.Again, reviewLogId);
@@ -925,7 +928,47 @@ export default function StudyScreen() {
         });
       }
     } else if (list?.flashcardMode === "simple_srs" && card) {
-      await rateSimpleSrsCard(card, true);
+      const simpleAction = isLongPress ? "easy" : "pass";
+      const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
+      if (!graduated) {
+        // Card still in learning — re-queue at end of session
+        const learningItem = queue[currentIndex];
+        const newQueue = [...queue, learningItem];
+        setQueue(newQueue);
+
+        setHistory((h) => [
+          ...h,
+          {
+            queueItem: item,
+            action: isLongPress ? "easy" : "pass",
+            preReviewSnapshot: snapshot,
+            reviewLogId,
+            preStudyPosition,
+            wasNewSimpleSrs,
+          },
+        ]);
+
+        // Log practice event
+        if (userDb && listId && item.kind === "entry") {
+          const practiceMode = list?.typingMode
+            ? "typing_flashcard"
+            : list?.voiceMode
+              ? "voice"
+              : "flashcard";
+          const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
+          logPracticeEvent(userDb, {
+            entryId: item.entry.id,
+            listId,
+            practiceMode,
+            correct: true,
+            responseMs,
+            sessionId: sessionIdRef.current,
+          }).catch(() => {});
+        }
+
+        advance(newQueue);
+        return;
+      }
     } else if (card) {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
       reviewLogId = generateId();
@@ -1027,24 +1070,67 @@ export default function StudyScreen() {
     );
   }
 
-  async function rateSimpleSrsCard(card: SrsCardRow, pass: boolean) {
-    if (!userDb) return;
+  /**
+   * Rate a simple SRS card. Returns true if the card graduated (should advance),
+   * false if it stays in learning (should re-queue).
+   */
+  async function rateSimpleSrsCard(
+    card: SrsCardRow,
+    action: "pass" | "easy" | "fail",
+  ): Promise<boolean> {
+    if (!userDb) return true;
     const now = new Date().toISOString();
-
-    // If card has never been reviewed (simpleStage is null), initialize it
     const isNew = card.simpleStage == null;
-    let updates: { simpleStage: number; simpleN: number; simpleInterval: number };
+    const isEasy = action === "easy";
+    const pass = action !== "fail";
 
-    if (isNew && pass) {
-      updates = simpleInitCard();
-      // Initialize then immediately graduate
-      updates = simpleReviewPass({ ...card, ...updates });
-    } else if (isNew) {
-      updates = simpleInitCard();
-    } else if (pass) {
-      updates = simpleReviewPass(card);
+    let updates: { simpleStage: number; simpleN: number; simpleInterval: number };
+    let graduated = false;
+
+    if (!pass) {
+      // FAIL: preserve interval, reset to learning, increment lapses
+      if (isNew) {
+        updates = simpleInitCard();
+      } else {
+        updates = simpleReviewFail(card);
+      }
+      // Reset correct count for this card
+      simpleCorrectCountRef.current.set(card.id, 0);
+    } else if (isEasy) {
+      // EASY: skip correctCount gate, immediately graduate
+      if (isNew) {
+        const init = simpleInitCard();
+        updates = simpleGraduate({ ...card, ...init }, true, card.lapses > 0);
+      } else {
+        updates = simpleGraduate(card, true, card.lapses > 0);
+      }
+      graduated = true;
+      simpleCorrectCountRef.current.delete(card.id);
     } else {
-      updates = simpleReviewFail(card);
+      // CORRECT: increment correct count, check if reached graduation threshold
+      if (isNew) {
+        // First time seeing this card — initialize and start counting
+        updates = simpleInitCard();
+        simpleCorrectCountRef.current.set(card.id, 1);
+        // Not graduated yet (need 3 correct)
+      } else {
+        const count = (simpleCorrectCountRef.current.get(card.id) ?? 0) + 1;
+        simpleCorrectCountRef.current.set(card.id, count);
+
+        if (count >= SIMPLE_SRS_REQUIRED_CORRECT) {
+          // Graduated! Update interval and schedule next review
+          updates = simpleGraduate(card, false, card.lapses > 0);
+          graduated = true;
+          simpleCorrectCountRef.current.delete(card.id);
+        } else {
+          // Still learning — keep current state, card will be re-queued
+          updates = {
+            simpleStage: card.simpleStage ?? 0,
+            simpleN: 0, // immediately due
+            simpleInterval: card.simpleInterval ?? 0,
+          };
+        }
+      }
     }
 
     await userDb.runAsync(
@@ -1056,6 +1142,8 @@ export default function StudyScreen() {
     if (isNew) {
       setSimpleSrsLearned((c) => c + 1);
     }
+
+    return graduated;
   }
 
   async function checkForConfusedWords(entry: DictEntry, card: SrsCardRow) {
@@ -1149,7 +1237,7 @@ export default function StudyScreen() {
     if (cardRow) {
       // Fail it so it comes up soon
       if (list?.flashcardMode === "simple_srs") {
-        await rateSimpleSrsCard(cardRow, false);
+        await rateSimpleSrsCard(cardRow, "fail");
       } else if (list?.flashcardMode === "srs") {
         await rateSrsCard(cardRow, Rating.Again);
       }
@@ -1256,6 +1344,8 @@ export default function StudyScreen() {
           card.id,
         ],
       );
+      // Reset correct count for this card on undo
+      simpleCorrectCountRef.current.delete(card.id);
       if (entry.wasNewSimpleSrs) {
         setSimpleSrsLearned((c) => Math.max(0, c - 1));
       }
@@ -1306,7 +1396,7 @@ export default function StudyScreen() {
 
     if (action === "fail") {
       if (list?.flashcardMode === "simple_srs" && card) {
-        await rateSimpleSrsCard(card, false);
+        await rateSimpleSrsCard(card, "fail");
       } else if (list?.flashcardMode === "srs" && card) {
         reviewLogId = generateId();
         await rateSrsCard(card, Rating.Again, reviewLogId);
@@ -1344,7 +1434,7 @@ export default function StudyScreen() {
           });
         }
       } else if (list?.flashcardMode === "simple_srs" && card) {
-        await rateSimpleSrsCard(card, true);
+        await rateSimpleSrsCard(card, isLongPress ? "easy" : "pass");
       } else if (card) {
         const rating = isLongPress ? Rating.Easy : Rating.Good;
         reviewLogId = generateId();
