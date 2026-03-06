@@ -195,6 +195,13 @@ export function PlayField({ state, now, onStateChange }: PlayFieldProps) {
                 fieldHeight={fieldSize.height}
                 now={now}
                 invalidTick={invalidTicks[bubble.id]}
+                pitchAccent={
+                  bubble.kind === "reading"
+                    ? state.entries
+                        .get(bubble.entryId)
+                        ?.pitchAccents.find((pa) => pa.reading === bubble.text)
+                    : undefined
+                }
               />
             ))}
 

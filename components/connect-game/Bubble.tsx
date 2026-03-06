@@ -10,7 +10,9 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
+import { PitchAccent } from "@/components/PitchAccent";
 import type { Bubble as BubbleType } from "@/lib/connect-game/types";
+import type { PitchAccent as PitchAccentType } from "@/db/types";
 
 // ─── Confetti burst ───
 
@@ -113,6 +115,8 @@ interface BubbleProps {
   now: number;
   /** Incremented each time this bubble is part of an invalid swipe */
   invalidTick?: number;
+  /** Pitch accent for reading bubbles */
+  pitchAccent?: PitchAccentType;
 }
 
 export const BubbleView = React.memo(function BubbleView({
@@ -121,6 +125,7 @@ export const BubbleView = React.memo(function BubbleView({
   fieldHeight,
   now,
   invalidTick,
+  pitchAccent,
 }: BubbleProps) {
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
@@ -220,14 +225,36 @@ export const BubbleView = React.memo(function BubbleView({
         }`}
         style={[{ overflow: "hidden" }, innerStyle]}
       >
-        <Text
-          className={`font-bold ${textSize} ${
-            bubble.matched ? "text-white" : bubble.collected ? "text-yellow-100" : "text-zinc-100"
-          }`}
-          numberOfLines={1}
-        >
-          {bubble.text}
-        </Text>
+        {bubble.kind === "reading" && pitchAccent ? (
+          <PitchAccent
+            accent={pitchAccent}
+            fontSize={16}
+            lineColor={bubble.matched ? "#ffffff" : bubble.collected ? "#fef9c3" : "#f4f4f5"}
+            renderMora={(mora) => (
+              <Text
+                className={`font-bold ${
+                  bubble.matched
+                    ? "text-white"
+                    : bubble.collected
+                      ? "text-yellow-100"
+                      : "text-zinc-100"
+                }`}
+                style={{ fontSize: 16 }}
+              >
+                {mora}
+              </Text>
+            )}
+          />
+        ) : (
+          <Text
+            className={`font-bold ${textSize} ${
+              bubble.matched ? "text-white" : bubble.collected ? "text-yellow-100" : "text-zinc-100"
+            }`}
+            numberOfLines={1}
+          >
+            {bubble.text}
+          </Text>
+        )}
 
         {/* Lifetime indicator bar */}
         {!bubble.matched && !bubble.expired && (
