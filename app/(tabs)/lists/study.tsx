@@ -8,7 +8,6 @@ import {
   TextInput,
   useWindowDimensions,
   ActivityIndicator,
-  Vibration,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
@@ -1339,6 +1338,15 @@ function StudyScreen() {
     }
   }
 
+  function clearLongPress() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    isLongPressRef.current = false;
+    setLongPressActive(false);
+  }
+
   function advance(currentQueue: QueueItem[]) {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= currentQueue.length) {
@@ -1353,6 +1361,7 @@ function StudyScreen() {
       revealedRef.current = false;
       setRevealed(false);
       setIsFlipping(false);
+      clearLongPress();
     }
   }
 
@@ -1569,6 +1578,7 @@ function StudyScreen() {
       setCurrentIndex(nextIndex);
       setRevealed(false);
       setIsFlipping(false);
+      clearLongPress();
     }
   }
 
@@ -1578,11 +1588,11 @@ function StudyScreen() {
     longPressTimerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
       setLongPressActive(true);
-      if (Platform.OS !== "web") Vibration.vibrate(10);
     }, 500);
   }
 
   function handlePassPressOut() {
+    // Only clear the timer, not the ref — onPress reads isLongPressRef after this
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -1592,6 +1602,12 @@ function StudyScreen() {
 
   function handlePassPress() {
     const wasLongPress = isLongPressRef.current;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    isLongPressRef.current = false;
+    setLongPressActive(false);
     handlePass(wasLongPress);
   }
 
