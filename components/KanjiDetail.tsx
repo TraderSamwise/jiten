@@ -35,6 +35,7 @@ import {
 } from "@/db/kanji-search";
 import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
+import { StrokeOrderDiagram } from "@/components/StrokeOrderDiagram";
 import type { KanjiCharacter, SimilarKanji, DictEntry } from "@/db/types";
 
 interface KanjiDetailProps {
@@ -225,6 +226,14 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           </View>
         )}
       </View>
+
+      {/* Stroke Order */}
+      {kanji.strokePaths.length > 0 && (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Stroke Order</Text>
+          <StrokeOrderDiagram strokes={kanji.strokePaths} />
+        </Card>
+      )}
 
       {/* Mnemonic & Keyword */}
       <Card className="mb-3">
