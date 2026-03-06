@@ -94,7 +94,7 @@ export function StudyStatisticsModal({
       const rows = await userDb.getAllAsync<{
         dueDays: number;
       }>(
-        `SELECT (simple_n + simple_interval) as dueDays
+        `SELECT simple_n as dueDays
          FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL`,
         [listId],
       );
