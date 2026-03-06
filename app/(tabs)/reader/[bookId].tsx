@@ -830,11 +830,24 @@ export default function BookReaderScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View
+      className="flex-1 bg-background"
+      style={[
+        Platform.OS === "web" && {
+          paddingTop: 15,
+          backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
+        },
+      ]}
+    >
       {/* Header */}
       <View
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
-        style={{ paddingTop: insets.top }}
+        style={[
+          { paddingTop: insets.top },
+          Platform.OS === "web" && {
+            backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
+          },
+        ]}
       >
         <Pressable onPress={() => goBack()} className="p-2">
           <ChevronLeft size={24} className="text-foreground" />
