@@ -125,13 +125,17 @@ export function WordDetail({ entryId }: WordDetailProps) {
             const accents = entry.pitchAccents.filter((pa) => pa.reading === k.text);
             return (
               <View key={i} className="flex-row items-center gap-1 flex-wrap">
-                <Text
-                  className={
-                    muted ? "text-base text-muted-foreground/50" : "text-xl text-muted-foreground"
-                  }
-                >
-                  {k.text}
-                </Text>
+                {!muted && accents.length > 0 ? (
+                  accents.map((pa, j) => <PitchAccent key={j} accent={pa} fontSize={20} />)
+                ) : (
+                  <Text
+                    className={
+                      muted ? "text-base text-muted-foreground/50" : "text-xl text-muted-foreground"
+                    }
+                  >
+                    {k.text}
+                  </Text>
+                )}
                 {k.romaji && (
                   <Text
                     className={
@@ -141,7 +145,6 @@ export function WordDetail({ entryId }: WordDetailProps) {
                     ({k.romaji})
                   </Text>
                 )}
-                {!muted && accents.map((pa, j) => <PitchAccent key={j} accent={pa} />)}
                 {k.tags.map((t, j) => (
                   <Badge key={j} variant="outline" label={getTagLabel(t)} />
                 ))}

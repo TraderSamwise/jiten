@@ -7,6 +7,8 @@ interface PitchAccentProps {
   accent: PitchAccentType;
   /** Font size of mora text — used to scale line thickness and drop height. Defaults to 14. */
   fontSize?: number;
+  /** Color for pitch accent lines. Defaults to foreground. */
+  lineColor?: string;
   /** Custom renderer for each mora's text. Receives (mora, moraIndex). */
   renderMora?: (mora: string, moraIndex: number) => React.ReactNode;
 }
@@ -19,7 +21,12 @@ const DEFAULT_FONT = 14;
  * Vertical drops at pitch transitions. Trailing drop for odaka words.
  * All line dimensions scale proportionally with fontSize.
  */
-export function PitchAccent({ accent, fontSize = DEFAULT_FONT, renderMora }: PitchAccentProps) {
+export function PitchAccent({
+  accent,
+  fontSize = DEFAULT_FONT,
+  lineColor,
+  renderMora,
+}: PitchAccentProps) {
   const { reading, pitchNumber } = accent;
   const morae = splitMorae(reading);
 
@@ -52,30 +59,41 @@ export function PitchAccent({ accent, fontSize = DEFAULT_FONT, renderMora }: Pit
               }}
             >
               {/* Horizontal line — only render for high morae */}
-              {isHigh && <View className="bg-foreground" style={{ flex: 1, height: lineH }} />}
+              {isHigh && (
+                <View
+                  className={lineColor ? undefined : "bg-foreground"}
+                  style={{
+                    flex: 1,
+                    height: lineH,
+                    ...(lineColor ? { backgroundColor: lineColor } : {}),
+                  }}
+                />
+              )}
               {/* Vertical drop between this mora and next */}
               {drops && (
                 <View
-                  className="bg-foreground"
+                  className={lineColor ? undefined : "bg-foreground"}
                   style={{
                     position: "absolute",
                     right: 0,
                     top: 0,
                     height: dropH,
                     width: lineH,
+                    ...(lineColor ? { backgroundColor: lineColor } : {}),
                   }}
                 />
               )}
               {/* Trailing drop for odaka */}
               {trailingDrop && (
                 <View
-                  className="bg-foreground"
+                  className={lineColor ? undefined : "bg-foreground"}
                   style={{
                     position: "absolute",
                     right: 0,
                     top: 0,
                     height: dropH,
                     width: lineH,
+                    ...(lineColor ? { backgroundColor: lineColor } : {}),
                   }}
                 />
               )}
@@ -85,7 +103,16 @@ export function PitchAccent({ accent, fontSize = DEFAULT_FONT, renderMora }: Pit
               {renderMora ? (
                 renderMora(mora, i)
               ) : (
-                <Text className="text-sm text-foreground">{mora}</Text>
+                <Text
+                  style={
+                    fontSize !== DEFAULT_FONT
+                      ? { fontSize, lineHeight: Math.round(fontSize * 1.3) }
+                      : undefined
+                  }
+                  className="text-sm text-foreground"
+                >
+                  {mora}
+                </Text>
               )}
             </View>
           </View>
