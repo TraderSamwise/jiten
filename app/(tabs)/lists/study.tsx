@@ -461,11 +461,6 @@ const StudyCardView = React.memo(
         backfaceVisibility: "hidden" as const,
         transform: [{ perspective: 1000 }, { rotateY: `${rotateX}deg` }],
         opacity,
-        position: "absolute" as const,
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
       };
     });
 
@@ -638,46 +633,48 @@ const StudyCardView = React.memo(
       );
     }
 
-    return (
-      <Card
-        className="flex-1 items-center justify-center"
-        style={{ position: "relative", overflow: "hidden" }}
+    const statsOverlay = stats ? (
+      <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
+        <Text className="text-xs text-muted-foreground">{stats}</Text>
+      </View>
+    ) : null;
+
+    const checksOverlay = (
+      <View
+        style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+        className="flex-row items-center gap-1"
       >
-        {stats && (
-          <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
-            <Text className="text-xs text-muted-foreground">{stats}</Text>
-          </View>
-        )}
-        <View
-          style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-          className="flex-row items-center gap-1"
-        >
-          {Array.from({ length: checkCount }, (_, ci) => (
-            <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
-          ))}
-          <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
-            <Info size={18} className="text-muted-foreground" />
-          </Pressable>
-        </View>
-        <Animated.View
-          style={[
-            frontFaceStyle,
-            {
-              flex: 1,
-              width: "100%",
-              alignItems: "center",
-              justifyContent: "center",
-            },
-          ]}
-        >
-          {renderFront()}
+        {Array.from({ length: checkCount }, (_, ci) => (
+          <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
+        ))}
+        <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
+          <Info size={18} className="text-muted-foreground" />
+        </Pressable>
+      </View>
+    );
+
+    return (
+      <View style={{ flex: 1, position: "relative" }}>
+        <Animated.View style={[frontFaceStyle, { flex: 1 }]}>
+          <Card className="flex-1 items-center justify-center" style={{ overflow: "hidden" }}>
+            {statsOverlay}
+            {checksOverlay}
+            {renderFront()}
+          </Card>
         </Animated.View>
         <Animated.View
-          style={[backFaceStyle, { alignItems: "center", justifyContent: "center", padding: 16 }]}
+          style={[backFaceStyle, { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }]}
         >
-          {renderBack()}
+          <Card
+            className="flex-1 items-center justify-center"
+            style={{ overflow: "hidden", padding: 16 }}
+          >
+            {statsOverlay}
+            {checksOverlay}
+            {renderBack()}
+          </Card>
         </Animated.View>
-      </Card>
+      </View>
     );
   }),
 );
