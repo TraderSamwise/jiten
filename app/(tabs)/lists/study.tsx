@@ -190,7 +190,7 @@ function TypingInput({
       return;
     }
 
-    // Over-length check: kana count >= target length → fail
+    // Over-length check: kana count >= target length -> fail
     const targetLen = targetChars.length;
     const kanaCount = [...conv].filter((ch) => {
       const code = ch.charCodeAt(0);
@@ -287,7 +287,7 @@ function TypingInput({
         </View>
       )}
 
-      {/* Visible TextInput — triggers virtual keyboard on mobile */}
+      {/* Visible TextInput -- triggers virtual keyboard on mobile */}
       <TextInput
         ref={inputRef}
         className="mt-4 w-48 h-10 rounded-lg border border-border bg-background px-3 text-center text-foreground text-lg"
@@ -324,7 +324,7 @@ function getKanjiFaceText(kanji: KanjiCharacter, face: CardFace): string {
     case "kanji":
       return kanji.literal;
     case "kana":
-      return [...kanji.readingsOn, ...kanji.readingsKun].join("、");
+      return [...kanji.readingsOn, ...kanji.readingsKun].join("\u3001");
     case "english":
       return kanji.meanings.join(", ");
   }
@@ -370,13 +370,17 @@ interface SrsSnapshot {
   lastConfusionCheck: string | null;
 }
 
-interface HistoryEntry {
-  queueItem: QueueItem;
-  action: "pass" | "easy" | "fail";
-  preReviewSnapshot: SrsSnapshot | null;
-  reviewLogId: string | null;
-  preStudyPosition: number | null;
-  wasNewSimpleSrs: boolean;
+type CardStatus = "pending" | "revealed" | "rated";
+
+interface StudyCard {
+  item: QueueItem;
+  status: CardStatus;
+  rating?: "pass" | "fail" | "easy";
+  snapshot?: SrsSnapshot | null;
+  reviewLogId?: string | null;
+  preStudyPosition?: number | null;
+  wasNewSimpleSrs?: boolean;
+  reQueueOf?: number;
 }
 
 function captureSnapshot(card: SrsCardRow): SrsSnapshot {
@@ -415,7 +419,7 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
     return Math.min(srsCard.reps, 2) || 1;
   }
 
-  return 0; // add_order — no SRS checks
+  return 0; // add_order -- no SRS checks
 }
 
 function formatInterval(days: number): string {
@@ -431,18 +435,18 @@ function getCardStats(srsCard: SrsCardRow | undefined, mode: FlashcardMode): str
     if (srsCard.simpleStage == null || srsCard.simpleInterval == null) return null;
     const interval = formatInterval(srsCard.simpleInterval);
     const lapses = srsCard.lapses;
-    return lapses > 0 ? `${interval} · ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
+    return lapses > 0 ? `${interval} \u00B7 ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
   }
   if (mode === "srs") {
     if (srsCard.state === 0) return null; // new card
     const interval = formatInterval(srsCard.scheduledDays);
     const lapses = srsCard.lapses;
-    return lapses > 0 ? `${interval} · ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
+    return lapses > 0 ? `${interval} \u00B7 ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
   }
   return null;
 }
 
-// Lightweight shell — defers mounting the heavy study UI until after nav animation
+// Lightweight shell -- defers mounting the heavy study UI until after nav animation
 export default function StudyScreenShell() {
   const [ready, setReady] = useState(false);
   const insets = useSafeAreaInsets();
@@ -481,9 +485,19 @@ function StudyScreen() {
   const [localList, setLocalList] = useState<typeof storeList>(undefined);
   const list = storeList ?? localList;
 
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [revealed, setRevealed] = useState(false);
+  // --- Single array + cursor (replaces queue/currentIndex/history/historyIndex/revealed) ---
+  const [cards, setCards] = useState<StudyCard[]>([]);
+  const cardsRef = useRef<StudyCard[]>([]);
+  cardsRef.current = cards;
+  const [cursor, setCursor] = useState(0);
+  const [originalCardCount, setOriginalCardCount] = useState(0);
+
+  // Derived state
+  const currentCard = cards[cursor];
+  const displayItem = currentCard?.item;
+  const revealed = currentCard ? currentCard.status !== "pending" : false;
+  const isBrowsingHistory = currentCard?.status === "rated";
+
   const [loading, setLoading] = useState(true);
   const [navigating, setNavigating] = useState(false);
   const [sessionDone, setSessionDone] = useState(false);
@@ -527,22 +541,15 @@ function StudyScreen() {
   const voiceAutoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceWrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // History for swipe-back
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
-
   // Carousel animation shared values
   const translateX = useSharedValue(0);
   const flipProgress = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
   const { width: screenWidth } = useWindowDimensions();
 
-  const isBrowsingHistory = historyIndex !== null;
-  const displayItem = isBrowsingHistory ? history[historyIndex]?.queueItem : queue[currentIndex];
-
-  // Voice recognition: enabled when voice mode is on, card is not revealed, not browsing history
+  // Voice recognition: enabled when voice mode is on, card is pending, not browsing history
   const voiceEnabled =
-    !!list?.voiceMode && !revealed && !isBrowsingHistory && !sessionDone && !loading;
+    !!list?.voiceMode && currentCard?.status === "pending" && !sessionDone && !loading;
 
   const voiceCallbackRef = useRef<(transcript: string) => void>(() => {});
 
@@ -559,7 +566,7 @@ function StudyScreen() {
     };
   }, []);
 
-  // Reset voice/typing state when card changes (typing state resets via TypingInput remount)
+  // Reset voice/typing state when cursor changes
   useEffect(() => {
     setVoiceStatus("idle");
     setVoiceHeard(null);
@@ -572,7 +579,7 @@ function StudyScreen() {
       clearTimeout(voiceWrongTimerRef.current);
       voiceWrongTimerRef.current = null;
     }
-  }, [currentIndex]);
+  }, [cursor]);
 
   // Log session summary when study session completes
   useEffect(() => {
@@ -658,9 +665,8 @@ function StudyScreen() {
   async function loadQueue() {
     if (!dictDb || !userDb || !list || !listId) return;
     setLoading(true);
-    setHistory([]);
-    setHistoryIndex(null);
     translateX.value = 0;
+    flipProgress.value = 0;
 
     try {
       if (list.flashcardMode === "add_order") {
@@ -685,7 +691,9 @@ function StudyScreen() {
         }
 
         if (rows.length === 0) {
-          setQueue([]);
+          setCards([]);
+          setCursor(0);
+          setOriginalCardCount(0);
           setSessionDone(true);
           setLoading(false);
           return;
@@ -717,9 +725,9 @@ function StudyScreen() {
           }
         }
 
-        setQueue(items);
-        setCurrentIndex(0);
-        setRevealed(false);
+        setCards(items.map((item) => ({ item, status: "pending" as CardStatus })));
+        setCursor(0);
+        setOriginalCardCount(items.length);
         setSessionDone(items.length === 0);
       } else if (list.flashcardMode === "simple_srs") {
         // Simple SRS mode: due review cards first, then new cards
@@ -789,7 +797,9 @@ function StudyScreen() {
         const srsRows = [...dueRows, ...newRows];
 
         if (srsRows.length === 0) {
-          setQueue([]);
+          setCards([]);
+          setCursor(0);
+          setOriginalCardCount(0);
           setSessionDone(true);
           setLoading(false);
           return;
@@ -825,9 +835,9 @@ function StudyScreen() {
           }
         }
 
-        setQueue(items);
-        setCurrentIndex(0);
-        setRevealed(false);
+        setCards(items.map((item) => ({ item, status: "pending" as CardStatus })));
+        setCursor(0);
+        setOriginalCardCount(items.length);
         setSessionDone(items.length === 0);
       } else {
         // FSRS mode: reviews first, then a batch of new cards
@@ -854,7 +864,9 @@ function StudyScreen() {
         const srsRows = [...reviewRows, ...newRows];
 
         if (srsRows.length === 0) {
-          setQueue([]);
+          setCards([]);
+          setCursor(0);
+          setOriginalCardCount(0);
           setSessionDone(true);
           setLoading(false);
           return;
@@ -890,9 +902,9 @@ function StudyScreen() {
           }
         }
 
-        setQueue(items);
-        setCurrentIndex(0);
-        setRevealed(false);
+        setCards(items.map((item) => ({ item, status: "pending" as CardStatus })));
+        setCursor(0);
+        setOriginalCardCount(items.length);
         setSessionDone(items.length === 0);
       }
     } catch (err) {
@@ -914,20 +926,43 @@ function StudyScreen() {
     ratingFlashOpacity.value = withTiming(0, { duration: 300 });
   }
 
-  async function handleFail() {
+  // --- moveCursor: replaces advance/goBack/goForward/advanceFrom ---
+  function moveCursor(newCursor: number) {
+    setCursor(newCursor);
+    setIsFlipping(false);
+    setPreSelectedRating(null);
+    clearLongPress();
+    revealedRef.current = cards[newCursor]?.status !== "pending";
+    // Flip state: if target is rated/revealed, show back; if pending, show front
+    flipProgress.value = cards[newCursor]?.status === "pending" ? 0 : 1;
+    // Animate translateX
+    const target = -(newCursor * slideDistance);
+    if (list?.disableSwipeAnimation) {
+      translateX.value = target;
+    } else {
+      translateX.value = withTiming(target, slideConfig);
+    }
+  }
+
+  const hasPrev = cursor > 0;
+  const hasNext = currentCard?.status === "rated" && cursor < cards.length - 1;
+
+  async function handleFail(fromReRate = false) {
     flashRating("fail");
     // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
     }
-    if (isBrowsingHistory) {
-      await reRateFromHistory("fail", false);
+    if (!fromReRate && isBrowsingHistory) {
+      await reRateCard("fail", false);
       return;
     }
-    if (currentIndex >= queue.length) return;
+    // Read from ref for fresh data (reRateCard may have updated cards before calling us)
+    const liveCard = cardsRef.current[cursor];
+    if (!liveCard || liveCard.status === "pending") return;
 
-    const item = queue[currentIndex];
+    const item = liveCard.item;
     const card = item.srsCard;
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
@@ -939,17 +974,21 @@ function StudyScreen() {
       await rateSrsCard(card, Rating.Again, reviewLogId);
     }
 
-    setHistory((h) => [
-      ...h,
-      {
-        queueItem: item,
-        action: "fail",
-        preReviewSnapshot: snapshot,
-        reviewLogId,
-        preStudyPosition: null,
-        wasNewSimpleSrs: card ? card.simpleStage == null : false,
-      },
-    ]);
+    // Update current card to rated + append re-queue copy
+    const updatedCards = [...cardsRef.current];
+    updatedCards[cursor] = {
+      ...updatedCards[cursor],
+      status: "rated",
+      rating: "fail",
+      snapshot,
+      reviewLogId,
+      preStudyPosition: null,
+      wasNewSimpleSrs: card ? card.simpleStage == null : false,
+    };
+    // Push failed card to end for re-review
+    updatedCards.push({ item, status: "pending", reQueueOf: cursor });
+    cardsRef.current = updatedCards;
+    setCards(updatedCards);
 
     // Log practice event
     if (userDb && listId && item.kind === "entry") {
@@ -969,37 +1008,41 @@ function StudyScreen() {
       }).catch(() => {});
     }
 
-    // Check for confused words (fire-and-forget, modal appears async) — skip for kanji
+    // Check for confused words (fire-and-forget, modal appears async) -- skip for kanji
     if (card && list?.flashcardMode !== "add_order" && item.kind === "entry") {
       checkForConfusedWords(item.entry, card);
     }
 
-    // Push failed card to end of queue for re-review
-    const failedItem = queue[currentIndex];
-    const newQueue = [...queue, failedItem];
-    setQueue(newQueue);
-    advance(newQueue);
+    // Advance to next card
+    if (cursor + 1 >= updatedCards.length) {
+      loadQueue();
+    } else {
+      moveCursor(cursor + 1);
+    }
   }
 
-  async function handlePass(isLongPress: boolean) {
+  async function handlePass(isLongPress: boolean, fromReRate = false) {
     flashRating(isLongPress ? "easy" : "pass");
     // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
     }
-    if (isBrowsingHistory) {
-      await reRateFromHistory(isLongPress ? "easy" : "pass", isLongPress);
+    if (!fromReRate && isBrowsingHistory) {
+      await reRateCard(isLongPress ? "easy" : "pass", isLongPress);
       return;
     }
-    if (currentIndex >= queue.length) return;
+    // Read from ref for fresh data (reRateCard may have updated cards before calling us)
+    const liveCard = cardsRef.current[cursor];
+    if (!liveCard || liveCard.status === "pending") return;
 
-    const item = queue[currentIndex];
+    const item = liveCard.item;
     const card = item.srsCard;
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
     let preStudyPosition: number | null = null;
     const wasNewSimpleSrs = card ? card.simpleStage == null : false;
+    let shouldReQueue = false;
 
     if (list?.flashcardMode === "add_order") {
       if (!userDb || !listId) return;
@@ -1019,43 +1062,7 @@ function StudyScreen() {
       const simpleAction = isLongPress ? "easy" : "pass";
       const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
       if (!graduated) {
-        // Card still in learning — re-queue at end of session
-        const learningItem = queue[currentIndex];
-        const newQueue = [...queue, learningItem];
-        setQueue(newQueue);
-
-        setHistory((h) => [
-          ...h,
-          {
-            queueItem: item,
-            action: isLongPress ? "easy" : "pass",
-            preReviewSnapshot: snapshot,
-            reviewLogId,
-            preStudyPosition,
-            wasNewSimpleSrs,
-          },
-        ]);
-
-        // Log practice event
-        if (userDb && listId && item.kind === "entry") {
-          const practiceMode = list?.typingMode
-            ? "typing_flashcard"
-            : list?.voiceMode
-              ? "voice"
-              : "flashcard";
-          const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
-          logPracticeEvent(userDb, {
-            entryId: item.entry.id,
-            listId,
-            practiceMode,
-            correct: true,
-            responseMs,
-            sessionId: sessionIdRef.current,
-          }).catch(() => {});
-        }
-
-        advance(newQueue);
-        return;
+        shouldReQueue = true;
       }
     } else if (card) {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
@@ -1063,17 +1070,23 @@ function StudyScreen() {
       await rateSrsCard(card, rating, reviewLogId);
     }
 
-    setHistory((h) => [
-      ...h,
-      {
-        queueItem: item,
-        action: isLongPress ? "easy" : "pass",
-        preReviewSnapshot: snapshot,
-        reviewLogId,
-        preStudyPosition,
-        wasNewSimpleSrs,
-      },
-    ]);
+    // Update current card to rated
+    const ratingLabel: "pass" | "easy" = isLongPress ? "easy" : "pass";
+    const updatedCards = [...cardsRef.current];
+    updatedCards[cursor] = {
+      ...updatedCards[cursor],
+      status: "rated",
+      rating: ratingLabel,
+      snapshot,
+      reviewLogId,
+      preStudyPosition,
+      wasNewSimpleSrs,
+    };
+    if (shouldReQueue) {
+      updatedCards.push({ item, status: "pending", reQueueOf: cursor });
+    }
+    cardsRef.current = updatedCards;
+    setCards(updatedCards);
 
     // Log practice event
     if (userDb && listId && item.kind === "entry") {
@@ -1095,7 +1108,13 @@ function StudyScreen() {
 
     sessionCorrectRef.current++;
     setReviewedCount((c) => c + 1);
-    advance(queue);
+
+    // Advance
+    if (cursor + 1 >= updatedCards.length) {
+      loadQueue();
+    } else {
+      moveCursor(cursor + 1);
+    }
   }
 
   async function rateSrsCard(card: SrsCardRow, rating: Rating, logId?: string) {
@@ -1197,7 +1216,7 @@ function StudyScreen() {
     } else {
       // CORRECT: increment correct count, check if reached graduation threshold
       if (isNew) {
-        // First time seeing this card — initialize and start counting
+        // First time seeing this card -- initialize and start counting
         updates = simpleInitCard();
         simpleCorrectCountRef.current.set(card.id, 1);
         // Not graduated yet (need 3 correct)
@@ -1211,7 +1230,7 @@ function StudyScreen() {
           graduated = true;
           simpleCorrectCountRef.current.delete(card.id);
         } else {
-          // Still learning — keep current state, card will be re-queued
+          // Still learning -- keep current state, card will be re-queued
           updates = {
             simpleStage: card.simpleStage ?? 0,
             simpleN: 0, // immediately due
@@ -1289,7 +1308,7 @@ function StudyScreen() {
       }
     }
 
-    // Meaning-based confusion detection (no reps/lapses gate — cheap and useful early)
+    // Meaning-based confusion detection (no reps/lapses gate -- cheap and useful early)
     const listEntries = await getEntries(dictDb, entryIds);
     const meaningResults = findMeaningConfusion(entry, listEntries);
     for (const mr of meaningResults) {
@@ -1330,10 +1349,13 @@ function StudyScreen() {
         await rateSrsCard(cardRow, Rating.Again);
       }
 
-      // Push to end of current session queue
-      setQueue((q) => [
-        ...q,
-        { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: cardRow },
+      // Push to end of current session
+      setCards((prev) => [
+        ...prev,
+        {
+          item: { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: cardRow },
+          status: "pending" as CardStatus,
+        },
       ]);
     }
   }
@@ -1347,56 +1369,11 @@ function StudyScreen() {
     setLongPressActive(false);
   }
 
-  function advance(currentQueue: QueueItem[]) {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= currentQueue.length) {
-      loadQueue();
-    } else {
-      if (list?.disableSwipeAnimation) {
-        translateX.value = translateX.value - slideDistance;
-      } else {
-        translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
-      }
-      setCurrentIndex(nextIndex);
-      revealedRef.current = false;
-      setRevealed(false);
-      setIsFlipping(false);
-      clearLongPress();
-    }
-  }
-
-  // Navigation: only update state. translateX is handled by callers (gesture/button animations).
-  function goBack() {
-    setIsFlipping(false);
-    setPreSelectedRating(null);
-    if (isBrowsingHistory) {
-      if (historyIndex! > 0) {
-        setHistoryIndex(historyIndex! - 1);
-        setRevealed(true);
-      }
-    } else if (history.length > 0) {
-      setHistoryIndex(history.length - 1);
-      setRevealed(true);
-    }
-  }
-
-  function goForward() {
-    setIsFlipping(false);
-    setPreSelectedRating(null);
-    if (!isBrowsingHistory) return;
-    if (historyIndex! < history.length - 1) {
-      setHistoryIndex(historyIndex! + 1);
-      setRevealed(true);
-    } else {
-      setHistoryIndex(null);
-      setRevealed(false);
-    }
-  }
-
-  async function undoReviewDb(entry: HistoryEntry) {
+  // --- undoSingleCard: undo DB changes for a single StudyCard ---
+  async function undoSingleCard(studyCard: StudyCard) {
     if (!userDb || !listId) return;
-    const card = entry.queueItem.srsCard;
-    const snap = entry.preReviewSnapshot;
+    const card = studyCard.item.srsCard;
+    const snap = studyCard.snapshot;
     const now = new Date().toISOString();
 
     if (list?.flashcardMode === "srs" && card && snap) {
@@ -1423,8 +1400,8 @@ function StudyScreen() {
         ],
       );
       // Delete review log
-      if (entry.reviewLogId) {
-        await userDb.runAsync("DELETE FROM review_logs WHERE id = ?", [entry.reviewLogId]);
+      if (studyCard.reviewLogId) {
+        await userDb.runAsync("DELETE FROM review_logs WHERE id = ?", [studyCard.reviewLogId]);
       }
     } else if (list?.flashcardMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
@@ -1444,141 +1421,65 @@ function StudyScreen() {
       );
       // Reset correct count for this card on undo
       simpleCorrectCountRef.current.delete(card.id);
-      if (entry.wasNewSimpleSrs) {
+      if (studyCard.wasNewSimpleSrs) {
         setSimpleSrsLearned((c) => Math.max(0, c - 1));
       }
-    } else if (list?.flashcardMode === "add_order" && entry.preStudyPosition != null) {
+    } else if (list?.flashcardMode === "add_order" && studyCard.preStudyPosition != null) {
       // Restore study_position
       await userDb.runAsync("UPDATE lists SET study_position = ?, updated_at = ? WHERE id = ?", [
-        entry.preStudyPosition,
+        studyCard.preStudyPosition,
         now,
         listId,
       ]);
       updateList(listId, {
-        studyPosition: entry.preStudyPosition,
+        studyPosition: studyCard.preStudyPosition,
         updatedAt: now,
       });
     }
 
     // Decrement reviewed count for pass/easy
-    if (entry.action === "pass" || entry.action === "easy") {
+    if (studyCard.rating === "pass" || studyCard.rating === "easy") {
       setReviewedCount((c) => Math.max(0, c - 1));
     }
   }
 
-  async function reRateFromHistory(action: "pass" | "easy" | "fail", isLongPress: boolean) {
-    if (historyIndex == null) return;
+  // --- reRateCard: replaces reRateFromHistory ---
+  async function reRateCard(action: "pass" | "easy" | "fail", isLongPress: boolean) {
+    const card = cards[cursor];
+    if (!card || card.status !== "rated") return;
 
-    // Undo entries from historyIndex to end, in reverse order
-    const toUndo = history.slice(historyIndex);
-    for (let i = toUndo.length - 1; i >= 0; i--) {
-      await undoReviewDb(toUndo[i]);
+    // 1. Undo all rated cards from cursor to end (reverse order)
+    for (let i = cards.length - 1; i >= cursor; i--) {
+      if (cards[i].status === "rated") {
+        await undoSingleCard(cards[i]);
+      }
     }
 
-    // Truncate history and exit browse mode
-    const truncated = history.slice(0, historyIndex);
-    setHistory(truncated);
-    const reReviewIndex = findQueueIndex(history[historyIndex].queueItem);
-    setHistoryIndex(null);
-    setCurrentIndex(reReviewIndex);
-    setRevealed(false);
+    // 2. Reset cards: cursor -> 'revealed', everything after -> remove re-queue copies + reset to pending
+    const next: StudyCard[] = [];
+    for (let i = 0; i < cursor; i++) {
+      next.push(cards[i]);
+    }
+    next.push({ item: cards[cursor].item, status: "revealed" });
+    for (let i = cursor + 1; i < cards.length; i++) {
+      if (cards[i].reQueueOf == null) {
+        next.push({ item: cards[i].item, status: "pending" });
+      }
+    }
+    cardsRef.current = next;
+    setCards(next);
 
-    // Now apply the new rating via normal flow
-    // We need to wait for state to settle, so we call the rating directly
-    const item = queue[reReviewIndex];
-    const card = item.srsCard;
-    const snapshot = card ? captureSnapshot(card) : null;
-    let reviewLogId: string | null = null;
-    let preStudyPosition: number | null = null;
-    const wasNewSimpleSrs = card ? card.simpleStage == null : false;
+    // Update revealedRef since the card is now revealed
+    revealedRef.current = true;
+    revealTimeRef.current = Date.now();
+    flipProgress.value = 1;
 
+    // 3. Apply new rating through normal flow (card is now 'revealed' at cursor)
+    //    Pass fromReRate=true to skip the isBrowsingHistory check (React state is stale)
     if (action === "fail") {
-      if (list?.flashcardMode === "simple_srs" && card) {
-        await rateSimpleSrsCard(card, "fail");
-      } else if (list?.flashcardMode === "srs" && card) {
-        reviewLogId = generateId();
-        await rateSrsCard(card, Rating.Again, reviewLogId);
-      }
-
-      setHistory([
-        ...truncated,
-        {
-          queueItem: item,
-          action: "fail",
-          preReviewSnapshot: snapshot,
-          reviewLogId,
-          preStudyPosition: null,
-          wasNewSimpleSrs,
-        },
-      ]);
-
-      // Push failed card to end
-      const newQueue = [...queue, item];
-      setQueue(newQueue);
-      advanceFrom(reReviewIndex, newQueue);
+      await handleFail(true);
     } else {
-      if (list?.flashcardMode === "add_order") {
-        if (!userDb || !listId) return;
-        const currentList = useListsStore.getState().lists.find((l) => l.id === listId);
-        preStudyPosition = currentList?.studyPosition ?? 0;
-        await userDb.runAsync(
-          "UPDATE lists SET study_position = study_position + 1, updated_at = ? WHERE id = ?",
-          [new Date().toISOString(), listId],
-        );
-        if (currentList) {
-          updateList(listId, {
-            studyPosition: (currentList.studyPosition ?? 0) + 1,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      } else if (list?.flashcardMode === "simple_srs" && card) {
-        await rateSimpleSrsCard(card, isLongPress ? "easy" : "pass");
-      } else if (card) {
-        const rating = isLongPress ? Rating.Easy : Rating.Good;
-        reviewLogId = generateId();
-        await rateSrsCard(card, rating, reviewLogId);
-      }
-
-      setHistory([
-        ...truncated,
-        {
-          queueItem: item,
-          action: isLongPress ? "easy" : "pass",
-          preReviewSnapshot: snapshot,
-          reviewLogId,
-          preStudyPosition,
-          wasNewSimpleSrs,
-        },
-      ]);
-
-      setReviewedCount((c) => c + 1);
-      advanceFrom(reReviewIndex, queue);
-    }
-  }
-
-  function findQueueIndex(item: QueueItem): number {
-    // Find the queue index that matches this item
-    const targetId = getQueueItemId(item);
-    const idx = queue.findIndex(
-      (q) => getQueueItemId(q) === targetId && q.srsCard?.id === item.srsCard?.id,
-    );
-    return idx >= 0 ? idx : currentIndex;
-  }
-
-  function advanceFrom(fromIndex: number, currentQueue: QueueItem[]) {
-    const nextIndex = fromIndex + 1;
-    if (nextIndex >= currentQueue.length) {
-      loadQueue();
-    } else {
-      if (list?.disableSwipeAnimation) {
-        translateX.value = translateX.value - slideDistance;
-      } else {
-        translateX.value = withTiming(translateX.value - slideDistance, slideConfig);
-      }
-      setCurrentIndex(nextIndex);
-      setRevealed(false);
-      setIsFlipping(false);
-      clearLongPress();
+      await handlePass(isLongPress, true);
     }
   }
 
@@ -1592,7 +1493,7 @@ function StudyScreen() {
   }
 
   function handlePassPressOut() {
-    // Only clear the timer, not the ref — onPress reads isLongPressRef after this
+    // Only clear the timer, not the ref -- onPress reads isLongPressRef after this
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -1634,32 +1535,17 @@ function StudyScreen() {
   const slideDistance = cardWidth + CARD_GAP;
   const slideConfig = { duration: SLIDE_DURATION, easing: Easing.out(Easing.ease) };
 
-  // --- All cards in a single row (no content swapping — eliminates flash) ---
-  const allCards = useMemo(() => {
-    const cards: Array<{ item: QueueItem; isRevealed: boolean; isCurrent: boolean }> = [];
-    history.forEach((h) => {
-      cards.push({ item: h.queueItem, isRevealed: true, isCurrent: false });
-    });
-    if (!sessionDone && queue[currentIndex]) {
-      cards.push({ item: queue[currentIndex], isRevealed: revealed, isCurrent: true });
-    }
-    // Pre-render next card so advance animation has something to slide to
-    if (!sessionDone && currentIndex + 1 < queue.length) {
-      cards.push({ item: queue[currentIndex + 1], isRevealed: false, isCurrent: false });
-    }
-    return cards;
-  }, [history, queue, currentIndex, revealed, sessionDone]);
-
-  const focusedCardIndex = isBrowsingHistory ? historyIndex! : history.length;
-  const hasPrev = focusedCardIndex > 0;
-  const hasNext = focusedCardIndex < history.length; // can only navigate forward within history
-
   // --- Handle reveal with flip ---
   function handleReveal() {
     if (revealed) return;
     revealedRef.current = true;
     revealTimeRef.current = Date.now();
-    setRevealed(true);
+    // Update card status to revealed
+    setCards((prev) => {
+      const next = [...prev];
+      next[cursor] = { ...next[cursor], status: "revealed" };
+      return next;
+    });
     if (list?.disableFlipAnimation) {
       flipProgress.value = 1;
     } else {
@@ -1707,31 +1593,6 @@ function StudyScreen() {
     }
   };
 
-  // --- Animated navigation wrappers ---
-  function goBackAnimated() {
-    if (!hasPrev) return;
-    if (list?.disableSwipeAnimation) {
-      translateX.value = translateX.value + slideDistance;
-      goBack();
-    } else {
-      translateX.value = withTiming(translateX.value + slideDistance, slideConfig, () => {
-        runOnJS(goBack)();
-      });
-    }
-  }
-
-  function goForwardAnimated() {
-    if (!hasNext) return;
-    if (list?.disableSwipeAnimation) {
-      translateX.value = translateX.value - slideDistance;
-      goForward();
-    } else {
-      translateX.value = withTiming(translateX.value - slideDistance, slideConfig, () => {
-        runOnJS(goForward)();
-      });
-    }
-  }
-
   // --- Gesture handling ---
   const disableSwipe = list?.disableSwipeAnimation ?? false;
   const panGesture = useMemo(
@@ -1754,37 +1615,42 @@ function StudyScreen() {
         })
         .onEnd((e) => {
           if (e.translationX > SWIPE_THRESHOLD && hasPrev) {
+            const target = gestureStartX.value + slideDistance;
             if (disableSwipe) {
-              translateX.value = gestureStartX.value + slideDistance;
-              runOnJS(goBack)();
+              translateX.value = target;
+              runOnJS(moveCursorFromGesture)(cursor - 1);
             } else {
-              translateX.value = withTiming(
-                gestureStartX.value + slideDistance,
-                slideConfig,
-                () => {
-                  runOnJS(goBack)();
-                },
-              );
+              translateX.value = withTiming(target, slideConfig, () => {
+                runOnJS(moveCursorFromGesture)(cursor - 1);
+              });
             }
           } else if (e.translationX < -SWIPE_THRESHOLD && hasNext) {
+            const target = gestureStartX.value - slideDistance;
             if (disableSwipe) {
-              translateX.value = gestureStartX.value - slideDistance;
-              runOnJS(goForward)();
+              translateX.value = target;
+              runOnJS(moveCursorFromGesture)(cursor + 1);
             } else {
-              translateX.value = withTiming(
-                gestureStartX.value - slideDistance,
-                slideConfig,
-                () => {
-                  runOnJS(goForward)();
-                },
-              );
+              translateX.value = withTiming(target, slideConfig, () => {
+                runOnJS(moveCursorFromGesture)(cursor + 1);
+              });
             }
           } else {
             translateX.value = withTiming(gestureStartX.value, slideConfig);
           }
         }),
-    [hasPrev, hasNext, slideDistance, disableSwipe],
+    [hasPrev, hasNext, slideDistance, disableSwipe, cursor],
   );
+
+  // Gesture-triggered cursor move: only updates cursor + flip state, no translateX animation
+  // (translateX is already handled by the gesture onEnd)
+  function moveCursorFromGesture(newCursor: number) {
+    setCursor(newCursor);
+    setIsFlipping(false);
+    setPreSelectedRating(null);
+    clearLongPress();
+    revealedRef.current = cards[newCursor]?.status !== "pending";
+    flipProgress.value = cards[newCursor]?.status === "pending" ? 0 : 1;
+  }
 
   const tapGesture = useMemo(
     () => Gesture.Tap().onEnd(() => runOnJS(handleReveal)()),
@@ -1830,8 +1696,14 @@ function StudyScreen() {
 
   // Reset carousel position when window resizes (slideDistance changes with screenWidth)
   useEffect(() => {
-    translateX.value = -(focusedCardIndex * slideDistance);
+    translateX.value = -(cursor * slideDistance);
   }, [slideDistance]);
+
+  // --- Sliding window: only render cards at [cursor-1, cursor, cursor+1] ---
+  const windowIndices: number[] = [];
+  for (let i = Math.max(0, cursor - 1); i <= Math.min(cards.length - 1, cursor + 1); i++) {
+    windowIndices.push(i);
+  }
 
   // --- Card content helpers ---
   const frontFaces = sortFaces(list?.frontFaces ?? ["kanji"]);
@@ -2021,15 +1893,14 @@ function StudyScreen() {
     );
   }
 
-  const currentItem = displayItem;
   const isSimpleSrs = list?.flashcardMode === "simple_srs";
-  const total = queue.length;
+  const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
   const progress = isSimpleSrs
     ? simpleSrsTotal > 0
       ? (simpleSrsLearned / simpleSrsTotal) * 100
       : 0
-    : total > 0
-      ? (currentIndex / total) * 100
+    : originalCardCount > 0
+      ? (ratedCount / originalCardCount) * 100
       : 0;
 
   return (
@@ -2047,10 +1918,10 @@ function StudyScreen() {
         </Pressable>
         <Text className="text-sm text-muted-foreground">
           {isBrowsingHistory
-            ? `← ${historyIndex! + 1} / ${history.length}`
+            ? `\u2190 ${cursor + 1} / ${cards.length}`
             : isSimpleSrs
               ? `${simpleSrsLearned} / ${simpleSrsTotal}`
-              : `${currentIndex + 1} / ${total}`}
+              : `${ratedCount + 1} / ${originalCardCount}`}
         </Text>
         <Pressable onPress={handleGear} className="p-2">
           <Settings size={20} className="text-foreground" />
@@ -2062,7 +1933,7 @@ function StudyScreen() {
         <View className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
       </View>
 
-      {/* Carousel — all cards rendered in one row, scroll via translateX */}
+      {/* Carousel -- sliding window rendered, scroll via translateX */}
       <GestureDetector gesture={composedGesture}>
         <View className="flex-1 pt-4" style={{ overflow: "hidden", paddingHorizontal: 16 }}>
           <Animated.View
@@ -2070,20 +1941,26 @@ function StudyScreen() {
               rowStyle,
               {
                 marginLeft: CARD_PEEK + CARD_GAP,
-                width: allCards.length * cardWidth + Math.max(0, allCards.length - 1) * CARD_GAP,
+                width: cards.length * cardWidth + Math.max(0, cards.length - 1) * CARD_GAP,
                 flex: 1,
                 maxHeight: 384,
               },
             ]}
           >
-            {allCards.map((card, i) => {
-              const isFocused = i === focusedCardIndex;
+            {windowIndices.map((i) => {
+              const studyCard = cards[i];
+              if (!studyCard) return null;
+              const isFocused = i === cursor;
+              const isRevealed = studyCard.status !== "pending";
               return (
                 <View
                   key={i}
                   style={{
+                    position: "absolute",
+                    left: i * (cardWidth + CARD_GAP),
                     width: cardWidth,
-                    marginRight: i < allCards.length - 1 ? CARD_GAP : 0,
+                    top: 0,
+                    bottom: 0,
                   }}
                 >
                   <Card
@@ -2095,10 +1972,10 @@ function StudyScreen() {
                     }}
                   >
                     {isFocused &&
-                      currentItem &&
+                      displayItem &&
                       (() => {
                         const stats = getCardStats(
-                          currentItem.srsCard,
+                          displayItem.srsCard,
                           list?.flashcardMode ?? "add_order",
                         );
                         return stats ? (
@@ -2107,7 +1984,7 @@ function StudyScreen() {
                           </View>
                         ) : null;
                       })()}
-                    {isFocused && currentItem && (
+                    {isFocused && displayItem && (
                       <View
                         style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
                         className="flex-row items-center gap-1"
@@ -2115,11 +1992,11 @@ function StudyScreen() {
                         {Array.from(
                           {
                             length:
-                              list?.flashcardMode === "simple_srs" && currentItem.srsCard
-                                ? (simpleCorrectCountRef.current.get(currentItem.srsCard.id) ??
-                                  getCheckCount(currentItem.srsCard, "simple_srs"))
+                              list?.flashcardMode === "simple_srs" && displayItem.srsCard
+                                ? (simpleCorrectCountRef.current.get(displayItem.srsCard.id) ??
+                                  getCheckCount(displayItem.srsCard, "simple_srs"))
                                 : getCheckCount(
-                                    currentItem.srsCard,
+                                    displayItem.srsCard,
                                     list?.flashcardMode ?? "add_order",
                                   ),
                           },
@@ -2134,9 +2011,9 @@ function StudyScreen() {
                         )}
                         <Pressable
                           onPress={() =>
-                            currentItem.kind === "entry"
-                              ? router.push(`/lists/word/${currentItem.entry.id}`)
-                              : tabRouter.pushKanji(currentItem.kanji.literal)
+                            displayItem.kind === "entry"
+                              ? router.push(`/lists/word/${displayItem.entry.id}`)
+                              : tabRouter.pushKanji(displayItem.kanji.literal)
                           }
                           hitSlop={8}
                           style={{ marginLeft: 8 }}
@@ -2145,7 +2022,7 @@ function StudyScreen() {
                         </Pressable>
                       </View>
                     )}
-                    {isFocused && card.isRevealed ? (
+                    {isFocused && isRevealed ? (
                       <>
                         <Animated.View
                           style={[
@@ -2158,7 +2035,7 @@ function StudyScreen() {
                             },
                           ]}
                         >
-                          {renderCardFront(card.item, card.isCurrent)}
+                          {renderCardFront(studyCard.item, true)}
                         </Animated.View>
                         <Animated.View
                           style={[
@@ -2166,13 +2043,13 @@ function StudyScreen() {
                             { alignItems: "center", justifyContent: "center", padding: 16 },
                           ]}
                         >
-                          {renderCardRevealed(card.item)}
+                          {renderCardRevealed(studyCard.item)}
                         </Animated.View>
                       </>
-                    ) : card.isRevealed ? (
-                      renderCardRevealed(card.item)
+                    ) : isRevealed ? (
+                      renderCardRevealed(studyCard.item)
                     ) : (
-                      renderCardFront(card.item, card.isCurrent)
+                      renderCardFront(studyCard.item, isFocused)
                     )}
                   </Card>
                 </View>
@@ -2186,7 +2063,7 @@ function StudyScreen() {
       {Platform.OS === "web" && (
         <View className="flex-row justify-center items-center gap-4 mt-2">
           <Pressable
-            onPress={goBackAnimated}
+            onPress={() => hasPrev && moveCursor(cursor - 1)}
             disabled={!hasPrev}
             style={{ opacity: hasPrev ? 1 : 0.3 }}
             className="p-2"
@@ -2194,7 +2071,7 @@ function StudyScreen() {
             <ChevronLeft size={24} className="text-foreground" />
           </Pressable>
           <Pressable
-            onPress={goForwardAnimated}
+            onPress={() => hasNext && moveCursor(cursor + 1)}
             disabled={!hasNext}
             style={{ opacity: hasNext ? 1 : 0.3 }}
             className="p-2"
@@ -2208,7 +2085,7 @@ function StudyScreen() {
       {(revealed || isBrowsingHistory) && (
         <View className="flex-row gap-3 px-4 mt-4 mb-8">
           <Pressable
-            onPress={handleFail}
+            onPress={() => handleFail()}
             className={`flex-1 items-center justify-center rounded-lg h-11 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
           >
             <Text className="font-medium text-white">
@@ -2345,7 +2222,7 @@ function StudyScreen() {
                             className="flex-row items-center bg-muted rounded px-2 py-1"
                           >
                             <Text className="text-sm text-red-500 font-bold">{m.failedKanji}</Text>
-                            <Text className="text-xs text-muted-foreground mx-1">≈</Text>
+                            <Text className="text-xs text-muted-foreground mx-1">{"\u2248"}</Text>
                             <Text className="text-sm text-orange-500 font-bold">
                               {m.candidateKanji}
                             </Text>
@@ -2427,7 +2304,7 @@ function StudyScreen() {
         </Animated.View>
       )}
 
-      {/* Navigation overlay — covers heavy UI before unmount to prevent frame drops */}
+      {/* Navigation overlay -- covers heavy UI before unmount to prevent frame drops */}
       {navigating && (
         <View className="absolute inset-0 z-50 bg-background items-center justify-center">
           <ActivityIndicator size="large" />
