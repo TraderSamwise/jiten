@@ -7,9 +7,10 @@ const Input = React.forwardRef<TextInput, TextInputProps>(({ className, ...props
     <TextInput
       ref={ref}
       className={cn(
-        "h-11 rounded-lg border border-border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground",
+        "h-11 rounded-lg border border-border bg-background px-3 py-0 text-base text-foreground placeholder:text-muted-foreground",
         className,
       )}
+      style={{ lineHeight: 16 }}
       {...props}
     />
   );
