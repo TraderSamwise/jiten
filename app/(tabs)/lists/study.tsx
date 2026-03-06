@@ -2163,7 +2163,10 @@ function StudyScreen() {
       ]}
     >
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-2" style={webBgStyle}>
+      <View
+        className={`flex-row items-center justify-between px-4 py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+        style={webBgStyle}
+      >
         <Pressable
           onPress={() => {
             setNavigating(true);
