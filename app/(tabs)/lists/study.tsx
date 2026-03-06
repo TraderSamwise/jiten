@@ -886,7 +886,7 @@ export default function StudyScreenShell() {
   if (!ready) {
     return (
       <View
-        className="flex-1 items-center justify-center bg-background"
+        className="flex-1 bg-background"
         style={[
           Platform.OS === "web"
             ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
@@ -894,7 +894,15 @@ export default function StudyScreenShell() {
           shellBgStyle,
         ]}
       >
-        <ActivityIndicator size="large" />
+        <View
+          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+          style={shellBgStyle}
+        >
+          <View style={{ height: 40 }} />
+        </View>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" />
+        </View>
       </View>
     );
   }
@@ -2117,7 +2125,7 @@ function StudyScreen() {
   if (loading) {
     return (
       <View
-        className="flex-1 items-center justify-center bg-background"
+        className="flex-1 bg-background"
         style={[
           Platform.OS === "web"
             ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
@@ -2125,8 +2133,16 @@ function StudyScreen() {
           webBgStyle,
         ]}
       >
-        <ActivityIndicator size="large" />
-        <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
+        <View
+          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+          style={webBgStyle}
+        >
+          <View style={{ height: 40 }} />
+        </View>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" />
+          <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
+        </View>
       </View>
     );
   }
@@ -2134,7 +2150,7 @@ function StudyScreen() {
   if (sessionDone) {
     return (
       <View
-        className="flex-1 items-center justify-center bg-background px-8"
+        className="flex-1 bg-background"
         style={[
           Platform.OS === "web"
             ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
@@ -2142,25 +2158,33 @@ function StudyScreen() {
           webBgStyle,
         ]}
       >
-        <Text className="text-4xl mb-4">
-          {reviewedCount > 0 ? "All done!" : "Nothing to study!"}
-        </Text>
-        <Text className="text-lg text-muted-foreground text-center mb-2">
-          {reviewedCount > 0
-            ? `You reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"}.`
-            : list?.flashcardMode === "add_order"
-              ? "You've studied all cards in this list. You can reset your position in settings."
-              : "No cards are due and no new cards remain."}
-        </Text>
-        <Button
-          className="mt-4"
-          label="Return to List"
-          variant="outline"
-          onPress={() => {
-            setNavigating(true);
-            setTimeout(() => navigateBack(), 100);
-          }}
-        />
+        <View
+          className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+          style={webBgStyle}
+        >
+          <View style={{ height: 40 }} />
+        </View>
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-4xl mb-4">
+            {reviewedCount > 0 ? "All done!" : "Nothing to study!"}
+          </Text>
+          <Text className="text-lg text-muted-foreground text-center mb-2">
+            {reviewedCount > 0
+              ? `You reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"}.`
+              : list?.flashcardMode === "add_order"
+                ? "You've studied all cards in this list. You can reset your position in settings."
+                : "No cards are due and no new cards remain."}
+          </Text>
+          <Button
+            className="mt-4"
+            label="Return to List"
+            variant="outline"
+            onPress={() => {
+              setNavigating(true);
+              setTimeout(() => navigateBack(), 100);
+            }}
+          />
+        </View>
       </View>
     );
   }
@@ -2529,10 +2553,25 @@ function StudyScreen() {
       {/* Navigation overlay -- covers heavy UI before unmount to prevent frame drops */}
       {navigating && (
         <View
-          className="absolute inset-0 z-50 bg-background items-center justify-center"
-          style={webBgStyle}
+          className="absolute inset-0 z-50 bg-background"
+          style={[
+            Platform.OS === "web"
+              ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+              : { paddingTop: insets.top },
+            webBgStyle,
+          ]}
         >
-          <ActivityIndicator size="large" />
+          <View
+            className={`py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+            style={webBgStyle}
+          >
+            <View className="p-2">
+              <View style={{ height: 24 }} />
+            </View>
+          </View>
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" />
+          </View>
         </View>
       )}
     </View>

@@ -516,10 +516,23 @@ export default function ConnectGameScreen() {
         )}
         {navigating && (
           <View
-            className="absolute inset-0 z-50 bg-background items-center justify-center"
-            style={webBgStyle}
+            className="absolute inset-0 z-50 bg-background"
+            style={[
+              Platform.OS === "web"
+                ? { paddingTop: WEB_CUSTOM_HEADER_TOP }
+                : { paddingTop: insets.top },
+              webBgStyle,
+            ]}
           >
-            <ActivityIndicator size="large" />
+            <View
+              className={`py-3 ${Platform.OS === "web" ? "border-b border-border" : ""}`}
+              style={webBgStyle}
+            >
+              <View style={{ height: 32 }} />
+            </View>
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" />
+            </View>
           </View>
         )}
       </View>
