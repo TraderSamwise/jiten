@@ -5,6 +5,7 @@ import { useColorScheme } from "nativewind";
 import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { webHeaderStyle } from "@/lib/navigation";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -85,7 +86,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
-          ...(isWeb ? { headerStyle: { backgroundColor: "transparent" } } : undefined),
+          headerStyle: webHeaderStyle,
         }}
       />
     </Tabs>

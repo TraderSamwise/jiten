@@ -1,6 +1,14 @@
 import React, { useCallback } from "react";
+import { Platform } from "react-native";
 import { useRouter, useNavigation, usePathname } from "expo-router";
 import { HeaderBackButton } from "@react-navigation/elements";
+
+/** Transparent header background on web so the navbar backdrop shows through */
+export const webHeaderStyle =
+  Platform.OS === "web" ? ({ backgroundColor: "transparent" } as const) : undefined;
+
+/** className fragment: includes bg-background on native, omits it on web for transparent headers */
+export const headerBgClass = Platform.OS === "web" ? "" : "bg-background";
 
 /**
  * Returns a goBack function that checks the current stack's state.

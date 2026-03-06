@@ -1,15 +1,12 @@
 import React from "react";
-import { Platform } from "react-native";
 import { Stack } from "expo-router";
-import { SafeBackButton } from "@/lib/navigation";
+import { SafeBackButton, webHeaderStyle } from "@/lib/navigation";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const backButton = ({ tintColor }: { tintColor?: string }) => (
   <SafeBackButton fallback="/lists" tintColor={tintColor} />
 );
-
-const webHeaderStyle = Platform.OS === "web" ? { backgroundColor: "transparent" } : undefined;
 
 // Navigation perf pattern for heavy screens (study, typing-game, connect-game):
 //

@@ -1,15 +1,12 @@
 import React from "react";
-import { Platform } from "react-native";
 import { Stack } from "expo-router";
-import { SafeBackButton } from "@/lib/navigation";
+import { SafeBackButton, webHeaderStyle } from "@/lib/navigation";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const backButton = ({ tintColor }: { tintColor?: string }) => (
   <SafeBackButton fallback="/reader" tintColor={tintColor} />
 );
-
-const webHeaderStyle = Platform.OS === "web" ? { backgroundColor: "transparent" } : undefined;
 
 export default function ReaderLayout() {
   return (
