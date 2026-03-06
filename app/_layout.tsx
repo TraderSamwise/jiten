@@ -73,6 +73,31 @@ export default function RootLayout() {
 
   useThemeEffect();
 
+  // Prevent browser back from exiting the SPA.
+  // With backBehavior="none" on tabs, tab switches use replaceState (no new
+  // history entries), so browser back at the tab root would exit the app.
+  // Push a guard entry after expo-router initializes so there's always
+  // something to go back to, then re-push whenever the guard is hit.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    // Wait for expo-router to finish initializing its history
+    const timer = setTimeout(() => {
+      // Push a duplicate entry — browser back hits this instead of exiting
+      window.history.pushState(window.history.state, "", window.location.href);
+    }, 500);
+    const handler = (e: PopStateEvent) => {
+      if (!e.state?.id) {
+        // Hit an entry without expo-router state — re-push to stay in the app
+        window.history.pushState(window.history.state, "", window.location.href);
+      }
+    };
+    window.addEventListener("popstate", handler);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("popstate", handler);
+    };
+  }, []);
+
   // Check for OTA updates on app launch (native only)
   useEffect(() => {
     if (__DEV__ || Platform.OS === "web") return;

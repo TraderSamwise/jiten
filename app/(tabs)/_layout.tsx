@@ -31,6 +31,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      backBehavior={isWeb ? "none" : undefined}
       screenOptions={{
         tabBarActiveTintColor: activeTint,
         headerShown: true,
