@@ -71,7 +71,8 @@ const CONFUSION_COOLDOWN_HOURS = 24;
 const NEW_CARD_BATCH_SIZE = 5;
 const CARD_PEEK = 40;
 const CARD_GAP = 8;
-const SWIPE_THRESHOLD = 80;
+const SWIPE_THRESHOLD = 50;
+const SWIPE_VELOCITY = 500;
 const SLIDE_DURATION = 250;
 const FLIP_DURATION = 400;
 
@@ -1987,7 +1988,11 @@ function StudyScreen() {
           }
         })
         .onEnd((e) => {
-          if (e.translationX > SWIPE_THRESHOLD && hasPrev) {
+          const swipeRight =
+            hasPrev && (e.translationX > SWIPE_THRESHOLD || e.velocityX > SWIPE_VELOCITY);
+          const swipeLeft =
+            hasNext && (e.translationX < -SWIPE_THRESHOLD || e.velocityX < -SWIPE_VELOCITY);
+          if (swipeRight) {
             const target = gestureStartX.value + slideDistance;
             if (disableSwipe) {
               translateX.value = target;
@@ -1997,7 +2002,7 @@ function StudyScreen() {
                 runOnJS(moveCursorFromGesture)(cursor - 1);
               });
             }
-          } else if (e.translationX < -SWIPE_THRESHOLD && hasNext) {
+          } else if (swipeLeft) {
             const target = gestureStartX.value - slideDistance;
             if (disableSwipe) {
               translateX.value = target;
