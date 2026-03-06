@@ -88,6 +88,11 @@ export function WordDetail({ entryId }: WordDetailProps) {
           isBookmarked ? "mb-4 rounded-lg border-l-4 border-primary bg-primary/5 pl-3 py-2" : "mb-4"
         }
       >
+        {entry.jlptLevel != null && (
+          <Text className="absolute top-2 right-3 text-xs font-semibold text-muted-foreground">
+            JLPT N{entry.jlptLevel}
+          </Text>
+        )}
         {entry.kanji
           .filter((k) => !shouldHide(k.tags))
           .map((k, i) => {
@@ -155,26 +160,20 @@ export function WordDetail({ entryId }: WordDetailProps) {
             );
           })}
         </View>
-        {entry.jlptLevel != null && (
-          <View className="flex-row gap-1 mt-1">
-            <Badge variant="secondary" label={`JLPT N${entry.jlptLevel}`} />
-          </View>
-        )}
       </View>
 
       <Card className="mb-4">
         <Text className="text-sm font-semibold text-foreground mb-2">Meanings</Text>
         {entry.senses.map((sense, i) => (
           <View key={i} className="mb-3">
-            {sense.partOfSpeech.length > 0 && (
-              <View className="flex-row flex-wrap gap-1 mb-1">
-                {sense.partOfSpeech.map((pos, j) => (
-                  <Badge key={j} variant="secondary" label={pos} />
-                ))}
-              </View>
-            )}
             <Text className="text-base text-foreground">
               {i + 1}.{" "}
+              {sense.partOfSpeech.length > 0 && (
+                <Text className="text-xs text-muted-foreground italic">
+                  {sense.partOfSpeech.join(", ")}
+                  {"   "}
+                </Text>
+              )}
               {sense.glosses
                 .filter((g) => g.lang === "eng")
                 .map((g) => g.text)
