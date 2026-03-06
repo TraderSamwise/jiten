@@ -823,7 +823,15 @@ export default function BookReaderScreen() {
 
   if (!book || !html) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        style={[
+          Platform.OS === "web" && {
+            paddingTop: 15,
+            backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)",
+          },
+        ]}
+      >
         <ActivityIndicator size="large" />
       </View>
     );
