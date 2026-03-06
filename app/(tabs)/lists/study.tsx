@@ -8,6 +8,7 @@ import {
   TextInput,
   useWindowDimensions,
   ActivityIndicator,
+  Vibration,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
@@ -16,6 +17,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSequence,
   interpolate,
   runOnJS,
   Easing,
@@ -429,6 +431,13 @@ export default function StudyScreen() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
   const [longPressActive, setLongPressActive] = useState(false);
+  const ratingFlashOpacity = useSharedValue(0);
+  const ratingFlashScale = useSharedValue(0.8);
+  const [flashInfo, setFlashInfo] = useState<{ label: string; color: string } | null>(null);
+  const ratingFlashStyle = useAnimatedStyle(() => ({
+    opacity: ratingFlashOpacity.value,
+    transform: [{ scale: ratingFlashScale.value }],
+  }));
   const [isFlipping, setIsFlipping] = useState(false);
   const revealedRef = useRef(false);
   const revealTimeRef = useRef(0);
@@ -553,6 +562,10 @@ export default function StudyScreen() {
         if (e.key === "2") {
           e.preventDefault();
           handlePass(false);
+        }
+        if (e.key === "3") {
+          e.preventDefault();
+          handlePass(true);
         }
       }
     }
@@ -828,7 +841,18 @@ export default function StudyScreen() {
     setLoading(false);
   }
 
+  function flashRating(which: "fail" | "pass" | "easy") {
+    const label = which === "fail" ? "Fail" : which === "easy" ? "Easy" : "Pass";
+    const color = which === "fail" ? "#ef4444" : which === "easy" ? "#4ade80" : "#22c55e";
+    setFlashInfo({ label, color });
+    ratingFlashOpacity.value = 1;
+    ratingFlashScale.value = 0.8;
+    ratingFlashScale.value = withTiming(1.3, { duration: 300 });
+    ratingFlashOpacity.value = withTiming(0, { duration: 300 });
+  }
+
   async function handleFail() {
+    flashRating("fail");
     // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
@@ -895,6 +919,7 @@ export default function StudyScreen() {
   }
 
   async function handlePass(isLongPress: boolean) {
+    flashRating(isLongPress ? "easy" : "pass");
     // Cancel voice auto-advance if pending
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
@@ -1489,6 +1514,7 @@ export default function StudyScreen() {
     longPressTimerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
       setLongPressActive(true);
+      if (Platform.OS !== "web") Vibration.vibrate(10);
     }, 500);
   }
 
@@ -1497,8 +1523,11 @@ export default function StudyScreen() {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    const wasLongPress = isLongPressRef.current;
     setLongPressActive(false);
+  }
+
+  function handlePassPress() {
+    const wasLongPress = isLongPressRef.current;
     handlePass(wasLongPress);
   }
 
@@ -2063,7 +2092,8 @@ export default function StudyScreen() {
           <Pressable
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
-            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-blue-500" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
+            onPress={handlePassPress}
+            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
           >
             <Text className="font-medium text-white">
               {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
@@ -2240,6 +2270,36 @@ export default function StudyScreen() {
         flashcardMode={list?.flashcardMode ?? "add_order"}
         onClearStatistics={loadQueue}
       />
+
+      {/* Rating flash overlay */}
+      {flashInfo && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              bottom: 60,
+              left: 0,
+              right: 0,
+              alignItems: "center",
+            },
+            ratingFlashStyle,
+          ]}
+        >
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingVertical: 10,
+              borderRadius: 20,
+              backgroundColor: flashInfo.color,
+            }}
+          >
+            <Text style={{ color: "white", fontWeight: "700", fontSize: 16 }}>
+              {flashInfo.label}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
