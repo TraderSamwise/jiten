@@ -33,6 +33,7 @@ export default function ListsLayout() {
       <Stack.Screen name="study" options={{ title: "Study", headerShown: false }} />
       <Stack.Screen name="typing-game" options={{ title: "Typing Game", headerShown: false }} />
       <Stack.Screen name="connect-game" options={{ title: "Connect Game", headerShown: false }} />
+      <Stack.Screen name="stats" options={{ title: "Practice Stats", headerShown: false }} />
     </Stack>
   );
 }
