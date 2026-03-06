@@ -10,6 +10,12 @@ export const webHeaderStyle =
 /** className fragment: includes bg-background on native, omits it on web for transparent headers */
 export const headerBgClass = Platform.OS === "web" ? "" : "bg-background";
 
+/** Navigator backdrop colors — matches global.css body.has-navbar::before */
+export const WEB_BACKDROP_COLORS = {
+  light: "rgb(242, 242, 242)",
+  dark: "rgb(1, 1, 1)",
+} as const;
+
 /**
  * Returns a goBack function that checks the current stack's state.
  * If there's a real route to pop to within the stack, it calls router.back().

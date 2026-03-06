@@ -14,7 +14,9 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { useSafeGoBack } from "@/lib/navigation";
+import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useContainerWidth } from "@/lib/use-container-width";
+import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -329,6 +331,13 @@ export default function TypingGameScreen() {
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const containerWidth = useContainerWidth();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const webBgStyle =
+    Platform.OS === "web"
+      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
+      : undefined;
   const userDb = useUserDb();
   const { dictDb, audioDb } = useDatabase();
 
@@ -389,7 +398,7 @@ export default function TypingGameScreen() {
   const batchSize = (() => {
     const availableHeight =
       screenHeight - insets.top - HEADER_HEIGHT - PROGRESS_HEIGHT - INPUT_HEIGHT - insets.bottom;
-    const availableWidth = screenWidth - 32;
+    const availableWidth = containerWidth - 32;
     const rows = Math.max(1, Math.floor(availableHeight / ROW_HEIGHT));
     const wordsPerRow = Math.max(1, Math.floor(availableWidth / AVG_WORD_WIDTH));
     return Math.max(4, rows * wordsPerRow);
@@ -737,13 +746,13 @@ export default function TypingGameScreen() {
     <View
       ref={gameRef}
       className="flex-1 bg-background"
-      style={{ paddingTop: insets.top }}
+      style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
       onTouchStart={() => {
         if (phase === "playing") inputRef.current?.focus();
       }}
     >
       {/* Header */}
-      <View className="flex-row items-center px-4 py-3 border-b border-border">
+      <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
         <Pressable
           onPress={() => {
             setNavigating(true);
