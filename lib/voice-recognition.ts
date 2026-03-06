@@ -6,9 +6,8 @@ import { isNativeModuleAvailable } from "@/lib/native-guard";
 // binary doesn't include ExpoSpeechRecognition. We guard with
 // isNativeModuleAvailable before ever touching the package.
 let _moduleChecked = false;
-let _module: import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModule | null = null;
-let _emitter: import("@jamsch/expo-speech-recognition").ExpoSpeechRecognitionModuleEmitter | null =
-  null;
+let _module: any | null = null;
+let _emitter: any | null = null;
 
 function loadModule() {
   if (_moduleChecked) return;

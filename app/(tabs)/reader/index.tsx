@@ -194,7 +194,6 @@ export default function LibraryScreen() {
         data={books}
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
-        estimatedItemSize={76}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         ListEmptyComponent={
           <View className="items-center py-16">

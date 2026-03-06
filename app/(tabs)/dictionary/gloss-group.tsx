@@ -28,7 +28,6 @@ export default function GlossGroupScreen() {
         data={group.entries}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
-        estimatedItemSize={72}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
       />
     </View>

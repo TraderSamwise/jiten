@@ -293,14 +293,16 @@ function GlowOverlay() {
     <Animated.View
       style={[
         {
-          position: "absolute",
+          position: "absolute" as const,
           top: -20,
           left: -24,
           right: -24,
           bottom: -20,
+        },
+        {
           background:
             "radial-gradient(circle, rgba(34,197,94,0.5) 0%, rgba(34,197,94,0.15) 40%, transparent 70%)",
-        },
+        } as any,
         style,
       ]}
       pointerEvents="none"

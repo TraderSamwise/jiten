@@ -114,7 +114,6 @@ function RadicalSearchView() {
         data={kanjiResults}
         keyExtractor={(item) => item.literal}
         renderItem={({ item }) => <KanjiCard kanji={item} />}
-        estimatedItemSize={80}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         ListEmptyComponent={
           selectedRadicals.length > 0 && !isSearching ? (
@@ -341,7 +340,6 @@ export default function SearchScreen() {
           data={kanjiResults}
           keyExtractor={(item) => item.literal}
           renderItem={({ item }) => <KanjiCard kanji={item} />}
-          estimatedItemSize={80}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (
@@ -403,7 +401,6 @@ export default function SearchScreen() {
           data={nameResults}
           keyExtractor={(item) => `${item.id}`}
           renderItem={({ item }) => <NameCard name={item} />}
-          estimatedItemSize={56}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (

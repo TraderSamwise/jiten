@@ -337,7 +337,10 @@ function sortFaces(faces: CardFace[]): CardFace[] {
 }
 
 const BASE_FONT_SIZE = 96;
-function scaledFontStyle(count: number, face: CardFace): { fontSize: number; lineHeight: number } {
+function scaledFontStyle(
+  count: number,
+  face: CardFace,
+): { fontSize: number; lineHeight: number; textAlign: "center" } {
   const scale = 1 / (1 + (count - 1) * 0.5);
   const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
   const size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
@@ -590,7 +593,7 @@ export default function StudyScreen() {
     if (storeList || !userDb || !listId) return;
     userDb
       .getFirstAsync<any>("SELECT * FROM lists WHERE id = ?", [listId])
-      .then((row) => {
+      .then((row: any) => {
         if (row) {
           const parsed = parseListRow(row);
           setLocalList(parsed);

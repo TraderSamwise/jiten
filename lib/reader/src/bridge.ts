@@ -71,7 +71,7 @@ export function setupMessageListener(): void {
         ta.select();
         document.execCommand("copy");
         document.body.removeChild(ta);
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: "copied" }));
+        (window as any).ReactNativeWebView.postMessage(JSON.stringify({ type: "copied" }));
       }
     } catch {}
   });

@@ -52,14 +52,18 @@ const noopStorage = {
   removeItem: () => {},
 };
 
-const isServer = typeof window === "undefined";
+function isServer() {
+  return typeof window === "undefined";
+}
 
 function createMergingStorage() {
-  const base = createJSONStorage<AppSettings>(() => (isServer ? noopStorage : AsyncStorage) as any);
+  const base = createJSONStorage<AppSettings>(
+    () => (isServer() ? noopStorage : AsyncStorage) as any,
+  );
   return {
     ...base,
     getItem: (key: string, initialValue: AppSettings) => {
-      if (isServer) return Promise.resolve(initialValue);
+      if (isServer()) return Promise.resolve(initialValue);
       const stored = base.getItem(key, initialValue);
       if (stored instanceof Promise) {
         return stored.then((v) => ({ ...initialValue, ...v }));
