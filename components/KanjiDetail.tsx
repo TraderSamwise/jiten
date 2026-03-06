@@ -191,13 +191,17 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             />
           </Pressable>
         </View>
+        {kanji.jlptLevel != null && (
+          <Text className="absolute top-12 right-0 text-xs font-semibold text-muted-foreground">
+            JLPT N{kanji.jlptLevel}
+          </Text>
+        )}
         <Text className="text-7xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
         {kanji.heisigKeyword && (
           <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
         )}
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
-          {kanji.jlptLevel != null && <Badge variant="secondary" label={`N${kanji.jlptLevel}`} />}
           <Badge variant="outline" label={`${kanji.strokeCount} strokes`} />
           {kanji.frequencyRank != null && (
             <Badge variant="outline" label={`#${kanji.frequencyRank}`} />
