@@ -24,7 +24,7 @@ export const EntrySummary = React.memo(function EntrySummary({
     .join("; ");
   const pos = entry.senses[0]?.partOfSpeech?.join(", ");
 
-  const bookmarkClass = isBookmarked ? "border-l-4 border-l-primary bg-primary/5 pl-2" : "";
+  const bookmarkClass = isBookmarked ? "border-l-4 border-l-primary pl-2" : "";
 
   if (variant === "compact") {
     return (
