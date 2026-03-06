@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { Pressable } from "react-native";
+import { View, Pressable } from "react-native";
 import Animated, { useAnimatedStyle, withTiming, FadeIn, FadeOut } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColorScheme } from "nativewind";
@@ -26,6 +26,7 @@ export function CollapsibleSection({
   const { colorScheme } = useColorScheme();
   const [fullHeight, setFullHeight] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [hasToggled, setHasToggled] = useState(false);
 
   const needsCollapse = fullHeight > collapsedHeight + 1;
 
@@ -44,28 +45,50 @@ export function CollapsibleSection({
   const animatedStyle = useAnimatedStyle(() => {
     if (!needsCollapse) return {};
     return {
-      height: withTiming(expanded ? fullHeight : collapsedHeight, { duration: 250 }),
+      height: hasToggled
+        ? withTiming(expanded ? fullHeight : collapsedHeight, { duration: 250 })
+        : collapsedHeight,
       overflow: "hidden" as const,
     };
-  }, [expanded, fullHeight, collapsedHeight, needsCollapse]);
+  }, [expanded, fullHeight, collapsedHeight, needsCollapse, hasToggled]);
 
   const inner = <Animated.View onLayout={onLayout}>{children}</Animated.View>;
 
-  if (!needsCollapse) return inner;
+  // Content confirmed to fit — render normally
+  if (fullHeight > 0 && !needsCollapse) return inner;
 
-  return (
-    <Pressable onPress={() => setExpanded((v) => !v)}>
-      <Animated.View style={animatedStyle}>{inner}</Animated.View>
-      {!expanded && (
-        <Animated.View
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(200)}
-          style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
-          pointerEvents="none"
-        >
-          <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+  // Not yet measured or needs collapse — always clip to collapsedHeight
+
+  if (expanded) {
+    // Expanded: children are interactive, tap anywhere to collapse
+    return (
+      <Pressable onPress={() => setExpanded(false)}>
+        <Animated.View style={animatedStyle} pointerEvents="box-none">
+          {inner}
         </Animated.View>
-      )}
+      </Pressable>
+    );
+  }
+
+  // Collapsed (or pre-measurement): intercept all taps to expand, block child press events
+  return (
+    <Pressable
+      onPress={() => {
+        setExpanded(true);
+        setHasToggled(true);
+      }}
+    >
+      <Animated.View style={animatedStyle}>{inner}</Animated.View>
+      {/* Touch blocker covers the content so child Pressables don't fire */}
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+      <Animated.View
+        {...(hasToggled ? { entering: FadeIn.duration(200) } : {})}
+        exiting={FadeOut.duration(200)}
+        style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
+        pointerEvents="none"
+      >
+        <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+      </Animated.View>
     </Pressable>
   );
 }
