@@ -31,7 +31,6 @@ import { X, Settings, Info, Check, ChevronLeft, ChevronRight, Mic } from "@/lib/
 import { useVoiceRecognition } from "@/lib/voice-recognition";
 import { toHiragana } from "wanakana";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
-import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { playEntryAudio } from "@/lib/audio";
 import {
   romajiToKana,
@@ -681,11 +680,6 @@ const StudyCardView = React.memo(
                   : getKanjiFaceText(item.kanji, face)}
               </Text>
             ))}
-            {item.kind === "entry" && (
-              <View className="mt-3">
-                <PlayAudioButton entryId={item.entry.id} size={22} />
-              </View>
-            )}
           </View>
         </View>
       );
