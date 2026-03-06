@@ -37,7 +37,13 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
       <PressableCard className="mb-2" onPress={handlePress}>
         <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
         <View className="flex-row items-center gap-2 mt-1">
-          {kanjiText && <Text className="text-lg text-foreground">{kanjiText}</Text>}
+          {kanjiText && (
+            <Text
+              className={`text-lg ${entry.common ? "text-green-700 dark:text-green-400" : "text-foreground"}`}
+            >
+              {kanjiText}
+            </Text>
+          )}
           {kana &&
             (accents.length > 0 ? (
               <View className="flex-row items-center gap-1">
@@ -54,19 +60,29 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
     );
   }
 
-  const japaneseLabels = group.entries
-    .map((e) => e.kanji[0]?.text ?? e.kana[0]?.text ?? "")
-    .filter(Boolean)
-    .join(", ");
+  const japaneseEntries = group.entries
+    .map((e) => ({
+      label: e.kanji[0]?.text ?? e.kana[0]?.text ?? "",
+      common: e.common,
+    }))
+    .filter((e) => e.label);
 
   return (
     <PressableCard className="mb-2" onPress={handlePress}>
       <View className="flex-row items-center">
         <View className="flex-1">
           <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
-          <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-            {japaneseLabels}
-          </Text>
+          <View className="flex-row flex-wrap mt-1 gap-1">
+            {japaneseEntries.map((e, i) => (
+              <Text
+                key={i}
+                className={`text-sm ${e.common ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`}
+              >
+                {e.label}
+                {i < japaneseEntries.length - 1 ? "," : ""}
+              </Text>
+            ))}
+          </View>
         </View>
         <ChevronRight size={20} className="text-muted-foreground ml-2" />
       </View>
