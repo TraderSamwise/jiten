@@ -64,7 +64,10 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   const showInput = searchMode !== "radical";
 
   return (
-    <View style={{ paddingTop: insets.top }} className="bg-background border-b border-border">
+    <View
+      style={{ paddingTop: Platform.OS === "web" ? 3 : insets.top }}
+      className={`border-b border-border ${Platform.OS === "web" ? "" : "bg-background"}`}
+    >
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
         {back && (
           <Pressable onPress={navigateToSearch} hitSlop={8} className="py-1">
