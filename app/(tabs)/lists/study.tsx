@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   Vibration,
-  InteractionManager,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
@@ -444,7 +443,31 @@ function getCardStats(srsCard: SrsCardRow | undefined, mode: FlashcardMode): str
   return null;
 }
 
-export default function StudyScreen() {
+// Lightweight shell — defers mounting the heavy study UI until after nav animation
+export default function StudyScreenShell() {
+  const [ready, setReady] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 100);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!ready) {
+    return (
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        style={{ paddingTop: insets.top }}
+      >
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return <StudyScreen />;
+}
+
+function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
   const tabRouter = useTabRouter();
@@ -630,10 +653,7 @@ export default function StudyScreen() {
   }, [userDb, listId, storeList]);
 
   useEffect(() => {
-    if (!dictDb || !userDb || !list) return;
-    // Defer heavy DB work until after navigation animation completes
-    const task = InteractionManager.runAfterInteractions(() => loadQueue());
-    return () => task.cancel();
+    if (dictDb && userDb && list) loadQueue();
   }, [dictDb, userDb, list?.id]);
 
   async function loadQueue() {

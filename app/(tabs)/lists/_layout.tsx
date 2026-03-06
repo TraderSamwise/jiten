@@ -9,9 +9,19 @@ const backButton = ({ tintColor }: { tintColor?: string }) => (
 );
 
 // Navigation perf pattern for heavy screens (study, typing-game, connect-game):
-// - Forward: defer DB work with InteractionManager.runAfterInteractions()
-// - Backward: show a full-screen loading overlay, then setTimeout(goBack, 100)
-//   so the heavy component unmounts off-screen and doesn't jank the animation.
+//
+// FORWARD (source page → heavy screen):
+// 1. Show inline spinner on the launch button (text + ActivityIndicator)
+// 2. setTimeout(() => router.push(...), 100) to let the spinner paint
+// 3. Reset loading state via useFocusEffect when user returns
+// 4. Heavy screen exports a lightweight Shell component as default that
+//    renders a spinner, then mounts the real component after setTimeout(100)
+//    (see StudyScreenShell, GamesModal for examples)
+//
+// BACKWARD (heavy screen → source page):
+// 1. setNavigating(true) to show a full-screen loading overlay (absolute inset-0)
+// 2. setTimeout(() => goBack(), 100) so the heavy component unmounts off-screen
+//
 // Apply this to any new screen with complex UI or heavy data loading.
 export default function ListsLayout() {
   return (
