@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { Tabs } from "expo-router";
+import { useNavigation, CommonActions } from "@react-navigation/native";
 import { useColorScheme } from "nativewind";
 import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
@@ -29,9 +30,32 @@ export default function TabLayout() {
   const isDark = colorScheme === "dark";
   const activeTint = isDark ? "#fafafa" : "#18181b";
 
+  const navigation = useNavigation();
+
   return (
     <Tabs
       backBehavior="history"
+      screenListeners={{
+        tabPress: (e) => {
+          // If tapping the already-active tab, pop its stack to root
+          const target = e.target;
+          const state = navigation.getState();
+          const currentRoute = state.routes[state.index];
+          if (target?.startsWith(currentRoute.name)) {
+            const childState = currentRoute.state;
+            if (childState && childState.index != null && childState.index > 0) {
+              e.preventDefault();
+              navigation.dispatch(
+                CommonActions.reset({
+                  ...childState,
+                  index: 0,
+                  routes: [childState.routes[0]],
+                }),
+              );
+            }
+          }
+        },
+      }}
       screenOptions={{
         tabBarActiveTintColor: activeTint,
         headerShown: true,
