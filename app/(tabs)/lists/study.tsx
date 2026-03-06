@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   Vibration,
+  InteractionManager,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
@@ -462,6 +463,7 @@ export default function StudyScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [navigating, setNavigating] = useState(false);
   const [sessionDone, setSessionDone] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -628,7 +630,10 @@ export default function StudyScreen() {
   }, [userDb, listId, storeList]);
 
   useEffect(() => {
-    if (dictDb && userDb && list) loadQueue();
+    if (!dictDb || !userDb || !list) return;
+    // Defer heavy DB work until after navigation animation completes
+    const task = InteractionManager.runAfterInteractions(() => loadQueue());
+    return () => task.cancel();
   }, [dictDb, userDb, list?.id]);
 
   async function loadQueue() {
@@ -1971,7 +1976,10 @@ export default function StudyScreen() {
           className="mt-4"
           label="Return to List"
           variant="outline"
-          onPress={() => navigateBack()}
+          onPress={() => {
+            setNavigating(true);
+            setTimeout(() => navigateBack(), 100);
+          }}
         />
       </View>
     );
@@ -1992,7 +2000,13 @@ export default function StudyScreen() {
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-2">
-        <Pressable onPress={() => navigateBack()} className="p-2">
+        <Pressable
+          onPress={() => {
+            setNavigating(true);
+            setTimeout(() => navigateBack(), 100);
+          }}
+          className="p-2"
+        >
           <X size={24} className="text-foreground" />
         </Pressable>
         <Text className="text-sm text-muted-foreground">
@@ -2375,6 +2389,13 @@ export default function StudyScreen() {
             </Text>
           </View>
         </Animated.View>
+      )}
+
+      {/* Navigation overlay — covers heavy UI before unmount to prevent frame drops */}
+      {navigating && (
+        <View className="absolute inset-0 z-50 bg-background items-center justify-center">
+          <ActivityIndicator size="large" />
+        </View>
       )}
     </View>
   );

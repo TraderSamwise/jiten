@@ -8,6 +8,11 @@ const backButton = ({ tintColor }: { tintColor?: string }) => (
   <SafeBackButton fallback="/lists" tintColor={tintColor} />
 );
 
+// Navigation perf pattern for heavy screens (study, typing-game, connect-game):
+// - Forward: defer DB work with InteractionManager.runAfterInteractions()
+// - Backward: show a full-screen loading overlay, then setTimeout(goBack, 100)
+//   so the heavy component unmounts off-screen and doesn't jank the animation.
+// Apply this to any new screen with complex UI or heavy data loading.
 export default function ListsLayout() {
   return (
     <Stack screenOptions={{ headerLeft: backButton }}>
