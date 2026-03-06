@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useAtom } from "jotai";
 import { alert } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { PitchAccent } from "@/components/PitchAccent";
 import { themeAtom, type ThemePreference } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
 
@@ -63,8 +64,30 @@ export default function SettingsScreen() {
     }
   }
 
+  const pitchExamples: { label: string; desc: string; reading: string; pitch: number }[] = [
+    { label: "Heiban (flat)", desc: "LH...H — pitch stays high", reading: "さくら", pitch: 0 },
+    {
+      label: "Atamadaka (head high)",
+      desc: "HLL... — drops after first mora",
+      reading: "いのち",
+      pitch: 1,
+    },
+    {
+      label: "Nakadaka (middle drop)",
+      desc: "LH...HL — drops mid-word",
+      reading: "たまご",
+      pitch: 2,
+    },
+    {
+      label: "Odaka (tail drop)",
+      desc: "LHH...H↓ — drops after last mora",
+      reading: "おとこ",
+      pitch: 3,
+    },
+  ];
+
   return (
-    <View className="flex-1 bg-background px-4 pt-4">
+    <ScrollView className="flex-1 bg-background px-4 pt-4">
       <Card className="mb-4">
         <CardTitle>Jiten</CardTitle>
         <CardDescription>Japanese-English Dictionary</CardDescription>
@@ -103,6 +126,22 @@ export default function SettingsScreen() {
       </Card>
 
       <Card className="mb-4">
+        <CardTitle className="text-base">Pitch Accent Guide</CardTitle>
+        <Separator className="my-2" />
+        <Text className="text-sm text-muted-foreground mb-3">
+          The line above kana shows pitch patterns. High = high pitch, low = low pitch. The number
+          in brackets is the downstep position (mora where pitch drops).
+        </Text>
+        {pitchExamples.map((ex) => (
+          <View key={ex.label} className="mb-3">
+            <Text className="text-sm font-medium text-foreground">{ex.label}</Text>
+            <Text className="text-xs text-muted-foreground mb-1">{ex.desc}</Text>
+            <PitchAccent accent={{ reading: ex.reading, pitchNumber: ex.pitch }} />
+          </View>
+        ))}
+      </Card>
+
+      <Card className="mb-4">
         <CardTitle className="text-base">Dictionary Data</CardTitle>
         <Separator className="my-2" />
         <Text className="text-sm text-muted-foreground">
@@ -132,6 +171,6 @@ export default function SettingsScreen() {
       <View className="items-center pt-4 pb-8 border-t border-border mt-auto">
         <Text className="text-[10px] font-medium text-muted-foreground">{getVersionString()}</Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
