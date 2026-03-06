@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { View, Pressable, InteractionManager, ActivityIndicator } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
@@ -22,6 +22,40 @@ import { ExportListModal } from "@/components/ExportListModal";
 import { listItemKey } from "@/db/types";
 import type { ListItem, KanjiCharacter, DictEntry } from "@/db/types";
 
+const PAGE_SIZE = 100;
+
+type ListEntryRow = { entry_id: number; kanji_literal: string | null };
+
+/** Resolve a page of ListEntryRows into full ListItems */
+async function resolvePageItems(dictDb: any, rows: ListEntryRow[]): Promise<ListItem[]> {
+  const wordEntryIds: number[] = [];
+  const kanjiLiterals: string[] = [];
+  for (const r of rows) {
+    if (r.kanji_literal != null) kanjiLiterals.push(r.kanji_literal);
+    else wordEntryIds.push(r.entry_id);
+  }
+
+  const [wordEntries, kanjiEntries] = await Promise.all([
+    wordEntryIds.length > 0 ? getEntries(dictDb, wordEntryIds) : Promise.resolve([]),
+    kanjiLiterals.length > 0 ? getKanjiBatchAsync(dictDb, kanjiLiterals) : Promise.resolve([]),
+  ]);
+
+  const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
+  const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
+
+  const items: ListItem[] = [];
+  for (const r of rows) {
+    if (r.kanji_literal != null) {
+      const k = kanjiMap.get(r.kanji_literal);
+      if (k) items.push({ kind: "kanji", kanji: k });
+    } else {
+      const e = entryMap.get(r.entry_id);
+      if (e) items.push({ kind: "entry", entry: e });
+    }
+  }
+  return items;
+}
+
 export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
@@ -30,7 +64,11 @@ export default function ListDetailScreen() {
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
   const [items, setItems] = useState<ListItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const allRowsRef = useRef<ListEntryRow[]>([]);
+  const loadedCountRef = useRef(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [gamesModalVisible, setGamesModalVisible] = useState(false);
@@ -89,18 +127,18 @@ export default function ListDetailScreen() {
   );
 
   useEffect(() => {
-    if (items.length > 0 && list) {
+    if (totalCount > 0 && list) {
       updateStudyCount();
     } else {
       setReviewCount(0);
       setNewCount(0);
     }
-  }, [items.length, list?.flashcardMode, list?.studyPosition]);
+  }, [totalCount, list?.flashcardMode, list?.studyPosition]);
 
   async function updateStudyCount() {
     if (!userDb || !list || !id) return;
     if (list.flashcardMode === "add_order") {
-      const remaining = items.length - (list.studyPosition ?? 0);
+      const remaining = totalCount - (list.studyPosition ?? 0);
       setReviewCount(Math.max(0, remaining));
       setNewCount(0);
     } else {
@@ -121,52 +159,43 @@ export default function ListDetailScreen() {
     if (!userDb || !dictDb || !id) return;
     setLoading(true);
 
-    const rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
+    // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
+    const rows = await userDb.getAllAsync<ListEntryRow>(
       "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at DESC",
       [id],
     );
 
+    allRowsRef.current = rows;
+    setTotalCount(rows.length);
+
     if (rows.length === 0) {
       setItems([]);
+      loadedCountRef.current = 0;
       setLoading(false);
       return;
     }
 
-    // Split into word entry IDs and kanji literals
-    const wordEntryIds: number[] = [];
-    const kanjiLiterals: string[] = [];
-    for (const r of rows) {
-      if (r.kanji_literal != null) {
-        kanjiLiterals.push(r.kanji_literal);
-      } else {
-        wordEntryIds.push(r.entry_id);
-      }
-    }
-
-    // Batch fetch both types
-    const [wordEntries, kanjiEntries] = await Promise.all([
-      wordEntryIds.length > 0 ? getEntries(dictDb, wordEntryIds) : Promise.resolve([]),
-      kanjiLiterals.length > 0 ? getKanjiBatchAsync(dictDb, kanjiLiterals) : Promise.resolve([]),
-    ]);
-
-    const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
-    const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
-
-    // Preserve order from list_entries
-    const ordered: ListItem[] = [];
-    for (const r of rows) {
-      if (r.kanji_literal != null) {
-        const k = kanjiMap.get(r.kanji_literal);
-        if (k) ordered.push({ kind: "kanji", kanji: k });
-      } else {
-        const e = entryMap.get(r.entry_id);
-        if (e) ordered.push({ kind: "entry", entry: e });
-      }
-    }
-
-    setItems(ordered);
+    // Step 2: Load only the first page of full entry details
+    const firstPage = rows.slice(0, PAGE_SIZE);
+    const resolved = await resolvePageItems(dictDb, firstPage);
+    loadedCountRef.current = PAGE_SIZE;
+    setItems(resolved);
     setLoading(false);
   }
+
+  const loadMore = useCallback(async () => {
+    if (!dictDb || loadingMore) return;
+    const rows = allRowsRef.current;
+    const loaded = loadedCountRef.current;
+    if (loaded >= rows.length) return;
+
+    setLoadingMore(true);
+    const nextPage = rows.slice(loaded, loaded + PAGE_SIZE);
+    const resolved = await resolvePageItems(dictDb, nextPage);
+    loadedCountRef.current = loaded + PAGE_SIZE;
+    setItems((prev) => [...prev, ...resolved]);
+    setLoadingMore(false);
+  }, [dictDb, loadingMore]);
 
   async function handleRemoveItem(item: ListItem) {
     if (!userDb) return;
@@ -210,6 +239,12 @@ export default function ListDetailScreen() {
     // Update local state
     const key = listItemKey(item);
     setItems((prev) => prev.filter((i) => listItemKey(i) !== key));
+    setTotalCount((prev) => prev - 1);
+    allRowsRef.current = allRowsRef.current.filter((r) =>
+      item.kind === "kanji"
+        ? r.kanji_literal !== item.kanji.literal
+        : r.entry_id !== item.entry.id || r.kanji_literal != null,
+    );
 
     // Update entry count in lists store
     const currentList = useListsStore.getState().lists.find((l) => l.id === id);
@@ -308,7 +343,7 @@ export default function ListDetailScreen() {
           : newCount > 0
             ? `Study (${newCount} new)`
             : "Study"
-      : `Study (${items.length} cards)`;
+      : `Study (${totalCount} cards)`;
 
   return (
     <View className="flex-1 bg-background">
@@ -316,6 +351,9 @@ export default function ListDetailScreen() {
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
+        estimatedItemSize={56}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
@@ -327,6 +365,13 @@ export default function ListDetailScreen() {
               This list is empty.{"\n"}Search for words and add them here.
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="py-4 items-center">
+              <ActivityIndicator size="small" />
+            </View>
+          ) : null
         }
       />
 
@@ -340,7 +385,7 @@ export default function ListDetailScreen() {
               studyLoading ||
               (list?.flashcardMode === "srs"
                 ? reviewCount === 0 && newCount === 0
-                : items.length === 0)
+                : totalCount === 0)
             }
             style={studyLoading ? { opacity: 1 } : undefined}
           >
@@ -354,7 +399,7 @@ export default function ListDetailScreen() {
             variant="outline"
             label="Games"
             onPress={() => setGamesModalVisible(true)}
-            disabled={items.length === 0}
+            disabled={totalCount === 0}
           />
         </View>
       </View>
