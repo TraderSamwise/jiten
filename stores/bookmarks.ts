@@ -18,12 +18,12 @@ export const useBookmarkStore = create<BookmarkState>((set) => ({
     const entryRows = await userDb.getAllAsync<{ entry_id: number }>(
       `SELECT DISTINCT le.entry_id FROM list_entries le
        JOIN lists l ON le.list_id = l.id
-       WHERE le.kanji_literal IS NULL AND l.is_default = 0`,
+       WHERE le.kanji_literal IS NULL AND l.is_default = 0 AND le.deleted_at IS NULL AND l.deleted_at IS NULL`,
     );
     const kanjiRows = await userDb.getAllAsync<{ kanji_literal: string }>(
       `SELECT DISTINCT le.kanji_literal FROM list_entries le
        JOIN lists l ON le.list_id = l.id
-       WHERE le.kanji_literal IS NOT NULL AND l.is_default = 0`,
+       WHERE le.kanji_literal IS NOT NULL AND l.is_default = 0 AND le.deleted_at IS NULL AND l.deleted_at IS NULL`,
     );
     const ids = new Set<string>();
     for (const r of entryRows) ids.add(`e:${r.entry_id}`);

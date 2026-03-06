@@ -19,6 +19,7 @@ import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { ExportListModal } from "@/components/ExportListModal";
+import { softDelete } from "@/db/sync-helpers";
 import { listItemKey } from "@/db/types";
 import type { ListItem, KanjiCharacter, DictEntry } from "@/db/types";
 
@@ -90,8 +91,8 @@ export default function ListDetailScreen() {
     if (!userDb || !id) return;
     const row = await userDb.getFirstAsync<any>(
       `SELECT l.*, COUNT(le.id) as entryCount
-       FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id
-       WHERE l.id = ? GROUP BY l.id`,
+       FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id AND le.deleted_at IS NULL
+       WHERE l.id = ? AND l.deleted_at IS NULL GROUP BY l.id`,
       [id],
     );
     if (row) {
@@ -143,11 +144,11 @@ export default function ListDetailScreen() {
       setNewCount(0);
     } else {
       const reviewRow = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ?",
+        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL",
         [id, new Date().toISOString()],
       );
       const newRow = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state = 0",
+        "SELECT COUNT(*) as count FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
         [id],
       );
       setReviewCount(reviewRow?.count ?? 0);
@@ -161,7 +162,7 @@ export default function ListDetailScreen() {
 
     // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
     const rows = await userDb.getAllAsync<ListEntryRow>(
-      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? ORDER BY added_at DESC",
+      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at DESC",
       [id],
     );
 
@@ -202,16 +203,10 @@ export default function ListDetailScreen() {
 
     if (item.kind === "kanji") {
       const literal = item.kanji.literal;
-      await userDb.runAsync("DELETE FROM list_entries WHERE list_id = ? AND kanji_literal = ?", [
-        id,
-        literal,
-      ]);
-      await userDb.runAsync("DELETE FROM srs_cards WHERE list_id = ? AND kanji_literal = ?", [
-        id,
-        literal,
-      ]);
+      await softDelete(userDb, "list_entries", "list_id = ? AND kanji_literal = ?", [id, literal]);
+      await softDelete(userDb, "srs_cards", "list_id = ? AND kanji_literal = ?", [id, literal]);
       const remaining = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM list_entries WHERE kanji_literal = ?",
+        "SELECT COUNT(*) as count FROM list_entries WHERE kanji_literal = ? AND deleted_at IS NULL",
         [literal],
       );
       if (!remaining || remaining.count === 0) {
@@ -219,16 +214,20 @@ export default function ListDetailScreen() {
       }
     } else {
       const entryId = item.entry.id;
-      await userDb.runAsync(
-        "DELETE FROM list_entries WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
+      await softDelete(
+        userDb,
+        "list_entries",
+        "list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
         [id, entryId],
       );
-      await userDb.runAsync(
-        "DELETE FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
+      await softDelete(
+        userDb,
+        "srs_cards",
+        "list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
         [id, entryId],
       );
       const remaining = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL",
+        "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL",
         [entryId],
       );
       if (!remaining || remaining.count === 0) {

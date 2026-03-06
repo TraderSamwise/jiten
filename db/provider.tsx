@@ -44,6 +44,7 @@ interface DatabaseContextType {
   backgroundStatus: BackgroundDownloadItem[];
   startDownload: () => Promise<void>;
   retryManifest: () => Promise<void>;
+  triggerBackgroundDownloads: () => void;
 }
 
 const DatabaseContext = createContext<DatabaseContextType>({
@@ -56,6 +57,7 @@ const DatabaseContext = createContext<DatabaseContextType>({
   backgroundStatus: [],
   startDownload: async () => {},
   retryManifest: async () => {},
+  triggerBackgroundDownloads: () => {},
 });
 
 export function useDatabase() {
@@ -199,6 +201,17 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     [updateBgItem],
   );
 
+  // Background downloads are deferred until sync completes (or is disabled).
+  // SyncProvider calls triggerBackgroundDownloads() after initial sync attempt.
+  const manifestForBg = useRef<DictManifest | undefined>(undefined);
+  const bgInitStarted = useRef(false);
+
+  const triggerBackgroundDownloads = useCallback(() => {
+    if (bgInitStarted.current) return;
+    bgInitStarted.current = true;
+    initBackgroundData(manifestForBg.current);
+  }, [initBackgroundData]);
+
   // Full init sequence — used on mount and on visibility reacquire
   const runInit = useCallback(async () => {
     try {
@@ -230,8 +243,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
 
-        // Fire-and-forget background data init
-        initBackgroundData(fetchedManifest);
+        // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
+        manifestForBg.current = fetchedManifest;
       } else {
         // Dict is not at DICT_VERSION — check if we can apply client migrations
         const localVersion = await getStoredDictVersion();
@@ -297,8 +310,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
 
-          // Fire-and-forget background data init
-          initBackgroundData(fetchedManifest);
+          // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
+          manifestForBg.current = fetchedManifest;
         } else if (action.type === "full-download") {
           setIsReady(true);
           setDownloadStatus({ state: "needs-download", manifest: action.manifest });
@@ -311,7 +324,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setIsDownloaded(true);
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
-          initBackgroundData(fetchedManifest);
+          manifestForBg.current = fetchedManifest;
         }
       }
     } catch (err) {
@@ -416,8 +429,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       setIsDownloaded(true);
       setDownloadStatus({ state: "ready" });
 
-      // Fire-and-forget background data init after fresh core download
-      initBackgroundData(m);
+      // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
+      manifestForBg.current = m;
     } catch (err) {
       console.error("[DB] Download error:", err);
       setDownloadStatus({
@@ -443,6 +456,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         backgroundStatus,
         startDownload,
         retryManifest,
+        triggerBackgroundDownloads,
       }}
     >
       {children}

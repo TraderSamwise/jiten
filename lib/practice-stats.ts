@@ -24,7 +24,7 @@ export async function getLeechCards(
        UNION ALL
        SELECT sc.entry_id, sc.kanji_literal, CASE WHEN rl.rating > 1 THEN 1 ELSE 0 END as correct
        FROM review_logs rl
-       JOIN srs_cards sc ON sc.id = rl.card_id
+       JOIN srs_cards sc ON sc.id = rl.card_id AND sc.deleted_at IS NULL
        WHERE sc.list_id = ?
      )
      GROUP BY entry_id, kanji_literal
@@ -41,7 +41,7 @@ export async function getLapseBasedLeeches(
 ) {
   return userDb.getAllAsync<{ entryId: number; kanjiLiteral: string | null; lapses: number }>(
     `SELECT entry_id as entryId, kanji_literal as kanjiLiteral, lapses
-     FROM srs_cards WHERE list_id = ? AND lapses >= ?
+     FROM srs_cards WHERE list_id = ? AND lapses >= ? AND deleted_at IS NULL
      ORDER BY lapses DESC`,
     [listId, minLapses],
   );
@@ -63,7 +63,7 @@ export async function getEntryPracticeStats(userDb: WrappedUserDb, entryId: numb
        UNION ALL
        SELECT CASE WHEN rl.rating > 1 THEN 1 ELSE 0 END, rl.reviewed_at
        FROM review_logs rl
-       JOIN srs_cards sc ON sc.id = rl.card_id
+       JOIN srs_cards sc ON sc.id = rl.card_id AND sc.deleted_at IS NULL
        WHERE sc.entry_id = ?
      )`,
     [entryId, entryId],
@@ -160,8 +160,8 @@ export async function getTopConfusionPairs(
               cp.confusion_type as confusionType, cp.confusion_count as confusionCount,
               cp.last_confused_at as lastConfusedAt
        FROM confusion_pairs cp
-       WHERE cp.entry_id_a IN (SELECT entry_id FROM list_entries WHERE list_id = ?)
-          OR cp.entry_id_b IN (SELECT entry_id FROM list_entries WHERE list_id = ?)
+       WHERE cp.deleted_at IS NULL AND (cp.entry_id_a IN (SELECT entry_id FROM list_entries WHERE list_id = ? AND deleted_at IS NULL)
+          OR cp.entry_id_b IN (SELECT entry_id FROM list_entries WHERE list_id = ? AND deleted_at IS NULL))
        ORDER BY cp.confusion_count DESC LIMIT ?`,
       [listId, listId, limit],
     );
@@ -171,7 +171,7 @@ export async function getTopConfusionPairs(
             kanji_literal_a as kanjiLiteralA, kanji_literal_b as kanjiLiteralB,
             confusion_type as confusionType, confusion_count as confusionCount,
             last_confused_at as lastConfusedAt
-     FROM confusion_pairs ORDER BY confusion_count DESC LIMIT ?`,
+     FROM confusion_pairs WHERE deleted_at IS NULL ORDER BY confusion_count DESC LIMIT ?`,
     [limit],
   );
 }
@@ -192,11 +192,11 @@ export async function getCardStateDistribution(
 ): Promise<CardDistribution> {
   // srs_cards.state: 0=new, 1=learning, 2=review, 3=relearning
   const rows = await userDb.getAllAsync<{ state: number; cnt: number }>(
-    `SELECT state, COUNT(*) as cnt FROM srs_cards WHERE list_id = ? GROUP BY state`,
+    `SELECT state, COUNT(*) as cnt FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL GROUP BY state`,
     [listId],
   );
   const totalEntries = await userDb.getFirstAsync<{ cnt: number }>(
-    `SELECT COUNT(*) as cnt FROM list_entries WHERE list_id = ?`,
+    `SELECT COUNT(*) as cnt FROM list_entries WHERE list_id = ? AND deleted_at IS NULL`,
     [listId],
   );
   const stateMap = new Map(rows.map((r) => [r.state, r.cnt]));

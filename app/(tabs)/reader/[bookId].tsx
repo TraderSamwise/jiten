@@ -470,7 +470,10 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!userDb || !bookId) return;
     (async () => {
-      const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
+      const row = await userDb.getFirstAsync<any>(
+        "SELECT * FROM books WHERE id = ? AND deleted_at IS NULL",
+        [bookId],
+      );
       if (!row) {
         goBack();
         return;

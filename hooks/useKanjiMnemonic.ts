@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useUserDb } from "@/db/user-provider";
+import { softDelete } from "@/db/sync-helpers";
+import { useSync } from "@/db/sync-provider";
 
 interface KanjiNotesRow {
   mnemonic: string;
@@ -8,6 +10,7 @@ interface KanjiNotesRow {
 
 export function useKanjiMnemonic(literal: string) {
   const userDb = useUserDb();
+  const { triggerSync } = useSync();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [keyword, setKeyword] = useState<string | null>(null);
 
@@ -16,7 +19,7 @@ export function useKanjiMnemonic(literal: string) {
 
     userDb
       .getFirstAsync<KanjiNotesRow>(
-        "SELECT mnemonic, keyword FROM user_kanji_notes WHERE literal = ?",
+        "SELECT mnemonic, keyword FROM user_kanji_notes WHERE literal = ? AND deleted_at IS NULL",
         [literal],
       )
       .then((row: KanjiNotesRow | null) => {
@@ -39,14 +42,15 @@ export function useKanjiMnemonic(literal: string) {
       if (m || k) {
         await userDb.runAsync(
           `INSERT INTO user_kanji_notes (literal, mnemonic, keyword, updated_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(literal) DO UPDATE SET mnemonic = excluded.mnemonic, keyword = excluded.keyword, updated_at = excluded.updated_at`,
+           ON CONFLICT(literal) DO UPDATE SET mnemonic = excluded.mnemonic, keyword = excluded.keyword, updated_at = excluded.updated_at, deleted_at = NULL`,
           [literal, m, k, now],
         );
       } else {
-        await userDb.runAsync("DELETE FROM user_kanji_notes WHERE literal = ?", [literal]);
+        await softDelete(userDb, "user_kanji_notes", "literal = ?", [literal]);
       }
+      triggerSync();
     },
-    [userDb, literal],
+    [userDb, literal, triggerSync],
   );
 
   const saveMnemonic = useCallback(
