@@ -2,6 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light dark;
+  scrollbar-width: thin;
+}
+
+body {
+  background-color: hsl(0, 0%, 100%);
+}
+
+.dark body {
+  background-color: hsl(240, 10%, 3.9%);
+}
+
+/* Webkit (Chrome/Safari) thin overlay scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
