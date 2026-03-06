@@ -13,7 +13,7 @@
       "destination": "https://ncode.syosetu.com/:path*"
     },
     {
-      "source": "/((?!_next|assets|proxy).*)",
+      "source": "/((?!_next|assets|proxy|api).*)",
       "destination": "/index.html"
     }
   ]
