@@ -292,7 +292,19 @@ function TypingInput({
         displayDiffersFromReading &&
         (furiganaRevealed ? (
           pitch ? (
-            <PitchAccent accent={pitch} renderMora={coloredMoraRenderer} />
+            <PitchAccent
+              accent={pitch}
+              renderMora={coloredMoraRenderer}
+              lineColor={
+                charStatuses[0] === "correct"
+                  ? "#22c55e"
+                  : charStatuses[0] === "wrong"
+                    ? "#ef4444"
+                    : charStatuses[0] === "pending"
+                      ? "#86efac"
+                      : "#a1a1aa"
+              }
+            />
           ) : (
             <View className="flex-row">
               {targetChars.map((char, i) => (
