@@ -419,6 +419,30 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
   return 0; // add_order — no SRS checks
 }
 
+function formatInterval(days: number): string {
+  if (days < 1) return `${Math.round(days * 24)}h`;
+  if (days < 30) return `${Math.round(days)}d`;
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
+}
+
+function getCardStats(srsCard: SrsCardRow | undefined, mode: FlashcardMode): string | null {
+  if (!srsCard) return null;
+  if (mode === "simple_srs") {
+    if (srsCard.simpleStage == null || srsCard.simpleInterval == null) return null;
+    const interval = formatInterval(srsCard.simpleInterval);
+    const lapses = srsCard.lapses;
+    return lapses > 0 ? `${interval} · ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
+  }
+  if (mode === "srs") {
+    if (srsCard.state === 0) return null; // new card
+    const interval = formatInterval(srsCard.scheduledDays);
+    const lapses = srsCard.lapses;
+    return lapses > 0 ? `${interval} · ${lapses} lapse${lapses > 1 ? "s" : ""}` : interval;
+  }
+  return null;
+}
+
 export default function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
@@ -2020,6 +2044,19 @@ export default function StudyScreen() {
                       overflow: "hidden",
                     }}
                   >
+                    {isFocused &&
+                      currentItem &&
+                      (() => {
+                        const stats = getCardStats(
+                          currentItem.srsCard,
+                          list?.flashcardMode ?? "add_order",
+                        );
+                        return stats ? (
+                          <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
+                            <Text className="text-xs text-muted-foreground">{stats}</Text>
+                          </View>
+                        ) : null;
+                      })()}
                     {isFocused && currentItem && (
                       <View
                         style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
