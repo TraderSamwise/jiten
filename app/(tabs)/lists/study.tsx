@@ -337,6 +337,14 @@ function sortFaces(faces: CardFace[]): CardFace[] {
   return [...faces].sort((a, b) => FACE_ORDER[a] - FACE_ORDER[b]);
 }
 
+const BASE_FONT_SIZE = 96;
+function scaledFontStyle(count: number, face: CardFace): { fontSize: number; lineHeight: number } {
+  const scale = 1 / (1 + (count - 1) * 0.5);
+  const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
+  const size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
+  return { fontSize: size, lineHeight: Math.round(size * 1.3) };
+}
+
 type QueueItem =
   | { kind: "entry"; entry: DictEntry; srsCard?: SrsCardRow }
   | { kind: "kanji"; kanji: KanjiCharacter; srsCard?: SrsCardRow };
@@ -1780,8 +1788,13 @@ export default function StudyScreen() {
         ? getFaceText(item.entry, frontFaces[0])
         : getKanjiFaceText(item.kanji, frontFaces[0]);
 
+    const frontCount = frontFaces.length;
     const secondaryFaces = frontFaces.slice(1).map((face, i) => (
-      <Text key={`front-${i}`} className="mt-1 text-lg text-foreground">
+      <Text
+        key={`front-${i}`}
+        style={{ ...scaledFontStyle(frontCount, face), marginTop: 4 }}
+        className="text-foreground"
+      >
         {item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face)}
       </Text>
     ));
@@ -1798,7 +1811,12 @@ export default function StudyScreen() {
           />
         ) : (
           <>
-            <Text className="text-3xl font-bold text-foreground">{faceText}</Text>
+            <Text
+              style={{ ...scaledFontStyle(frontCount, frontFaces[0]) }}
+              className="text-foreground"
+            >
+              {faceText}
+            </Text>
             {isTyping && item.kind === "entry" && (
               <View className="mt-6 items-center w-full px-4">
                 <TypingInput
@@ -1845,11 +1863,22 @@ export default function StudyScreen() {
         ? getFaceText(item.entry, backFaces[0])
         : getKanjiFaceText(item.kanji, backFaces[0]);
 
+    const totalFaceCount = frontFaces.length + backFaces.length;
+
     return (
       <View className="items-center justify-center flex-1">
-        <Text className="text-lg text-foreground">{frontText}</Text>
+        <Text
+          style={{ ...scaledFontStyle(totalFaceCount, frontFaces[0]) }}
+          className="text-foreground"
+        >
+          {frontText}
+        </Text>
         {frontFaces.slice(1).map((face, i) => (
-          <Text key={`front-${i}`} className="mt-1 text-sm text-foreground">
+          <Text
+            key={`front-${i}`}
+            style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
+            className="text-foreground"
+          >
             {item.kind === "entry"
               ? getFaceText(item.entry, face)
               : getKanjiFaceText(item.kanji, face)}
@@ -1857,9 +1886,18 @@ export default function StudyScreen() {
         ))}
         <View className="mt-6 items-center">
           <View className="h-px w-32 bg-border mb-4" />
-          <Text className="text-3xl font-bold text-foreground">{backText}</Text>
+          <Text
+            style={{ ...scaledFontStyle(totalFaceCount, backFaces[0]) }}
+            className="text-foreground"
+          >
+            {backText}
+          </Text>
           {backFaces.slice(1).map((face, i) => (
-            <Text key={`back-${i}`} className="mt-2 text-3xl text-foreground">
+            <Text
+              key={`back-${i}`}
+              style={{ ...scaledFontStyle(totalFaceCount, face), marginTop: 4 }}
+              className="text-foreground"
+            >
               {item.kind === "entry"
                 ? getFaceText(item.entry, face)
                 : getKanjiFaceText(item.kanji, face)}
