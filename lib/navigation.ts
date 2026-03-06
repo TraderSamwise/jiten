@@ -104,9 +104,8 @@ export function SafeBackButton({ fallback, tintColor }: { fallback: string; tint
   const navigation = useNavigation();
   const state = navigation.getState();
 
-  // On web, hide when phantom duplicates make back a no-op
-  if (Platform.OS === "web" && state) {
-    if (state.index === 0) return null;
+  // On web, hide only when phantom duplicates make back a no-op
+  if (Platform.OS === "web" && state && state.index > 0) {
     const prev = state.routes[state.index - 1];
     const curr = state.routes[state.index];
     if (buildRoutePath(prev, fallback) === buildRoutePath(curr, fallback)) return null;
