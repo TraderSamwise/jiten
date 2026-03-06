@@ -332,6 +332,11 @@ function getKanjiFaceText(kanji: KanjiCharacter, face: CardFace): string {
   }
 }
 
+const FACE_ORDER: Record<CardFace, number> = { kanji: 0, kana: 1, english: 2 };
+function sortFaces(faces: CardFace[]): CardFace[] {
+  return [...faces].sort((a, b) => FACE_ORDER[a] - FACE_ORDER[b]);
+}
+
 type QueueItem =
   | { kind: "entry"; entry: DictEntry; srsCard?: SrsCardRow }
   | { kind: "kanji"; kanji: KanjiCharacter; srsCard?: SrsCardRow };
@@ -1754,8 +1759,8 @@ export default function StudyScreen() {
   }, [slideDistance]);
 
   // --- Card content helpers ---
-  const frontFaces = list?.frontFaces ?? ["kanji"];
-  const backFaces = list?.backFaces ?? ["english"];
+  const frontFaces = sortFaces(list?.frontFaces ?? ["kanji"]);
+  const backFaces = sortFaces(list?.backFaces ?? ["english"]);
 
   function renderCardFront(item: QueueItem, isCurrent: boolean) {
     // Typing and voice modes only for word entries
@@ -1776,7 +1781,7 @@ export default function StudyScreen() {
         : getKanjiFaceText(item.kanji, frontFaces[0]);
 
     const secondaryFaces = frontFaces.slice(1).map((face, i) => (
-      <Text key={`front-${i}`} className="mt-1 text-lg text-muted-foreground">
+      <Text key={`front-${i}`} className="mt-1 text-lg text-foreground">
         {item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face)}
       </Text>
     ));
@@ -1807,31 +1812,25 @@ export default function StudyScreen() {
           </>
         )}
         {secondaryFaces}
-        {!isTyping &&
-          (list?.voiceMode && item.kind === "entry" ? (
-            <View className="mt-6 items-center">
-              {voiceStatus === "correct" ? (
-                <Text className="text-lg font-bold text-green-500">Correct!</Text>
-              ) : voiceStatus === "wrong" ? (
-                <>
-                  <Text className="text-lg font-bold text-red-500">Try again</Text>
-                  {voiceHeard && (
-                    <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Mic
-                    size={24}
-                    className={isListening ? "text-primary" : "text-muted-foreground"}
-                  />
-                  <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
-                </>
-              )}
-            </View>
-          ) : (
-            <Text className="mt-6 text-sm text-muted-foreground">Tap to reveal</Text>
-          ))}
+        {!isTyping && list?.voiceMode && item.kind === "entry" && (
+          <View className="mt-6 items-center">
+            {voiceStatus === "correct" ? (
+              <Text className="text-lg font-bold text-green-500">Correct!</Text>
+            ) : voiceStatus === "wrong" ? (
+              <>
+                <Text className="text-lg font-bold text-red-500">Try again</Text>
+                {voiceHeard && (
+                  <Text className="text-sm text-muted-foreground mt-1">Heard: {voiceHeard}</Text>
+                )}
+              </>
+            ) : (
+              <>
+                <Mic size={24} className={isListening ? "text-primary" : "text-muted-foreground"} />
+                <Text className="text-sm text-muted-foreground mt-1">Say the reading...</Text>
+              </>
+            )}
+          </View>
+        )}
       </View>
     );
   }
@@ -1848,9 +1847,9 @@ export default function StudyScreen() {
 
     return (
       <View className="items-center justify-center flex-1">
-        <Text className="text-lg text-muted-foreground">{frontText}</Text>
+        <Text className="text-lg text-foreground">{frontText}</Text>
         {frontFaces.slice(1).map((face, i) => (
-          <Text key={`front-${i}`} className="mt-1 text-sm text-muted-foreground">
+          <Text key={`front-${i}`} className="mt-1 text-sm text-foreground">
             {item.kind === "entry"
               ? getFaceText(item.entry, face)
               : getKanjiFaceText(item.kanji, face)}
@@ -1860,7 +1859,7 @@ export default function StudyScreen() {
           <View className="h-px w-32 bg-border mb-4" />
           <Text className="text-3xl font-bold text-foreground">{backText}</Text>
           {backFaces.slice(1).map((face, i) => (
-            <Text key={`back-${i}`} className="mt-2 text-3xl text-muted-foreground">
+            <Text key={`back-${i}`} className="mt-2 text-3xl text-foreground">
               {item.kind === "entry"
                 ? getFaceText(item.entry, face)
                 : getKanjiFaceText(item.kanji, face)}
