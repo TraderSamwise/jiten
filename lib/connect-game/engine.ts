@@ -198,6 +198,7 @@ export function spawnWave(state: GameState, now: number): Bubble[] {
   const config = getWaveConfig(state.wave, state.speedPreset, state.mode, pairsOnly);
   const newBubbles: Bubble[] = [];
 
+  // 1. Pick entries and create all bubbles (all at time=now, no stagger yet)
   for (let i = 0; i < config.groupCount; i++) {
     if (state.entryQueue.length === 0) {
       // Recycle: re-shuffle all entry IDs
@@ -219,7 +220,6 @@ export function spawnWave(state: GameState, now: number): Bubble[] {
       continue;
     }
 
-    const stagger = i * config.spawnInterval;
     const bubbles = createBubblesForEntry(
       entry,
       config,
@@ -227,7 +227,7 @@ export function spawnWave(state: GameState, now: number): Bubble[] {
       state.fieldWidth,
       state.fieldHeight,
       now,
-      stagger,
+      0,
       state.enabledKinds,
     );
 
@@ -235,6 +235,17 @@ export function spawnWave(state: GameState, now: number): Bubble[] {
       state.activeEntryIds.add(entryId);
       newBubbles.push(...bubbles);
     }
+  }
+
+  // 2. Shuffle all bubbles so entries are interleaved
+  for (let i = newBubbles.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newBubbles[i], newBubbles[j]] = [newBubbles[j], newBubbles[i]];
+  }
+
+  // 3. Stagger spawn times: each bubble appears one at a time
+  for (let i = 0; i < newBubbles.length; i++) {
+    newBubbles[i].spawnedAt = now + i * config.spawnInterval;
   }
 
   return newBubbles;
