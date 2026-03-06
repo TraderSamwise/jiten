@@ -91,7 +91,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
             })}
           />
         ) : (
-          <View className="flex-1 h-10 justify-center">
+          <View className="flex-1 h-11 justify-center rounded-lg border border-border px-3">
             <Text className="text-muted-foreground">Tap radicals to filter kanji</Text>
           </View>
         )}
