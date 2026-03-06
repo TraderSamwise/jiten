@@ -1,11 +1,15 @@
 import { useEffect } from "react";
+import { Platform, View } from "react-native";
 import { Tabs } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
+import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
+
+const isWeb = Platform.OS === "web";
 
 export default function TabLayout() {
   const userDb = useUserDb();
@@ -16,7 +20,8 @@ export default function TabLayout() {
   }, [userDb]);
 
   const { colorScheme } = useColorScheme();
-  const activeTint = colorScheme === "dark" ? "#fafafa" : "#18181b";
+  const isDark = colorScheme === "dark";
+  const activeTint = isDark ? "#fafafa" : "#18181b";
 
   return (
     <Tabs
@@ -24,7 +29,42 @@ export default function TabLayout() {
         tabBarActiveTintColor: activeTint,
         headerShown: true,
         freezeOnBlur: true,
+        ...(isWeb
+          ? {
+              tabBarPosition: "top" as any,
+              tabBarStyle: {
+                borderWidth: 1,
+                borderColor: isDark ? "hsl(240,3.7%,15.9%)" : "hsl(240,5.9%,90%)",
+                borderRadius: 12,
+                marginHorizontal: 8,
+                marginTop: 8,
+                marginBottom: 16,
+                paddingTop: 10,
+                paddingBottom: 10,
+                overflow: "hidden",
+              },
+              tabBarLabelStyle: {
+                fontSize: 13,
+                fontWeight: "500" as const,
+              },
+            }
+          : undefined),
       }}
+      {...(isWeb
+        ? {
+            tabBar: (props: any) => {
+              const DefaultTabBar = require("@react-navigation/bottom-tabs").BottomTabBar;
+              return (
+                <View className="flex-row items-center">
+                  <Text className="text-base font-bold text-foreground px-4">字典</Text>
+                  <View style={{ flex: 1 }}>
+                    <DefaultTabBar {...props} />
+                  </View>
+                </View>
+              );
+            },
+          }
+        : undefined)}
     >
       <Tabs.Screen
         name="dictionary"
@@ -55,6 +95,9 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
+          ...(isWeb
+            ? { headerStyle: { borderRadius: 12, marginHorizontal: 8, marginBottom: 8 } }
+            : undefined),
         }}
       />
     </Tabs>

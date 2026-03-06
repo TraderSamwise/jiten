@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useDatabase } from "@/db/provider";
@@ -26,13 +26,15 @@ export function BackgroundDownloadBanner() {
   const percent = Math.round((activeItem.progress ?? 0) * 100);
   const stateLabel = STATE_LABELS[activeItem.state] ?? "Preparing";
 
+  const isWeb = Platform.OS === "web";
+
   return (
     <View
       style={{
         position: "absolute",
-        bottom: insets.bottom > 0 ? 0 : TAB_BAR_HEIGHT,
-        left: 0,
-        right: 0,
+        ...(isWeb
+          ? { top: 0, left: 0, right: 0 }
+          : { bottom: insets.bottom > 0 ? 0 : TAB_BAR_HEIGHT, left: 0, right: 0 }),
       }}
       pointerEvents="box-none"
     >
