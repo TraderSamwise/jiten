@@ -106,7 +106,14 @@ export default function RootLayout() {
 
   return (
     <GlobalErrorHandler>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView
+        style={{
+          flex: 1,
+          ...(Platform.OS === "web"
+            ? { maxWidth: 960, width: "100%" as any, alignSelf: "center" as const }
+            : undefined),
+        }}
+      >
         <ThemeProvider value={navTheme}>
           <AuthProvider>
             <AuthGate>
