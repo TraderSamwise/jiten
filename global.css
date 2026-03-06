@@ -24,7 +24,7 @@ body.has-navbar::before {
   right: 0;
   height: 137px;
   background-color: rgb(242, 242, 242);
-  border-bottom: 1.5px solid hsl(240, 5.9%, 90%);
+  border-bottom: 1px solid hsl(240, 5.9%, 90%);
   z-index: -1;
   pointer-events: none;
 }
