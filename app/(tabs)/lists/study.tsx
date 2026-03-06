@@ -528,6 +528,44 @@ const StudyCardView = React.memo(
         ? (simpleCorrectCount ?? getCheckCount(item.srsCard, "simple_srs"))
         : getCheckCount(item.srsCard, flashcardMode);
 
+    // Render kana face with pitch accent visualization when available
+    function renderFaceContent(
+      face: CardFace,
+      style: { fontSize: number; lineHeight: number; textAlign: "center" },
+      opts?: { numberOfLines?: number; adjustsFontSizeToFit?: boolean; minimumFontScale?: number },
+    ) {
+      const text =
+        item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face);
+
+      if (face === "kana" && item.kind === "entry" && item.entry.pitchAccents.length > 0) {
+        return (
+          <PitchAccent
+            accent={item.entry.pitchAccents[0]}
+            renderMora={(mora) => (
+              <Text
+                style={{ fontSize: style.fontSize, lineHeight: style.lineHeight }}
+                className="text-foreground"
+              >
+                {mora}
+              </Text>
+            )}
+          />
+        );
+      }
+
+      return (
+        <Text
+          style={style}
+          className="text-foreground"
+          numberOfLines={opts?.numberOfLines}
+          adjustsFontSizeToFit={opts?.adjustsFontSizeToFit}
+          minimumFontScale={opts?.minimumFontScale}
+        >
+          {text}
+        </Text>
+      );
+    }
+
     // --- Front content ---
     function renderFront() {
       const isTyping = typingMode && status === "pending" && item.kind === "entry";
@@ -541,25 +579,15 @@ const StudyCardView = React.memo(
         onTypingComplete(wasCorrect);
       };
 
-      const faceText =
-        item.kind === "entry"
-          ? getFaceText(item.entry, frontFaces[0])
-          : getKanjiFaceText(item.kanji, frontFaces[0]);
-
       const frontCount = frontFaces.length;
       const secondaryFaces = frontFaces.slice(1).map((face, i) => (
-        <Text
-          key={`front-${i}`}
-          style={{ ...scaledFontStyle(frontCount, face), marginTop: 4 }}
-          className="text-foreground"
-          numberOfLines={face === "english" ? 3 : 1}
-          adjustsFontSizeToFit={face !== "english"}
-          minimumFontScale={0.5}
-        >
-          {item.kind === "entry"
-            ? getFaceText(item.entry, face)
-            : getKanjiFaceText(item.kanji, face)}
-        </Text>
+        <View key={`front-${i}`} style={{ marginTop: 4 }}>
+          {renderFaceContent(face, scaledFontStyle(frontCount, face), {
+            numberOfLines: face === "english" ? 3 : 1,
+            adjustsFontSizeToFit: face !== "english",
+            minimumFontScale: 0.5,
+          })}
+        </View>
       ));
 
       return (
@@ -573,15 +601,11 @@ const StudyCardView = React.memo(
             />
           ) : (
             <>
-              <Text
-                style={{ ...scaledFontStyle(frontCount, frontFaces[0]) }}
-                className="text-foreground"
-                numberOfLines={frontFaces[0] === "english" ? 3 : 1}
-                adjustsFontSizeToFit={frontFaces[0] !== "english"}
-                minimumFontScale={0.5}
-              >
-                {faceText}
-              </Text>
+              {renderFaceContent(frontFaces[0], scaledFontStyle(frontCount, frontFaces[0]), {
+                numberOfLines: frontFaces[0] === "english" ? 3 : 1,
+                adjustsFontSizeToFit: frontFaces[0] !== "english",
+                minimumFontScale: 0.5,
+              })}
               {isTyping && item.kind === "entry" && (
                 <View className="mt-6 items-center w-full px-4">
                   <TypingInput
@@ -623,15 +647,6 @@ const StudyCardView = React.memo(
 
     // --- Back content ---
     function renderBack() {
-      const frontText =
-        item.kind === "entry"
-          ? getFaceText(item.entry, frontFaces[0])
-          : getKanjiFaceText(item.kanji, frontFaces[0]);
-      const backText =
-        item.kind === "entry"
-          ? getFaceText(item.entry, backFaces[0])
-          : getKanjiFaceText(item.kanji, backFaces[0]);
-
       const totalFaceCount = frontFaces.length + backFaces.length;
 
       // Back face uses fixed smaller sizes — no adjustsFontSizeToFit needed
@@ -645,40 +660,23 @@ const StudyCardView = React.memo(
 
       return (
         <View className="items-center justify-center flex-1">
-          <Text style={backFontStyle(frontFaces[0])} className="text-foreground">
-            {frontText}
-          </Text>
+          {renderFaceContent(frontFaces[0], backFontStyle(frontFaces[0]))}
           {frontFaces.slice(1).map((face, i) => (
-            <Text
-              key={`front-${i}`}
-              style={{ ...backFontStyle(face), marginTop: 4 }}
-              className="text-foreground"
-            >
-              {item.kind === "entry"
-                ? getFaceText(item.entry, face)
-                : getKanjiFaceText(item.kanji, face)}
-            </Text>
+            <View key={`front-${i}`} style={{ marginTop: 4 }}>
+              {renderFaceContent(face, backFontStyle(face))}
+            </View>
           ))}
           <View className="mt-6 items-center">
             <View className="h-px w-32 bg-border mb-4" />
-            <Text
-              style={backFontStyle(backFaces[0])}
-              className="text-foreground"
-              numberOfLines={backFaces[0] === "english" ? 3 : undefined}
-            >
-              {backText}
-            </Text>
+            {renderFaceContent(backFaces[0], backFontStyle(backFaces[0]), {
+              numberOfLines: backFaces[0] === "english" ? 3 : undefined,
+            })}
             {backFaces.slice(1).map((face, i) => (
-              <Text
-                key={`back-${i}`}
-                style={{ ...backFontStyle(face), marginTop: 4 }}
-                className="text-foreground"
-                numberOfLines={face === "english" ? 3 : undefined}
-              >
-                {item.kind === "entry"
-                  ? getFaceText(item.entry, face)
-                  : getKanjiFaceText(item.kanji, face)}
-              </Text>
+              <View key={`back-${i}`} style={{ marginTop: 4 }}>
+                {renderFaceContent(face, backFontStyle(face), {
+                  numberOfLines: face === "english" ? 3 : undefined,
+                })}
+              </View>
             ))}
           </View>
         </View>
