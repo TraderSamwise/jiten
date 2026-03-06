@@ -269,6 +269,89 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 | `app/(tabs)/reader/_layout.tsx`   | Reader stack with automatic `SafeBackButton`          |
 | `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button    |
 
+## Web Layout and Header System
+
+On web, the app is capped at 960px content width (centered) with a full-bleed navbar backdrop behind the tab bar. This requires special handling for headers, layout dimensions, and screens that manage their own headers.
+
+### How the web backdrop works
+
+The tab bar renders at the top of the viewport via Expo Router's tab navigator. A CSS `::before` pseudo-element on `body.has-navbar` provides a full-width colored backdrop (137px tall) with a bottom border, so the gray/black bar extends edge-to-edge even though content is centered. The `has-navbar` class is toggled in `app/(tabs)/_layout.tsx` when the tab layout mounts/unmounts.
+
+The backdrop colors are centralized in `lib/navigation.ts` as `WEB_BACKDROP_COLORS` (light: `rgb(242, 242, 242)`, dark: `rgb(1, 1, 1)`) and must match `global.css`.
+
+### Three header categories
+
+**1. Stack-managed headers** (most screens) — Expo Router's default `<Stack.Screen>` headers. On web, these get `headerStyle: { backgroundColor: "transparent" }` via `webHeaderStyle` from `lib/navigation.ts`, so the CSS backdrop shows through. No per-screen code needed.
+
+**2. Custom React Nav header** (`DictionaryHeader`) — A custom header component passed to the stack navigator. Manages its own padding and backdrop color.
+
+**3. `headerShown: false` screens** (study, typing-game, connect-game, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
+
+### `CustomHeaderScreen` system (`components/CustomHeaderScreen.tsx`)
+
+Reusable components for screens with `headerShown: false`:
+
+| Export                    | Purpose                                                                                                                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useWebBackdrop(webTop?)` | Hook returning `{ webBgStyle, topPadding, insets, isDark }`. On web, computes backdrop background color and `paddingTop` (default `WEB_CUSTOM_HEADER_TOP = 7`). On native, uses safe area insets.                                            |
+| `CustomHeaderScreen`      | `forwardRef` wrapper — applies `flex-1 bg-background` + backdrop styling. Accepts `webTop`, `style`, `className`, `onTouchStart`. Use this as the outermost container for `headerShown: false` screens.                                      |
+| `HeaderPlaceholder`       | Renders an invisible spacer matching the real header height, with backdrop color and bottom border on web. Used during loading/shell states so the screen doesn't flash headerless. Props: `py` (`"py-2"` or `"py-3"`), `spacerHeight` (px). |
+| `NavigatingOverlay`       | Full-screen overlay with `HeaderPlaceholder` + centered spinner. Shown when navigating away (exit animation). Props: `visible`, `py`, `spacerHeight`, `webTop`.                                                                              |
+
+**Header height conventions:**
+
+- Games (typing, connect): `py-3` + 32px spacer (matches `py-3` + 24px icon + `p-1` padding)
+- Study/flashcards: `py-2` + 40px spacer (matches `py-2` + larger header content)
+- Reader: uses `webTop={15}` (unique larger spacing)
+
+**Adding a new `headerShown: false` screen:**
+
+```tsx
+import {
+  CustomHeaderScreen,
+  NavigatingOverlay,
+  useWebBackdrop,
+} from "@/components/CustomHeaderScreen";
+
+export default function MyScreen() {
+  const { webBgStyle } = useWebBackdrop();
+  const [navigating, setNavigating] = useState(false);
+
+  return (
+    <CustomHeaderScreen>
+      {/* Your header */}
+      <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
+        {/* header content */}
+      </View>
+      {/* Screen content */}
+      {/* ... */}
+      <NavigatingOverlay visible={navigating} />
+    </CustomHeaderScreen>
+  );
+}
+```
+
+### Container width (`lib/use-container-width.ts`)
+
+`useContainerWidth()` returns `Math.min(windowWidth, 960)` on web, raw `windowWidth` on native. Use this instead of `useWindowDimensions().width` for layout calculations (card sizes, game field dimensions, etc.) so elements don't overflow the centered content area on wide screens.
+
+### Modal width
+
+All modal dialogs (`FlashcardSettingsModal`, `StudyStatisticsModal`, `ExportListModal`, `GamesModal`) cap their content width on web:
+
+```tsx
+style={Platform.OS === "web" ? { maxWidth: 500, width: "100%", alignSelf: "center" } : undefined}
+```
+
+### Key files
+
+| File                                | Purpose                                                                          |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `global.css`                        | `body.has-navbar::before` backdrop, dark mode variant                            |
+| `lib/navigation.ts`                 | `WEB_CUSTOM_HEADER_TOP`, `WEB_BACKDROP_COLORS`, `webHeaderStyle`                 |
+| `components/CustomHeaderScreen.tsx` | `useWebBackdrop`, `CustomHeaderScreen`, `HeaderPlaceholder`, `NavigatingOverlay` |
+| `lib/use-container-width.ts`        | `useContainerWidth()` — capped width hook                                        |
+
 ## Scripts
 
 ### Dictionary Database
