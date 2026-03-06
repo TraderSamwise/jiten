@@ -5,21 +5,27 @@ import type { PitchAccent as PitchAccentType } from "@/db/types";
 
 interface PitchAccentProps {
   accent: PitchAccentType;
+  /** Font size of mora text — used to scale line thickness and drop height. Defaults to 14. */
+  fontSize?: number;
   /** Custom renderer for each mora's text. Receives (mora, moraIndex). */
   renderMora?: (mora: string, moraIndex: number) => React.ReactNode;
 }
 
-const LINE_H = 1;
-const DROP_H = 8;
+const DEFAULT_FONT = 14;
 
 /**
  * Renders pitch accent as a line diagram above kana.
- * Continuous line above text: high position = high pitch, low = low pitch.
- * Vertical risers at pitch transitions. Trailing drop for odaka words.
+ * Continuous line above text: high position = high pitch.
+ * Vertical drops at pitch transitions. Trailing drop for odaka words.
+ * All line dimensions scale proportionally with fontSize.
  */
-export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
+export function PitchAccent({ accent, fontSize = DEFAULT_FONT, renderMora }: PitchAccentProps) {
   const { reading, pitchNumber } = accent;
   const morae = splitMorae(reading);
+
+  const scale = fontSize / DEFAULT_FONT;
+  const lineH = Math.max(1, scale);
+  const dropH = Math.round(8 * scale);
 
   // Odaka: last mora is high and pitch drops after it (on particles).
   const lastHigh = morae.length > 0 && getMoraPitch(morae.length - 1, pitchNumber, morae.length);
@@ -39,14 +45,14 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
             {/* Line area — minimal height, drops overflow into text */}
             <View
               style={{
-                height: LINE_H,
-                marginBottom: -1.5,
+                height: lineH,
+                marginBottom: -lineH,
                 flexDirection: "row",
                 overflow: "visible",
               }}
             >
               {/* Horizontal line — only render for high morae */}
-              {isHigh && <View className="bg-foreground" style={{ flex: 1, height: LINE_H }} />}
+              {isHigh && <View className="bg-foreground" style={{ flex: 1, height: lineH }} />}
               {/* Vertical drop between this mora and next */}
               {drops && (
                 <View
@@ -55,8 +61,8 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
                     position: "absolute",
                     right: 0,
                     top: 0,
-                    height: DROP_H,
-                    width: LINE_H,
+                    height: dropH,
+                    width: lineH,
                   }}
                 />
               )}
@@ -68,8 +74,8 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
                     position: "absolute",
                     right: 0,
                     top: 0,
-                    height: DROP_H,
-                    width: LINE_H,
+                    height: dropH,
+                    width: lineH,
                   }}
                 />
               )}
@@ -85,7 +91,14 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
           </View>
         );
       })}
-      <Text className="ml-1 text-xs text-muted-foreground">[{pitchNumber}]</Text>
+      <View style={{ justifyContent: "flex-end" }}>
+        <Text
+          style={{ marginLeft: 2 * scale, fontSize: Math.min(Math.round(10 * scale), 16) }}
+          className="text-muted-foreground"
+        >
+          [{pitchNumber}]
+        </Text>
+      </View>
     </View>
   );
 }

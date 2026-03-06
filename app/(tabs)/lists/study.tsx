@@ -453,6 +453,7 @@ const StudyCardView = React.memo(
     },
     ref,
   ) {
+    const { width: screenWidth } = useWindowDimensions();
     // Per-card flip animation
     const flipProgress = useSharedValue(initialFlipped ? 1 : 0);
     const [flipped, setFlipped] = useState(initialFlipped);
@@ -538,14 +539,19 @@ const StudyCardView = React.memo(
         item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face);
 
       if (face === "kana" && item.kind === "entry" && item.entry.pitchAccents.length > 0) {
+        const accent = item.entry.pitchAccents[0];
+        const moraCount = splitMorae(accent.reading).length;
+        // Cap font size so all morae fit: card text area ≈ 45% of screen width
+        const availableWidth = screenWidth * 0.45;
+        const maxFontForFit = Math.floor(availableWidth / moraCount);
+        const fontSize = Math.min(style.fontSize, maxFontForFit);
+        const lineHeight = Math.round(fontSize * 1.3);
         return (
           <PitchAccent
-            accent={item.entry.pitchAccents[0]}
+            accent={accent}
+            fontSize={fontSize}
             renderMora={(mora) => (
-              <Text
-                style={{ fontSize: style.fontSize, lineHeight: style.lineHeight }}
-                className="text-foreground"
-              >
+              <Text style={{ fontSize, lineHeight }} className="text-foreground">
                 {mora}
               </Text>
             )}
