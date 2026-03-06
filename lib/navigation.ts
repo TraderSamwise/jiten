@@ -10,6 +10,9 @@ export const webHeaderStyle =
 /** className fragment: includes bg-background on native, omits it on web for transparent headers */
 export const headerBgClass = Platform.OS === "web" ? "" : "bg-background";
 
+/** Top padding for screens with headerShown: false that render their own header on web */
+export const WEB_CUSTOM_HEADER_TOP = 7;
+
 /** Navigator backdrop colors — matches global.css body.has-navbar::before */
 export const WEB_BACKDROP_COLORS = {
   light: "rgb(242, 242, 242)",
