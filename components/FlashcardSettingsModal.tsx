@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Modal, Pressable, View } from "react-native";
+import { useAtom } from "jotai";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore } from "@/stores/lists";
+import {
+  flashcardFlipAnimationAtom,
+  flashcardSwipeAnimationAtom,
+  flashcardButtonAnimationAtom,
+} from "@/stores/settings";
 import { alert } from "@/lib/confirm";
 import { requestVoicePermissions } from "@/lib/voice-recognition";
 import type { CardFace, FlashcardMode } from "@/db/types";
@@ -38,8 +44,9 @@ export function FlashcardSettingsModal({
   const [confusionDetection, setConfusionDetection] = useState(true);
   const [voiceMode, setVoiceMode] = useState(false);
   const [typingMode, setTypingMode] = useState(false);
-  const [flipAnimation, setFlipAnimation] = useState(true);
-  const [swipeAnimation, setSwipeAnimation] = useState(true);
+  const [flipAnimation, setFlipAnimation] = useAtom(flashcardFlipAnimationAtom);
+  const [swipeAnimation, setSwipeAnimation] = useAtom(flashcardSwipeAnimationAtom);
+  const [buttonAnimation, setButtonAnimation] = useAtom(flashcardButtonAnimationAtom);
 
   const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
 
@@ -65,8 +72,6 @@ export function FlashcardSettingsModal({
       setConfusionDetection(list.confusionDetection !== false);
       setVoiceMode(list.voiceMode ?? false);
       setTypingMode(list.typingMode ?? false);
-      setFlipAnimation(!list.disableFlipAnimation);
-      setSwipeAnimation(!list.disableSwipeAnimation);
     }
   }, [visible, list]);
 
@@ -84,7 +89,7 @@ export function FlashcardSettingsModal({
     if (!userDb) return;
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, disable_flip_animation = ?, disable_swipe_animation = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -93,8 +98,6 @@ export function FlashcardSettingsModal({
         confusionDetection ? 1 : 0,
         voiceMode ? 1 : 0,
         typingMode ? 1 : 0,
-        flipAnimation ? 0 : 1,
-        swipeAnimation ? 0 : 1,
         now,
         listId,
       ],
@@ -108,8 +111,6 @@ export function FlashcardSettingsModal({
       confusionDetection,
       voiceMode,
       typingMode,
-      disableFlipAnimation: !flipAnimation,
-      disableSwipeAnimation: !swipeAnimation,
       updatedAt: now,
     });
     if (onStartStudy) {
@@ -414,6 +415,39 @@ export function FlashcardSettingsModal({
                 <Text
                   className={`text-sm font-medium ${
                     swipeAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  On
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Button animation */}
+            <Text className="text-sm font-medium text-muted-foreground mb-2">Button animation</Text>
+            <View className="flex-row gap-2 mb-5">
+              <Pressable
+                onPress={() => setButtonAnimation(false)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  !buttonAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    !buttonAnimation ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Off
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setButtonAnimation(true)}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  buttonAnimation ? "border-primary bg-primary/10" : "border-border"
+                }`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    buttonAnimation ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
                   On
