@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, Platform, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { ChevronRight } from "@/lib/icons";
@@ -43,7 +43,14 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
         onPress={loading ? undefined : onClose}
       >
         <Pressable onPress={() => {}}>
-          <View className="rounded-2xl border border-border bg-background p-5">
+          <View
+            className="rounded-2xl border border-border bg-background p-5"
+            style={
+              Platform.OS === "web"
+                ? { maxWidth: 500, width: "100%", alignSelf: "center" }
+                : undefined
+            }
+          >
             <Text className="text-lg font-semibold text-foreground mb-4">Games</Text>
 
             <View className="gap-3">

@@ -6,11 +6,12 @@ import {
   Platform,
   Modal,
   TextInput,
-  useWindowDimensions,
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
+import { useSafeGoBack, useTabRouter, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useContainerWidth } from "@/lib/use-container-width";
+import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -471,7 +472,7 @@ const StudyCardView = React.memo(
     },
     ref,
   ) {
-    const { width: screenWidth } = useWindowDimensions();
+    const screenWidth = useContainerWidth();
     // Per-card flip animation
     const flipProgress = useSharedValue(initialFlipped ? 1 : 0);
     const [flipped, setFlipped] = useState(initialFlipped);
@@ -891,6 +892,13 @@ function StudyScreen() {
   const tabRouter = useTabRouter();
   const navigateBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
+  const clampedWidth = useContainerWidth();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const webBgStyle =
+    Platform.OS === "web"
+      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
+      : undefined;
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
@@ -960,7 +968,6 @@ function StudyScreen() {
   // Carousel animation shared values
   const translateX = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
-  const { width: screenWidth } = useWindowDimensions();
 
   // Voice recognition: enabled when voice mode is on, card is pending, not browsing history
   const voiceEnabled =
@@ -1943,7 +1950,7 @@ function StudyScreen() {
   }
 
   // --- Carousel measurements ---
-  const containerWidth = screenWidth - 32; // px-4 = 16px each side
+  const containerWidth = clampedWidth - 32; // px-4 = 16px each side
   const cardWidth = containerWidth - 2 * CARD_PEEK - 2 * CARD_GAP;
   const slideDistance = cardWidth + CARD_GAP;
   const slideConfig = { duration: SLIDE_DURATION, easing: Easing.out(Easing.ease) };
@@ -2143,9 +2150,12 @@ function StudyScreen() {
       : 0;
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <View
+      className="flex-1 bg-background"
+      style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
+    >
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-2">
+      <View className="flex-row items-center justify-between px-4 py-2" style={webBgStyle}>
         <Pressable
           onPress={() => {
             setNavigating(true);
@@ -2297,7 +2307,14 @@ function StudyScreen() {
         onRequestClose={() => setMenuVisible(false)}
       >
         <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setMenuVisible(false)}>
-          <View className="mx-4 mb-8 rounded-2xl border border-border bg-background overflow-hidden">
+          <View
+            className="mx-4 mb-8 rounded-2xl border border-border bg-background overflow-hidden"
+            style={
+              Platform.OS === "web"
+                ? { maxWidth: 500, width: "100%", alignSelf: "center" }
+                : undefined
+            }
+          >
             <Pressable
               onPress={() => {
                 setMenuVisible(false);
@@ -2337,7 +2354,14 @@ function StudyScreen() {
             onPress={() => setConfusedWordsVisible(false)}
           />
           <View className="flex-1 justify-center px-6">
-            <View className="rounded-2xl border border-border bg-background p-5">
+            <View
+              className="rounded-2xl border border-border bg-background p-5"
+              style={
+                Platform.OS === "web"
+                  ? { maxWidth: 500, width: "100%", alignSelf: "center" }
+                  : undefined
+              }
+            >
               <Text className="text-lg font-semibold text-foreground mb-1">
                 Similar words in your list
               </Text>

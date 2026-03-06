@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, Platform, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useUserDb } from "@/db/user-provider";
@@ -39,7 +39,14 @@ export function ExportListModal({ visible, onClose, listId, listName }: ExportLi
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={onClose}>
         <Pressable onPress={() => {}}>
-          <View className="rounded-2xl border border-border bg-background p-5">
+          <View
+            className="rounded-2xl border border-border bg-background p-5"
+            style={
+              Platform.OS === "web"
+                ? { maxWidth: 500, width: "100%", alignSelf: "center" }
+                : undefined
+            }
+          >
             <Text className="text-lg font-semibold text-foreground mb-1">Export List</Text>
             <Text className="text-sm text-muted-foreground mb-4">{listName}</Text>
 

@@ -9,7 +9,7 @@ import {
   GestureResponderEvent,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useSafeGoBack } from "@/lib/navigation";
+import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
@@ -823,7 +823,7 @@ export default function BookReaderScreen() {
 
   const webBgStyle =
     Platform.OS === "web"
-      ? { backgroundColor: isDark ? "rgb(1, 1, 1)" : "rgb(242, 242, 242)" }
+      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
       : undefined;
 
   return (

@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, View, Pressable, useWindowDimensions, AppState } from "react-native";
+import {
+  ActivityIndicator,
+  View,
+  Pressable,
+  Platform,
+  useWindowDimensions,
+  AppState,
+} from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
-import { useSafeGoBack } from "@/lib/navigation";
+import { useSafeGoBack, WEB_BACKDROP_COLORS } from "@/lib/navigation";
+import { useContainerWidth } from "@/lib/use-container-width";
+import { useColorScheme } from "nativewind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useAtom } from "jotai";
@@ -36,6 +45,13 @@ export default function ConnectGameScreen() {
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const containerWidth = useContainerWidth();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const webBgStyle =
+    Platform.OS === "web"
+      ? { backgroundColor: isDark ? WEB_BACKDROP_COLORS.dark : WEB_BACKDROP_COLORS.light }
+      : undefined;
   const { dictDb } = useDatabase();
   const userDb = useUserDb();
 
@@ -226,7 +242,7 @@ export default function ConnectGameScreen() {
     const entries = await getEntries(dictDb, entryIds);
 
     // Compute field dimensions (full screen minus header and safe area)
-    const fieldWidth = screenWidth;
+    const fieldWidth = containerWidth;
     const fieldHeight = screenHeight - insets.top - 52 - 60 - insets.bottom; // header + HUD + bottom
 
     const mode = gameMode as GameMode;
@@ -339,9 +355,12 @@ export default function ConnectGameScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      <View
+        className="flex-1 bg-background"
+        style={[Platform.OS === "web" ? { paddingTop: 7 } : { paddingTop: insets.top }, webBgStyle]}
+      >
         {/* Header */}
-        <View className="flex-row items-center px-4 py-3 border-b border-border">
+        <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
           <Pressable onPress={handleClose} className="p-1 mr-3">
             <X size={24} className="text-foreground" />
           </Pressable>
