@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Pressable, InteractionManager, ActivityIndicator } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,12 @@ export default function ListDetailScreen() {
     });
     return () => task.cancel();
   }, [userDb, dictDb, id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setStudyLoading(false);
+    }, []),
+  );
 
   useEffect(() => {
     if (items.length > 0 && list) {
@@ -273,12 +279,14 @@ export default function ListDetailScreen() {
     [userDb, id, list?.isDefault],
   );
 
+  const [studyLoading, setStudyLoading] = useState(false);
   function handleStudy() {
     if (!list?.configured) {
       setSetupMode(true);
       setSettingsVisible(true);
     } else {
-      router.push(`/lists/study?listId=${id}`);
+      setStudyLoading(true);
+      setTimeout(() => router.push(`/lists/study?listId=${id}`), 100);
     }
   }
 
@@ -327,14 +335,20 @@ export default function ListDetailScreen() {
         <View className="flex-row gap-2">
           <Button
             className="flex-1"
-            label={studyLabel}
             onPress={handleStudy}
             disabled={
-              list?.flashcardMode === "srs"
+              studyLoading ||
+              (list?.flashcardMode === "srs"
                 ? reviewCount === 0 && newCount === 0
-                : items.length === 0
+                : items.length === 0)
             }
-          />
+            style={studyLoading ? { opacity: 1 } : undefined}
+          >
+            <Text className="font-medium text-base text-primary-foreground">{studyLabel}</Text>
+            {studyLoading && (
+              <ActivityIndicator size="small" className="text-primary-foreground ml-2" />
+            )}
+          </Button>
           <Button
             className="flex-1"
             variant="outline"
