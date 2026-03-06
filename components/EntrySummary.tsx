@@ -50,15 +50,23 @@ export const EntrySummary = React.memo(function EntrySummary({
   return (
     <View className={bookmarkClass}>
       <View className="flex-row items-center gap-3">
-        {primaryKanji && <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>}
-        {accents.length > 0 ? (
-          <View className="flex-row flex-wrap items-baseline gap-2">
-            {accents.map((pa, i) => (
-              <PitchAccent key={i} accent={pa} />
-            ))}
-          </View>
+        {primaryKanji ? (
+          <>
+            <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
+            {accents.length > 0 ? (
+              <View className="flex-row flex-wrap items-baseline gap-2">
+                {accents.map((pa, i) => (
+                  <PitchAccent key={i} accent={pa} />
+                ))}
+              </View>
+            ) : (
+              <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+            )}
+          </>
+        ) : accents.length > 0 ? (
+          accents.map((pa, i) => <PitchAccent key={i} accent={pa} fontSize={20} />)
         ) : (
-          <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+          <Text className="text-2xl font-bold text-foreground">{primaryKana}</Text>
         )}
         {entry.common && <Badge variant="common" label="common" />}
         {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
