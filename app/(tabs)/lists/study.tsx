@@ -449,7 +449,7 @@ const StudyCardView = React.memo(
       const opacity = flipProgress.value < 0.5 ? 1 : 0;
       return {
         backfaceVisibility: "hidden" as const,
-        transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
+        transform: [{ perspective: 1000 }, { rotateY: `${rotateX}deg` }],
         opacity,
       };
     });
@@ -459,7 +459,7 @@ const StudyCardView = React.memo(
       const opacity = flipProgress.value >= 0.5 ? 1 : 0;
       return {
         backfaceVisibility: "hidden" as const,
-        transform: [{ perspective: 1000 }, { rotateX: `${rotateX}deg` }],
+        transform: [{ perspective: 1000 }, { rotateY: `${rotateX}deg` }],
         opacity,
         position: "absolute" as const,
         top: 0,
