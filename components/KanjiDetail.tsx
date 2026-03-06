@@ -36,6 +36,7 @@ import {
 import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
 import { StrokeOrderDiagram } from "@/components/StrokeOrderDiagram";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 import type { KanjiCharacter, SimilarKanji, DictEntry } from "@/db/types";
 
 interface KanjiDetailProps {
@@ -360,11 +361,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {kanji.meanings.length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Meanings</Text>
-          {kanji.meanings.map((m, i) => (
-            <Text key={i} className="text-base text-foreground">
-              {m}
-            </Text>
-          ))}
+          <Text className="text-base text-foreground">{kanji.meanings.join(", ")}</Text>
         </Card>
       )}
 
@@ -372,40 +369,42 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {radicals.filter((r) => r !== literal).length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
-          <View className="flex-row flex-wrap gap-2">
-            {radicals
-              .filter((r) => r !== literal)
-              .map((r) => {
-                const ck = componentKanji.get(r);
-                const userKw = componentUserKeywords.get(r);
-                const meaning = userKw ?? ck?.heisigKeyword ?? ck?.meanings[0];
-                const meaningColor = userKw
-                  ? "text-xs text-blue-500 font-medium"
-                  : ck?.heisigKeyword
-                    ? "text-xs text-foreground font-medium"
-                    : "text-xs text-muted-foreground";
-                return (
-                  <Pressable
-                    key={r}
-                    onPress={() => {
-                      if (ck) {
-                        tabRouter.pushKanji(r);
-                      } else {
-                        handleRadicalPress(r);
-                      }
-                    }}
-                    className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
-                  >
-                    <Text className="text-xl font-bold text-foreground">{r}</Text>
-                    {meaning && (
-                      <Text className={meaningColor} numberOfLines={1}>
-                        {meaning}
-                      </Text>
-                    )}
-                  </Pressable>
-                );
-              })}
-          </View>
+          <CollapsibleSection collapsedHeight={75} fadeHeight={30}>
+            <View className="flex-row flex-wrap gap-2">
+              {radicals
+                .filter((r) => r !== literal)
+                .map((r) => {
+                  const ck = componentKanji.get(r);
+                  const userKw = componentUserKeywords.get(r);
+                  const meaning = userKw ?? ck?.heisigKeyword ?? ck?.meanings[0];
+                  const meaningColor = userKw
+                    ? "text-xs text-blue-500 font-medium"
+                    : ck?.heisigKeyword
+                      ? "text-xs text-foreground font-medium"
+                      : "text-xs text-muted-foreground";
+                  return (
+                    <Pressable
+                      key={r}
+                      onPress={() => {
+                        if (ck) {
+                          tabRouter.pushKanji(r);
+                        } else {
+                          handleRadicalPress(r);
+                        }
+                      }}
+                      className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                    >
+                      <Text className="text-xl font-bold text-foreground">{r}</Text>
+                      {meaning && (
+                        <Text className={meaningColor} numberOfLines={1}>
+                          {meaning}
+                        </Text>
+                      )}
+                    </Pressable>
+                  );
+                })}
+            </View>
+          </CollapsibleSection>
         </Card>
       )}
 
@@ -413,18 +412,22 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {similar.length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Visually</Text>
-          <View className="flex-row flex-wrap gap-2">
-            {similar.map((s) => (
-              <Pressable
-                key={s.literal}
-                onPress={() => handleSimilarPress(s.literal)}
-                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
-              >
-                <Text className="text-xl font-bold text-foreground">{s.literal}</Text>
-                <Text className="text-xs text-muted-foreground">{Math.round(s.score * 100)}%</Text>
-              </Pressable>
-            ))}
-          </View>
+          <CollapsibleSection collapsedHeight={75} fadeHeight={30}>
+            <View className="flex-row flex-wrap gap-2">
+              {similar.map((s) => (
+                <Pressable
+                  key={s.literal}
+                  onPress={() => handleSimilarPress(s.literal)}
+                  className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                >
+                  <Text className="text-xl font-bold text-foreground">{s.literal}</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {Math.round(s.score * 100)}%
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </CollapsibleSection>
         </Card>
       )}
 
@@ -432,18 +435,20 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {similarMeaning.length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Meaning</Text>
-          <View className="flex-row flex-wrap gap-2">
-            {similarMeaning.map((k) => (
-              <Pressable
-                key={k.literal}
-                onPress={() => handleSimilarPress(k.literal)}
-                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
-              >
-                <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
-                <Text className="text-xs text-muted-foreground">{k.meanings[0] ?? ""}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <CollapsibleSection collapsedHeight={75} fadeHeight={30}>
+            <View className="flex-row flex-wrap gap-2">
+              {similarMeaning.map((k) => (
+                <Pressable
+                  key={k.literal}
+                  onPress={() => handleSimilarPress(k.literal)}
+                  className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                >
+                  <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
+                  <Text className="text-xs text-muted-foreground">{k.meanings[0] ?? ""}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </CollapsibleSection>
         </Card>
       )}
 
@@ -453,20 +458,22 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           <Text className="text-sm font-medium text-muted-foreground mb-2">
             Used as Component in
           </Text>
-          <View className="flex-row flex-wrap gap-2">
-            {usedIn.map((k) => (
-              <Pressable
-                key={k.literal}
-                onPress={() => handleSimilarPress(k.literal)}
-                className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
-              >
-                <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
-                <Text className="text-xs text-muted-foreground">
-                  {k.heisigKeyword ?? k.meanings[0] ?? ""}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <CollapsibleSection collapsedHeight={75} fadeHeight={30}>
+            <View className="flex-row flex-wrap gap-2">
+              {usedIn.map((k) => (
+                <Pressable
+                  key={k.literal}
+                  onPress={() => handleSimilarPress(k.literal)}
+                  className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                >
+                  <Text className="text-xl font-bold text-foreground">{k.literal}</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {k.heisigKeyword ?? k.meanings[0] ?? ""}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </CollapsibleSection>
         </Card>
       )}
 
