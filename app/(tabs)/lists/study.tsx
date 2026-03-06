@@ -2161,7 +2161,7 @@ function StudyScreen() {
 
       {/* Carousel -- sliding window rendered, scroll via translateX */}
       <GestureDetector gesture={composedGesture}>
-        <View className="flex-1 pt-4" style={{ overflow: "hidden", paddingHorizontal: 16 }}>
+        <View className="pt-4" style={{ overflow: "hidden", paddingHorizontal: 16, height: 400 }}>
           <Animated.View
             style={[
               rowStyle,
@@ -2169,7 +2169,6 @@ function StudyScreen() {
                 marginLeft: CARD_PEEK + CARD_GAP,
                 width: cards.length * cardWidth + Math.max(0, cards.length - 1) * CARD_GAP,
                 flex: 1,
-                maxHeight: 384,
               },
             ]}
           >
@@ -2250,11 +2249,11 @@ function StudyScreen() {
 
       {/* Rating buttons -- always visible */}
       {!sessionDone && (
-        <View className="flex-row gap-3 px-4 mt-4 mb-8">
+        <View className="flex-row gap-3 px-4 mt-3">
           <Pressable
             ref={failButtonRef}
             onPress={() => handleFail()}
-            className={`flex-1 items-center justify-center rounded-lg h-11 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
+            className={`flex-1 items-center justify-center rounded-lg h-12 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
           >
             <Text className="font-medium text-white">
               {preSelectedRating === "fail" ? "Fail \u21B5" : "Fail"}
@@ -2265,7 +2264,7 @@ function StudyScreen() {
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
             onPress={handlePassPress}
-            className={`flex-1 items-center justify-center rounded-lg h-11 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
+            className={`flex-1 items-center justify-center rounded-lg h-12 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
           >
             <Text className="font-medium text-white">
               {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
