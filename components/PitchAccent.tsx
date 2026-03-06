@@ -9,8 +9,8 @@ interface PitchAccentProps {
   renderMora?: (mora: string, moraIndex: number) => React.ReactNode;
 }
 
-const LINE_H = 1.5;
-const STEP = 8;
+const LINE_H = 1;
+const DROP_H = 8;
 
 /**
  * Renders pitch accent as a line diagram above kana.
@@ -31,31 +31,36 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
         const isHigh = getMoraPitch(i, pitchNumber, morae.length);
         const nextHigh =
           i < morae.length - 1 ? getMoraPitch(i + 1, pitchNumber, morae.length) : null;
-        const top = isHigh ? 0 : STEP;
-        const risesOrDrops = nextHigh !== null && nextHigh !== isHigh;
-        // For the last mora of an odaka word, show a trailing drop
+        const drops = isHigh && nextHigh === false;
         const trailingDrop = i === morae.length - 1 && isOdaka;
 
         return (
-          <View key={i}>
-            {/* Line area */}
-            <View style={{ height: STEP + LINE_H, flexDirection: "row" }}>
-              {/* Horizontal line */}
-              <View className="bg-foreground" style={{ flex: 1, height: LINE_H, marginTop: top }} />
-              {/* Vertical riser between this mora and next */}
-              {risesOrDrops && (
+          <View key={i} style={{ overflow: "visible" }}>
+            {/* Line area — minimal height, drops overflow into text */}
+            <View
+              style={{
+                height: LINE_H,
+                marginBottom: -1.5,
+                flexDirection: "row",
+                overflow: "visible",
+              }}
+            >
+              {/* Horizontal line — only render for high morae */}
+              {isHigh && <View className="bg-foreground" style={{ flex: 1, height: LINE_H }} />}
+              {/* Vertical drop between this mora and next */}
+              {drops && (
                 <View
                   className="bg-foreground"
                   style={{
                     position: "absolute",
                     right: 0,
-                    top: Math.min(top, nextHigh ? 0 : STEP),
-                    height: STEP + LINE_H,
+                    top: 0,
+                    height: DROP_H,
                     width: LINE_H,
                   }}
                 />
               )}
-              {/* Trailing drop for odaka: vertical line down from right edge */}
+              {/* Trailing drop for odaka */}
               {trailingDrop && (
                 <View
                   className="bg-foreground"
@@ -63,7 +68,7 @@ export function PitchAccent({ accent, renderMora }: PitchAccentProps) {
                     position: "absolute",
                     right: 0,
                     top: 0,
-                    height: STEP + LINE_H,
+                    height: DROP_H,
                     width: LINE_H,
                   }}
                 />
