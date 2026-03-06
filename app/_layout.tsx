@@ -80,20 +80,29 @@ export default function RootLayout() {
   // something to go back to, then re-push whenever the guard is hit.
   useEffect(() => {
     if (Platform.OS !== "web") return;
-    // Wait for expo-router to finish initializing its history
-    const timer = setTimeout(() => {
-      // Push a duplicate entry — browser back hits this instead of exiting
+    // Poll for expo-router's history state (it sets an `id` property).
+    // Once present, push a duplicate guard entry so browser back doesn't exit.
+    let cancelled = false;
+    const pushGuard = () => {
       window.history.pushState(window.history.state, "", window.location.href);
-    }, 500);
+    };
+    const check = () => {
+      if (cancelled) return;
+      if (window.history.state?.id) {
+        pushGuard();
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
     const handler = (e: PopStateEvent) => {
       if (!e.state?.id) {
-        // Hit an entry without expo-router state — re-push to stay in the app
-        window.history.pushState(window.history.state, "", window.location.href);
+        pushGuard();
       }
     };
     window.addEventListener("popstate", handler);
     return () => {
-      clearTimeout(timer);
+      cancelled = true;
       window.removeEventListener("popstate", handler);
     };
   }, []);
