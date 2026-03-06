@@ -515,7 +515,10 @@ export default function ConnectGameScreen() {
           />
         )}
         {navigating && (
-          <View className="absolute inset-0 z-50 bg-background items-center justify-center">
+          <View
+            className="absolute inset-0 z-50 bg-background items-center justify-center"
+            style={webBgStyle}
+          >
             <ActivityIndicator size="large" />
           </View>
         )}
