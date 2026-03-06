@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Pressable, Platform } from "react-native";
-import { useSafeGoBack } from "@/lib/navigation";
+import { useSafeGoBack, headerBgClass } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Input } from "@/components/ui/input";
@@ -66,7 +66,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   return (
     <View
       style={{ paddingTop: Platform.OS === "web" ? 3 : insets.top }}
-      className={`border-b border-border ${Platform.OS === "web" ? "" : "bg-background"}`}
+      className={`border-b border-border ${headerBgClass}`}
     >
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
         {back && (
