@@ -73,7 +73,12 @@ export const EntrySummary = React.memo(function EntrySummary({
       </View>
       {(pos || primaryGloss) && (
         <Text className="mt-1 text-sm text-foreground" numberOfLines={2}>
-          {pos && <Text className="text-xs text-muted-foreground italic">{pos} </Text>}
+          {pos && (
+            <Text className="text-xs text-muted-foreground italic">
+              {pos}
+              {"   "}
+            </Text>
+          )}
           {primaryGloss}
         </Text>
       )}
