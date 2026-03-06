@@ -633,32 +633,36 @@ const StudyCardView = React.memo(
       );
     }
 
-    const statsOverlay = stats ? (
-      <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
-        <Text className="text-xs text-muted-foreground">{stats}</Text>
-      </View>
-    ) : null;
-
-    const checksOverlay = (
-      <View
-        style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-        className="flex-row items-center gap-1"
-      >
-        {Array.from({ length: checkCount }, (_, ci) => (
-          <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
-        ))}
-        <Pressable onPress={onInfoPress} hitSlop={8} style={{ marginLeft: 8 }}>
-          <Info size={18} className="text-muted-foreground" />
-        </Pressable>
-      </View>
-    );
+    function renderOverlays() {
+      return (
+        <>
+          {stats && (
+            <View style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}>
+              <Text className="text-xs text-muted-foreground">{stats}</Text>
+            </View>
+          )}
+          <View
+            style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
+            className="flex-row items-center gap-1"
+          >
+            {Array.from({ length: checkCount }, (_, ci) => (
+              <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
+            ))}
+            <GestureDetector gesture={Gesture.Tap().onEnd(() => runOnJS(onInfoPress)())}>
+              <View style={{ marginLeft: 8, padding: 8, margin: -8 }}>
+                <Info size={18} className="text-muted-foreground" />
+              </View>
+            </GestureDetector>
+          </View>
+        </>
+      );
+    }
 
     return (
       <View style={{ flex: 1, position: "relative" }}>
         <Animated.View style={[frontFaceStyle, { flex: 1 }]}>
           <Card className="flex-1 items-center justify-center" style={{ overflow: "hidden" }}>
-            {statsOverlay}
-            {checksOverlay}
+            {renderOverlays()}
             {renderFront()}
           </Card>
         </Animated.View>
@@ -669,8 +673,7 @@ const StudyCardView = React.memo(
             className="flex-1 items-center justify-center"
             style={{ overflow: "hidden", padding: 16 }}
           >
-            {statsOverlay}
-            {checksOverlay}
+            {renderOverlays()}
             {renderBack()}
           </Card>
         </Animated.View>
