@@ -6,7 +6,7 @@ import { Text } from "./text";
 const Card = React.forwardRef<View, ViewProps>(({ className, ...props }, ref) => (
   <View
     ref={ref}
-    className={cn("rounded-xl border border-border bg-card p-4", className)}
+    className={cn("rounded-xl border border-border bg-card p-3", className)}
     {...props}
   />
 ));
@@ -18,7 +18,7 @@ const PressableCard = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Pressable
     ref={ref}
-    className={cn("rounded-xl border border-border bg-card p-4 active:opacity-80", className)}
+    className={cn("rounded-xl border border-border bg-card p-3 active:opacity-80", className)}
     {...props}
   />
 ));
