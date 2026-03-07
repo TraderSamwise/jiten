@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useCallback, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useUserDb } from "./user-provider";
+import type { WrappedUserDb } from "./user-db";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
 import { getTursoToken } from "@/lib/turso-token";
@@ -8,6 +9,13 @@ import { env } from "@/lib/env";
 import { sync, isNetworkError, type SyncResult } from "./sync-engine";
 import { resetLocalUserData, hasLocalData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { useListsStore } from "@/stores/lists";
+
+/** Reload all in-memory stores from the database after sync or data reset. */
+function reloadStores(userDb: WrappedUserDb) {
+  reloadStores(userDb);
+  useListsStore.getState().load(userDb);
+}
 import { getLastUser, setLastUser } from "@/lib/last-user";
 import type { Client } from "@libsql/client/web";
 
@@ -170,7 +178,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (proceed && userDb) {
         await resetLocalUserData(userDb);
         await setLastUser(userId);
-        useBookmarkStore.getState().load(userDb);
+        reloadStores(userDb);
         setNeedsReconciliation(false);
         setReconciled(true);
       } else {
@@ -187,7 +195,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (choice === "use-cloud") {
         // Wipe local, pull from cloud
         await resetLocalUserData(userDb);
-        useBookmarkStore.getState().load(userDb);
+        reloadStores(userDb);
       } else if (choice === "use-local") {
         // Reset sync state so everything pushes fresh
         await userDb.runAsync("DELETE FROM sync_meta");
@@ -266,7 +274,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           resetInterval();
           // Reload in-memory stores if data was pulled from remote
           if (result.pulled > 0) {
-            useBookmarkStore.getState().load(userDb);
+            reloadStores(userDb);
           }
         } else {
           // Classify error: network errors are silent, others show banner

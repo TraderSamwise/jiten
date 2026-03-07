@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { ChevronLeft } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
+import { useSync } from "@/db/sync-provider";
 import { getEntries } from "@/db/search";
 import { useListsStore } from "@/stores/lists";
 import { useTabRouter, useSafeGoBack } from "@/lib/navigation";
@@ -88,6 +89,7 @@ export default function StatsScreen() {
   const { webBgStyle, insets } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
+  const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const dayResetHour = useAtomValue(dayResetHourAtom);
 
@@ -117,7 +119,7 @@ export default function StatsScreen() {
 
   useEffect(() => {
     loadAllData();
-  }, [userDb, dictDb, scope, listId, dayResetHour]);
+  }, [userDb, dictDb, scope, listId, dayResetHour, lastSyncAt]);
 
   useEffect(() => {
     if (selectedDay) loadDayDetail(selectedDay);

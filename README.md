@@ -666,6 +666,59 @@ A slim progress bar + label displayed above the tab bar (native) or below the na
 
 Progress animates smoothly — moves 1% per 30ms tick toward the target, with snap-ahead logic if the target jumps more than 30%.
 
+### Sync data reactivity
+
+After sync pulls remote data, the UI needs to reflect the changes. Three patterns are used, each for different situations:
+
+#### 1. Zustand store reload (`reloadStores()`)
+
+**When to use:** For data shown on multiple screens simultaneously (bookmarks, list index).
+
+After any successful pull, `sync-provider.tsx` calls `reloadStores(userDb)` which reloads all registered Zustand stores. Components subscribed to those stores re-render automatically.
+
+Current stores with `.load()`:
+
+- `useBookmarkStore` — bookmark icons across all screens
+- `useListsStore` — list index (names, entry counts, SRS progress)
+
+**To add a new store:** Add a `.load(userDb)` method to the store, then add the call to `reloadStores()` in `sync-provider.tsx`.
+
+#### 2. `lastSyncAt` dependency (`useSync().lastSyncAt`)
+
+**When to use:** For screens that load data into local `useState` via `useEffect`. Adding `lastSyncAt` to the effect's dependency array triggers a reload when sync completes.
+
+```ts
+const { lastSyncAt } = useSync();
+useEffect(() => {
+  loadData();
+}, [userDb, lastSyncAt]);
+```
+
+Screens using this pattern:
+
+- `lists/[id].tsx` — list detail (entries + SRS counts)
+- `lists/stats.tsx` — review statistics
+- `lists/marked-for-review.tsx` — marked entries
+- `reader/index.tsx` — book library
+- `DueCardsSection.tsx` — SRS due card counts
+
+#### 3. Load-on-open (no sync watcher needed)
+
+**When to use:** For screens/components that always load fresh data when opened.
+
+- `BookmarkPopover` — reloads every time the popover opens
+- `lists/study.tsx` — loads cards fresh per study session
+- Game screens — load word sets fresh per game session
+
+#### When to use which
+
+| Scenario                                               | Pattern                      |
+| ------------------------------------------------------ | ---------------------------- |
+| Data shown across many screens (bookmarks, list names) | Zustand store with `.load()` |
+| Screen with local `useState` + `useEffect`             | Add `lastSyncAt` to deps     |
+| Modal/popover that loads fresh on every open           | No sync watcher needed       |
+| Session screen (study, games) that loads once          | No sync watcher needed       |
+
 ### Data deletion (`components/DeleteDataModal.tsx`)
 
 Users can selectively delete data by category from Settings:

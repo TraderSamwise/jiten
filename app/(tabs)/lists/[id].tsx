@@ -20,6 +20,7 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow, type ListScrollCache } from "@/stores/lists";
 import { ExportListModal } from "@/components/ExportListModal";
 import { softDelete } from "@/db/sync-helpers";
+import { useSync } from "@/db/sync-provider";
 import { listItemKey } from "@/db/types";
 import type { ListItem, KanjiCharacter, DictEntry } from "@/db/types";
 
@@ -79,6 +80,7 @@ export default function ListDetailScreen() {
   const [reviewCount, setReviewCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const flashListRef = useRef<FlashListRef<ListItem>>(null);
+  const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
   const restoredOffsetRef = useRef<number | null>(null);
 
@@ -122,7 +124,7 @@ export default function ListDetailScreen() {
       loadEntries();
     });
     return () => task.cancel();
-  }, [userDb, dictDb, id]);
+  }, [userDb, dictDb, id, lastSyncAt]);
 
   useFocusEffect(
     useCallback(() => {
