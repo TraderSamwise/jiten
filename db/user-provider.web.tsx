@@ -41,13 +41,21 @@ async function openAndMigrateUserDb(): Promise<{
   const db = await SQLite.openDatabaseAsync("user.db");
   await db.execAsync("PRAGMA journal_mode = MEMORY");
   await db.execAsync("PRAGMA temp_store = MEMORY");
+  await db.execAsync("PRAGMA foreign_keys = ON");
 
-  for (const sql of USER_DB_MIGRATIONS) {
+  // Run only pending migrations (tracked via PRAGMA user_version)
+  const vr = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
+  const currentVersion = vr?.user_version ?? 0;
+  const pending = USER_DB_MIGRATIONS.slice(currentVersion);
+  for (const sql of pending) {
     try {
       await db.execAsync(sql);
     } catch (err) {
       if (!String(err).includes("duplicate column")) throw err;
     }
+  }
+  if (pending.length > 0) {
+    await db.execAsync(`PRAGMA user_version = ${USER_DB_MIGRATIONS.length}`);
   }
 
   const wrapped: WrappedUserDb = {

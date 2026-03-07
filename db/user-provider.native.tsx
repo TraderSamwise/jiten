@@ -37,13 +37,19 @@ export function UserDatabaseProvider({
     async function init() {
       db = open({ name: "user.db" });
 
-      // Run migrations
-      for (const sql of USER_DB_MIGRATIONS) {
+      // Run only pending migrations (tracked via PRAGMA user_version)
+      const vr = await db.execute("PRAGMA user_version");
+      const currentVersion = (vr.rows?.[0] as any)?.user_version ?? 0;
+      const pending = USER_DB_MIGRATIONS.slice(currentVersion);
+      for (const sql of pending) {
         try {
           await db.execute(sql);
         } catch (err) {
           if (!String(err).includes("duplicate column")) throw err;
         }
+      }
+      if (pending.length > 0) {
+        await db.execute(`PRAGMA user_version = ${USER_DB_MIGRATIONS.length}`);
       }
 
       const wrapped = wrapUserDb(db);

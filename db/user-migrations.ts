@@ -168,4 +168,6 @@ export const USER_DB_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_list_entries_updated ON list_entries(updated_at)`,
   `CREATE INDEX IF NOT EXISTS idx_srs_cards_updated ON srs_cards(updated_at)`,
   `CREATE INDEX IF NOT EXISTS idx_books_updated ON books(updated_at)`,
+  // Clean up orphaned list_entries from non-idempotent migration re-runs (FKs off → no cascade)
+  `DELETE FROM list_entries WHERE list_id NOT IN (SELECT id FROM lists)`,
 ];

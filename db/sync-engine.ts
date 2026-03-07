@@ -216,7 +216,12 @@ async function pullAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
 // Push: local → remote (batched per table)
 // ---------------------------------------------------------------------------
 
-async function pushAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string): Promise<number> {
+async function pushAll(
+  localDb: WrappedUserDb,
+  turso: Client,
+  lastSyncAt: string,
+  onProgress?: (progress: number) => void,
+): Promise<number> {
   const allStmts: { sql: string; args: any[] }[] = [];
 
   for (const table of MUTABLE_TABLES) {
@@ -229,9 +234,14 @@ async function pushAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
       `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
       [lastSyncAt],
     );
+    console.log(`[Sync] push ${table.name}: ${rows.length} rows`);
+    // Use ON CONFLICT DO UPDATE instead of INSERT OR REPLACE to avoid
+    // DELETE+INSERT cycle which triggers FK cascade violations.
+    const updateCols = cols.filter((c) => c !== table.pk);
+    const updateSet = updateCols.map((c) => `${c}=excluded.${c}`).join(", ");
     for (const row of rows) {
       allStmts.push({
-        sql: `INSERT OR REPLACE INTO ${table.name} (${colList}) VALUES (${placeholders})`,
+        sql: `INSERT INTO ${table.name} (${colList}) VALUES (${placeholders}) ON CONFLICT(${table.pk}) DO UPDATE SET ${updateSet}`,
         args: cols.map((c) => row[c] ?? null),
       });
     }
@@ -246,6 +256,7 @@ async function pushAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
       `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
       [lastSyncAt],
     );
+    console.log(`[Sync] push ${table.name}: ${rows.length} rows`);
     for (const row of rows) {
       allStmts.push({
         sql: `INSERT OR IGNORE INTO ${table.name} (${colList}) VALUES (${placeholders})`,
@@ -256,8 +267,17 @@ async function pushAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
 
   if (allStmts.length === 0) return 0;
 
-  // Single batch request for all push statements
-  await turso.batch(allStmts, "write");
+  console.log(`[Sync] pushing ${allStmts.length} statements`);
+
+  const CHUNK_SIZE = 500;
+  const totalChunks = Math.ceil(allStmts.length / CHUNK_SIZE);
+  for (let i = 0; i < allStmts.length; i += CHUNK_SIZE) {
+    const chunk = allStmts.slice(i, i + CHUNK_SIZE);
+    await turso.batch(chunk, "write");
+    const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+    console.log(`[Sync] pushed chunk ${chunkNum}/${totalChunks} (${chunk.length} stmts)`);
+    onProgress?.(chunkNum / totalChunks);
+  }
   return allStmts.length;
 }
 
@@ -272,17 +292,21 @@ export async function sync(
 ): Promise<SyncResult> {
   try {
     onProgress?.(0);
+    const t0 = Date.now();
 
     // 1. Ensure remote schema (skips if version matches)
     const schemaChanged = await ensureRemoteSchema(localDb, turso);
-    onProgress?.(0.3);
+    console.log(`[Sync] schema: ${Date.now() - t0}ms (changed=${schemaChanged})`);
+    onProgress?.(0.05);
 
     // 2. Ensure column cache (persisted locally, fetched from remote only when needed)
     await ensureColumnCache(turso, localDb);
-    onProgress?.(0.5);
+    console.log(`[Sync] columns: ${Date.now() - t0}ms`);
+    onProgress?.(0.1);
 
     // 3. Get last sync timestamp
     const lastSyncAt = (await getSyncMeta(localDb, "last_sync_at")) ?? "1970-01-01T00:00:00.000Z";
+    console.log(`[Sync] lastSyncAt=${lastSyncAt}`);
 
     // 4. Check remote push_version — skip pull if nothing changed remotely
     let pulled = 0;
@@ -295,17 +319,23 @@ export async function sync(
         : null;
     const localVersion = await getSyncMeta(localDb, "last_seen_push_version");
     const skipPull = !schemaChanged && remoteVersion !== null && remoteVersion === localVersion;
+    console.log(
+      `[Sync] version check: ${Date.now() - t0}ms (remote=${remoteVersion}, local=${localVersion}, skipPull=${skipPull})`,
+    );
 
     if (skipPull) {
       console.log("[Sync] Remote version unchanged, skipping pull");
     } else {
       // 5. Pull (single batch request for all tables)
       pulled = await pullAll(localDb, turso, lastSyncAt);
+      console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
     }
-    onProgress?.(1);
+    onProgress?.(0.5);
 
-    // 6. Push (single batch request for all rows)
-    const pushed = await pushAll(localDb, turso, lastSyncAt);
+    // 6. Push — progress 0.5→1.0 proportional to chunks
+    const pushed = await pushAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.5 + p * 0.5));
+    onProgress?.(1);
+    console.log(`[Sync] push: ${Date.now() - t0}ms (${pushed} stmts)`);
 
     // 7. If pushed, increment remote push_version
     if (pushed > 0) {
@@ -325,7 +355,7 @@ export async function sync(
     // 8. Update last sync timestamp
     await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
 
-    console.log(`[Sync] Complete: pulled ${pulled}, pushed ${pushed}`);
+    console.log(`[Sync] Complete: ${Date.now() - t0}ms total — pulled ${pulled}, pushed ${pushed}`);
     return { ok: true, pulled, pushed };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);

@@ -22,10 +22,25 @@ export function BackgroundDownloadBanner() {
   const activeItem = backgroundStatus.find(
     (item) => item.state === "downloading" || item.state === "importing",
   );
-  const hasActivity = isSyncing || !!activeItem;
-  const targetPercent = isSyncing
-    ? Math.round(syncProgress * 100)
-    : Math.round((activeItem?.progress ?? 0) * 100);
+
+  // Show error state briefly when sync fails
+  const [showError, setShowError] = useState(false);
+  const prevSyncStatus = useRef(syncStatus);
+  useEffect(() => {
+    if (prevSyncStatus.current === "syncing" && syncStatus === "error") {
+      setShowError(true);
+      const timer = setTimeout(() => setShowError(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    prevSyncStatus.current = syncStatus;
+  }, [syncStatus]);
+
+  const hasActivity = isSyncing || showError || !!activeItem;
+  const targetPercent = showError
+    ? 100
+    : isSyncing
+      ? Math.round(syncProgress * 100)
+      : Math.round((activeItem?.progress ?? 0) * 100);
 
   // Smoothly animate displayPercent toward targetPercent via interval
   const [displayPercent, setDisplayPercent] = useState(0);
@@ -74,9 +89,13 @@ export function BackgroundDownloadBanner() {
   if (!hasActivity) return null;
 
   const isWeb = Platform.OS === "web";
-  const label = isSyncing
-    ? "Syncing..."
-    : `${STATE_LABELS[activeItem!.state] ?? "Preparing"} ${activeItem!.label}... ${Math.round(activeItem!.progress * 100)}%`;
+  const label = showError
+    ? "Sync failed"
+    : isSyncing
+      ? "Syncing..."
+      : `${STATE_LABELS[activeItem!.state] ?? "Preparing"} ${activeItem!.label}... ${Math.round(activeItem!.progress * 100)}%`;
+
+  const barColor = showError ? "bg-destructive" : "bg-primary";
 
   return (
     <View
@@ -89,11 +108,15 @@ export function BackgroundDownloadBanner() {
       pointerEvents="box-none"
     >
       <View className="h-px bg-border" pointerEvents="none">
-        <View className="h-full bg-primary" style={{ width: `${displayPercent}%` }} />
+        <View className={`h-full ${barColor}`} style={{ width: `${displayPercent}%` }} />
       </View>
       <View className={isWeb ? "" : "bg-secondary"} pointerEvents="none">
         <View className="flex-row items-start justify-center px-4 pt-1 pb-4">
-          <Text className="text-xs text-secondary-foreground">{label}</Text>
+          <Text
+            className={`text-xs ${showError ? "text-destructive" : "text-secondary-foreground"}`}
+          >
+            {label}
+          </Text>
         </View>
       </View>
     </View>
