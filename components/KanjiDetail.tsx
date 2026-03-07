@@ -8,6 +8,7 @@ import {
   Platform,
   InteractionManager,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -70,7 +71,19 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`k:${literal}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmarkKanji(literal, isBookmarked);
+  const bookmarkRef = useRef<View>(null);
+  const [bookmarkAnchor, setBookmarkAnchor] = useState<
+    { top: number; right: number } | undefined
+  >();
   const { mnemonic, keyword, saveMnemonic, saveKeyword } = useKanjiMnemonic(literal);
+
+  function measureAndRun(callback: () => void) {
+    bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+      const screenWidth = Dimensions.get("window").width;
+      setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+      callback();
+    });
+  }
 
   useEffect(() => {
     if (!dictDb || !isReady || !literal) return;
@@ -184,7 +197,12 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Header */}
       <View className="items-center mb-6">
         <View className="flex-row justify-end w-full mb-2">
-          <Pressable onPress={handlePress} onLongPress={handleLongPress} className="p-1">
+          <Pressable
+            ref={bookmarkRef}
+            onPress={() => measureAndRun(handlePress)}
+            onLongPress={() => measureAndRun(handleLongPress)}
+            className="p-1"
+          >
             <Bookmark
               size={22}
               fill={isBookmarked ? "currentColor" : "none"}
@@ -547,8 +565,12 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
 
       <BookmarkPopover
         visible={popoverVisible}
-        onClose={dismissPopover}
+        onClose={() => {
+          dismissPopover();
+          setBookmarkAnchor(undefined);
+        }}
         kanjiLiteral={literal}
+        anchorPosition={bookmarkAnchor}
         onListToggled={onListToggled}
       />
     </ScrollView>
