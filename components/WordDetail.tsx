@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   Platform,
   InteractionManager,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useNavigation } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
@@ -48,6 +49,18 @@ export function WordDetail({ entryId }: WordDetailProps) {
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entryId}`));
   const { handlePress, handleLongPress, popoverVisible, dismissPopover, onListToggled } =
     useQuickBookmark(entryId, isBookmarked);
+  const bookmarkRef = useRef<View>(null);
+  const [bookmarkAnchor, setBookmarkAnchor] = useState<
+    { top: number; right: number } | undefined
+  >();
+
+  function measureAndRun(callback: () => void) {
+    bookmarkRef.current?.measureInWindow((x, y, width, height) => {
+      const screenWidth = Dimensions.get("window").width;
+      setBookmarkAnchor({ top: y + height + 4, right: screenWidth - x - width });
+      callback();
+    });
+  }
 
   useEffect(() => {
     if (!dictDb || !isReady || !entryId) return;
@@ -74,7 +87,12 @@ export function WordDetail({ entryId }: WordDetailProps) {
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
       <View className="flex-row justify-end items-center gap-2 mb-1">
         <PlayAudioButton entryId={entryId} size={22} />
-        <Pressable onPress={handlePress} onLongPress={handleLongPress} className="p-1">
+        <Pressable
+          ref={bookmarkRef}
+          onPress={() => measureAndRun(handlePress)}
+          onLongPress={() => measureAndRun(handleLongPress)}
+          className="p-1"
+        >
           <Bookmark
             size={22}
             fill={isBookmarked ? "currentColor" : "none"}
@@ -251,8 +269,12 @@ export function WordDetail({ entryId }: WordDetailProps) {
 
       <BookmarkPopover
         visible={popoverVisible}
-        onClose={dismissPopover}
+        onClose={() => {
+          dismissPopover();
+          setBookmarkAnchor(undefined);
+        }}
         entryId={entryId}
+        anchorPosition={bookmarkAnchor}
         onListToggled={onListToggled}
       />
     </ScrollView>
