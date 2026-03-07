@@ -429,6 +429,15 @@ export default function ListDetailScreen() {
               <Text className="text-sm text-foreground">Review Statistics</Text>
             </Pressable>
             <Pressable
+              className="px-4 py-3 border-b border-border"
+              onPress={() => {
+                setMenuVisible(false);
+                router.push(`/lists/marked-for-review?listId=${id}`);
+              }}
+            >
+              <Text className="text-sm text-foreground">Marked for Review</Text>
+            </Pressable>
+            <Pressable
               className="px-4 py-3"
               onPress={() => {
                 setMenuVisible(false);

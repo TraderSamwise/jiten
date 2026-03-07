@@ -29,6 +29,7 @@ import {
   Mic,
   BarChart3,
   User,
+  Flag,
 } from "lucide-react-native";
 
 // Map className → style with color extraction so NativeWind
@@ -63,6 +64,7 @@ const icons = [
   Mic,
   BarChart3,
   User,
+  Flag,
 ];
 
 for (const icon of icons) {
@@ -104,4 +106,5 @@ export {
   Mic,
   BarChart3,
   User,
+  Flag,
 };

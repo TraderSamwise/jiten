@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Platform, ScrollView, Switch, View } from "react-native";
+import { Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import { useAtom } from "jotai";
 import { useRouter } from "expo-router";
 import { alert } from "@/lib/confirm";
@@ -13,6 +13,7 @@ import {
   showRomajiAtom,
   showPitchAccentAtom,
   showPitchAccentTypeAtom,
+  dayResetHourAtom,
   type ThemePreference,
 } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
@@ -87,6 +88,7 @@ export default function SettingsScreen() {
   const [showRomaji, setShowRomaji] = useAtom(showRomajiAtom);
   const [showPitchAccent, setShowPitchAccent] = useAtom(showPitchAccentAtom);
   const [showPitchAccentType, setShowPitchAccentType] = useAtom(showPitchAccentTypeAtom);
+  const [dayResetHour, setDayResetHour] = useAtom(dayResetHourAtom);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const { isSignedIn } = useAuth();
@@ -219,6 +221,32 @@ export default function SettingsScreen() {
         <View className="flex-row items-center justify-between py-2">
           <Text className="text-sm text-foreground">Show Pitch Accent Type</Text>
           <Switch value={showPitchAccentType} onValueChange={setShowPitchAccentType} />
+        </View>
+      </Card>
+
+      <Card className="mb-4">
+        <CardTitle className="text-base">Study</CardTitle>
+        <Separator className="my-2" />
+        <Text className="text-sm text-foreground mb-1">Day Reset Time</Text>
+        <Text className="text-xs text-muted-foreground mb-2">
+          When your study day resets. Affects streaks, stats, and review marks.
+        </Text>
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            className="w-8 h-8 items-center justify-center rounded border border-border"
+            onPress={() => setDayResetHour(Math.max(0, dayResetHour - 1))}
+          >
+            <Text className="text-foreground text-base">-</Text>
+          </Pressable>
+          <Text className="text-sm text-foreground min-w-[72px] text-center">
+            {dayResetHour === 0 ? "12:00 AM" : `${dayResetHour}:00 AM`}
+          </Text>
+          <Pressable
+            className="w-8 h-8 items-center justify-center rounded border border-border"
+            onPress={() => setDayResetHour(Math.min(6, dayResetHour + 1))}
+          >
+            <Text className="text-foreground text-base">+</Text>
+          </Pressable>
         </View>
       </Card>
 

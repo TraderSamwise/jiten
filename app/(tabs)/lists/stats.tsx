@@ -35,6 +35,9 @@ import {
   type DaySessionDetail,
   type ConfusionCluster,
 } from "@/lib/practice-stats";
+import { useAtomValue } from "jotai";
+import { dayResetHourAtom } from "@/stores/settings";
+import { getLogicalToday } from "@/lib/day-boundary";
 import type { DictEntry } from "@/db/types";
 
 function formatDuration(ms: number): string {
@@ -86,6 +89,7 @@ export default function StatsScreen() {
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
+  const dayResetHour = useAtomValue(dayResetHourAtom);
 
   const [scope, setScope] = useState<"list" | "all">(listId ? "list" : "all");
   const [loading, setLoading] = useState(true);
@@ -109,11 +113,11 @@ export default function StatsScreen() {
   const [dayLoading, setDayLoading] = useState(false);
 
   const effectiveListId = scope === "list" ? listId : undefined;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLogicalToday(dayResetHour);
 
   useEffect(() => {
     loadAllData();
-  }, [userDb, dictDb, scope, listId]);
+  }, [userDb, dictDb, scope, listId, dayResetHour]);
 
   useEffect(() => {
     if (selectedDay) loadDayDetail(selectedDay);
@@ -127,12 +131,12 @@ export default function StatsScreen() {
 
     const [todayData, streakData, activityData, sessionData, confusionData, todayConfClusters] =
       await Promise.all([
-        getTodaySummary(userDb, lid),
-        getCurrentStreak(userDb, lid),
-        getDailyActivity(userDb, lid, 90),
-        getRecentSessions(userDb, lid, 15),
+        getTodaySummary(userDb, lid, dayResetHour),
+        getCurrentStreak(userDb, lid, dayResetHour),
+        getDailyActivity(userDb, lid, 90, dayResetHour),
+        getRecentSessions(userDb, lid, 15, dayResetHour),
         getTopConfusionPairs(userDb, lid, 20),
-        buildDayConfusionClusters(userDb, todayStr, lid),
+        buildDayConfusionClusters(userDb, todayStr, lid, dayResetHour),
       ]);
 
     setTodaySummary(todayData);
@@ -187,8 +191,8 @@ export default function StatsScreen() {
     setDayLoading(true);
 
     const [sessions, dayConfClusters] = await Promise.all([
-      getDaySessionsWithEvents(userDb, day, effectiveListId),
-      buildDayConfusionClusters(userDb, day, effectiveListId),
+      getDaySessionsWithEvents(userDb, day, effectiveListId, dayResetHour),
+      buildDayConfusionClusters(userDb, day, effectiveListId, dayResetHour),
     ]);
     setDayDetail(sessions);
     setDayClusters(dayConfClusters);

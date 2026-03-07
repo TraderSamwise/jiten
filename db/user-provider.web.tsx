@@ -136,6 +136,15 @@ export function UserDatabaseProvider({
     try {
       const { raw, wrapped } = await openAndMigrateUserDb();
       rawDbRef.current = raw;
+      // Cleanup old temporary marked-for-review lists (>24h old) and old review marks (>90 days)
+      wrapped
+        .runAsync(
+          `DELETE FROM lists WHERE id LIKE '_marked_%' AND created_at < datetime('now', '-1 day')`,
+        )
+        .catch(() => {});
+      wrapped
+        .runAsync(`DELETE FROM review_marks WHERE marked_at < datetime('now', '-90 days')`)
+        .catch(() => {});
       setState({ userDb: wrapped, isReady: true });
       console.log("[UserDB Web] Initialized successfully");
     } catch (err) {

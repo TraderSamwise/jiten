@@ -122,13 +122,8 @@
   },
   "private": true,
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,css}": [
-      "prettier --write"
-    ]
+    "*.{ts,tsx}": "eslint --fix --quiet",
+    "*.{json,md,css}": "prettier --write"
   },
   "op-sqlite": {
     "libsql": true
