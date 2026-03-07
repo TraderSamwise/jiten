@@ -1,5 +1,15 @@
 import { create } from "zustand";
-import type { WordList, CardFace } from "@/db/types";
+import type { WordList, CardFace, ListItem } from "@/db/types";
+
+type ListEntryRow = { entry_id: number; kanji_literal: string | null };
+
+export interface ListScrollCache {
+  scrollOffset: number;
+  items: ListItem[];
+  allRows: ListEntryRow[];
+  loadedCount: number;
+  totalCount: number;
+}
 
 interface ListsState {
   lists: WordList[];
@@ -8,6 +18,10 @@ interface ListsState {
   addList: (list: WordList) => void;
   removeList: (id: string) => void;
   updateList: (id: string, updates: Partial<WordList>) => void;
+  scrollCache: Record<string, ListScrollCache>;
+  setScrollCache: (listId: string, partial: Partial<ListScrollCache>) => void;
+  getScrollCache: (listId: string) => ListScrollCache | undefined;
+  clearScrollCache: (listId: string) => void;
 }
 
 export function parseListRow(row: any): WordList {
@@ -32,7 +46,7 @@ export function parseListRow(row: any): WordList {
   };
 }
 
-export const useListsStore = create<ListsState>((set) => ({
+export const useListsStore = create<ListsState>((set, get) => ({
   lists: [],
   listsLoaded: false,
   setLists: (lists) => set({ lists, listsLoaded: true }),
@@ -42,4 +56,18 @@ export const useListsStore = create<ListsState>((set) => ({
     set((state) => ({
       lists: state.lists.map((l) => (l.id === id ? { ...l, ...updates } : l)),
     })),
+  scrollCache: {},
+  setScrollCache: (listId, partial) =>
+    set((state) => ({
+      scrollCache: {
+        ...state.scrollCache,
+        [listId]: { ...state.scrollCache[listId], ...partial } as ListScrollCache,
+      },
+    })),
+  getScrollCache: (listId) => get().scrollCache[listId],
+  clearScrollCache: (listId) =>
+    set((state) => {
+      const { [listId]: _, ...rest } = state.scrollCache;
+      return { scrollCache: rest };
+    }),
 }));

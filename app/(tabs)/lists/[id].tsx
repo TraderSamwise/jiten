@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { View, Pressable, InteractionManager, ActivityIndicator } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { View, Pressable, InteractionManager, ActivityIndicator, Platform } from "react-native";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
 import { Text } from "@/components/ui/text";
@@ -17,7 +17,7 @@ import { useDatabase } from "@/db/provider";
 import { getEntries } from "@/db/search";
 import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useBookmarkStore } from "@/stores/bookmarks";
-import { useListsStore, parseListRow } from "@/stores/lists";
+import { useListsStore, parseListRow, type ListScrollCache } from "@/stores/lists";
 import { ExportListModal } from "@/components/ExportListModal";
 import { softDelete } from "@/db/sync-helpers";
 import { listItemKey } from "@/db/types";
@@ -77,7 +77,9 @@ export default function ListDetailScreen() {
   const [setupMode, setSetupMode] = useState(false);
   const [reviewCount, setReviewCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
+  const flashListRef = useRef<FlashListRef<ListItem>>(null);
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
+  const restoredOffsetRef = useRef<number | null>(null);
 
   // Load list from DB if not in store (e.g. direct navigation / refresh)
 
@@ -127,6 +129,31 @@ export default function ListDetailScreen() {
     }, []),
   );
 
+  // Web only: restore scroll position from cache after hydration
+  const hasItems = items.length > 0;
+  useEffect(() => {
+    if (Platform.OS !== "web" || !hasItems) return;
+    const offset = restoredOffsetRef.current;
+    if (offset == null || offset <= 0) return;
+    restoredOffsetRef.current = null;
+    requestAnimationFrame(() => {
+      flashListRef.current?.scrollToOffset({ offset, animated: false });
+    });
+  }, [hasItems]);
+
+  // Web only: throttled onScroll handler to cache scroll position
+  // Mutate the existing cache object directly to avoid Zustand re-renders on every scroll
+  const handleScroll = useCallback(
+    (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      if (Platform.OS !== "web" || !id) return;
+      const cached = useListsStore.getState().scrollCache[id];
+      if (cached) {
+        cached.scrollOffset = e.nativeEvent.contentOffset.y;
+      }
+    },
+    [id],
+  );
+
   useEffect(() => {
     if (totalCount > 0 && list) {
       updateStudyCount();
@@ -158,6 +185,41 @@ export default function ListDetailScreen() {
 
   async function loadEntries() {
     if (!userDb || !dictDb || !id) return;
+
+    // Web only: try to restore from scroll cache
+    if (Platform.OS === "web") {
+      const cached = useListsStore.getState().getScrollCache(id);
+      if (cached && cached.items.length > 0) {
+        allRowsRef.current = cached.allRows;
+        loadedCountRef.current = cached.loadedCount;
+        setTotalCount(cached.totalCount);
+        setItems(cached.items);
+        restoredOffsetRef.current = cached.scrollOffset;
+        setLoading(false);
+
+        // Background staleness check
+        userDb
+          .getFirstAsync<{
+            count: number;
+          }>(
+            "SELECT COUNT(*) as count FROM list_entries WHERE list_id = ? AND deleted_at IS NULL",
+            [id],
+          )
+          .then((row) => {
+            if (row && row.count !== cached.totalCount) {
+              useListsStore.getState().clearScrollCache(id);
+              loadEntriesFresh();
+            }
+          });
+        return;
+      }
+    }
+
+    await loadEntriesFresh();
+  }
+
+  async function loadEntriesFresh() {
+    if (!userDb || !dictDb || !id) return;
     setLoading(true);
 
     // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
@@ -173,6 +235,9 @@ export default function ListDetailScreen() {
       setItems([]);
       loadedCountRef.current = 0;
       setLoading(false);
+      if (Platform.OS === "web") {
+        useListsStore.getState().clearScrollCache(id);
+      }
       return;
     }
 
@@ -182,6 +247,16 @@ export default function ListDetailScreen() {
     loadedCountRef.current = PAGE_SIZE;
     setItems(resolved);
     setLoading(false);
+
+    if (Platform.OS === "web") {
+      useListsStore.getState().setScrollCache(id, {
+        scrollOffset: 0,
+        items: resolved,
+        allRows: rows,
+        loadedCount: PAGE_SIZE,
+        totalCount: rows.length,
+      });
+    }
   }
 
   const loadMore = useCallback(async () => {
@@ -193,10 +268,20 @@ export default function ListDetailScreen() {
     setLoadingMore(true);
     const nextPage = rows.slice(loaded, loaded + PAGE_SIZE);
     const resolved = await resolvePageItems(dictDb, nextPage);
-    loadedCountRef.current = loaded + PAGE_SIZE;
-    setItems((prev) => [...prev, ...resolved]);
+    const newLoaded = loaded + PAGE_SIZE;
+    loadedCountRef.current = newLoaded;
+    setItems((prev) => {
+      const updated = [...prev, ...resolved];
+      if (Platform.OS === "web" && id) {
+        useListsStore.getState().setScrollCache(id, {
+          items: updated,
+          loadedCount: newLoaded,
+        });
+      }
+      return updated;
+    });
     setLoadingMore(false);
-  }, [dictDb, loadingMore]);
+  }, [dictDb, loadingMore, id]);
 
   async function handleRemoveItem(item: ListItem) {
     if (!userDb) return;
@@ -347,11 +432,14 @@ export default function ListDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       <FlashList
+        ref={flashListRef}
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
+        onScroll={Platform.OS === "web" ? handleScroll : undefined}
+        scrollEventThrottle={Platform.OS === "web" ? 200 : undefined}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
