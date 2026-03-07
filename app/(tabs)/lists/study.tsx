@@ -959,7 +959,11 @@ function StudyScreen() {
 
   const [loading, setLoading] = useState(true);
   const [navigating, setNavigating] = useState(false);
-  const [sessionDone, setSessionDone] = useState(false);
+  type SessionPhase = "studying" | "checkpoint" | "done";
+  const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
+  const [newCardsAvailable, setNewCardsAvailable] = useState(0);
+  const [earlyReviewAvailable, setEarlyReviewAvailable] = useState(0);
+  const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -1004,7 +1008,7 @@ function StudyScreen() {
 
   // Voice recognition: enabled when voice mode is on, card is pending, not browsing history
   const voiceEnabled =
-    !!list?.voiceMode && !revealed && !isBrowsingHistory && !sessionDone && !loading;
+    !!list?.voiceMode && !revealed && !isBrowsingHistory && sessionPhase === "studying" && !loading;
 
   const voiceCallbackRef = useRef<(transcript: string) => void>(() => {});
 
@@ -1036,9 +1040,9 @@ function StudyScreen() {
     }
   }, [cursor]);
 
-  // Log session summary when study session completes (all cards done — rare for large decks)
+  // Log session summary when study session completes
   useEffect(() => {
-    if (sessionDone && reviewedCount > 0 && userDb && listId && sessionIdRef.current) {
+    if (sessionPhase === "done" && reviewedCount > 0 && userDb && listId && sessionIdRef.current) {
       const practiceMode = list?.typingMode
         ? "typing_flashcard"
         : list?.voiceMode
@@ -1054,7 +1058,7 @@ function StudyScreen() {
         correctCount: sessionCorrectRef.current,
       }).catch(() => {});
     }
-  }, [sessionDone]);
+  }, [sessionPhase]);
 
   // Web: keyboard shortcuts for reveal / rating
   useEffect(() => {
@@ -1144,13 +1148,71 @@ function StudyScreen() {
     });
   }, [dictDb, userDb, list?.id]);
 
-  async function loadQueue() {
+  const srsSelectClause = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
+    stability, difficulty, elapsed_days as elapsedDays,
+    scheduled_days as scheduledDays, reps, lapses, state,
+    last_review as lastReview, front_mode as frontMode,
+    back_mode as backMode, created_at as createdAt,
+    updated_at as updatedAt,
+    simple_stage as simpleStage, simple_n as simpleN,
+    simple_interval as simpleInterval,
+    last_confusion_check as lastConfusionCheck`;
+
+  /** Resolve SRS card rows into QueueItems with full dict entries */
+  async function resolveCards(srsRows: SrsCardRow[]): Promise<QueueItem[]> {
+    if (!dictDb || srsRows.length === 0) return [];
+    const wordCards = srsRows.filter((r) => r.kanjiLiteral == null);
+    const kanjiCards = srsRows.filter((r) => r.kanjiLiteral != null);
+    const [wordEntries, kanjiEntries] = await Promise.all([
+      wordCards.length > 0
+        ? getEntries(
+            dictDb,
+            wordCards.map((r) => r.entryId),
+          )
+        : Promise.resolve([]),
+      kanjiCards.length > 0
+        ? getKanjiBatchAsync(
+            dictDb,
+            kanjiCards.map((r) => r.kanjiLiteral!),
+          )
+        : Promise.resolve([]),
+    ]);
+    const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
+    const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
+    const items: QueueItem[] = [];
+    for (const card of srsRows) {
+      if (card.kanjiLiteral != null) {
+        const k = kanjiMap.get(card.kanjiLiteral);
+        if (k) items.push({ kind: "kanji", kanji: k, srsCard: card });
+      } else {
+        const e = entryMap.get(card.entryId);
+        if (e) items.push({ kind: "entry", entry: e, srsCard: card });
+      }
+    }
+    return items;
+  }
+
+  /** Set resolved items into card state and reset cursor */
+  function setQueueCards(items: QueueItem[], dueCount: number) {
+    setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
+    setCursor(0);
+    setOriginalCardCount(items.length);
+    setDueAtStart(dueCount);
+    if (items.length === 0) {
+      setSessionPhase("done");
+    } else {
+      setSessionPhase("studying");
+    }
+  }
+
+  async function loadQueue(mode?: "due" | "new" | "early" | "both") {
     if (!dictDb || !userDb || !list || !listId) return;
     setLoading(true);
     translateX.value = 0;
 
     try {
       if (list.flashcardMode === "add_order") {
+        // add_order mode: unchanged
         let position = list.studyPosition ?? 0;
         let rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
           "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC LIMIT 10 OFFSET ?",
@@ -1175,7 +1237,7 @@ function StudyScreen() {
           setCards([]);
           setCursor(0);
           setOriginalCardCount(0);
-          setSessionDone(true);
+          setSessionPhase("done");
           setLoading(false);
           return;
         }
@@ -1209,19 +1271,10 @@ function StudyScreen() {
         setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
         setCursor(0);
         setOriginalCardCount(items.length);
-        setSessionDone(items.length === 0);
+        if (items.length === 0) setSessionPhase("done");
+        else setSessionPhase("studying");
       } else if (list.flashcardMode === "simple_srs") {
-        // Simple SRS mode: due review cards first, then new cards
-        const simpleSrsSelect = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-          stability, difficulty, elapsed_days as elapsedDays,
-          scheduled_days as scheduledDays, reps, lapses, state,
-          last_review as lastReview, front_mode as frontMode,
-          back_mode as backMode, created_at as createdAt,
-          updated_at as updatedAt,
-          simple_stage as simpleStage, simple_n as simpleN,
-          simple_interval as simpleInterval,
-          last_confusion_check as lastConfusionCheck`;
-
+        // Simple SRS mode
         // Ensure srs_cards exist for all list entries (auto-create if missing)
         const cardCount = await userDb.getFirstAsync<{ c: number }>(
           "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL",
@@ -1258,138 +1311,147 @@ function StudyScreen() {
         setSimpleSrsLearned(learnedRow?.c ?? 0);
 
         const nowDays = dateToSrsEpochDays();
+        const reviewedIds = [...reviewedSrsIdsRef.current];
+        const excludeClause =
+          reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
 
-        // Due cards: have SRS data and n <= now (n is the due date directly)
-        const dueRows = await userDb.getAllAsync<SrsCardRow>(
-          `${simpleSrsSelect} FROM srs_cards
-           WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
-           ORDER BY simple_n ASC`,
-          [listId, nowDays],
-        );
+        let srsRows: SrsCardRow[] = [];
 
-        // New cards: no SRS data yet (simpleStage IS NULL)
-        const newRows = await userDb.getAllAsync<SrsCardRow>(
-          `${simpleSrsSelect} FROM srs_cards
-           WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
-           ORDER BY created_at ASC LIMIT ?`,
-          [listId, NEW_CARD_BATCH_SIZE],
-        );
+        if (!mode || mode === "due") {
+          // Due cards only
+          const dueRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
+             ORDER BY simple_n ASC`,
+            [listId, nowDays],
+          );
 
-        const srsRows = [...dueRows, ...newRows];
-
-        if (srsRows.length === 0) {
-          setCards([]);
-          setCursor(0);
-          setOriginalCardCount(0);
-          setSessionDone(true);
-          setLoading(false);
-          return;
-        }
-
-        const wordCards = srsRows.filter((r) => r.kanjiLiteral == null);
-        const kanjiCards = srsRows.filter((r) => r.kanjiLiteral != null);
-        const [wordEntries, kanjiEntries] = await Promise.all([
-          wordCards.length > 0
-            ? getEntries(
-                dictDb,
-                wordCards.map((r) => r.entryId),
-              )
-            : Promise.resolve([]),
-          kanjiCards.length > 0
-            ? getKanjiBatchAsync(
-                dictDb,
-                kanjiCards.map((r) => r.kanjiLiteral!),
-              )
-            : Promise.resolve([]),
-        ]);
-        const entryMap = new Map(wordEntries.map((e: DictEntry) => [e.id, e]));
-        const kanjiMap = new Map(kanjiEntries.map((k: KanjiCharacter) => [k.literal, k]));
-
-        const items: QueueItem[] = [];
-        for (const card of srsRows) {
-          if (card.kanjiLiteral != null) {
-            const k = kanjiMap.get(card.kanjiLiteral);
-            if (k) items.push({ kind: "kanji", kanji: k, srsCard: card });
+          if (dueRows.length > 0) {
+            srsRows = dueRows;
+            const items = await resolveCards(srsRows);
+            setQueueCards(items, dueRows.length);
           } else {
-            const e = entryMap.get(card.entryId);
-            if (e) items.push({ kind: "entry", entry: e, srsCard: card });
+            // No due cards — check for new cards (fresh deck edge case)
+            const newCount = await userDb.getFirstAsync<{ c: number }>(
+              "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL",
+              [listId],
+            );
+            if ((newCount?.c ?? 0) > 0 && reviewedCount === 0) {
+              // Fresh deck: load new cards directly, no checkpoint
+              const newRows = await userDb.getAllAsync<SrsCardRow>(
+                `${srsSelectClause} FROM srs_cards
+                 WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
+                 ORDER BY created_at ASC LIMIT ?`,
+                [listId, NEW_CARD_BATCH_SIZE],
+              );
+              const items = await resolveCards(newRows);
+              setQueueCards(items, 0);
+            } else {
+              // Enter checkpoint or done
+              setLoading(false);
+              await enterCheckpoint();
+              return;
+            }
           }
+        } else if (mode === "new") {
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
+             ORDER BY created_at ASC LIMIT ?`,
+            [listId, NEW_CARD_BATCH_SIZE],
+          );
+          const items = await resolveCards(newRows);
+          setQueueCards(items, 0);
+        } else if (mode === "early") {
+          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n > ? AND deleted_at IS NULL${excludeClause}
+             ORDER BY simple_n ASC LIMIT 10`,
+            [listId, nowDays, ...reviewedIds],
+          );
+          const items = await resolveCards(earlyRows);
+          setQueueCards(items, 0);
+        } else if (mode === "both") {
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
+             ORDER BY created_at ASC LIMIT ?`,
+            [listId, NEW_CARD_BATCH_SIZE],
+          );
+          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n > ? AND deleted_at IS NULL${excludeClause}
+             ORDER BY simple_n ASC LIMIT 10`,
+            [listId, nowDays, ...reviewedIds],
+          );
+          const combined = [...newRows, ...earlyRows];
+          const items = await resolveCards(combined);
+          setQueueCards(items, 0);
         }
-
-        setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
-        setCursor(0);
-        setOriginalCardCount(items.length);
-        setDueAtStart(dueRows.length + newRows.length);
-        setSessionDone(items.length === 0);
       } else {
-        // FSRS mode: reviews first, then a batch of new cards
-        const srsSelect = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-          stability, difficulty, elapsed_days as elapsedDays,
-          scheduled_days as scheduledDays, reps, lapses, state,
-          last_review as lastReview, front_mode as frontMode,
-          back_mode as backMode, created_at as createdAt,
-          updated_at as updatedAt,
-          simple_stage as simpleStage, simple_n as simpleN,
-          simple_interval as simpleInterval,
-          last_confusion_check as lastConfusionCheck`;
+        // FSRS mode
+        const now = new Date().toISOString();
+        const reviewedIds = [...reviewedSrsIdsRef.current];
+        const excludeClause =
+          reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
 
-        const reviewRows = await userDb.getAllAsync<SrsCardRow>(
-          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
-          [listId, new Date().toISOString()],
-        );
+        if (!mode || mode === "due") {
+          // Due review cards only
+          const reviewRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
+            [listId, now],
+          );
 
-        const newRows = await userDb.getAllAsync<SrsCardRow>(
-          `${srsSelect} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
-          [listId, NEW_CARD_BATCH_SIZE],
-        );
-
-        const srsRows = [...reviewRows, ...newRows];
-
-        if (srsRows.length === 0) {
-          setCards([]);
-          setCursor(0);
-          setOriginalCardCount(0);
-          setDueAtStart(0);
-          setSessionDone(true);
-          setLoading(false);
-          return;
-        }
-
-        const wordCards2 = srsRows.filter((r) => r.kanjiLiteral == null);
-        const kanjiCards2 = srsRows.filter((r) => r.kanjiLiteral != null);
-        const [wordEntries2, kanjiEntries2] = await Promise.all([
-          wordCards2.length > 0
-            ? getEntries(
-                dictDb,
-                wordCards2.map((r) => r.entryId),
-              )
-            : Promise.resolve([]),
-          kanjiCards2.length > 0
-            ? getKanjiBatchAsync(
-                dictDb,
-                kanjiCards2.map((r) => r.kanjiLiteral!),
-              )
-            : Promise.resolve([]),
-        ]);
-        const entryMap2 = new Map(wordEntries2.map((e: DictEntry) => [e.id, e]));
-        const kanjiMap2 = new Map(kanjiEntries2.map((k: KanjiCharacter) => [k.literal, k]));
-
-        const items: QueueItem[] = [];
-        for (const card of srsRows) {
-          if (card.kanjiLiteral != null) {
-            const k = kanjiMap2.get(card.kanjiLiteral);
-            if (k) items.push({ kind: "kanji", kanji: k, srsCard: card });
+          if (reviewRows.length > 0) {
+            const items = await resolveCards(reviewRows);
+            setQueueCards(items, reviewRows.length);
           } else {
-            const e = entryMap2.get(card.entryId);
-            if (e) items.push({ kind: "entry", entry: e, srsCard: card });
+            // No due cards — check for new cards (fresh deck edge case)
+            const newCount = await userDb.getFirstAsync<{ c: number }>(
+              "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
+              [listId],
+            );
+            if ((newCount?.c ?? 0) > 0 && reviewedCount === 0) {
+              // Fresh deck: load new cards directly, no checkpoint
+              const newRows = await userDb.getAllAsync<SrsCardRow>(
+                `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
+                [listId, NEW_CARD_BATCH_SIZE],
+              );
+              const items = await resolveCards(newRows);
+              setQueueCards(items, 0);
+            } else {
+              setLoading(false);
+              await enterCheckpoint();
+              return;
+            }
           }
+        } else if (mode === "new") {
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
+            [listId, NEW_CARD_BATCH_SIZE],
+          );
+          const items = await resolveCards(newRows);
+          setQueueCards(items, 0);
+        } else if (mode === "early") {
+          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+            [listId, now, ...reviewedIds],
+          );
+          const items = await resolveCards(earlyRows);
+          setQueueCards(items, 0);
+        } else if (mode === "both") {
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
+            [listId, NEW_CARD_BATCH_SIZE],
+          );
+          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+            [listId, now, ...reviewedIds],
+          );
+          const combined = [...newRows, ...earlyRows];
+          const items = await resolveCards(combined);
+          setQueueCards(items, 0);
         }
-
-        setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
-        setCursor(0);
-        setOriginalCardCount(items.length);
-        setDueAtStart(reviewRows.length + newRows.length);
-        setSessionDone(items.length === 0);
       }
     } catch (err) {
       console.error("loadQueue error:", err);
@@ -1398,6 +1460,58 @@ function StudyScreen() {
     sessionStartRef.current = new Date().toISOString();
     sessionCorrectRef.current = 0;
     setLoading(false);
+  }
+
+  async function enterCheckpoint() {
+    if (!userDb || !listId || !list) return;
+
+    const isSimple = list.flashcardMode === "simple_srs";
+    const reviewedIds = [...reviewedSrsIdsRef.current];
+    const excludeClause =
+      reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
+
+    let newCount = 0;
+    let earlyCount = 0;
+
+    if (isSimple) {
+      const newRow = await userDb.getFirstAsync<{ c: number }>(
+        "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL",
+        [listId],
+      );
+      newCount = newRow?.c ?? 0;
+
+      const nowDays = dateToSrsEpochDays();
+      const earlyRow = await userDb.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM srs_cards
+         WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n > ? AND deleted_at IS NULL${excludeClause}`,
+        [listId, nowDays, ...reviewedIds],
+      );
+      earlyCount = earlyRow?.c ?? 0;
+    } else {
+      // FSRS
+      const newRow = await userDb.getFirstAsync<{ c: number }>(
+        "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
+        [listId],
+      );
+      newCount = newRow?.c ?? 0;
+
+      const now = new Date().toISOString();
+      const earlyRow = await userDb.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM srs_cards
+         WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause}`,
+        [listId, now, ...reviewedIds],
+      );
+      earlyCount = earlyRow?.c ?? 0;
+    }
+
+    setNewCardsAvailable(newCount);
+    setEarlyReviewAvailable(earlyCount);
+
+    if (newCount === 0 && earlyCount === 0) {
+      setSessionPhase("done");
+    } else {
+      setSessionPhase("checkpoint");
+    }
   }
 
   function flashRating(which: "fail" | "pass" | "easy") {
@@ -1502,9 +1616,16 @@ function StudyScreen() {
       checkForConfusedWords(item.entry, card);
     }
 
+    // Track reviewed SRS card ID for early review exclusion
+    if (card?.id) reviewedSrsIdsRef.current.add(card.id);
+
     // Advance to next card
     if (cursor + 1 >= updatedCards.length) {
-      loadQueue();
+      if (list?.flashcardMode === "add_order") {
+        loadQueue();
+      } else {
+        enterCheckpoint();
+      }
     } else {
       moveCursor(cursor + 1);
     }
@@ -1604,9 +1725,16 @@ function StudyScreen() {
     sessionCorrectRef.current++;
     setReviewedCount((c) => c + 1);
 
+    // Track reviewed SRS card ID for early review exclusion
+    if (card?.id) reviewedSrsIdsRef.current.add(card.id);
+
     // Advance
     if (cursor + 1 >= updatedCards.length) {
-      loadQueue();
+      if (list?.flashcardMode === "add_order") {
+        loadQueue();
+      } else {
+        enterCheckpoint();
+      }
     } else {
       moveCursor(cursor + 1);
     }
@@ -2185,7 +2313,53 @@ function StudyScreen() {
     );
   }
 
-  if (sessionDone) {
+  if (sessionPhase === "checkpoint") {
+    return (
+      <CustomHeaderScreen>
+        <HeaderPlaceholder py="py-2" spacerHeight={40} />
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-4xl mb-4">Due cards complete!</Text>
+          <Text className="text-lg text-muted-foreground text-center mb-6">
+            You reviewed {reviewedCount} card{reviewedCount === 1 ? "" : "s"}.
+          </Text>
+          {newCardsAvailable > 0 && (
+            <Button
+              className="mt-2 w-64"
+              label={`Learn New Cards (${newCardsAvailable} available)`}
+              onPress={() => loadQueue("new")}
+            />
+          )}
+          {earlyReviewAvailable > 0 && (
+            <Button
+              className="mt-2 w-64"
+              label={`Review Early (${earlyReviewAvailable} available)`}
+              variant="outline"
+              onPress={() => loadQueue("early")}
+            />
+          )}
+          {newCardsAvailable > 0 && earlyReviewAvailable > 0 && (
+            <Button
+              className="mt-2 w-64"
+              label="Both"
+              variant="outline"
+              onPress={() => loadQueue("both")}
+            />
+          )}
+          <Button
+            className="mt-4 w-64"
+            label="Return to List"
+            variant="outline"
+            onPress={() => {
+              setNavigating(true);
+              setTimeout(() => navigateBack(), 100);
+            }}
+          />
+        </View>
+      </CustomHeaderScreen>
+    );
+  }
+
+  if (sessionPhase === "done") {
     return (
       <CustomHeaderScreen>
         <HeaderPlaceholder py="py-2" spacerHeight={40} />
@@ -2204,8 +2378,9 @@ function StudyScreen() {
             className="mt-4"
             label="Continue Studying"
             onPress={() => {
-              setSessionDone(false);
+              setSessionPhase("studying");
               setReviewedCount(0);
+              reviewedSrsIdsRef.current.clear();
               loadQueue();
             }}
           />
@@ -2403,7 +2578,7 @@ function StudyScreen() {
       )}
 
       {/* Rating buttons -- always visible */}
-      {!sessionDone && (
+      {sessionPhase === "studying" && (
         <View
           className="flex-row gap-3 mt-3"
           style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
