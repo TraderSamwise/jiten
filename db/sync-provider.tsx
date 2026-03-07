@@ -28,6 +28,7 @@ interface SyncContextType {
 }
 
 const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
+const SYNC_INTERVAL_MS = 120_000;
 
 const SyncContext = createContext<SyncContextType>({
   syncStatus: "disabled",
@@ -80,12 +81,16 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   // If the queued entry was ever non-silent, it stays non-silent (sticky).
   const pendingSyncRef = useRef<{ force: boolean; silent: boolean } | null>(null);
 
+  // Keep getToken in a ref to avoid re-running effects when its identity changes
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
   // Initialize Turso client with scoped token (async — waits for reconciliation)
   useEffect(() => {
     if (!isRealUser || !reconciled) return;
     let cancelled = false;
     (async () => {
-      const token = await getTursoToken(userId, getToken, env.API_BASE_URL!);
+      const token = await getTursoToken(userId, getTokenRef.current, env.API_BASE_URL!);
       if (cancelled) return;
       if (!token) {
         // Can't get token — app works locally, sync stays idle
@@ -101,15 +106,23 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       }
       // Check dirty flag and trigger initial sync
       if (!userDb) return;
-      const row = await userDb.getFirstAsync<{ value: string }>(
-        "SELECT value FROM sync_meta WHERE key = ?",
-        ["sync_dirty"],
-      );
+      const [dirtyRow, lastSyncRow] = await Promise.all([
+        userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
+          "sync_dirty",
+        ]),
+        userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
+          "last_sync_at",
+        ]),
+      ]);
       if (cancelled) return;
-      if (row) {
+      const isDirty = !!dirtyRow;
+      if (isDirty) {
         dirtyRef.current = true;
         triggerSyncRef.current(true);
       } else {
+        // Skip if last sync was within the sync interval
+        const elapsed = lastSyncRow ? Date.now() - new Date(lastSyncRow.value).getTime() : Infinity;
+        if (elapsed < SYNC_INTERVAL_MS) return;
         triggerSyncRef.current();
       }
     })();
@@ -117,7 +130,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       cancelled = true;
       tursoRef.current = null;
     };
-  }, [userId, isRealUser, reconciled, getToken, userDb]);
+  }, [userId, isRealUser, reconciled, userDb]);
 
   // Check for account change before first sync
   useEffect(() => {
@@ -198,7 +211,10 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   // Helper to reset the periodic interval timer (called after successful sync)
   const resetInterval = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => triggerSyncRef.current({ silent: true }), 120_000);
+    intervalRef.current = setInterval(
+      () => triggerSyncRef.current({ silent: true }),
+      SYNC_INTERVAL_MS,
+    );
   }, []);
 
   // We need a ref to triggerSync so resetInterval and the interval callback
@@ -319,7 +335,10 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   // Periodic sync every 2 minutes
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
-    intervalRef.current = setInterval(() => triggerSyncRef.current({ silent: true }), 120_000);
+    intervalRef.current = setInterval(
+      () => triggerSyncRef.current({ silent: true }),
+      SYNC_INTERVAL_MS,
+    );
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
