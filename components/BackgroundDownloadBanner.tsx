@@ -18,7 +18,7 @@ const STATE_LABELS: Record<string, string> = {
 
 export function BackgroundDownloadBanner() {
   const { backgroundStatus } = useDatabase();
-  const { syncStatus, syncProgress, syncLabel, lastError } = useSync();
+  const { syncStatus, syncProgress, syncLabel, lastError, isSilentSync } = useSync();
   const insets = useSafeAreaInsets();
   const segments = useSegments();
 
@@ -62,8 +62,8 @@ export function BackgroundDownloadBanner() {
     setShowSignedOut(false);
   }
 
-  // Hide normal sync progress — only show errors, signed-out notice, and background downloads
-  const hasActivity = showError || showSignedOut || !!activeItem;
+  const hasActivity =
+    (isSilentSync ? false : isSyncing) || showError || showSignedOut || !!activeItem;
   const targetPercent =
     showError || showSignedOut
       ? 100

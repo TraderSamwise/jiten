@@ -36,7 +36,7 @@ export function BookmarkPopover({
   const pos = anchorPosition ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
-  const { triggerSync } = useSync();
+  const { markDirty } = useSync();
   const [lists, setLists] = useState<WordList[]>([]);
   const [membershipMap, setMembershipMap] = useState<Set<string>>(new Set());
   const [showNewList, setShowNewList] = useState(false);
@@ -95,7 +95,7 @@ export function BookmarkPopover({
       setMembershipMap((prev) => new Set(prev).add(listId));
       onListToggled?.(listId, true);
     }
-    triggerSync();
+    markDirty();
   }
 
   async function handleCreateList() {

@@ -1015,7 +1015,7 @@ function StudyScreen() {
     }
   }, [cursor]);
 
-  // Log session summary when study session completes
+  // Log session summary when study session completes (all cards done — rare for large decks)
   useEffect(() => {
     if (sessionDone && reviewedCount > 0 && userDb && listId && sessionIdRef.current) {
       const practiceMode = list?.typingMode
@@ -1032,7 +1032,6 @@ function StudyScreen() {
         totalItems: reviewedCount,
         correctCount: sessionCorrectRef.current,
       }).catch(() => {});
-      triggerSync();
     }
   }, [sessionDone]);
 
