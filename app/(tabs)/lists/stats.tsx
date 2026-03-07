@@ -14,6 +14,7 @@ import { Heatmap } from "@/components/charts/Heatmap";
 import { WeeklyBarChart } from "@/components/charts/WeeklyBarChart";
 import { DayReviewDetail } from "@/components/DayReviewDetail";
 import { ConfusionClusters } from "@/components/ConfusionClusters";
+import { DueCardsSection } from "@/components/DueCardsSection";
 import {
   getDailyActivity,
   getRecentSessions,
@@ -240,7 +241,7 @@ export default function StatsScreen() {
         <Pressable onPress={goBack} className="p-1 mr-3">
           <ChevronLeft size={24} className="text-foreground" />
         </Pressable>
-        <Text className="text-lg font-semibold text-foreground flex-1">Practice Stats</Text>
+        <Text className="text-lg font-semibold text-foreground flex-1">Review Statistics</Text>
       </View>
 
       {/* Scope toggle */}
@@ -369,6 +370,13 @@ export default function StatsScreen() {
             <Text className="text-sm font-semibold text-muted-foreground mb-3">This Week</Text>
             <WeeklyBarChart data={dailyActivity} />
           </Card>
+
+          {/* Due Cards (per-list only) */}
+          {scope === "list" && listId && list?.flashcardMode && (
+            <Card>
+              <DueCardsSection listId={listId} flashcardMode={list.flashcardMode} />
+            </Card>
+          )}
 
           {/* Card Distribution (per-list only) */}
           {cardDist && cardDist.total > 0 && (

@@ -426,7 +426,7 @@ export default function ListDetailScreen() {
                 router.push(`/lists/stats?listId=${id}`);
               }}
             >
-              <Text className="text-sm text-foreground">Practice Stats</Text>
+              <Text className="text-sm text-foreground">Review Statistics</Text>
             </Pressable>
             <Pressable
               className="px-4 py-3"
