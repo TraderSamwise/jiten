@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import { ClerkProvider, useAuth as useClerkAuth } from "@clerk/clerk-expo";
+import { ClerkProvider, useAuth as useClerkAuth, useUser as useClerkUser } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
 
 import { env } from "@/lib/env";
@@ -74,5 +74,12 @@ export function useAuth(): AuthState {
     return useLocalAuth();
   }
   return useClerkAuthAdapter();
+}
+
+/** Safe useUser — returns { user: null } when Clerk is absent or user is not signed in. */
+export function useUser() {
+  if (LOCAL_MODE) return { user: null };
+  const { user } = useClerkUser();
+  return { user: user ?? null };
 }
 /* eslint-enable react-hooks/rules-of-hooks */

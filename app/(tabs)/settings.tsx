@@ -17,8 +17,7 @@ import {
   type ThemePreference,
 } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
-import { useAuth } from "@/lib/auth";
-import { useUser as useClerkUser } from "@clerk/clerk-expo";
+import { useAuth, useUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
@@ -31,44 +30,37 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 
 const HAS_AUTH = !!env.CLERK_PUBLISHABLE_KEY;
 
-/** Safe wrapper — returns null when ClerkProvider is absent (local mode). */
-function useUser() {
-  if (!HAS_AUTH) return { user: null };
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- HAS_AUTH is a build-time constant
-  return useClerkUser();
-}
-
-function SignedOutCard() {
-  const router = useRouter();
-  return (
-    <Card className="mb-4">
-      <CardTitle className="text-base">Account</CardTitle>
-      <Separator className="my-2" />
-      <Text className="text-sm text-muted-foreground mb-3">Sign in to sync across devices</Text>
-      <View className="flex-row gap-2">
-        <Button
-          variant="default"
-          size="sm"
-          label="Sign In"
-          onPress={() => router.push("/sign-in")}
-          className="flex-1"
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          label="Sign Up"
-          onPress={() => router.push("/sign-up")}
-          className="flex-1"
-        />
-      </View>
-    </Card>
-  );
-}
-
-function SignedInCard() {
-  const { signOut } = useAuth();
+function AccountCard() {
+  const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const { syncStatus, triggerSync } = useSync();
+  const router = useRouter();
+
+  if (!isSignedIn) {
+    return (
+      <Card className="mb-4">
+        <CardTitle className="text-base">Account</CardTitle>
+        <Separator className="my-2" />
+        <Text className="text-sm text-muted-foreground mb-3">Sign in to sync across devices</Text>
+        <View className="flex-row gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            label="Sign In"
+            onPress={() => router.push("/sign-in")}
+            className="flex-1"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            label="Sign Up"
+            onPress={() => router.push("/sign-up")}
+            className="flex-1"
+          />
+        </View>
+      </Card>
+    );
+  }
 
   return (
     <Card className="mb-4">
@@ -88,11 +80,6 @@ function SignedInCard() {
       <Button variant="outline" size="sm" label="Sign Out" onPress={() => signOut()} />
     </Card>
   );
-}
-
-function AccountCard() {
-  const { isSignedIn } = useAuth();
-  return isSignedIn ? <SignedInCard /> : <SignedOutCard />;
 }
 
 export default function SettingsScreen() {
