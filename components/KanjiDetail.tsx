@@ -360,7 +360,14 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             <Text className="text-xs text-muted-foreground w-16" numberOfLines={1}>
               ON'yomi
             </Text>
-            <Text className="flex-1 text-base text-foreground">{kanji.readingsOn.join("、")}</Text>
+            <View className="flex-1 flex-row flex-wrap">
+              {kanji.readingsOn.map((r, i) => (
+                <Text key={i} className="text-base text-foreground">
+                  {r}
+                  {i < kanji.readingsOn.length - 1 && "、 "}
+                </Text>
+              ))}
+            </View>
           </View>
         )}
         {kanji.readingsKun.length > 0 && (
@@ -368,13 +375,29 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             <Text className="text-xs text-muted-foreground w-16" numberOfLines={1}>
               KUN'yomi
             </Text>
-            <Text className="flex-1 text-base text-foreground">{kanji.readingsKun.join("、")}</Text>
+            <View className="flex-1 flex-row flex-wrap">
+              {kanji.readingsKun.map((r, i) => (
+                <Text key={i} className="text-base text-foreground">
+                  {r}
+                  {i < kanji.readingsKun.length - 1 && "、 "}
+                </Text>
+              ))}
+            </View>
           </View>
         )}
         {kanji.nanori.length > 0 && (
-          <View>
-            <Text className="text-xs text-muted-foreground">Nanori</Text>
-            <Text className="text-base text-foreground">{kanji.nanori.join("、")}</Text>
+          <View className="flex-row items-baseline gap-2">
+            <Text className="text-xs text-muted-foreground w-16" numberOfLines={1}>
+              Nanori
+            </Text>
+            <View className="flex-1 flex-row flex-wrap">
+              {kanji.nanori.map((r, i) => (
+                <Text key={i} className="text-base text-foreground">
+                  {r}
+                  {i < kanji.nanori.length - 1 && "、 "}
+                </Text>
+              ))}
+            </View>
           </View>
         )}
       </Card>
