@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useDatabase } from "@/db/provider";
 import { useSync } from "@/db/sync-provider";
+import { useAuth } from "@/lib/auth";
+import { getLastUser } from "@/lib/last-user";
 
 const TAB_BAR_HEIGHT = 49;
 
@@ -35,12 +37,34 @@ export function BackgroundDownloadBanner() {
     prevSyncStatus.current = syncStatus;
   }, [syncStatus]);
 
-  const hasActivity = isSyncing || showError || !!activeItem;
-  const targetPercent = showError
-    ? 100
-    : isSyncing
-      ? Math.round(syncProgress * 100)
-      : Math.round((activeItem?.progress ?? 0) * 100);
+  // Show "signed out" notice for users whose session expired
+  const { isSignedIn, isLoaded } = useAuth();
+  const [showSignedOut, setShowSignedOut] = useState(false);
+  useEffect(() => {
+    if (!isLoaded || isSignedIn) return;
+    let cancelled = false;
+    getLastUser().then((lastUser) => {
+      if (cancelled || !lastUser) return;
+      setShowSignedOut(true);
+      const timer = setTimeout(() => setShowSignedOut(false), 30_000);
+      return () => clearTimeout(timer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn]);
+  // Dismiss signed-out notice when other activity starts
+  if (showSignedOut && (isSyncing || !!activeItem)) {
+    setShowSignedOut(false);
+  }
+
+  const hasActivity = isSyncing || showError || showSignedOut || !!activeItem;
+  const targetPercent =
+    showError || showSignedOut
+      ? 100
+      : isSyncing
+        ? Math.round(syncProgress * 100)
+        : Math.round((activeItem?.progress ?? 0) * 100);
 
   // Smoothly animate displayPercent toward targetPercent via interval
   const [displayPercent, setDisplayPercent] = useState(0);
@@ -91,11 +115,13 @@ export function BackgroundDownloadBanner() {
   const isWeb = Platform.OS === "web";
   const label = showError
     ? "Sync failed"
-    : isSyncing
-      ? `Syncing${syncLabel ? ` — ${syncLabel}` : "..."}`
-      : `${STATE_LABELS[activeItem!.state] ?? "Preparing"} ${activeItem!.label}... ${Math.round(activeItem!.progress * 100)}%`;
+    : showSignedOut
+      ? "Signed out — Sign in to sync"
+      : isSyncing
+        ? `Syncing${syncLabel ? ` — ${syncLabel}` : "..."}`
+        : `${STATE_LABELS[activeItem!.state] ?? "Preparing"} ${activeItem!.label}... ${Math.round(activeItem!.progress * 100)}%`;
 
-  const barColor = showError ? "bg-destructive" : "bg-primary";
+  const barColor = showError ? "bg-destructive" : showSignedOut ? "bg-blue-500" : "bg-primary";
 
   return (
     <View
@@ -113,7 +139,7 @@ export function BackgroundDownloadBanner() {
       <View className={isWeb ? "" : "bg-secondary"} pointerEvents="none">
         <View className="flex-row items-start justify-center px-4 pt-1 pb-4">
           <Text
-            className={`text-xs ${showError ? "text-destructive" : "text-secondary-foreground"}`}
+            className={`text-xs ${showError ? "text-destructive" : showSignedOut ? "text-blue-500" : "text-secondary-foreground"}`}
           >
             {label}
           </Text>
