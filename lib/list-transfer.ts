@@ -272,13 +272,13 @@ export async function importListToDb(
       const entry = data.entries[i];
       if (isKanjiEntry(entry)) {
         await userDb.runAsync(
-          "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at) VALUES (?, ?, 0, ?, ?)",
-          [generateId(), listId, entry.kanjiLiteral, entry.addedAt],
+          "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
+          [generateId(), listId, entry.kanjiLiteral, entry.addedAt, now],
         );
       } else {
         await userDb.runAsync(
-          "INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES (?, ?, ?, ?)",
-          [generateId(), listId, entry.entryId, entry.addedAt],
+          "INSERT INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          [generateId(), listId, entry.entryId, entry.addedAt, now],
         );
       }
       if (onProgress && i % 100 === 0) {
