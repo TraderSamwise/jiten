@@ -208,6 +208,7 @@ export default function ListsIndexScreen() {
     await softDelete(userDb, "list_entries", "list_id = ?", [id]);
     await softDelete(userDb, "lists", "id = ?", [id]);
     removeList(id);
+    useListsStore.getState().clearScrollCache(id);
     await useBookmarkStore.getState().load(userDb);
     triggerSync();
   }
