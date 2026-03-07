@@ -15,7 +15,7 @@ const STATE_LABELS: Record<string, string> = {
 
 export function BackgroundDownloadBanner() {
   const { backgroundStatus } = useDatabase();
-  const { syncStatus, syncProgress } = useSync();
+  const { syncStatus, syncProgress, syncLabel } = useSync();
   const insets = useSafeAreaInsets();
 
   const isSyncing = syncStatus === "syncing";
@@ -92,7 +92,7 @@ export function BackgroundDownloadBanner() {
   const label = showError
     ? "Sync failed"
     : isSyncing
-      ? "Syncing..."
+      ? `Syncing${syncLabel ? ` — ${syncLabel}` : "..."}`
       : `${STATE_LABELS[activeItem!.state] ?? "Preparing"} ${activeItem!.label}... ${Math.round(activeItem!.progress * 100)}%`;
 
   const barColor = showError ? "bg-destructive" : "bg-primary";

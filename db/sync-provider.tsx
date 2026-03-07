@@ -12,6 +12,7 @@ import type { Client } from "@libsql/client/web";
 interface SyncContextType {
   syncStatus: "disabled" | "idle" | "syncing" | "error";
   syncProgress: number;
+  syncLabel: string;
   lastSyncAt: string | null;
   lastError: string | null;
   triggerSync: (force?: boolean) => Promise<SyncResult>;
@@ -24,6 +25,7 @@ const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
 const SyncContext = createContext<SyncContextType>({
   syncStatus: "disabled",
   syncProgress: 0,
+  syncLabel: "",
   lastSyncAt: null,
   lastError: null,
   triggerSync: async () => noopResult,
@@ -49,6 +51,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   );
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState(0);
+  const [syncLabel, setSyncLabel] = useState("");
   const [lastError, setLastError] = useState<string | null>(null);
   const [needsReconciliation, setNeedsReconciliation] = useState(false);
   const [reconciled, setReconciled] = useState(false);
@@ -131,9 +134,10 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       syncingRef.current = true;
       setSyncStatus("syncing");
       setSyncProgress(0);
+      setSyncLabel("");
 
       try {
-        const result = await sync(userDb, tursoRef.current, setSyncProgress);
+        const result = await sync(userDb, tursoRef.current, setSyncProgress, setSyncLabel);
         if (result.ok) {
           // Let the progress bar fill to 100% before hiding
           await new Promise((r) => setTimeout(r, 500));
@@ -219,6 +223,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       value={{
         syncStatus,
         syncProgress,
+        syncLabel,
         lastSyncAt,
         lastError,
         triggerSync,
