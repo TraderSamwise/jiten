@@ -840,7 +840,7 @@ export default function BookReaderScreen() {
       {/* Header */}
       <View
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
-        style={[{ paddingTop: insets.top }, webBgStyle]}
+        style={webBgStyle}
       >
         <Pressable onPress={() => goBack()} className="p-2">
           <ChevronLeft size={24} className="text-foreground" />
