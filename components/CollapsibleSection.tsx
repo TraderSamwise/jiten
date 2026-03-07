@@ -1,8 +1,23 @@
 import React, { useState, useCallback } from "react";
-import { View, Pressable } from "react-native";
+import { Platform, View, Pressable } from "react-native";
 import Animated, { useAnimatedStyle, withTiming, FadeIn, FadeOut } from "react-native-reanimated";
-import { LinearGradient } from "expo-linear-gradient";
 import { useColorScheme } from "nativewind";
+
+// expo-linear-gradient needs native linking; fall back gracefully if unavailable
+let LinearGradient: any = null;
+if (Platform.OS === "web") {
+  // Web doesn't use the native module — skip entirely, use CSS gradient instead
+} else {
+  try {
+    const { UIManager } = require("react-native");
+    const isLinked = UIManager.getViewManagerConfig?.("ExpoLinearGradient") != null;
+    if (isLinked) {
+      LinearGradient = require("expo-linear-gradient").LinearGradient;
+    }
+  } catch {
+    // Not available
+  }
+}
 
 interface CollapsibleSectionProps {
   /** Height at which content is considered overflowing. */
@@ -87,7 +102,18 @@ export function CollapsibleSection({
         style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
         pointerEvents="none"
       >
-        <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+        {Platform.OS === "web" ? (
+          <View
+            style={
+              {
+                height: fadeHeight,
+                backgroundImage: `linear-gradient(${cardBgTransparent}, ${cardBg})`,
+              } as any
+            }
+          />
+        ) : LinearGradient ? (
+          <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+        ) : null}
       </Animated.View>
     </Pressable>
   );
