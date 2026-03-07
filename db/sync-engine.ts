@@ -181,50 +181,65 @@ async function pullAll(
     if (rows.length === 0) continue;
     console.log(`[Sync] pull ${meta.name}: ${rows.length} rows`);
 
-    if (meta.mutable) {
-      // Batch fetch all local timestamps for LWW comparison (fixes N+1)
-      const pks = rows.map((r: any) => r[meta.pk] ?? r[meta.cols.indexOf(meta.pk)]);
-      const localRows = await localDb.getAllAsync<Record<string, any>>(
-        `SELECT ${meta.pk} AS _pk, ${meta.timestampCol} AS _ts FROM ${meta.name} WHERE ${meta.pk} IN (${pks.map(() => "?").join(",")})`,
-        pks,
-      );
-      const localTimestamps = new Map(localRows.map((r) => [String(r._pk), String(r._ts ?? "")]));
+    // Wrap all inserts for this table in a transaction for performance
+    await localDb.runAsync("BEGIN");
+    try {
+      if (meta.mutable) {
+        // Batch fetch local timestamps for LWW comparison (chunked to stay under SQLite param limit)
+        const PK_CHUNK = 500;
+        const pks = rows.map((r: any) => r[meta.pk] ?? r[meta.cols.indexOf(meta.pk)]);
+        const localTimestamps = new Map<string, string>();
+        for (let ci = 0; ci < pks.length; ci += PK_CHUNK) {
+          const chunk = pks.slice(ci, ci + PK_CHUNK);
+          const localRows = await localDb.getAllAsync<Record<string, any>>(
+            `SELECT ${meta.pk} AS _pk, ${meta.timestampCol} AS _ts FROM ${meta.name} WHERE ${meta.pk} IN (${chunk.map(() => "?").join(",")})`,
+            chunk,
+          );
+          for (const r of localRows) {
+            localTimestamps.set(String(r._pk), String(r._ts ?? ""));
+          }
+        }
 
-      for (const row of rows) {
-        const pkVal = String(row[meta.pk] ?? row[meta.cols.indexOf(meta.pk)]);
-        const remoteTs = String(
-          row[meta.timestampCol] ?? row[meta.cols.indexOf(meta.timestampCol)] ?? "",
-        );
-        const localTs = localTimestamps.get(pkVal);
-        if (localTs && localTs >= remoteTs) continue;
+        for (const row of rows) {
+          const pkVal = String(row[meta.pk] ?? row[meta.cols.indexOf(meta.pk)]);
+          const remoteTs = String(
+            row[meta.timestampCol] ?? row[meta.cols.indexOf(meta.timestampCol)] ?? "",
+          );
+          const localTs = localTimestamps.get(pkVal);
+          if (localTs && localTs >= remoteTs) continue;
 
-        const values = meta.cols.map((c) => {
-          const v = row[c] ?? row[meta.cols.indexOf(c)];
-          return v === undefined ? null : v;
-        });
-        await localDb.runAsync(
-          `INSERT OR REPLACE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
-          values,
-        );
-        pulled++;
-      }
-    } else {
-      // Append-only: INSERT OR IGNORE
-      for (const row of rows) {
-        const values = meta.cols.map((c) => {
-          const v = row[c] ?? row[meta.cols.indexOf(c)];
-          return v === undefined ? null : v;
-        });
-        try {
+          const values = meta.cols.map((c) => {
+            const v = row[c] ?? row[meta.cols.indexOf(c)];
+            return v === undefined ? null : v;
+          });
           await localDb.runAsync(
-            `INSERT OR IGNORE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
+            `INSERT OR REPLACE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
             values,
           );
-        } catch {
-          // ignore
+          pulled++;
         }
-        pulled++;
+      } else {
+        // Append-only: INSERT OR IGNORE
+        for (const row of rows) {
+          const values = meta.cols.map((c) => {
+            const v = row[c] ?? row[meta.cols.indexOf(c)];
+            return v === undefined ? null : v;
+          });
+          try {
+            await localDb.runAsync(
+              `INSERT OR IGNORE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
+              values,
+            );
+          } catch {
+            // ignore
+          }
+          pulled++;
+        }
       }
+      await localDb.runAsync("COMMIT");
+    } catch (err) {
+      await localDb.runAsync("ROLLBACK").catch(() => {});
+      throw err;
     }
   }
   return pulled;
