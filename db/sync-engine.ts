@@ -118,10 +118,14 @@ function getColumns(table: string, exclude?: readonly string[]): string[] {
 // Pull: remote → local (batched SELECTs)
 // ---------------------------------------------------------------------------
 
-async function pullAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string): Promise<number> {
-  // Build all pull queries in one batch
-  const queries: { sql: string; args: any[] }[] = [];
-  const queryMeta: {
+async function pullAll(
+  localDb: WrappedUserDb,
+  turso: Client,
+  lastSyncAt: string,
+  onProgress?: (progress: number) => void,
+): Promise<number> {
+  // Build per-table pull metadata
+  const tableMeta: {
     name: string;
     pk: string;
     timestampCol: string;
@@ -133,35 +137,31 @@ async function pullAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
     const excludeCols = "excludeCols" in table ? table.excludeCols : undefined;
     const cols = getColumns(table.name, excludeCols);
     if (cols.length === 0) continue;
-    queries.push({
-      sql: `SELECT ${cols.join(", ")} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
-      args: [lastSyncAt],
-    });
-    queryMeta.push({ ...table, cols, mutable: true });
+    tableMeta.push({ ...table, cols, mutable: true });
   }
   for (const table of APPEND_TABLES) {
     const cols = getColumns(table.name);
     if (cols.length === 0) continue;
-    queries.push({
-      sql: `SELECT ${cols.join(", ")} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
-      args: [lastSyncAt],
-    });
-    queryMeta.push({ ...table, cols, mutable: false });
+    tableMeta.push({ ...table, cols, mutable: false });
   }
 
-  if (queries.length === 0) return 0;
-
-  // Single batch request for all pull SELECTs
-  const results = await turso.batch(queries, "read");
+  if (tableMeta.length === 0) return 0;
 
   let pulled = 0;
-  for (let i = 0; i < results.length; i++) {
-    const { rows } = results[i];
-    if (rows.length === 0) continue;
-
-    const meta = queryMeta[i];
+  for (let ti = 0; ti < tableMeta.length; ti++) {
+    const meta = tableMeta[ti];
     const colList = meta.cols.join(", ");
     const placeholders = meta.cols.map(() => "?").join(", ");
+
+    const result = await turso.execute({
+      sql: `SELECT ${colList} FROM ${meta.name} WHERE ${meta.timestampCol} > ?`,
+      args: [lastSyncAt],
+    });
+    const { rows } = result;
+    onProgress?.((ti + 1) / tableMeta.length);
+
+    if (rows.length === 0) continue;
+    console.log(`[Sync] pull ${meta.name}: ${rows.length} rows`);
 
     if (meta.mutable) {
       // Batch fetch all local timestamps for LWW comparison (fixes N+1)
@@ -289,9 +289,11 @@ export async function sync(
   localDb: WrappedUserDb,
   turso: Client,
   onProgress?: (progress: number) => void,
+  onLabel?: (label: string) => void,
 ): Promise<SyncResult> {
   try {
     onProgress?.(0);
+    onLabel?.("Preparing...");
     const t0 = Date.now();
 
     // 1. Ensure remote schema (skips if version matches)
@@ -326,15 +328,18 @@ export async function sync(
     if (skipPull) {
       console.log("[Sync] Remote version unchanged, skipping pull");
     } else {
-      // 5. Pull (single batch request for all tables)
-      pulled = await pullAll(localDb, turso, lastSyncAt);
+      // 5. Pull — per-table requests with progress 0.1→0.5
+      onLabel?.("Downloading...");
+      pulled = await pullAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.1 + p * 0.4));
       console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
     }
     onProgress?.(0.5);
 
     // 6. Push — progress 0.5→1.0 proportional to chunks
+    onLabel?.("Uploading...");
     const pushed = await pushAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.5 + p * 0.5));
     onProgress?.(1);
+    onLabel?.("");
     console.log(`[Sync] push: ${Date.now() - t0}ms (${pushed} stmts)`);
 
     // 7. If pushed, increment remote push_version
