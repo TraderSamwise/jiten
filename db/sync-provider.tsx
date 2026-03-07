@@ -73,6 +73,9 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   const dirtyRef = useRef(false);
   const isOfflineRef = useRef(false);
   const [isSilentSync, setIsSilentSync] = useState(false);
+  // Len-1 sync queue: if a sync is requested while one is in progress, queue it.
+  // If the queued entry was ever non-silent, it stays non-silent (sticky).
+  const pendingSyncRef = useRef<{ force: boolean; silent: boolean } | null>(null);
 
   // Initialize Turso client
   useEffect(() => {
@@ -183,7 +186,16 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       const silent = typeof opts === "object" && opts?.silent === true;
 
       if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
-      if (syncingRef.current) return noopResult; // Dedup
+
+      // If sync in progress, queue this request (len-1 queue, sticky non-silent)
+      if (syncingRef.current) {
+        const prev = pendingSyncRef.current;
+        pendingSyncRef.current = {
+          force: force || (prev?.force ?? false),
+          silent: silent && (prev?.silent ?? true),
+        };
+        return noopResult;
+      }
 
       // Skip if offline (but forced syncs still attempt — gives it one shot)
       if (!force && isOfflineRef.current) return noopResult;
@@ -237,6 +249,12 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       } finally {
         syncingRef.current = false;
         setIsSilentSync(false);
+        // Drain queued sync request if any
+        const pending = pendingSyncRef.current;
+        if (pending) {
+          pendingSyncRef.current = null;
+          triggerSyncRef.current(pending);
+        }
       }
     },
     [userDb, isRealUser, resetInterval],
