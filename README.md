@@ -336,6 +336,68 @@ Trade-off: `router.replace()` swaps the top route instead of popping it, leaving
 | `app/(tabs)/reader/_layout.tsx`   | Reader stack with automatic `SafeBackButton`                              |
 | `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button                        |
 
+## Virtualized Lists (FlashList)
+
+We use `@shopify/flash-list` for long scrollable lists (list detail screen, dictionary results). FlashList wraps RecyclerListView, which uses `useLayoutEffect` internally for cell measurement and viewport management. This creates a **critical pitfall on web** that must be understood.
+
+### The layout effect feedback loop
+
+FlashList's internal layout effects can trigger `onEndReached` during the React layout/commit phase (not just from user scrolling). If `onEndReached` calls a function that does `setState` (e.g., adding more items), FlashList re-renders and its layout effects fire again, creating a loop:
+
+```
+FlashList layout effect → onEndReached → loadMore → setItems
+    → FlashList re-render → layout effect → onEndReached → ...
+    → "Maximum update depth exceeded"
+```
+
+This is especially likely when:
+
+- Restoring a large number of items from cache (hundreds at once)
+- Programmatically scrolling to a deep offset (`scrollToOffset`)
+- `estimatedItemSize` is missing or inaccurate (forces more dynamic measurement)
+
+### Rules for FlashList on web
+
+1. **Do NOT use `onEndReached` for pagination on web.** Instead, handle pagination in the `onScroll` handler by checking `distanceFromEnd` manually. Scroll events come from user interaction, not layout effects, breaking the feedback loop:
+
+   ```tsx
+   onEndReached={Platform.OS === "web" ? undefined : loadMore}
+   onScroll={Platform.OS === "web" ? handleScroll : undefined}
+   ```
+
+2. **Always provide `estimatedItemSize`.** Measure your actual item height (inspect in devtools) and set it accurately. This reduces FlashList's dynamic measurement work.
+
+3. **Never call `setState` (React or Zustand) inside a `setItems` updater.** Move side effects to a separate `useEffect` that runs after render, outside the layout phase.
+
+4. **Use a ref for reentrancy guards**, not state. React batches state updates, so a `loadingMore` state variable can't prevent multiple `onEndReached` calls within the same render cycle:
+
+   ```tsx
+   const loadingMoreRef = useRef(false);
+   // In loadMore:
+   if (loadingMoreRef.current) return;
+   loadingMoreRef.current = true;
+   // ... async work ...
+   loadingMoreRef.current = false;
+   ```
+
+5. **Cache mutations must avoid Zustand `set()`.** When updating scroll cache during scroll or inside state updaters, mutate the cached object directly instead of calling store actions that trigger `set()`.
+
+### Web scroll position cache (`stores/lists.ts`)
+
+On web, `router.replace()` unmounts the list screen on back navigation. To preserve scroll position, the list detail screen uses a write-through Zustand cache:
+
+- **During usage:** `onScroll` writes `contentOffset.y` to cache (direct mutation). After each `setItems`, a `useEffect` syncs items to cache.
+- **On remount:** `loadEntries()` checks cache first. If hit, hydrates items + refs from cache, skips DB query, and restores scroll position via `scrollToOffset`.
+- **Staleness check:** Background query compares DB count to cached count; invalidates on mismatch.
+- **In-memory only:** Lost on full page refresh (acceptable — user starts from top).
+
+### Key files
+
+| File                        | Purpose                                                   |
+| --------------------------- | --------------------------------------------------------- |
+| `app/(tabs)/lists/[id].tsx` | List detail with FlashList pagination + scroll cache      |
+| `stores/lists.ts`           | `ListScrollCache` type + `scrollCache` map in lists store |
+
 ## Web Layout and Header System
 
 On web, the app is capped at 960px content width (centered) with a full-bleed navbar backdrop behind the tab bar. This requires special handling for headers, layout dimensions, and screens that manage their own headers.

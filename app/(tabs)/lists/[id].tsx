@@ -70,6 +70,7 @@ export default function ListDetailScreen() {
   const loadedCountRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [gamesModalVisible, setGamesModalVisible] = useState(false);
@@ -140,19 +141,6 @@ export default function ListDetailScreen() {
       flashListRef.current?.scrollToOffset({ offset, animated: false });
     });
   }, [hasItems]);
-
-  // Web only: throttled onScroll handler to cache scroll position
-  // Mutate the existing cache object directly to avoid Zustand re-renders on every scroll
-  const handleScroll = useCallback(
-    (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-      if (Platform.OS !== "web" || !id) return;
-      const cached = useListsStore.getState().scrollCache[id];
-      if (cached) {
-        cached.scrollOffset = e.nativeEvent.contentOffset.y;
-      }
-    },
-    [id],
-  );
 
   useEffect(() => {
     if (totalCount > 0 && list) {
@@ -260,28 +248,58 @@ export default function ListDetailScreen() {
   }
 
   const loadMore = useCallback(async () => {
-    if (!dictDb || loadingMore) return;
+    if (!dictDb || loadingMoreRef.current) return;
     const rows = allRowsRef.current;
     const loaded = loadedCountRef.current;
     if (loaded >= rows.length) return;
 
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     const nextPage = rows.slice(loaded, loaded + PAGE_SIZE);
     const resolved = await resolvePageItems(dictDb, nextPage);
     const newLoaded = loaded + PAGE_SIZE;
     loadedCountRef.current = newLoaded;
-    setItems((prev) => {
-      const updated = [...prev, ...resolved];
-      if (Platform.OS === "web" && id) {
-        useListsStore.getState().setScrollCache(id, {
-          items: updated,
-          loadedCount: newLoaded,
-        });
-      }
-      return updated;
-    });
+    setItems((prev) => [...prev, ...resolved]);
     setLoadingMore(false);
-  }, [dictDb, loadingMore, id]);
+    loadingMoreRef.current = false;
+  }, [dictDb, id]);
+
+  // Web only: onScroll handler for caching scroll position + manual pagination.
+  // We handle pagination here instead of onEndReached on web to avoid
+  // FlashList's internal layout effects creating a feedback loop with setState.
+  const handleScroll = useCallback(
+    (e: {
+      nativeEvent: {
+        contentOffset: { y: number };
+        contentSize: { height: number };
+        layoutMeasurement: { height: number };
+      };
+    }) => {
+      if (Platform.OS !== "web" || !id) return;
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      // Cache scroll position (direct mutation, no Zustand re-render)
+      const cached = useListsStore.getState().scrollCache[id];
+      if (cached) {
+        cached.scrollOffset = contentOffset.y;
+      }
+      // Manual pagination: trigger loadMore when near the end
+      const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y;
+      if (distanceFromEnd < layoutMeasurement.height * 0.5 && distanceFromEnd >= 0) {
+        loadMore();
+      }
+    },
+    [id, loadMore],
+  );
+
+  // Web only: keep scroll cache items in sync after each render (outside layout phase)
+  useEffect(() => {
+    if (Platform.OS !== "web" || !id || items.length === 0) return;
+    const cached = useListsStore.getState().scrollCache[id];
+    if (cached) {
+      cached.items = items;
+      cached.loadedCount = loadedCountRef.current;
+    }
+  }, [items, id]);
 
   async function handleRemoveItem(item: ListItem) {
     if (!userDb) return;
@@ -436,7 +454,7 @@ export default function ListDetailScreen() {
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
-        onEndReached={loadMore}
+        onEndReached={Platform.OS === "web" ? undefined : loadMore}
         onEndReachedThreshold={0.5}
         onScroll={Platform.OS === "web" ? handleScroll : undefined}
         scrollEventThrottle={Platform.OS === "web" ? 200 : undefined}
