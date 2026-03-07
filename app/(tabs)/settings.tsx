@@ -38,37 +38,37 @@ function useUser() {
   return useClerkUser();
 }
 
-function AccountCard() {
-  const { isSignedIn, signOut } = useAuth();
+function SignedOutCard() {
+  const router = useRouter();
+  return (
+    <Card className="mb-4">
+      <CardTitle className="text-base">Account</CardTitle>
+      <Separator className="my-2" />
+      <Text className="text-sm text-muted-foreground mb-3">Sign in to sync across devices</Text>
+      <View className="flex-row gap-2">
+        <Button
+          variant="default"
+          size="sm"
+          label="Sign In"
+          onPress={() => router.push("/sign-in")}
+          className="flex-1"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          label="Sign Up"
+          onPress={() => router.push("/sign-up")}
+          className="flex-1"
+        />
+      </View>
+    </Card>
+  );
+}
+
+function SignedInCard() {
+  const { signOut } = useAuth();
   const { user } = useUser();
   const { syncStatus, triggerSync } = useSync();
-  const router = useRouter();
-
-  if (!isSignedIn) {
-    return (
-      <Card className="mb-4">
-        <CardTitle className="text-base">Account</CardTitle>
-        <Separator className="my-2" />
-        <Text className="text-sm text-muted-foreground mb-3">Sign in to sync across devices</Text>
-        <View className="flex-row gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            label="Sign In"
-            onPress={() => router.push("/sign-in")}
-            className="flex-1"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            label="Sign Up"
-            onPress={() => router.push("/sign-up")}
-            className="flex-1"
-          />
-        </View>
-      </Card>
-    );
-  }
 
   return (
     <Card className="mb-4">
@@ -88,6 +88,11 @@ function AccountCard() {
       <Button variant="outline" size="sm" label="Sign Out" onPress={() => signOut()} />
     </Card>
   );
+}
+
+function AccountCard() {
+  const { isSignedIn } = useAuth();
+  return isSignedIn ? <SignedInCard /> : <SignedOutCard />;
 }
 
 export default function SettingsScreen() {
