@@ -37,6 +37,7 @@ export default function TabLayout() {
           // If tapping the already-active tab, pop its stack to root
           const target = e.target;
           const state = navigation.getState();
+          if (!state) return;
           const currentRoute = state.routes[state.index];
           if (target?.startsWith(currentRoute.name)) {
             const childState = currentRoute.state;
@@ -47,7 +48,7 @@ export default function TabLayout() {
                   ...childState,
                   index: 0,
                   routes: [childState.routes[0]],
-                }),
+                } as any),
               );
             }
           }

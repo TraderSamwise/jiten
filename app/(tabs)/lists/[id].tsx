@@ -350,7 +350,6 @@ export default function ListDetailScreen() {
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
-        estimatedItemSize={56}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         contentContainerStyle={{
