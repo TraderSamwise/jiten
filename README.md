@@ -262,20 +262,24 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 
 ### Web navigation: back button and browser history
 
-Expo Router syncs React Navigation state to browser history via `useLinking.js`. On web, this creates two problems:
+Expo Router syncs React Navigation state to browser history via `useLinking.js`. On web, this creates three problems:
 
 1. **In-app back buttons cross tabs**: `router.back()` calls `window.history.go(-1)` which follows linear browser history. If the previous history entry was a tab switch, back escapes to a different tab.
 2. **Browser back can exit the SPA**: If browser back goes past the initial history entry, the browser navigates away from the app entirely.
+3. **Browser forward/back restores stale state**: Expo-router stores React Navigation state in each history entry. After in-app navigation changes the stack (especially `router.replace()`-based back), forward/back history entries contain stale state that no longer matches the current navigation tree, causing full page reloads.
 
 #### How it's solved
+
+**Popstate interceptor** (`app/_layout.tsx`): A capture-phase `popstate` listener intercepts ALL browser history navigation before expo-router can process it. This prevents expo-router from restoring stale React Navigation state from history entries. Instead, the handler calls `router.replace(url)` to cleanly navigate to the URL the browser moved to, giving a proper SPA transition. This single mechanism handles:
+
+- Browser back/forward between routes (clean SPA navigation instead of stale state restoration)
+- SPA exit guard (entries without expo-router state get a re-pushed guard entry)
 
 **In-app back buttons** (`useSafeGoBack` in `lib/navigation.ts`): On web, never calls `router.back()`. Instead, reads the current stack's navigation state, computes the previous route's URL via `buildRoutePath()`, and calls `router.replace(path)`. Since REPLACE doesn't change stack depth, expo-router uses `history.replaceState()` (not `history.go(-1)`), so navigation stays within the current tab.
 
 Trade-off: `router.replace()` swaps the top route instead of popping it, leaving a phantom duplicate in the stack (e.g., `[index, [id]]` → `[index, index]`). The phantom is invisible, gets cleaned up on the next forward push, and is detected by `SafeBackButton` which hides itself when back would be a no-op.
 
-**Browser back button**: Works naturally — `backBehavior="history"` on the Tabs navigator makes tab switches push to browser history, so browser back retraces your tab path. This is standard web behavior.
-
-**SPA exit guard** (`app/_layout.tsx`): On mount, polls for expo-router's history state to initialize (indicated by `window.history.state.id` being set), then pushes a duplicate guard entry. A `popstate` listener re-pushes whenever the user hits an entry without an expo-router ID, preventing the browser from leaving the SPA.
+**Tap active tab to pop to root** (`app/(tabs)/_layout.tsx`): `screenListeners.tabPress` detects when the user taps the already-active tab and resets the child stack to index 0, providing a quick way to return to the tab root.
 
 #### Rules for navigation on web
 
@@ -284,14 +288,15 @@ Trade-off: `router.replace()` swaps the top route instead of popping it, leaving
 - Use `router.push()` for forward navigation (pushes to both stack and browser history)
 - Use `router.replace()` for redirects that shouldn't add history entries
 - The `buildRoutePath()` helper in `lib/navigation.ts` converts a route's `name` + `params` into a URL path by substituting `[param]` segments and appending remaining params as query string
+- Browser forward/back are handled by the popstate interceptor — they produce clean SPA navigations, not stale state restorations
 
 ### Key files
 
 | File                              | Purpose                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
 | `lib/navigation.ts`               | `useSafeGoBack()`, `SafeBackButton`, `useTabRouter()`, `buildRoutePath()` |
-| `app/_layout.tsx`                 | SPA exit guard (popstate listener)                                        |
-| `app/(tabs)/_layout.tsx`          | Tabs config: `backBehavior="history"`, `freezeOnBlur`                     |
+| `app/_layout.tsx`                 | Popstate interceptor (browser back/forward + SPA exit guard)              |
+| `app/(tabs)/_layout.tsx`          | Tabs config: `backBehavior="history"`, `freezeOnBlur`, tap-to-pop-root    |
 | `app/(tabs)/lists/_layout.tsx`    | Lists stack with automatic `SafeBackButton`                               |
 | `app/(tabs)/reader/_layout.tsx`   | Reader stack with automatic `SafeBackButton`                              |
 | `components/DictionaryHeader.tsx` | Custom dictionary header with search + back button                        |
