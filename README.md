@@ -504,6 +504,8 @@ Uses Clerk (`@clerk/clerk-expo`) for email + password auth with optional email v
 
 Auth screens live at `app/sign-in.tsx` and `app/sign-up.tsx`. The root layout (`app/_layout.tsx`) gates tab access behind auth state.
 
+**Always use `useAuth()` and `useUser()` from `@/lib/auth`** — never import directly from `@clerk/clerk-expo`. The wrappers handle local mode (no Clerk key) by returning safe defaults (`userId: "local"`, `user: null`) and avoid crashes when Clerk hooks are called outside `<ClerkProvider>` or when the user is not signed in.
+
 ### Database provisioning (`api/provision-db.ts`)
 
 A Vercel serverless function handles Clerk's `user.created` webhook:
@@ -517,12 +519,13 @@ The same `hashUserId()` function is duplicated in `db/turso-client.ts` (client-s
 
 **Server-side env vars** (set in Vercel dashboard):
 
-| Variable               | Purpose                                                      |
-| ---------------------- | ------------------------------------------------------------ |
-| `TURSO_API_TOKEN`      | Turso platform API token (from `turso auth api-tokens mint`) |
-| `TURSO_ORG`            | Turso organization slug                                      |
-| `TURSO_GROUP`          | Database group name (cluster)                                |
-| `CLERK_WEBHOOK_SECRET` | Webhook signing secret from Clerk dashboard                  |
+| Variable               | Purpose                                                               |
+| ---------------------- | --------------------------------------------------------------------- |
+| `TURSO_API_TOKEN`      | Turso platform API token (from `turso auth api-tokens mint`)          |
+| `TURSO_ORG`            | Turso organization slug                                               |
+| `TURSO_GROUP`          | Database group name (cluster)                                         |
+| `CLERK_SECRET_KEY`     | Clerk secret key (for verifying session JWTs in `api/turso-token.ts`) |
+| `CLERK_WEBHOOK_SECRET` | Webhook signing secret from Clerk dashboard                           |
 
 ### Turso client (`db/turso-client.ts`)
 
@@ -533,8 +536,8 @@ The same `hashUserId()` function is duplicated in `db/turso-client.ts` (client-s
 | Variable                            | Purpose                                                     |
 | ----------------------------------- | ----------------------------------------------------------- |
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk public key (presence enables cloud mode)              |
-| `EXPO_PUBLIC_TURSO_AUTH_TOKEN`      | Turso database auth token                                   |
 | `EXPO_PUBLIC_TURSO_ORG`             | Turso organization slug                                     |
+| `EXPO_PUBLIC_API_BASE_URL`          | API base URL for token minting (e.g. `https://jiten.tokyo`) |
 | `EXPO_PUBLIC_DEV_SYNC`              | Set to `1` to enable sync in dev mode (disabled by default) |
 
 ### Sync engine (`db/sync-engine.ts`)

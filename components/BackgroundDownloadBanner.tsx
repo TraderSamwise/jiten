@@ -57,8 +57,8 @@ export function BackgroundDownloadBanner() {
       cancelled = true;
     };
   }, [isLoaded, isSignedIn]);
-  // Dismiss signed-out notice when other activity starts
-  if (showSignedOut && (isSyncing || !!activeItem)) {
+  // Dismiss signed-out notice when user signs in or other activity starts
+  if (showSignedOut && (isSignedIn || isSyncing || !!activeItem)) {
     setShowSignedOut(false);
   }
 
