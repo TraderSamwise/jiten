@@ -14,8 +14,8 @@ export const env = {
   get CLERK_PUBLISHABLE_KEY(): string | undefined {
     return process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || undefined;
   },
-  get TURSO_AUTH_TOKEN(): string | undefined {
-    return process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || undefined;
+  get API_BASE_URL(): string | undefined {
+    return process.env.EXPO_PUBLIC_API_BASE_URL || undefined;
   },
   get TURSO_ORG(): string | undefined {
     return process.env.EXPO_PUBLIC_TURSO_ORG || undefined;

@@ -94,6 +94,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.0.1",
     "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.13",
     "@types/encoding-japanese": "^2.2.1",
