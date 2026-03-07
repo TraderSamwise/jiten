@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, Platform, View } from "react-native";
+import { Modal, Pressable, Platform, View, ScrollView, Switch } from "react-native";
 import { useAtom } from "jotai";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -124,13 +124,16 @@ export function FlashcardSettingsModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={onClose}>
         <Pressable onPress={() => {}}>
-          <View
-            className="rounded-2xl border border-border bg-background p-5"
-            style={
+          <ScrollView
+            bounces={false}
+            className="rounded-2xl border border-border bg-background"
+            contentContainerStyle={{ padding: 20 }}
+            style={[
+              { maxHeight: "85%" },
               Platform.OS === "web"
                 ? { maxWidth: 500, width: "100%", alignSelf: "center" }
-                : undefined
-            }
+                : undefined,
+            ]}
           >
             <Text className="text-lg font-semibold text-foreground mb-4">Flashcard Settings</Text>
 
@@ -231,79 +234,33 @@ export function FlashcardSettingsModal({
               })}
             </View>
 
-            {/* Auto-play audio */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">
-              Play audio on reveal
-            </Text>
-            <View className="flex-row gap-2 mb-5">
-              <Pressable
-                onPress={() => setAutoPlayAudio(false)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  !autoPlayAudio ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    !autoPlayAudio ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  Off
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setAutoPlayAudio(true)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  autoPlayAudio ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    autoPlayAudio ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  On
-                </Text>
-              </Pressable>
+            {/* Toggle switches */}
+            <View className="flex-row items-center justify-between py-2">
+              <Text className="text-sm text-foreground">Play audio on reveal</Text>
+              <Switch value={autoPlayAudio} onValueChange={setAutoPlayAudio} />
             </View>
 
-            {/* Confusion detection (only for SRS modes) */}
             {mode !== "add_order" && (
-              <>
-                <Text className="text-sm font-medium text-muted-foreground mb-2">
-                  Similar word detection
-                </Text>
-                <View className="flex-row gap-2 mb-5">
-                  <Pressable
-                    onPress={() => setConfusionDetection(false)}
-                    className={`flex-1 items-center rounded-lg border py-2 ${
-                      !confusionDetection ? "border-primary bg-primary/10" : "border-border"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
-                        !confusionDetection ? "text-primary" : "text-muted-foreground"
-                      }`}
-                    >
-                      Off
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setConfusionDetection(true)}
-                    className={`flex-1 items-center rounded-lg border py-2 ${
-                      confusionDetection ? "border-primary bg-primary/10" : "border-border"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
-                        confusionDetection ? "text-primary" : "text-muted-foreground"
-                      }`}
-                    >
-                      On
-                    </Text>
-                  </Pressable>
-                </View>
-              </>
+              <View className="flex-row items-center justify-between py-2">
+                <Text className="text-sm text-foreground">Similar word detection</Text>
+                <Switch value={confusionDetection} onValueChange={setConfusionDetection} />
+              </View>
             )}
+
+            <View className="flex-row items-center justify-between py-2">
+              <Text className="text-sm text-foreground">Flip animation</Text>
+              <Switch value={flipAnimation} onValueChange={setFlipAnimation} />
+            </View>
+
+            <View className="flex-row items-center justify-between py-2">
+              <Text className="text-sm text-foreground">Swipe animation</Text>
+              <Switch value={swipeAnimation} onValueChange={setSwipeAnimation} />
+            </View>
+
+            <View className="flex-row items-center justify-between py-2 mb-3">
+              <Text className="text-sm text-foreground">Button animation</Text>
+              <Switch value={buttonAnimation} onValueChange={setButtonAnimation} />
+            </View>
 
             {/* Input mode */}
             <Text className="text-sm font-medium text-muted-foreground mb-2">Input mode</Text>
@@ -363,105 +320,6 @@ export function FlashcardSettingsModal({
               </Pressable>
             </View>
 
-            {/* Flip animation */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">Flip animation</Text>
-            <View className="flex-row gap-2 mb-5">
-              <Pressable
-                onPress={() => setFlipAnimation(false)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  !flipAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    !flipAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  Off
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setFlipAnimation(true)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  flipAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    flipAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  On
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Swipe animation */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">Swipe animation</Text>
-            <View className="flex-row gap-2 mb-5">
-              <Pressable
-                onPress={() => setSwipeAnimation(false)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  !swipeAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    !swipeAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  Off
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setSwipeAnimation(true)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  swipeAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    swipeAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  On
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Button animation */}
-            <Text className="text-sm font-medium text-muted-foreground mb-2">Button animation</Text>
-            <View className="flex-row gap-2 mb-5">
-              <Pressable
-                onPress={() => setButtonAnimation(false)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  !buttonAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    !buttonAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  Off
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setButtonAnimation(true)}
-                className={`flex-1 items-center rounded-lg border py-2 ${
-                  buttonAnimation ? "border-primary bg-primary/10" : "border-border"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium ${
-                    buttonAnimation ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  On
-                </Text>
-              </Pressable>
-            </View>
-
             {/* Actions */}
             <View className="flex-row gap-2">
               <Button className="flex-1" variant="outline" label="Cancel" onPress={onClose} />
@@ -471,7 +329,7 @@ export function FlashcardSettingsModal({
                 onPress={handleSave}
               />
             </View>
-          </View>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
