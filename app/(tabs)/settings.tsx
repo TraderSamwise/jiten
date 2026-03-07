@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Platform, ScrollView, Switch, View } from "react-native";
 import { useAtom } from "jotai";
+import { useRouter } from "expo-router";
 import { alert } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,61 @@ import {
   type ThemePreference,
 } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
+import { useAuth } from "@/lib/auth";
+import { env } from "@/lib/env";
+import { useSync } from "@/db/sync-provider";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];
+
+const HAS_AUTH = !!env.CLERK_PUBLISHABLE_KEY;
+
+function AccountCard() {
+  const { isSignedIn, userId, signOut } = useAuth();
+  const { syncStatus } = useSync();
+  const router = useRouter();
+
+  if (!isSignedIn) {
+    return (
+      <Card className="mb-4">
+        <CardTitle className="text-base">Account</CardTitle>
+        <Separator className="my-2" />
+        <Text className="text-sm text-muted-foreground mb-3">Sign in to sync across devices</Text>
+        <View className="flex-row gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            label="Sign In"
+            onPress={() => router.push("/sign-in")}
+            className="flex-1"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            label="Sign Up"
+            onPress={() => router.push("/sign-up")}
+            className="flex-1"
+          />
+        </View>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mb-4">
+      <CardTitle className="text-base">Account</CardTitle>
+      <Separator className="my-2" />
+      <Text className="text-sm text-foreground mb-1">{userId}</Text>
+      <Text className="text-xs text-muted-foreground mb-3">
+        Sync: {syncStatus === "disabled" ? "off" : syncStatus}
+      </Text>
+      <Button variant="outline" size="sm" label="Sign Out" onPress={() => signOut()} />
+    </Card>
+  );
+}
 
 export default function SettingsScreen() {
   const [activeTheme, setActiveTheme] = useAtom(themeAtom);
@@ -101,6 +151,8 @@ export default function SettingsScreen() {
         <CardTitle>Jiten</CardTitle>
         <CardDescription>Japanese-English Dictionary</CardDescription>
       </Card>
+
+      {HAS_AUTH && <AccountCard />}
 
       <Card className="mb-4">
         <CardTitle className="text-base">Theme</CardTitle>

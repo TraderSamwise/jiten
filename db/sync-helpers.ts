@@ -34,3 +34,12 @@ export const APPEND_TABLES = [
   { name: "confusion_events", pk: "id", timestampCol: "confused_at" },
   { name: "game_scores", pk: "id", timestampCol: "played_at" },
 ] as const;
+
+/** Wipe all user data rows. Schema stays intact — sync pull repopulates from remote. */
+export async function resetLocalUserData(db: WrappedUserDb) {
+  const tables = [...MUTABLE_TABLES, ...APPEND_TABLES].map((t) => t.name);
+  for (const table of tables) {
+    await db.runAsync(`DELETE FROM ${table}`);
+  }
+  await db.runAsync("DELETE FROM sync_meta");
+}
