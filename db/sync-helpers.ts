@@ -46,9 +46,9 @@ export const APPEND_TABLES = [
 export async function hasLocalData(db: WrappedUserDb): Promise<boolean> {
   const row = await db.getFirstAsync<{ n: number }>(
     `SELECT
-      (SELECT COUNT(*) FROM lists WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM lists WHERE deleted_at IS NULL AND is_default = 0) +
       (SELECT COUNT(*) FROM srs_cards WHERE deleted_at IS NULL) +
-      (SELECT COUNT(*) FROM books WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM books WHERE deleted_at IS NULL AND is_default = 0) +
       (SELECT COUNT(*) FROM user_kanji_notes WHERE deleted_at IS NULL) as n`,
   );
   return !!(row && row.n > 0);

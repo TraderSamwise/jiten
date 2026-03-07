@@ -592,7 +592,7 @@ Large columns that should sync once (not on every delta cycle) are configured as
 
 This keeps progress updates lightweight (no megabytes re-pushed) while ensuring imported book content is available on all devices. The `filter` option restricts which rows participate — default books have content seeded locally so they don't need blob sync.
 
-**Important for new INSERT statements:** Any column used in the regular delta sync (i.e. not in `excludeCols`) must be set on INSERT. If `updated_at` is NULL, the row will never sync (`NULL > timestamp` is always false in SQL).
+**Important for new INSERT/UPDATE statements:** Any INSERT into a synced table must set `updated_at` (or the table's `timestampCol`). If `updated_at` is NULL, the row will never sync (`NULL > timestamp` is always false in SQL). Similarly, any UPDATE that modifies synced columns must also update `updated_at`, or the change won't propagate to other devices.
 
 #### Network error detection
 
@@ -652,14 +652,14 @@ No external dependencies (NetInfo, exponential backoff) — offline detection is
 
 On mount, compares current `userId` against `lastUser` stored in AsyncStorage:
 
-| Scenario                         | Action                                |
-| -------------------------------- | ------------------------------------- |
-| Same user                        | Proceed to sync                       |
-| First sign-in, no local data     | Save user, proceed                    |
-| First sign-in, local data exists | Prompt: use cloud / use local / merge |
-| Different user                   | Prompt: wipe local data or sign out   |
+| Scenario                     | Action                                |
+| ---------------------------- | ------------------------------------- |
+| Same user                    | Proceed to sync                       |
+| First sign-in, no local data | Save user, proceed                    |
+| First sign-in, has user data | Prompt: use cloud / use local / merge |
+| Different user               | Prompt: wipe local data or sign out   |
 
-The "merge" option proceeds with normal LWW + append sync — local and remote data coexist, with conflicts resolved by timestamp.
+The "merge" option proceeds with normal LWW + append sync — local and remote data coexist, with conflicts resolved by timestamp. `hasLocalData()` excludes default/seeded lists and books so they don't falsely trigger the prompt.
 
 ### Sync metadata (`sync_meta` table)
 
@@ -695,7 +695,7 @@ After sync pulls remote data, the UI needs to reflect the changes. Three pattern
 
 **When to use:** For data shown on multiple screens simultaneously (bookmarks, list index).
 
-After any successful pull, `sync-provider.tsx` calls `reloadStores(userDb)` which reloads all registered Zustand stores. Components subscribed to those stores re-render automatically.
+After any successful pull, `sync-provider.tsx` awaits `reloadStores(userDb)` which reloads all registered Zustand stores in parallel via `Promise.all`. Components subscribed to those stores re-render automatically. `reloadStores` is also awaited after reconciliation, first-sync choice, and hard sync.
 
 Current stores with `.load()`:
 

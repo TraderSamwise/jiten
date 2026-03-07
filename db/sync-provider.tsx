@@ -10,14 +10,16 @@ import { sync, isNetworkError, type SyncResult } from "./sync-engine";
 import { resetLocalUserData, hasLocalData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore } from "@/stores/lists";
-
-/** Reload all in-memory stores from the database after sync or data reset. */
-function reloadStores(userDb: WrappedUserDb) {
-  useBookmarkStore.getState().load(userDb);
-  useListsStore.getState().load(userDb);
-}
 import { getLastUser, setLastUser } from "@/lib/last-user";
 import type { Client } from "@libsql/client/web";
+
+/** Reload all in-memory stores from the database after sync or data reset. */
+async function reloadStores(userDb: WrappedUserDb) {
+  await Promise.all([
+    useBookmarkStore.getState().load(userDb),
+    useListsStore.getState().load(userDb),
+  ]);
+}
 
 interface SyncContextType {
   syncStatus: "disabled" | "idle" | "syncing" | "error";
@@ -178,7 +180,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (proceed && userDb) {
         await resetLocalUserData(userDb);
         await setLastUser(userId);
-        reloadStores(userDb);
+        await reloadStores(userDb);
         setNeedsReconciliation(false);
         setReconciled(true);
       } else {
@@ -195,7 +197,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (choice === "use-cloud") {
         // Wipe local, pull from cloud
         await resetLocalUserData(userDb);
-        reloadStores(userDb);
+        await reloadStores(userDb);
       } else if (choice === "use-local") {
         // Reset sync state so everything pushes fresh
         await userDb.runAsync("DELETE FROM sync_meta");
@@ -274,7 +276,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           resetInterval();
           // Reload in-memory stores if data was pulled from remote
           if (result.pulled > 0) {
-            reloadStores(userDb);
+            await reloadStores(userDb);
           }
         } else {
           // Classify error: network errors are silent, others show banner
