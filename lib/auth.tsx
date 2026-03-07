@@ -9,12 +9,14 @@ export interface AuthState {
   isLoaded: boolean;
   userId: string | null;
   signOut: () => Promise<void>;
+  getToken: () => Promise<string | null>;
 }
 
 /** true when no Clerk key is configured — app runs fully local */
 const LOCAL_MODE = !env.CLERK_PUBLISHABLE_KEY;
 
 const noop = async () => {};
+const noopToken = async () => null;
 
 // Local-mode context: always signed in as "local" user
 const LocalAuthContext = createContext<AuthState>({
@@ -22,6 +24,7 @@ const LocalAuthContext = createContext<AuthState>({
   isLoaded: true,
   userId: "local",
   signOut: noop,
+  getToken: noopToken,
 });
 
 function useLocalAuth(): AuthState {
@@ -29,7 +32,7 @@ function useLocalAuth(): AuthState {
 }
 
 function useClerkAuthAdapter(): AuthState {
-  const { isSignedIn, isLoaded, userId, signOut } = useClerkAuth();
+  const { isSignedIn, isLoaded, userId, signOut, getToken } = useClerkAuth();
   return {
     isSignedIn: isSignedIn ?? false,
     isLoaded: isLoaded ?? false,
@@ -37,6 +40,7 @@ function useClerkAuthAdapter(): AuthState {
     signOut: async () => {
       await signOut();
     },
+    getToken: async () => getToken() ?? null,
   };
 }
 
@@ -44,7 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   if (LOCAL_MODE) {
     return (
       <LocalAuthContext.Provider
-        value={{ isSignedIn: true, isLoaded: true, userId: "local", signOut: noop }}
+        value={{
+          isSignedIn: true,
+          isLoaded: true,
+          userId: "local",
+          signOut: noop,
+          getToken: noopToken,
+        }}
       >
         {children}
       </LocalAuthContext.Provider>

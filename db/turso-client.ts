@@ -16,16 +16,15 @@ function hashUserId(userId: string): string {
   return Math.abs(hash).toString(36);
 }
 
-export function createTursoClient(userId: string): Client {
+export function createTursoClient(userId: string, authToken: string): Client {
   const org = env.TURSO_ORG;
-  const token = env.TURSO_AUTH_TOKEN;
-  if (!org || !token) {
-    throw new Error("Turso env vars not configured (TURSO_ORG, TURSO_AUTH_TOKEN)");
+  if (!org) {
+    throw new Error("Turso env var not configured (TURSO_ORG)");
   }
   const dbName = hashUserId(userId);
   return createClient({
     url: `libsql://${dbName}-${org}.turso.io`,
-    authToken: token,
+    authToken,
   });
 }
 
@@ -34,5 +33,5 @@ export function createTursoClient(userId: string): Client {
  *  Set EXPO_PUBLIC_DEV_SYNC=1 to enable sync during development. */
 export function isSyncEnabled(): boolean {
   if (__DEV__ && !process.env.EXPO_PUBLIC_DEV_SYNC) return false;
-  return !!(env.CLERK_PUBLISHABLE_KEY && env.TURSO_AUTH_TOKEN && env.TURSO_ORG);
+  return !!(env.CLERK_PUBLISHABLE_KEY && env.TURSO_ORG);
 }

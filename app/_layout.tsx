@@ -91,7 +91,7 @@ function FirstSyncCheck() {
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
-  const { isSignedIn, isLoaded, userId, signOut } = useAuth();
+  const { isSignedIn, isLoaded, userId, signOut, getToken } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const [authTimedOut, setAuthTimedOut] = useState(false);
@@ -129,7 +129,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     <DatabaseProvider>
       <DictDownloadGate>
         <UserDatabaseProvider userId={effectiveUserId}>
-          <SyncProvider userId={effectiveUserId} onSignOut={signOut}>
+          <SyncProvider userId={effectiveUserId} onSignOut={signOut} getToken={getToken}>
             <ReconciliationCheck />
             <FirstSyncCheck />
             <View style={{ flex: 1 }}>

@@ -60,6 +60,8 @@ export async function resetLocalUserData(db: WrappedUserDb) {
     await db.runAsync(`DELETE FROM ${table}`);
   }
   await db.runAsync("DELETE FROM sync_meta");
+  // Clear seeding flags so defaults re-create for the new user
+  await db.runAsync("DELETE FROM app_flags");
 }
 
 /** Maps user-facing category keys to their underlying tables */

@@ -3,6 +3,8 @@ import { AppState, Platform } from "react-native";
 import { useUserDb } from "./user-provider";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
+import { getTursoToken } from "@/lib/turso-token";
+import { env } from "@/lib/env";
 import { sync, isNetworkError, type SyncResult } from "./sync-engine";
 import { resetLocalUserData, hasLocalData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -50,10 +52,11 @@ export function useSync() {
 interface SyncProviderProps {
   userId: string;
   onSignOut?: () => Promise<void>;
+  getToken: () => Promise<string | null>;
   children: React.ReactNode;
 }
 
-export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps) {
+export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProviderProps) {
   const userDb = useUserDb();
   const isRealUser = userId !== "local" && isSyncEnabled();
   const [syncStatus, setSyncStatus] = useState<SyncContextType["syncStatus"]>(
@@ -77,20 +80,44 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   // If the queued entry was ever non-silent, it stays non-silent (sticky).
   const pendingSyncRef = useRef<{ force: boolean; silent: boolean } | null>(null);
 
-  // Initialize Turso client
+  // Initialize Turso client with scoped token (async — waits for reconciliation)
   useEffect(() => {
-    if (!isRealUser) return;
-    try {
-      tursoRef.current = createTursoClient(userId);
-    } catch (err) {
-      console.error("[SyncProvider] Failed to create Turso client:", err);
-      setSyncStatus("error");
-      setLastError(String(err));
-    }
+    if (!isRealUser || !reconciled) return;
+    let cancelled = false;
+    (async () => {
+      const token = await getTursoToken(userId, getToken, env.API_BASE_URL!);
+      if (cancelled) return;
+      if (!token) {
+        // Can't get token — app works locally, sync stays idle
+        return;
+      }
+      try {
+        tursoRef.current = createTursoClient(userId, token);
+      } catch (err) {
+        console.error("[SyncProvider] Failed to create Turso client:", err);
+        setSyncStatus("error");
+        setLastError(String(err));
+        return;
+      }
+      // Check dirty flag and trigger initial sync
+      if (!userDb) return;
+      const row = await userDb.getFirstAsync<{ value: string }>(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        ["sync_dirty"],
+      );
+      if (cancelled) return;
+      if (row) {
+        dirtyRef.current = true;
+        triggerSyncRef.current(true);
+      } else {
+        triggerSyncRef.current();
+      }
+    })();
     return () => {
+      cancelled = true;
       tursoRef.current = null;
     };
-  }, [userId, isRealUser]);
+  }, [userId, isRealUser, reconciled, getToken, userDb]);
 
   // Check for account change before first sync
   useEffect(() => {
@@ -265,25 +292,10 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
     triggerSyncRef.current = triggerSync;
   }, [triggerSync]);
 
-  // Sync on mount and foreground — only after reconciliation passes
+  // Foreground listener — clear offline flag and retry sync
   useEffect(() => {
-    if (!isRealUser || !userDb || !reconciled) return;
+    if (!isRealUser || !reconciled) return;
 
-    // Check dirty flag on mount — if set, force immediate sync
-    (async () => {
-      const row = await userDb.getFirstAsync<{ value: string }>(
-        "SELECT value FROM sync_meta WHERE key = ?",
-        ["sync_dirty"],
-      );
-      if (row) {
-        dirtyRef.current = true;
-        triggerSync(true);
-      } else {
-        triggerSync();
-      }
-    })();
-
-    // Foreground listener — clear offline flag and retry
     if (Platform.OS === "web") {
       const onVisibility = () => {
         if (document.visibilityState === "visible") {
@@ -302,7 +314,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       });
       return () => sub.remove();
     }
-  }, [userDb, triggerSync, isRealUser, reconciled]);
+  }, [triggerSync, isRealUser, reconciled]);
 
   // Periodic sync every 2 minutes
   useEffect(() => {
