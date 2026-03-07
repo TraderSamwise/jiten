@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 import { useUser } from "@clerk/clerk-expo";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
+import { DeleteDataModal } from "@/components/DeleteDataModal";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -87,6 +88,9 @@ export default function SettingsScreen() {
   const [showPitchAccent, setShowPitchAccent] = useAtom(showPitchAccentAtom);
   const [showPitchAccentType, setShowPitchAccentType] = useAtom(showPitchAccentTypeAtom);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
 
   function handleThemeChange(theme: ThemePreference) {
     setActiveTheme(theme);
@@ -162,6 +166,24 @@ export default function SettingsScreen() {
       </Card>
 
       {HAS_AUTH && <AccountCard />}
+
+      <Card className="mb-4">
+        <CardTitle className="text-base">Data</CardTitle>
+        <Separator className="my-2" />
+        <Button
+          variant="destructive"
+          size="sm"
+          label="Delete Data"
+          onPress={() => setShowDeleteModal(true)}
+        />
+      </Card>
+
+      <DeleteDataModal
+        visible={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        isSignedIn={!!isSignedIn}
+        deleteAccount={isSignedIn && user ? () => user.delete() : undefined}
+      />
 
       <Card className="mb-4">
         <CardTitle className="text-base">Theme</CardTitle>

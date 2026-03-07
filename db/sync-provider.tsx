@@ -16,6 +16,7 @@ interface SyncContextType {
   lastSyncAt: string | null;
   lastError: string | null;
   triggerSync: (force?: boolean) => Promise<SyncResult>;
+  tursoClient: Client | null;
   needsReconciliation: boolean;
   resolveReconciliation: (proceed: boolean) => void;
 }
@@ -29,6 +30,7 @@ const SyncContext = createContext<SyncContextType>({
   lastSyncAt: null,
   lastError: null,
   triggerSync: async () => noopResult,
+  tursoClient: null,
   needsReconciliation: false,
   resolveReconciliation: () => {},
 });
@@ -227,6 +229,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
         lastSyncAt,
         lastError,
         triggerSync,
+        tursoClient: tursoRef.current,
         needsReconciliation,
         resolveReconciliation,
       }}

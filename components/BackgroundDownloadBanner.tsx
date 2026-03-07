@@ -17,7 +17,7 @@ const STATE_LABELS: Record<string, string> = {
 
 export function BackgroundDownloadBanner() {
   const { backgroundStatus } = useDatabase();
-  const { syncStatus, syncProgress, syncLabel } = useSync();
+  const { syncStatus, syncProgress, syncLabel, lastError } = useSync();
   const insets = useSafeAreaInsets();
 
   const isSyncing = syncStatus === "syncing";
@@ -31,7 +31,7 @@ export function BackgroundDownloadBanner() {
   useEffect(() => {
     if (prevSyncStatus.current === "syncing" && syncStatus === "error") {
       setShowError(true);
-      const timer = setTimeout(() => setShowError(false), 5000);
+      const timer = setTimeout(() => setShowError(false), 15_000);
       return () => clearTimeout(timer);
     }
     prevSyncStatus.current = syncStatus;
@@ -113,8 +113,13 @@ export function BackgroundDownloadBanner() {
   if (!hasActivity) return null;
 
   const isWeb = Platform.OS === "web";
+  const errorDetail = lastError
+    ? lastError.length > 80
+      ? lastError.slice(0, 80) + "..."
+      : lastError
+    : null;
   const label = showError
-    ? "Sync failed"
+    ? `Sync failed${errorDetail ? ` — ${errorDetail}` : ""}`
     : showSignedOut
       ? "Signed out — Sign in to sync"
       : isSyncing
