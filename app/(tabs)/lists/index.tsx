@@ -270,6 +270,7 @@ export default function ListsIndexScreen() {
         // Refresh stores
         await loadLists();
         await useBookmarkStore.getState().load(userDb);
+        triggerSync(true);
 
         router.push(`/lists/${newListId}`);
       } finally {

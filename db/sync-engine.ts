@@ -304,6 +304,13 @@ async function pushAll(
 // Main sync
 // ---------------------------------------------------------------------------
 
+export function isNetworkError(err: unknown): boolean {
+  const msg = String(err);
+  return /Failed to fetch|NetworkError|ERR_FAILED|net::ERR_|CORS|Load failed|Network request failed/i.test(
+    msg,
+  );
+}
+
 export async function sync(
   localDb: WrappedUserDb,
   turso: Client,

@@ -902,11 +902,20 @@ function StudyScreen() {
   const { webBgStyle } = useWebBackdrop();
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
-  const { triggerSync } = useSync();
+  const { triggerSync, markDirty } = useSync();
+  const sessionDirtyRef = useRef(false);
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const setLists = useListsStore((s) => s.setLists);
   const updateList = useListsStore((s) => s.updateList);
   const [syncWarning, setSyncWarning] = useState(false);
+
+  // Sync on unmount if any SRS updates were made during this session
+  useEffect(
+    () => () => {
+      if (sessionDirtyRef.current) triggerSync(true);
+    },
+    [],
+  );
 
   const [localList, setLocalList] = useState<typeof storeList>(undefined);
   const list = storeList ?? localList;
@@ -1407,6 +1416,12 @@ function StudyScreen() {
       await rateSrsCard(card, Rating.Again, reviewLogId);
     }
 
+    // Mark dirty for sync on unmount
+    if (!sessionDirtyRef.current) {
+      sessionDirtyRef.current = true;
+      markDirty();
+    }
+
     // Update current card to rated + append re-queue copy
     const updatedCards = [...cardsRef.current];
     updatedCards[cursor] = {
@@ -1501,6 +1516,12 @@ function StudyScreen() {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
       reviewLogId = generateId();
       await rateSrsCard(card, rating, reviewLogId);
+    }
+
+    // Mark dirty for sync on unmount
+    if (!sessionDirtyRef.current) {
+      sessionDirtyRef.current = true;
+      markDirty();
     }
 
     // Update current card to rated

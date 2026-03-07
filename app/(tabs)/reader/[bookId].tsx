@@ -57,6 +57,7 @@ import {
   type FuriganaEntry,
 } from "@/lib/reader-furigana";
 import { parseBookRow } from "./index";
+import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
 
 const TOOLBAR_GAP = 24;
@@ -367,6 +368,8 @@ export default function BookReaderScreen() {
   const isDark = colorScheme === "dark";
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
+  const { triggerSync, markDirty } = useSync();
+  const scrollDirtyRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
@@ -595,7 +598,7 @@ export default function BookReaderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [furiganaLevels, dictDb]);
 
-  // Save char offset on unmount
+  // Save char offset on unmount + trigger sync if scroll position changed
   useEffect(() => {
     return () => {
       if (userDb && bookId && scrollPosRef.current > 0) {
@@ -605,6 +608,7 @@ export default function BookReaderScreen() {
           bookId,
         ]);
       }
+      if (scrollDirtyRef.current) triggerSync(true);
     };
   }, [userDb, bookId]);
 
@@ -697,6 +701,10 @@ export default function BookReaderScreen() {
           setShowPopup(true);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.charOffset;
+          if (!scrollDirtyRef.current) {
+            scrollDirtyRef.current = true;
+            markDirty();
+          }
           if (userDb && bookId) {
             userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
               msg.charOffset,

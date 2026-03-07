@@ -3,7 +3,7 @@ import { AppState, Platform } from "react-native";
 import { useUserDb } from "./user-provider";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
-import { sync, type SyncResult } from "./sync-engine";
+import { sync, isNetworkError, type SyncResult } from "./sync-engine";
 import { resetLocalUserData, hasLocalData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { getLastUser, setLastUser } from "@/lib/last-user";
@@ -16,6 +16,7 @@ interface SyncContextType {
   lastSyncAt: string | null;
   lastError: string | null;
   triggerSync: (force?: boolean) => Promise<SyncResult>;
+  markDirty: () => void;
   tursoClient: Client | null;
   needsReconciliation: boolean;
   resolveReconciliation: (proceed: boolean) => void;
@@ -32,6 +33,7 @@ const SyncContext = createContext<SyncContextType>({
   lastSyncAt: null,
   lastError: null,
   triggerSync: async () => noopResult,
+  markDirty: () => {},
   tursoClient: null,
   needsReconciliation: false,
   resolveReconciliation: () => {},
@@ -66,6 +68,8 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   const syncingRef = useRef(false);
   const tursoRef = useRef<Client | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dirtyRef = useRef(false);
+  const isOfflineRef = useRef(false);
 
   // Initialize Turso client
   useEffect(() => {
@@ -150,21 +154,31 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
     [userId, userDb],
   );
 
+  const markDirty = useCallback(() => {
+    if (!userDb || dirtyRef.current) return;
+    dirtyRef.current = true;
+    userDb
+      .runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", ["sync_dirty", "1"])
+      .catch(() => {});
+  }, [userDb]);
+
+  // Helper to reset the periodic interval timer (called after successful sync)
+  const resetInterval = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(triggerSyncRef.current, 120_000);
+  }, []);
+
+  // We need a ref to triggerSync so resetInterval and the interval callback
+  // always call the latest version without a circular dep.
+  const triggerSyncRef = useRef<(force?: boolean) => Promise<SyncResult>>(async () => noopResult);
+
   const triggerSync = useCallback(
     async (force = false): Promise<SyncResult> => {
       if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
       if (syncingRef.current) return noopResult; // Dedup
 
-      // Throttle: skip if last sync was within 5 minutes (unless forced)
-      if (!force) {
-        const row = await userDb.getFirstAsync<{ value: string }>(
-          "SELECT value FROM sync_meta WHERE key = ?",
-          ["last_sync_at"],
-        );
-        if (row && Date.now() - new Date(row.value).getTime() < 5 * 60_000) {
-          return noopResult;
-        }
-      }
+      // Skip if offline (but forced syncs still attempt — gives it one shot)
+      if (!force && isOfflineRef.current) return noopResult;
 
       syncingRef.current = true;
       setSyncStatus("syncing");
@@ -174,62 +188,102 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       try {
         const result = await sync(userDb, tursoRef.current, setSyncProgress, setSyncLabel);
         if (result.ok) {
+          // Clear offline flag on success
+          isOfflineRef.current = false;
+          // Clear dirty flag after successful sync
+          dirtyRef.current = false;
+          userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]).catch(() => {});
           // Let the progress bar fill to 100% before hiding
           await new Promise((r) => setTimeout(r, 500));
           setSyncStatus("idle");
           setLastError(null);
           setLastSyncAt(new Date().toISOString());
+          // Reset the periodic interval so 2min countdown starts fresh
+          resetInterval();
           // Reload in-memory stores if data was pulled from remote
           if (result.pulled > 0) {
             useBookmarkStore.getState().load(userDb);
           }
         } else {
-          setSyncStatus("error");
-          setLastError(result.error ?? "Unknown sync error");
+          // Classify error: network errors are silent, others show banner
+          if (isNetworkError(result.error)) {
+            isOfflineRef.current = true;
+            setSyncStatus("idle");
+          } else {
+            setSyncStatus("error");
+            setLastError(result.error ?? "Unknown sync error");
+          }
         }
         return result;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        setSyncStatus("error");
-        setLastError(msg);
+        if (isNetworkError(err)) {
+          isOfflineRef.current = true;
+          setSyncStatus("idle");
+        } else {
+          setSyncStatus("error");
+          setLastError(msg);
+        }
         return { ok: false, error: msg, pulled: 0, pushed: 0 };
       } finally {
         syncingRef.current = false;
       }
     },
-    [userDb, isRealUser],
+    [userDb, isRealUser, resetInterval],
   );
+
+  // Keep triggerSyncRef up to date
+  useEffect(() => {
+    triggerSyncRef.current = triggerSync;
+  }, [triggerSync]);
 
   // Sync on mount and foreground — only after reconciliation passes
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
 
-    // Initial sync
-    triggerSync();
+    // Check dirty flag on mount — if set, force immediate sync
+    (async () => {
+      const row = await userDb.getFirstAsync<{ value: string }>(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        ["sync_dirty"],
+      );
+      if (row) {
+        dirtyRef.current = true;
+        triggerSync(true);
+      } else {
+        triggerSync();
+      }
+    })();
 
-    // Foreground listener
+    // Foreground listener — clear offline flag and retry
     if (Platform.OS === "web") {
       const onVisibility = () => {
-        if (document.visibilityState === "visible") triggerSync();
+        if (document.visibilityState === "visible") {
+          isOfflineRef.current = false;
+          triggerSync();
+        }
       };
       document.addEventListener("visibilitychange", onVisibility);
       return () => document.removeEventListener("visibilitychange", onVisibility);
     } else {
       const sub = AppState.addEventListener("change", (state) => {
-        if (state === "active") triggerSync();
+        if (state === "active") {
+          isOfflineRef.current = false;
+          triggerSync();
+        }
       });
       return () => sub.remove();
     }
   }, [userDb, triggerSync, isRealUser, reconciled]);
 
-  // Periodic sync every 5 minutes
+  // Periodic sync every 2 minutes
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
-    intervalRef.current = setInterval(triggerSync, 300_000);
+    intervalRef.current = setInterval(() => triggerSyncRef.current(), 120_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [userDb, triggerSync, isRealUser, reconciled]);
+  }, [userDb, isRealUser, reconciled]);
 
   // Start background downloads (audio, extended DB) after initial sync completes.
   // This ensures sync data is available before large downloads begin.
@@ -262,6 +316,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
         lastSyncAt,
         lastError,
         triggerSync,
+        markDirty,
         tursoClient: tursoRef.current,
         needsReconciliation,
         resolveReconciliation,
