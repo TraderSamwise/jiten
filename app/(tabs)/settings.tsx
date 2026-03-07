@@ -34,7 +34,6 @@ const HAS_AUTH = !!env.CLERK_PUBLISHABLE_KEY;
 function AccountCard() {
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
-  const { syncStatus, triggerSync } = useSync();
   const router = useRouter();
 
   if (!isSignedIn) {
@@ -70,14 +69,6 @@ function AccountCard() {
       <Text className="text-sm text-foreground mb-1">
         {user?.primaryEmailAddress?.emailAddress ?? user?.id ?? "Signed in"}
       </Text>
-      <Button
-        variant="outline"
-        size="sm"
-        label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
-        onPress={() => triggerSync(true)}
-        disabled={syncStatus === "syncing"}
-        className="mb-2"
-      />
       <Button variant="outline" size="sm" label="Sign Out" onPress={() => signOut()} />
     </Card>
   );
@@ -94,6 +85,7 @@ export default function SettingsScreen() {
   const [showHardSyncModal, setShowHardSyncModal] = useState(false);
   const { isSignedIn } = useAuth();
   const { user } = useUser();
+  const { syncStatus, triggerSync } = useSync();
 
   function handleThemeChange(theme: ThemePreference) {
     setActiveTheme(theme);
@@ -174,13 +166,23 @@ export default function SettingsScreen() {
         <CardTitle className="text-base">Data</CardTitle>
         <Separator className="my-2" />
         {isSignedIn && (
-          <Button
-            variant="outline"
-            size="sm"
-            label="Hard Sync"
-            onPress={() => setShowHardSyncModal(true)}
-            className="mb-2"
-          />
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
+              onPress={() => triggerSync(true)}
+              disabled={syncStatus === "syncing"}
+              className="mb-2"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="Hard Sync"
+              onPress={() => setShowHardSyncModal(true)}
+              className="mb-2"
+            />
+          </>
         )}
         <Button
           variant="destructive"
