@@ -30,12 +30,13 @@ async function setSyncMeta(db: WrappedUserDb, key: string, value: string): Promi
 // Remote schema initialization (versioned — only runs new migrations)
 // ---------------------------------------------------------------------------
 
-async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promise<void> {
+/** Returns true if new migrations were applied (schema changed). */
+async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promise<boolean> {
   const stored = await getSyncMeta(localDb, "remote_schema_version");
   const appliedVersion = stored ? parseInt(stored, 10) : -1;
   const total = USER_DB_MIGRATIONS.length;
 
-  if (appliedVersion >= total - 1) return;
+  if (appliedVersion >= total - 1) return false;
 
   const pending = USER_DB_MIGRATIONS.slice(appliedVersion + 1);
   console.log(
@@ -63,6 +64,10 @@ async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promis
   }
 
   await setSyncMeta(localDb, "remote_schema_version", String(total - 1));
+  // Invalidate persisted column cache since schema changed
+  columnCache.clear();
+  await setSyncMeta(localDb, "columns_cache", "");
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +76,18 @@ async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promis
 
 const columnCache = new Map<string, string[]>();
 
-async function ensureColumnCache(turso: Client): Promise<void> {
+async function ensureColumnCache(turso: Client, localDb: WrappedUserDb): Promise<void> {
+  // Try restoring from persisted cache first
+  if (columnCache.size === 0) {
+    const cached = await getSyncMeta(localDb, "columns_cache");
+    if (cached) {
+      const parsed = JSON.parse(cached) as Record<string, string[]>;
+      for (const [table, cols] of Object.entries(parsed)) {
+        columnCache.set(table, cols);
+      }
+    }
+  }
+
   const allTables = [...MUTABLE_TABLES.map((t) => t.name), ...APPEND_TABLES.map((t) => t.name)];
   const uncached = allTables.filter((t) => !columnCache.has(t));
   if (uncached.length === 0) return;
@@ -86,6 +102,9 @@ async function ensureColumnCache(turso: Client): Promise<void> {
     const cols = results[i].rows.map((r: any) => String(r.name ?? r[1]));
     columnCache.set(uncached[i], cols);
   }
+
+  // Persist for future sessions
+  await setSyncMeta(localDb, "columns_cache", JSON.stringify(Object.fromEntries(columnCache)));
 }
 
 function getColumns(table: string, exclude?: readonly string[]): string[] {
@@ -144,31 +163,40 @@ async function pullAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
     const colList = meta.cols.join(", ");
     const placeholders = meta.cols.map(() => "?").join(", ");
 
-    for (const row of rows) {
-      const values = meta.cols.map((c) => {
-        const v = row[c] ?? row[meta.cols.indexOf(c)];
-        return v === undefined ? null : v;
-      });
+    if (meta.mutable) {
+      // Batch fetch all local timestamps for LWW comparison (fixes N+1)
+      const pks = rows.map((r: any) => r[meta.pk] ?? r[meta.cols.indexOf(meta.pk)]);
+      const localRows = await localDb.getAllAsync<Record<string, any>>(
+        `SELECT ${meta.pk} AS _pk, ${meta.timestampCol} AS _ts FROM ${meta.name} WHERE ${meta.pk} IN (${pks.map(() => "?").join(",")})`,
+        pks,
+      );
+      const localTimestamps = new Map(localRows.map((r) => [String(r._pk), String(r._ts ?? "")]));
 
-      if (meta.mutable) {
-        // Last-write-wins: check if local is newer
-        const pkVal = row[meta.pk] ?? row[meta.cols.indexOf(meta.pk)];
+      for (const row of rows) {
+        const pkVal = String(row[meta.pk] ?? row[meta.cols.indexOf(meta.pk)]);
         const remoteTs = String(
           row[meta.timestampCol] ?? row[meta.cols.indexOf(meta.timestampCol)] ?? "",
         );
-        const localRow = await localDb.getFirstAsync<Record<string, any>>(
-          `SELECT ${meta.timestampCol} FROM ${meta.name} WHERE ${meta.pk} = ?`,
-          [pkVal],
-        );
-        if (localRow && String(localRow[meta.timestampCol] ?? "") >= remoteTs) {
-          continue;
-        }
+        const localTs = localTimestamps.get(pkVal);
+        if (localTs && localTs >= remoteTs) continue;
+
+        const values = meta.cols.map((c) => {
+          const v = row[c] ?? row[meta.cols.indexOf(c)];
+          return v === undefined ? null : v;
+        });
         await localDb.runAsync(
           `INSERT OR REPLACE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
           values,
         );
-      } else {
-        // Append-only: INSERT OR IGNORE
+        pulled++;
+      }
+    } else {
+      // Append-only: INSERT OR IGNORE
+      for (const row of rows) {
+        const values = meta.cols.map((c) => {
+          const v = row[c] ?? row[meta.cols.indexOf(c)];
+          return v === undefined ? null : v;
+        });
         try {
           await localDb.runAsync(
             `INSERT OR IGNORE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
@@ -177,8 +205,8 @@ async function pullAll(localDb: WrappedUserDb, turso: Client, lastSyncAt: string
         } catch {
           // ignore
         }
+        pulled++;
       }
-      pulled++;
     }
   }
   return pulled;
@@ -246,25 +274,55 @@ export async function sync(
     onProgress?.(0);
 
     // 1. Ensure remote schema (skips if version matches)
-    await ensureRemoteSchema(localDb, turso);
-    onProgress?.(0.2);
+    const schemaChanged = await ensureRemoteSchema(localDb, turso);
+    onProgress?.(0.3);
 
-    // 2. Ensure column cache (single batch PRAGMA, cached forever)
-    await ensureColumnCache(turso);
-    onProgress?.(0.35);
+    // 2. Ensure column cache (persisted locally, fetched from remote only when needed)
+    await ensureColumnCache(turso, localDb);
+    onProgress?.(0.5);
 
     // 3. Get last sync timestamp
     const lastSyncAt = (await getSyncMeta(localDb, "last_sync_at")) ?? "1970-01-01T00:00:00.000Z";
 
-    // 4. Pull (single batch request for all tables)
-    const pulled = await pullAll(localDb, turso, lastSyncAt);
-    onProgress?.(0.65);
+    // 4. Check remote push_version — skip pull if nothing changed remotely
+    let pulled = 0;
+    const remotePushVersion = await turso.execute(
+      "SELECT value FROM sync_meta WHERE key = 'push_version'",
+    );
+    const remoteVersion =
+      remotePushVersion.rows.length > 0
+        ? String(remotePushVersion.rows[0].value ?? remotePushVersion.rows[0][1])
+        : null;
+    const localVersion = await getSyncMeta(localDb, "last_seen_push_version");
+    const skipPull = !schemaChanged && remoteVersion !== null && remoteVersion === localVersion;
 
-    // 5. Push (single batch request for all rows)
-    const pushed = await pushAll(localDb, turso, lastSyncAt);
+    if (skipPull) {
+      console.log("[Sync] Remote version unchanged, skipping pull");
+    } else {
+      // 5. Pull (single batch request for all tables)
+      pulled = await pullAll(localDb, turso, lastSyncAt);
+    }
     onProgress?.(1);
 
-    // 6. Update last sync timestamp
+    // 6. Push (single batch request for all rows)
+    const pushed = await pushAll(localDb, turso, lastSyncAt);
+
+    // 7. If pushed, increment remote push_version
+    if (pushed > 0) {
+      await turso.execute(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('push_version', CAST(COALESCE((SELECT value FROM sync_meta WHERE key = 'push_version'), '0') AS INTEGER) + 1)",
+      );
+      const newVersionResult = await turso.execute(
+        "SELECT value FROM sync_meta WHERE key = 'push_version'",
+      );
+      const newVersion = String(newVersionResult.rows[0].value ?? newVersionResult.rows[0][1]);
+      await setSyncMeta(localDb, "last_seen_push_version", newVersion);
+    } else if (remoteVersion !== null) {
+      // No push, but save remote version locally so next sync can skip pull
+      await setSyncMeta(localDb, "last_seen_push_version", remoteVersion);
+    }
+
+    // 8. Update last sync timestamp
     await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
 
     console.log(`[Sync] Complete: pulled ${pulled}, pushed ${pushed}`);

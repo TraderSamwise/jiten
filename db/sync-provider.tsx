@@ -14,7 +14,7 @@ interface SyncContextType {
   syncProgress: number;
   lastSyncAt: string | null;
   lastError: string | null;
-  triggerSync: () => Promise<SyncResult>;
+  triggerSync: (force?: boolean) => Promise<SyncResult>;
   needsReconciliation: boolean;
   resolveReconciliation: (proceed: boolean) => void;
 }
@@ -112,40 +112,54 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
     [userId, userDb, onSignOut],
   );
 
-  const triggerSync = useCallback(async (): Promise<SyncResult> => {
-    if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
-    if (syncingRef.current) return noopResult; // Dedup
+  const triggerSync = useCallback(
+    async (force = false): Promise<SyncResult> => {
+      if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
+      if (syncingRef.current) return noopResult; // Dedup
 
-    syncingRef.current = true;
-    setSyncStatus("syncing");
-    setSyncProgress(0);
-
-    try {
-      const result = await sync(userDb, tursoRef.current, setSyncProgress);
-      if (result.ok) {
-        // Let the progress bar fill to 100% before hiding
-        await new Promise((r) => setTimeout(r, 500));
-        setSyncStatus("idle");
-        setLastError(null);
-        setLastSyncAt(new Date().toISOString());
-        // Reload in-memory stores if data was pulled from remote
-        if (result.pulled > 0) {
-          useBookmarkStore.getState().load(userDb);
+      // Throttle: skip if last sync was within 5 minutes (unless forced)
+      if (!force) {
+        const row = await userDb.getFirstAsync<{ value: string }>(
+          "SELECT value FROM sync_meta WHERE key = ?",
+          ["last_sync_at"],
+        );
+        if (row && Date.now() - new Date(row.value).getTime() < 5 * 60_000) {
+          return noopResult;
         }
-      } else {
-        setSyncStatus("error");
-        setLastError(result.error ?? "Unknown sync error");
       }
-      return result;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setSyncStatus("error");
-      setLastError(msg);
-      return { ok: false, error: msg, pulled: 0, pushed: 0 };
-    } finally {
-      syncingRef.current = false;
-    }
-  }, [userDb, isRealUser]);
+
+      syncingRef.current = true;
+      setSyncStatus("syncing");
+      setSyncProgress(0);
+
+      try {
+        const result = await sync(userDb, tursoRef.current, setSyncProgress);
+        if (result.ok) {
+          // Let the progress bar fill to 100% before hiding
+          await new Promise((r) => setTimeout(r, 500));
+          setSyncStatus("idle");
+          setLastError(null);
+          setLastSyncAt(new Date().toISOString());
+          // Reload in-memory stores if data was pulled from remote
+          if (result.pulled > 0) {
+            useBookmarkStore.getState().load(userDb);
+          }
+        } else {
+          setSyncStatus("error");
+          setLastError(result.error ?? "Unknown sync error");
+        }
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setSyncStatus("error");
+        setLastError(msg);
+        return { ok: false, error: msg, pulled: 0, pushed: 0 };
+      } finally {
+        syncingRef.current = false;
+      }
+    },
+    [userDb, isRealUser],
+  );
 
   // Sync on mount and foreground — only after reconciliation passes
   useEffect(() => {
@@ -169,10 +183,10 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
     }
   }, [userDb, triggerSync, isRealUser, reconciled]);
 
-  // Periodic sync every 60s
+  // Periodic sync every 5 minutes
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
-    intervalRef.current = setInterval(triggerSync, 60_000);
+    intervalRef.current = setInterval(triggerSync, 300_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
