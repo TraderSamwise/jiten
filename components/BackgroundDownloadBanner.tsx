@@ -29,11 +29,11 @@ export function BackgroundDownloadBanner() {
     (item) => item.state === "downloading" || item.state === "importing",
   );
 
-  // Show error state briefly when sync fails
+  // Show error state briefly when sync fails (from syncing or directly from init)
   const [showError, setShowError] = useState(false);
   const prevSyncStatus = useRef(syncStatus);
   useEffect(() => {
-    if (prevSyncStatus.current === "syncing" && syncStatus === "error") {
+    if (syncStatus === "error" && prevSyncStatus.current !== "error") {
       setShowError(true);
       const timer = setTimeout(() => setShowError(false), 15_000);
       return () => clearTimeout(timer);
