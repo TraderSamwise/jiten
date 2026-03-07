@@ -58,20 +58,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [isLoaded]);
 
+  const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
+
   // Redirect signed-in users away from auth screens
   useEffect(() => {
     if (!isLoaded) return;
-    const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
     if (isSignedIn && onAuthScreen) {
       router.replace("/dictionary");
     }
-  }, [isSignedIn, isLoaded, segments]);
-
-  // Always add has-navbar on web once loaded (app tree is always mounted)
+  }, [isSignedIn, isLoaded, onAuthScreen]);
   useEffect(() => {
     if (Platform.OS !== "web" || !isLoaded) return;
-    document.body.classList.add("has-navbar");
-  }, [isLoaded]);
+    if (onAuthScreen) {
+      document.body.classList.remove("has-navbar");
+    } else {
+      document.body.classList.add("has-navbar");
+    }
+  }, [isLoaded, onAuthScreen]);
 
   if (!isLoaded && !authTimedOut) return null;
 
