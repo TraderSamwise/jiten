@@ -1,4 +1,12 @@
-import { View, ScrollView, Pressable, Platform, StyleSheet, Text } from "react-native";
+import {
+  View,
+  ScrollView,
+  Pressable,
+  Platform,
+  StyleSheet,
+  Text,
+  useColorScheme,
+} from "react-native";
 import { getVersionString, getVersionCode } from "@/lib/version";
 
 interface ErrorScreenProps {
@@ -16,33 +24,36 @@ export function ErrorScreen({
   primaryAction,
   secondaryAction,
 }: ErrorScreenProps) {
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Something went wrong</Text>
+  const dark = useColorScheme() === "dark";
+  const s = dark ? darkStyles : styles;
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{source}</Text>
-        <Text style={styles.errorMessage}>{message}</Text>
+  return (
+    <ScrollView style={s.container} contentContainerStyle={s.content}>
+      <Text style={s.title}>Something went wrong</Text>
+
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>{source}</Text>
+        <Text style={s.errorMessage}>{message}</Text>
       </View>
 
-      <Pressable style={styles.button} onPress={primaryAction.onPress}>
-        <Text style={styles.buttonText}>{primaryAction.label}</Text>
+      <Pressable style={s.button} onPress={primaryAction.onPress}>
+        <Text style={s.buttonText}>{primaryAction.label}</Text>
       </Pressable>
 
       {secondaryAction && (
-        <Pressable style={styles.buttonOutline} onPress={secondaryAction.onPress}>
-          <Text style={styles.buttonOutlineText}>{secondaryAction.label}</Text>
+        <Pressable style={s.buttonOutline} onPress={secondaryAction.onPress}>
+          <Text style={s.buttonOutlineText}>{secondaryAction.label}</Text>
         </Pressable>
       )}
 
-      <Text style={styles.version}>
+      <Text style={s.version}>
         {getVersionString()} ({getVersionCode()})
       </Text>
 
       {stack && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Stack Trace</Text>
-          <Text style={styles.stackTrace}>{stack}</Text>
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Stack Trace</Text>
+          <Text style={s.stackTrace}>{stack}</Text>
         </View>
       )}
     </ScrollView>
@@ -137,4 +148,32 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 16,
   },
+});
+
+const darkStyles = StyleSheet.create({
+  ...styles,
+  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  section: { marginBottom: 12, padding: 12, backgroundColor: "#1a1a1a", borderRadius: 8 },
+  sectionTitle: { fontSize: 13, fontWeight: "600", color: "#999", marginBottom: 4 },
+  errorMessage: {
+    fontSize: 14,
+    color: "#ef5350",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  stackTrace: {
+    fontSize: 10,
+    color: "#999",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  title: { fontSize: 22, fontWeight: "700", color: "#ef5350", marginBottom: 16 },
+  buttonOutline: {
+    borderWidth: 1,
+    borderColor: "#2196F3",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonOutlineText: { color: "#42a5f5", fontSize: 16, fontWeight: "600" },
+  version: { textAlign: "center", fontSize: 11, color: "#666", marginTop: 20, marginBottom: 16 },
 });

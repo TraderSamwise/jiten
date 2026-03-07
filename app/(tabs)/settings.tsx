@@ -18,7 +18,7 @@ import {
 } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
 import { useAuth } from "@/lib/auth";
-import { useUser } from "@clerk/clerk-expo";
+import { useUser as useClerkUser } from "@clerk/clerk-expo";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
@@ -30,6 +30,13 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 ];
 
 const HAS_AUTH = !!env.CLERK_PUBLISHABLE_KEY;
+
+/** Safe wrapper — returns null when ClerkProvider is absent (local mode). */
+function useUser() {
+  if (!HAS_AUTH) return { user: null };
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- HAS_AUTH is a build-time constant
+  return useClerkUser();
+}
 
 function AccountCard() {
   const { isSignedIn, signOut } = useAuth();
