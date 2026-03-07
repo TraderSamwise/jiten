@@ -14,6 +14,7 @@ import {
   typingFuriganaModeAtom,
   typingShowPitchAtom,
   typingPlayAudioAtom,
+  dayResetHourAtom,
 } from "./settings";
 
 // Access mock helpers
@@ -50,6 +51,13 @@ describe("defaultSettings", () => {
       connectSpeedPreset: "normal",
       connectBubbleKinds: { kanji: true, reading: true, meaning: false },
       typingWordFilter: "all",
+      showRomaji: false,
+      showPitchAccent: true,
+      showPitchAccentType: false,
+      flashcardFlipAnimation: true,
+      flashcardSwipeAnimation: true,
+      flashcardButtonAnimation: true,
+      dayResetHour: 3,
     });
   });
 
@@ -117,6 +125,14 @@ describe("focused atoms", () => {
     expect(store.get(typingPlayAudioAtom)).toBe(false);
     store.set(typingPlayAudioAtom, true);
     expect(store.get(typingPlayAudioAtom)).toBe(true);
+  });
+
+  it("dayResetHourAtom reads and writes", () => {
+    const store = createStore();
+    expect(store.get(dayResetHourAtom)).toBe(3);
+    store.set(dayResetHourAtom, 5);
+    expect(store.get(dayResetHourAtom)).toBe(5);
+    expect(store.get(settingsAtom)?.dayResetHour).toBe(5);
   });
 
   it("writing one focused atom does not affect others", () => {

@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { StudyStatisticsModal } from "@/components/StudyStatisticsModal";
-import { X, Settings, Info, Check, ChevronLeft, ChevronRight, Mic } from "@/lib/icons";
+import { X, Settings, Info, Check, ChevronLeft, ChevronRight, Mic, Flag } from "@/lib/icons";
 import { useVoiceRecognition } from "@/lib/voice-recognition";
 import { toHiragana } from "wanakana";
 import { PitchAccent, splitMorae } from "@/components/PitchAccent";
@@ -65,7 +65,10 @@ import {
   flashcardFlipAnimationAtom,
   flashcardSwipeAnimationAtom,
   flashcardButtonAnimationAtom,
+  dayResetHourAtom,
 } from "@/stores/settings";
+import { markForReview, unmarkForReview } from "@/lib/review-marks";
+import { getLogicalToday, sqlDayExpr } from "@/lib/day-boundary";
 import {
   shouldCheckConfusion,
   findConfusedWords,
@@ -447,6 +450,9 @@ interface StudyCardViewProps {
   isListening: boolean;
   typingMode: boolean;
   voiceMode: boolean;
+  // Mark for review (omit to hide the flag button, e.g. when studying marked cards)
+  isMarkedForReview?: boolean;
+  onMarkForReview?: () => void;
   // Callbacks
   onFlip: () => void;
   onTypingComplete: (wasCorrect: boolean) => void;
@@ -473,6 +479,8 @@ const StudyCardView = React.memo(
       isListening,
       typingMode,
       voiceMode,
+      isMarkedForReview,
+      onMarkForReview,
       onFlip,
       onTypingComplete,
       onInfoPress,
@@ -726,13 +734,23 @@ const StudyCardView = React.memo(
           )}
           <View
             style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
-            className="flex-row items-center gap-1"
+            className="flex-row items-center"
           >
             {Array.from({ length: checkCount }, (_, ci) => (
               <Check key={ci} size={14} className="text-green-500" style={{ marginRight: -4 }} />
             ))}
+            {onMarkForReview && (
+              <GestureDetector gesture={Gesture.Tap().onEnd(() => runOnJS(onMarkForReview)())}>
+                <View style={{ padding: 8, marginVertical: -8, marginLeft: 2, marginRight: -8 }}>
+                  <Flag
+                    size={16}
+                    className={isMarkedForReview ? "text-amber-500" : "text-muted-foreground"}
+                  />
+                </View>
+              </GestureDetector>
+            )}
             <GestureDetector gesture={Gesture.Tap().onEnd(() => runOnJS(onInfoPress)())}>
-              <View style={{ marginLeft: 8, padding: 8, margin: -8 }}>
+              <View style={{ padding: 8, marginVertical: -8, marginLeft: 2, marginRight: -8 }}>
                 <Info size={18} className="text-muted-foreground" />
               </View>
             </GestureDetector>
@@ -922,6 +940,8 @@ function StudyScreen() {
   const flipAnimationEnabled = useAtomValue(flashcardFlipAnimationAtom);
   const swipeAnimationEnabled = useAtomValue(flashcardSwipeAnimationAtom);
   const buttonAnimationEnabled = useAtomValue(flashcardButtonAnimationAtom);
+  const dayResetHour = useAtomValue(dayResetHourAtom);
+  const [markedSet, setMarkedSet] = useState<Set<string>>(new Set());
 
   // --- Single array + cursor (replaces queue/currentIndex/history/historyIndex/revealed) ---
   const [cards, setCards] = useState<StudyCard[]>([]);
@@ -1091,6 +1111,24 @@ function StudyScreen() {
       })
       .catch(() => {});
   }, [userDb, listId, storeList]);
+
+  // Pre-populate markedSet with today's marks for this list
+  useEffect(() => {
+    if (!userDb || !listId) return;
+    const today = getLogicalToday(dayResetHour);
+    const dayExpr = sqlDayExpr("marked_at", dayResetHour);
+    userDb
+      .getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
+        `SELECT entry_id, kanji_literal FROM review_marks WHERE ${dayExpr} = ? AND list_id = ?`,
+        [today, listId],
+      )
+      .then((rows) => {
+        const set = new Set<string>();
+        for (const r of rows) set.add(`${r.entry_id}-${r.kanji_literal ?? ""}`);
+        setMarkedSet(set);
+      })
+      .catch(() => {});
+  }, [userDb, listId, dayResetHour]);
 
   useEffect(() => {
     if (!dictDb || !userDb || !list) return;
@@ -2269,6 +2307,40 @@ function StudyScreen() {
                     isListening={isCursor && isListening}
                     typingMode={isCursor && !!list?.typingMode}
                     voiceMode={isCursor && !!list?.voiceMode}
+                    {...(listId?.startsWith("_marked_")
+                      ? {}
+                      : {
+                          isMarkedForReview: markedSet.has(
+                            studyCard.item.kind === "entry"
+                              ? `${studyCard.item.entry.id}-`
+                              : `0-${studyCard.item.kanji.literal}`,
+                          ),
+                          onMarkForReview: () => {
+                            const item = studyCard.item;
+                            const entryId = item.kind === "entry" ? item.entry.id : 0;
+                            const kanjiLiteral = item.kind === "kanji" ? item.kanji.literal : null;
+                            const key = `${entryId}-${kanjiLiteral ?? ""}`;
+                            if (markedSet.has(key)) {
+                              setMarkedSet((prev) => {
+                                const next = new Set(prev);
+                                next.delete(key);
+                                return next;
+                              });
+                              if (userDb)
+                                unmarkForReview(userDb, entryId, kanjiLiteral, dayResetHour);
+                            } else {
+                              setMarkedSet((prev) => new Set(prev).add(key));
+                              if (userDb)
+                                markForReview(
+                                  userDb,
+                                  entryId,
+                                  kanjiLiteral,
+                                  listId ?? null,
+                                  dayResetHour,
+                                );
+                            }
+                          },
+                        })}
                     onFlip={isCursor ? handleCardFlip : () => {}}
                     onTypingComplete={(wasCorrect) => {
                       if (isCursor) {

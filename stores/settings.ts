@@ -43,6 +43,7 @@ export const defaultSettings = Object.freeze({
   flashcardFlipAnimation: true as boolean,
   flashcardSwipeAnimation: true as boolean,
   flashcardButtonAnimation: true as boolean,
+  dayResetHour: 3 as number,
 });
 
 export type AppSettings = typeof defaultSettings;
@@ -123,3 +124,4 @@ export const flashcardSwipeAnimationAtom = focusAtom(settingsAtom, (o) =>
 export const flashcardButtonAnimationAtom = focusAtom(settingsAtom, (o) =>
   o.prop("flashcardButtonAnimation"),
 );
+export const dayResetHourAtom = focusAtom(settingsAtom, (o) => o.prop("dayResetHour"));

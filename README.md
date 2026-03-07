@@ -15,6 +15,41 @@ yarn lint:fix   # auto-fix lint errors
 yarn format     # format all files with prettier
 ```
 
+## Testing
+
+Tests use [vitest](https://vitest.dev/). Run with `yarn test` or `yarn test:watch`.
+
+### SQLite test helper
+
+`test/test-db.ts` provides `createTestDb()` — an in-memory SQLite database (via `better-sqlite3`) that implements the `WrappedUserDb` interface and runs all user DB migrations. This lets tests execute real SQL queries against the same schema the app uses.
+
+```ts
+import { createTestDb } from "@/test/test-db";
+
+let db: ReturnType<typeof createTestDb>;
+
+beforeEach(() => {
+  db = createTestDb(); // fresh DB per test
+});
+
+afterAll(() => db.close());
+
+test("example", async () => {
+  await db.runAsync("INSERT INTO review_marks ...", [...]);
+  const rows = await db.getAllAsync("SELECT ...");
+  expect(rows).toHaveLength(1);
+});
+```
+
+### Test mocks
+
+| Mock             | Path                              | Purpose                                     |
+| ---------------- | --------------------------------- | ------------------------------------------- |
+| React Native     | `test/__mocks__/react-native.ts`  | Stubs `Platform.OS`                         |
+| AsyncStorage     | `test/__mocks__/async-storage.ts` | In-memory key-value store                   |
+| Env              | `test/__mocks__/env.ts`           | Environment stubs                           |
+| SQLite (user DB) | `test/test-db.ts`                 | In-memory SQLite with full migration schema |
+
 ## Platform Polymorphism
 
 This project runs on both native (iOS/Android) and web. React Native's `Alert.alert`, gesture handlers, and filesystem APIs behave differently (or don't work at all) across platforms.

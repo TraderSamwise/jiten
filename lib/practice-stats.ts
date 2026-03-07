@@ -1,4 +1,5 @@
 import type { WrappedUserDb } from "@/db/user-db";
+import { getDayStart, getLogicalToday, sqlDayExpr } from "./day-boundary";
 
 export interface LeechCard {
   entryId: number;
@@ -84,7 +85,9 @@ export async function getDailyActivity(
   userDb: WrappedUserDb,
   listId?: string | null,
   days: number = 90,
+  resetHour: number = 0,
 ): Promise<DailyActivity[]> {
+  const dayExpr = sqlDayExpr("reviewed_at", resetHour);
   const params: any[] = [days];
   let where = "";
   if (listId) {
@@ -92,10 +95,10 @@ export async function getDailyActivity(
     params.push(listId);
   }
   return userDb.getAllAsync<DailyActivity>(
-    `SELECT DATE(reviewed_at) as day, COUNT(*) as reviews, SUM(correct) as correct,
+    `SELECT ${dayExpr} as day, COUNT(*) as reviews, SUM(correct) as correct,
             COALESCE(SUM(response_ms), 0) as timeMs
      FROM practice_events
-     WHERE reviewed_at >= date('now', '-' || ? || ' days') ${where}
+     WHERE reviewed_at >= date('now', '-${resetHour} hours', '-' || ? || ' days') ${where}
      GROUP BY day ORDER BY day`,
     params,
   );
@@ -117,6 +120,7 @@ export async function getRecentSessions(
   userDb: WrappedUserDb,
   listId?: string | null,
   limit: number = 20,
+  _resetHour: number = 0,
 ): Promise<SessionSummary[]> {
   if (listId) {
     return userDb.getAllAsync<SessionSummary>(
@@ -224,21 +228,25 @@ export interface TodaySummary {
 export async function getTodaySummary(
   userDb: WrappedUserDb,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<TodaySummary> {
   const listFilter = listId ? "AND list_id = ?" : "";
-  const params = listId ? [listId] : [];
+  const today = getLogicalToday(resetHour);
+  const dayExpr = sqlDayExpr("reviewed_at", resetHour);
+  const dayExprStarted = sqlDayExpr("started_at", resetHour);
+  const params = listId ? [today, listId] : [today];
 
   const events = await userDb.getFirstAsync<{ reviews: number; correct: number; timeMs: number }>(
     `SELECT COUNT(*) as reviews, COALESCE(SUM(correct), 0) as correct,
             COALESCE(SUM(response_ms), 0) as timeMs
      FROM practice_events
-     WHERE DATE(reviewed_at) = DATE('now') ${listFilter}`,
+     WHERE ${dayExpr} = ? ${listFilter}`,
     params,
   );
 
   const sess = await userDb.getFirstAsync<{ sessions: number }>(
     `SELECT COUNT(*) as sessions FROM practice_sessions
-     WHERE DATE(started_at) = DATE('now') ${listFilter}`,
+     WHERE ${dayExprStarted} = ? ${listFilter}`,
     params,
   );
 
@@ -263,19 +271,20 @@ export interface StreakInfo {
 export async function getCurrentStreak(
   userDb: WrappedUserDb,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<StreakInfo> {
+  const dayExpr = sqlDayExpr("reviewed_at", resetHour);
   const listFilter = listId ? "WHERE list_id = ?" : "";
   const params = listId ? [listId] : [];
 
   const days = await userDb.getAllAsync<{ day: string }>(
-    `SELECT DISTINCT DATE(reviewed_at) as day FROM practice_events ${listFilter} ORDER BY day DESC`,
+    `SELECT DISTINCT ${dayExpr} as day FROM practice_events ${listFilter} ORDER BY day DESC`,
     params,
   );
 
   if (days.length === 0) return { current: 0, longest: 0 };
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getDayStart(new Date(), resetHour);
   const todayStr = today.toISOString().slice(0, 10);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -349,7 +358,9 @@ export async function getDayReviewEvents(
   userDb: WrappedUserDb,
   day: string,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<DayReviewEvent[]> {
+  const dayExpr = sqlDayExpr("reviewed_at", resetHour);
   const listFilter = listId ? "AND list_id = ?" : "";
   const params: any[] = [day, ...(listId ? [listId] : [])];
   return userDb.getAllAsync<DayReviewEvent>(
@@ -359,7 +370,7 @@ export async function getDayReviewEvents(
             response_ms as responseMs, typed_answer as typedAnswer,
             reviewed_at as reviewedAt
      FROM practice_events
-     WHERE DATE(reviewed_at) = ? ${listFilter}
+     WHERE ${dayExpr} = ? ${listFilter}
      ORDER BY reviewed_at ASC`,
     params,
   );
@@ -392,11 +403,13 @@ export async function getDaySessionsWithEvents(
   userDb: WrappedUserDb,
   day: string,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<DaySessionDetail[]> {
-  const events = await getDayReviewEvents(userDb, day, listId);
+  const events = await getDayReviewEvents(userDb, day, listId, resetHour);
   if (events.length === 0) return [];
 
   // Fetch session summaries for this day
+  const dayExprStarted = sqlDayExpr("started_at", resetHour);
   const listFilter = listId ? "AND list_id = ?" : "";
   const sessParams: any[] = [day, ...(listId ? [listId] : [])];
   const sessionRows = await userDb.getAllAsync<SessionSummary>(
@@ -404,7 +417,7 @@ export async function getDaySessionsWithEvents(
             started_at as startedAt, duration_ms as durationMs, total_items as totalItems,
             correct_count as correctCount
      FROM practice_sessions
-     WHERE DATE(started_at) = ? ${listFilter}
+     WHERE ${dayExprStarted} = ? ${listFilter}
      ORDER BY started_at ASC`,
     sessParams,
   );
@@ -499,7 +512,9 @@ export async function getConfusionEventsForDay(
   userDb: WrappedUserDb,
   day: string,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<ConfusionEventResult[]> {
+  const dayExpr = sqlDayExpr("confused_at", resetHour);
   const listFilter = listId ? "AND list_id = ?" : "";
   const params: any[] = [day, ...(listId ? [listId] : [])];
   return userDb.getAllAsync<ConfusionEventResult>(
@@ -508,7 +523,7 @@ export async function getConfusionEventsForDay(
             confusion_type as confusionType, list_id as listId,
             practice_mode as practiceMode, confused_at as confusedAt
      FROM confusion_events
-     WHERE DATE(confused_at) = ? ${listFilter}
+     WHERE ${dayExpr} = ? ${listFilter}
      ORDER BY confused_at ASC`,
     params,
   );
@@ -518,8 +533,9 @@ export async function buildDayConfusionClusters(
   userDb: WrappedUserDb,
   day: string,
   listId?: string | null,
+  resetHour: number = 0,
 ): Promise<ConfusionCluster[]> {
-  const events = await getConfusionEventsForDay(userDb, day, listId);
+  const events = await getConfusionEventsForDay(userDb, day, listId, resetHour);
   if (events.length === 0) return [];
 
   // Deduplicate events into pair-like structures for buildConfusionClusters

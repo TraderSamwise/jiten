@@ -170,4 +170,14 @@ export const USER_DB_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_books_updated ON books(updated_at)`,
   // Clean up orphaned list_entries from non-idempotent migration re-runs (FKs off → no cascade)
   `DELETE FROM list_entries WHERE list_id NOT IN (SELECT id FROM lists)`,
+  // Review marks table for "Mark for Review" feature
+  `CREATE TABLE IF NOT EXISTS review_marks (
+    id TEXT PRIMARY KEY,
+    entry_id INTEGER NOT NULL,
+    kanji_literal TEXT DEFAULT NULL,
+    list_id TEXT DEFAULT NULL,
+    marked_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_review_marks_date ON review_marks(marked_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_review_marks_entry_day ON review_marks(entry_id, kanji_literal, marked_at)`,
 ];
