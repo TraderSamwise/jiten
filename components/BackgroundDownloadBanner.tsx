@@ -62,7 +62,8 @@ export function BackgroundDownloadBanner() {
     setShowSignedOut(false);
   }
 
-  const hasActivity = isSyncing || showError || showSignedOut || !!activeItem;
+  // Hide normal sync progress — only show errors, signed-out notice, and background downloads
+  const hasActivity = showError || showSignedOut || !!activeItem;
   const targetPercent =
     showError || showSignedOut
       ? 100
