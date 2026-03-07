@@ -39,7 +39,7 @@ Importing `Alert` from `react-native` is banned via `no-restricted-imports`. Use
 
 - **ESLint** with TypeScript, React Hooks (exhaustive-deps), and Prettier rules
 - **Prettier** for consistent formatting
-- **Pre-commit hook** (husky + lint-staged) runs eslint and prettier on staged files automatically
+- **Pre-commit hook** (husky + lint-staged) runs `tsc --noEmit`, eslint, and prettier on staged files automatically
 
 Config files: `eslint.config.mjs`, `.prettierrc`
 
@@ -378,6 +378,219 @@ style={Platform.OS === "web" ? { maxWidth: 500, width: "100%", alignSelf: "cente
 | `lib/navigation.ts`                 | `WEB_CUSTOM_HEADER_TOP`, `WEB_BACKDROP_COLORS`, `webHeaderStyle`                 |
 | `components/CustomHeaderScreen.tsx` | `useWebBackdrop`, `CustomHeaderScreen`, `HeaderPlaceholder`, `NavigatingOverlay` |
 | `lib/use-container-width.ts`        | `useContainerWidth()` — capped width hook                                        |
+
+## Cloud Sync
+
+The app syncs user data (lists, flashcards, books, review history, kanji notes) across devices using Clerk for authentication and Turso (hosted SQLite) for remote storage. The system is offline-first — everything works locally, and sync happens in the background when connectivity is available.
+
+### Architecture overview
+
+```
+User signs up (Clerk)
+  → Clerk fires user.created webhook
+  → Vercel serverless function (api/provision-db.ts)
+  → Turso REST API creates per-user database
+  → Client connects via libsql to [hash]-[org].turso.io
+  → Sync engine pushes/pulls changes bidirectionally
+```
+
+The local SQLite database is the source of truth. The remote Turso database is a mirror used for cross-device sync. If sync is disabled or offline, the app functions identically — just without cloud backup.
+
+### Authentication (`lib/auth.tsx`)
+
+Uses Clerk (`@clerk/clerk-expo`) for email + password auth with optional email verification / MFA. If `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` is not set, the app runs in local-only mode with `userId: "local"` — no sign-in screens, no sync.
+
+Auth screens live at `app/sign-in.tsx` and `app/sign-up.tsx`. The root layout (`app/_layout.tsx`) gates tab access behind auth state.
+
+### Database provisioning (`api/provision-db.ts`)
+
+A Vercel serverless function handles Clerk's `user.created` webhook:
+
+1. Verifies Svix signature (HMAC-SHA256) using `CLERK_WEBHOOK_SECRET`
+2. Hashes the Clerk `userId` to a short alphanumeric string (base36)
+3. Creates a Turso child database via `POST /v1/organizations/{org}/databases`
+4. Returns 200 with `existing: true` if the DB already exists (409 from Turso = idempotent)
+
+The same `hashUserId()` function is duplicated in `db/turso-client.ts` (client-side) so the app can derive its database URL without a server round-trip.
+
+**Server-side env vars** (set in Vercel dashboard):
+
+| Variable               | Purpose                                                      |
+| ---------------------- | ------------------------------------------------------------ |
+| `TURSO_API_TOKEN`      | Turso platform API token (from `turso auth api-tokens mint`) |
+| `TURSO_ORG`            | Turso organization slug                                      |
+| `TURSO_GROUP`          | Database group name (cluster)                                |
+| `CLERK_WEBHOOK_SECRET` | Webhook signing secret from Clerk dashboard                  |
+
+### Turso client (`db/turso-client.ts`)
+
+`createTursoClient(userId)` builds a `@libsql/client/web` client pointing to `libsql://[hash]-[org].turso.io`. `isSyncEnabled()` returns false if env vars are missing or in dev mode without `EXPO_PUBLIC_DEV_SYNC=1`.
+
+**Client-side env vars**:
+
+| Variable                            | Purpose                                                     |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk public key (presence enables cloud mode)              |
+| `EXPO_PUBLIC_TURSO_AUTH_TOKEN`      | Turso database auth token                                   |
+| `EXPO_PUBLIC_TURSO_ORG`             | Turso organization slug                                     |
+| `EXPO_PUBLIC_DEV_SYNC`              | Set to `1` to enable sync in dev mode (disabled by default) |
+
+### Sync engine (`db/sync-engine.ts`)
+
+The `sync()` function runs a full bidirectional sync cycle:
+
+1. **Ensure remote schema** — applies pending user DB migrations to the remote Turso database (tracked via `remote_schema_version` in `sync_meta`)
+2. **Cache column metadata** — fetches `PRAGMA table_info()` for all tables, caches in `sync_meta.columns_cache` to avoid repeated discovery
+3. **Version check** — compares remote `push_version` counter against `last_seen_push_version`. If unchanged and no schema change, skips pull entirely
+4. **Pull (remote → local)** — fetches rows where `updated_at > last_sync_at`, applies using conflict resolution strategy per table type
+5. **Push (local → remote)** — sends local changes since `last_sync_at` in 500-statement batches to avoid timeouts
+6. **Save state** — updates `last_sync_at`, increments remote `push_version` if rows were pushed
+
+#### Conflict resolution
+
+**Mutable tables** (lists, list_entries, srs_cards, books, user_kanji_notes, confusion_pairs): Last-Write-Wins (LWW) based on `updated_at` timestamp. Pull uses `INSERT OR REPLACE` only when `remote_ts >= local_ts`. Push uses `INSERT ... ON CONFLICT DO UPDATE` to avoid DELETE+INSERT cycles that break FK cascades.
+
+**Append-only tables** (review_logs, practice_events, practice_sessions, confusion_events, game_scores): `INSERT OR IGNORE` in both directions. Primary key ensures idempotency — no conflicts possible.
+
+#### Soft deletes
+
+Mutable tables use `deleted_at IS NOT NULL` to mark deletions. The `deleted_at` timestamp syncs via the normal `updated_at` LWW mechanism. Queries throughout the app filter with `WHERE deleted_at IS NULL`.
+
+#### Push filters
+
+Default/seeded data is excluded from sync to prevent overwriting other devices' seeds:
+
+- `lists`: `is_default = 0`
+- `list_entries`: entries in non-default lists only
+- `books`: `is_default = 0`
+
+#### Column exclusions
+
+`books.html_content` is excluded from push (too large — often megabytes of parsed HTML). Books sync metadata only; content is re-imported locally.
+
+#### Network error detection
+
+`isNetworkError(err)` classifies fetch failures (CORS, DNS, connectivity) separately from application errors (auth, schema). Network errors trigger silent retry; application errors show an error banner.
+
+### Sync provider (`db/sync-provider.tsx`)
+
+Orchestrates when and how sync runs. Exposes `useSync()` hook with:
+
+- `syncStatus` — `"disabled" | "idle" | "syncing" | "error"`
+- `triggerSync(opts?)` — accepts `{ force?: boolean, silent?: boolean }` or legacy `boolean`
+- `markDirty()` — marks data as changed, persists `sync_dirty` flag to `sync_meta`
+- `isSilentSync` — true when the current sync should not show progress UI
+
+#### Sync triggers
+
+| Trigger                                   | Behavior                                                        |
+| ----------------------------------------- | --------------------------------------------------------------- |
+| **Mount**                                 | Checks `sync_dirty` flag → forces sync if set, else normal sync |
+| **Tab focus / foreground**                | Clears offline flag, retries sync                               |
+| **2-minute timer**                        | `triggerSync({ silent: true })` — suppresses progress UI        |
+| **List import / delete**                  | `triggerSync(true)` — immediate forced sync                     |
+| **Screen unmount** (study, games, reader) | `triggerSync(true)` if dirty — syncs review progress on exit    |
+| **Manual** (settings)                     | `triggerSync({ force: true })`                                  |
+
+#### Dirty flag
+
+`markDirty()` sets an in-memory ref and persists `sync_dirty=1` to the `sync_meta` table. This survives app kills — on next launch, the flag triggers an immediate sync. The flag is cleared only after a successful sync (any trigger — mount, timer, manual, event-driven — single code path).
+
+Small incremental changes (bookmark toggles, review card swipes, game progress, reading position updates) call `markDirty()` instead of triggering immediate sync. Sync fires on the next timer tick or screen unmount.
+
+#### Silent sync
+
+Timer-based syncs pass `silent: true` to suppress the progress banner. Mount, unmount, list import/delete, and manual syncs show the progress UI. Errors always show regardless of the silent flag.
+
+#### Sync queue
+
+A length-1 queue handles overlapping sync requests. If a sync is in progress when a new request arrives:
+
+- The request is queued (not dropped)
+- `force` is sticky-true: if either the queued or new request is forced, the dequeued sync is forced
+- `silent` is sticky-false: if either request is non-silent, the dequeued sync shows UI
+
+The queue drains in the `finally` block after the current sync completes.
+
+#### Offline resilience
+
+Network errors set an `isOfflineRef` flag. While offline:
+
+- Timer and event syncs skip silently (no error banner)
+- Forced syncs still attempt (gives one shot)
+- Tab focus / foreground clears the flag and retries
+
+No external dependencies (NetInfo, exponential backoff) — offline detection is purely based on failed fetch errors, and the 2-minute timer + dirty flag provides natural retry.
+
+#### Account change detection
+
+On mount, compares current `userId` against `lastUser` stored in AsyncStorage:
+
+| Scenario                         | Action                                |
+| -------------------------------- | ------------------------------------- |
+| Same user                        | Proceed to sync                       |
+| First sign-in, no local data     | Save user, proceed                    |
+| First sign-in, local data exists | Prompt: use cloud / use local / merge |
+| Different user                   | Prompt: wipe local data or sign out   |
+
+The "merge" option proceeds with normal LWW + append sync — local and remote data coexist, with conflicts resolved by timestamp.
+
+### Sync metadata (`sync_meta` table)
+
+| Key                      | Purpose                                         |
+| ------------------------ | ----------------------------------------------- |
+| `last_sync_at`           | ISO timestamp of last successful sync           |
+| `last_seen_push_version` | Remote version counter (skip pull if unchanged) |
+| `remote_schema_version`  | Last applied remote migration version           |
+| `columns_cache`          | Cached `PRAGMA table_info` results (JSON)       |
+| `sync_dirty`             | `"1"` if unsaved changes exist since last sync  |
+
+### Background downloads and sync ordering
+
+Background downloads (audio DB, extended DB) are deferred until the first sync attempt completes. This ensures sync data is available before large downloads begin. Managed via `triggerBackgroundDownloads()` in the database provider, gated on `syncStatus` transitioning to `idle` or `error` with a non-null `lastSyncAt` or `lastError`.
+
+### Sync UI (`components/BackgroundDownloadBanner.tsx`)
+
+A slim progress bar + label displayed above the tab bar (native) or below the navbar (web):
+
+- **Syncing**: blue progress bar with phase labels ("Syncing — Uploading lists...")
+- **Background download**: progress bar with download label and percentage
+- **Sync error**: red bar, auto-dismisses after 15 seconds
+- **Session expired**: blue "Signed out — Sign in to sync" banner, auto-dismisses after 30 seconds
+- **Silent sync**: progress bar hidden entirely (timer-based syncs)
+
+Progress animates smoothly — moves 1% per 30ms tick toward the target, with snap-ahead logic if the target jumps more than 30%.
+
+### Data deletion (`components/DeleteDataModal.tsx`)
+
+Users can selectively delete data by category from Settings:
+
+| Category   | Mutable tables      | Append tables                      |
+| ---------- | ------------------- | ---------------------------------- |
+| Lists      | lists, list_entries | —                                  |
+| Flashcards | srs_cards           | review_logs                        |
+| Books      | books               | —                                  |
+| Notes      | user_kanji_notes    | —                                  |
+| Practice   | —                   | practice_events, practice_sessions |
+| Games      | —                   | game_scores                        |
+| Confusion  | confusion_pairs     | confusion_events                   |
+
+Mutable tables are soft-deleted (syncs to remote). Append tables are hard-deleted locally. A sync runs after deletion to propagate changes.
+
+### Key files
+
+| File                                      | Purpose                                                                     |
+| ----------------------------------------- | --------------------------------------------------------------------------- |
+| `lib/auth.tsx`                            | Clerk auth provider, local mode fallback, `useAuth()` hook                  |
+| `db/turso-client.ts`                      | Turso client factory, `isSyncEnabled()`                                     |
+| `db/sync-engine.ts`                       | Core push/pull logic, LWW resolution, schema migrations, `isNetworkError()` |
+| `db/sync-provider.tsx`                    | Sync orchestration, triggers, queue, dirty flag, offline detection          |
+| `db/sync-helpers.ts`                      | `softDelete()`, `resetLocalUserData()`, push filters, data categories       |
+| `api/provision-db.ts`                     | Vercel webhook: Clerk `user.created` → Turso DB creation                    |
+| `components/BackgroundDownloadBanner.tsx` | Sync/download progress UI                                                   |
+| `components/DeleteDataModal.tsx`          | Selective data deletion with category toggles                               |
+| `app/sign-in.tsx`                         | Email + password sign-in with MFA support                                   |
+| `app/sign-up.tsx`                         | Email + password sign-up with email verification                            |
 
 ## Scripts
 
