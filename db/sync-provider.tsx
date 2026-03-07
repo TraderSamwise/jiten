@@ -13,7 +13,7 @@ import { useListsStore } from "@/stores/lists";
 
 /** Reload all in-memory stores from the database after sync or data reset. */
 function reloadStores(userDb: WrappedUserDb) {
-  reloadStores(userDb);
+  useBookmarkStore.getState().load(userDb);
   useListsStore.getState().load(userDb);
 }
 import { getLastUser, setLastUser } from "@/lib/last-user";
