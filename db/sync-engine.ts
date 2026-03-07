@@ -212,8 +212,11 @@ async function pullAll(
             const v = row[c] ?? row[meta.cols.indexOf(c)];
             return v === undefined ? null : v;
           });
+          // Use ON CONFLICT DO UPDATE to preserve local-only columns (e.g. raw_content)
+          const updateCols = meta.cols.filter((c) => c !== meta.pk);
+          const updateSet = updateCols.map((c) => `${c}=excluded.${c}`).join(", ");
           await localDb.runAsync(
-            `INSERT OR REPLACE INTO ${meta.name} (${colList}) VALUES (${placeholders})`,
+            `INSERT INTO ${meta.name} (${colList}) VALUES (${placeholders}) ON CONFLICT(${meta.pk}) DO UPDATE SET ${updateSet}`,
             values,
           );
           pulled++;
@@ -316,6 +319,81 @@ async function pushAll(
 }
 
 // ---------------------------------------------------------------------------
+// Blob column sync — large columns excluded from regular delta sync.
+// Synced once: pushed when remote is missing, pulled when local is missing.
+// Configured via `blobCols` on MUTABLE_TABLES entries.
+// ---------------------------------------------------------------------------
+
+async function syncBlobColumns(localDb: WrappedUserDb, turso: Client): Promise<number> {
+  let synced = 0;
+  const PK_CHUNK = 500;
+
+  for (const table of MUTABLE_TABLES) {
+    if (!("blobCols" in table)) continue;
+    const { cols, filter } = table.blobCols as { cols: readonly string[]; filter?: string };
+    const pk = table.pk;
+    const where = filter ? `AND ${filter}` : "";
+
+    for (const col of cols) {
+      // Push: local has content, check if remote is missing
+      const localRows = await localDb.getAllAsync<Record<string, any>>(
+        `SELECT ${pk}, ${col} FROM ${table.name} WHERE ${col} IS NOT NULL ${where} AND deleted_at IS NULL`,
+      );
+      if (localRows.length > 0) {
+        const ids = localRows.map((r) => r[pk]);
+        const remoteHas = new Set<string>();
+        for (let i = 0; i < ids.length; i += PK_CHUNK) {
+          const chunk = ids.slice(i, i + PK_CHUNK);
+          const result = await turso.execute({
+            sql: `SELECT ${pk} FROM ${table.name} WHERE ${pk} IN (${chunk.map(() => "?").join(",")}) AND ${col} IS NOT NULL`,
+            args: chunk,
+          });
+          for (const row of result.rows) {
+            remoteHas.add(String(row[pk] ?? row[0]));
+          }
+        }
+        for (const row of localRows) {
+          const id = String(row[pk]);
+          if (!remoteHas.has(id)) {
+            console.log(`[Sync] pushing blob ${table.name}.${col}: ${id}`);
+            await turso.execute({
+              sql: `UPDATE ${table.name} SET ${col} = ? WHERE ${pk} = ?`,
+              args: [row[col], id],
+            });
+            synced++;
+          }
+        }
+      }
+
+      // Pull: local is missing content, fetch from remote
+      const missingLocal = await localDb.getAllAsync<Record<string, any>>(
+        `SELECT ${pk} FROM ${table.name} WHERE ${col} IS NULL ${where} AND deleted_at IS NULL`,
+      );
+      for (const row of missingLocal) {
+        const id = row[pk];
+        const result = await turso.execute({
+          sql: `SELECT ${col} FROM ${table.name} WHERE ${pk} = ? AND ${col} IS NOT NULL`,
+          args: [id],
+        });
+        if (result.rows.length > 0) {
+          const val = result.rows[0][col] ?? result.rows[0][0];
+          if (val) {
+            console.log(`[Sync] pulling blob ${table.name}.${col}: ${id}`);
+            await localDb.runAsync(`UPDATE ${table.name} SET ${col} = ? WHERE ${pk} = ?`, [
+              val,
+              id,
+            ]);
+            synced++;
+          }
+        }
+      }
+    }
+  }
+
+  return synced;
+}
+
+// ---------------------------------------------------------------------------
 // Main sync
 // ---------------------------------------------------------------------------
 
@@ -383,7 +461,14 @@ export async function sync(
     onLabel?.("");
     console.log(`[Sync] push: ${Date.now() - t0}ms (${pushed} stmts)`);
 
-    // 7. Save last_sync_at immediately after push — prevents full re-push on interruption
+    // 7. Sync blob columns (large content synced once, not on every delta cycle)
+    const blobs = await syncBlobColumns(localDb, turso);
+    if (blobs > 0) {
+      console.log(`[Sync] blobs: ${Date.now() - t0}ms (${blobs} synced)`);
+      pulled += blobs;
+    }
+
+    // 8. Save last_sync_at immediately after push — prevents full re-push on interruption
     await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
 
     // 8. If pushed, increment remote push_version

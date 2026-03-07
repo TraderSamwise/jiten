@@ -24,8 +24,9 @@ export const MUTABLE_TABLES = [
     name: "books",
     pk: "id",
     timestampCol: "updated_at",
-    excludeCols: ["html_content"],
-    pushFilter: "is_default = 0",
+    excludeCols: ["html_content", "raw_content"],
+    // Synced once (push if remote missing, pull if local missing) — not on every delta cycle
+    blobCols: { cols: ["raw_content"], filter: "is_default = 0" },
   },
   { name: "user_kanji_notes", pk: "literal", timestampCol: "updated_at" },
   { name: "confusion_pairs", pk: "id", timestampCol: "updated_at" },
