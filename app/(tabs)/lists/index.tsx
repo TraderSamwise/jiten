@@ -423,7 +423,7 @@ export default function ListsIndexScreen() {
       {importing !== null && (
         <View
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-          className="items-center justify-center bg-black/50"
+          className="items-center justify-center"
         >
           <View className="rounded-2xl bg-background p-6 items-center w-64">
             <View className="w-full h-2 bg-secondary rounded-full mb-2 overflow-hidden">
