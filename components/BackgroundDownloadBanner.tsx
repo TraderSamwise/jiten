@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSegments } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { useDatabase } from "@/db/provider";
 import { useSync } from "@/db/sync-provider";
@@ -19,6 +20,9 @@ export function BackgroundDownloadBanner() {
   const { backgroundStatus } = useDatabase();
   const { syncStatus, syncProgress, syncLabel, lastError } = useSync();
   const insets = useSafeAreaInsets();
+  const segments = useSegments();
+
+  const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
 
   const isSyncing = syncStatus === "syncing";
   const activeItem = backgroundStatus.find(
@@ -110,7 +114,7 @@ export function BackgroundDownloadBanner() {
     };
   }, [targetPercent, hasActivity]);
 
-  if (!hasActivity) return null;
+  if (!hasActivity || onAuthScreen) return null;
 
   const isWeb = Platform.OS === "web";
   const errorDetail = lastError
