@@ -949,6 +949,7 @@ function StudyScreen() {
   cardsRef.current = cards;
   const [cursor, setCursor] = useState(0);
   const [originalCardCount, setOriginalCardCount] = useState(0);
+  const [dueAtStart, setDueAtStart] = useState(0); // SRS: due reviews at session start (excludes new)
 
   // Derived state
   const currentCard = cards[cursor];
@@ -1318,6 +1319,7 @@ function StudyScreen() {
         setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
         setCursor(0);
         setOriginalCardCount(items.length);
+        setDueAtStart(dueRows.length + newRows.length);
         setSessionDone(items.length === 0);
       } else {
         // FSRS mode: reviews first, then a batch of new cards
@@ -1347,6 +1349,7 @@ function StudyScreen() {
           setCards([]);
           setCursor(0);
           setOriginalCardCount(0);
+          setDueAtStart(0);
           setSessionDone(true);
           setLoading(false);
           return;
@@ -1385,6 +1388,7 @@ function StudyScreen() {
         setCards(items.map((item) => ({ item, status: "pending" as CardStatus, flipped: false })));
         setCursor(0);
         setOriginalCardCount(items.length);
+        setDueAtStart(reviewRows.length + newRows.length);
         setSessionDone(items.length === 0);
       }
     } catch (err) {
@@ -2198,6 +2202,15 @@ function StudyScreen() {
           </Text>
           <Button
             className="mt-4"
+            label="Continue Studying"
+            onPress={() => {
+              setSessionDone(false);
+              setReviewedCount(0);
+              loadQueue();
+            }}
+          />
+          <Button
+            className="mt-2"
             label="Return to List"
             variant="outline"
             onPress={() => {
@@ -2211,6 +2224,7 @@ function StudyScreen() {
   }
 
   const isSimpleSrs = list?.flashcardMode === "simple_srs";
+  const isSrsMode = list?.flashcardMode === "srs" || isSimpleSrs;
   const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
   const progress = isSimpleSrs
     ? simpleSrsTotal > 0
@@ -2219,6 +2233,7 @@ function StudyScreen() {
     : originalCardCount > 0
       ? (ratedCount / originalCardCount) * 100
       : 0;
+  const allDueComplete = isSrsMode && progress >= 100;
 
   return (
     <CustomHeaderScreen>
@@ -2243,11 +2258,13 @@ function StudyScreen() {
         >
           <X size={24} className="text-foreground" />
         </Pressable>
-        <Text className="text-sm text-muted-foreground">
+        <Text
+          className={`text-sm ${allDueComplete ? "text-green-500 font-medium" : "text-muted-foreground"}`}
+        >
           {isBrowsingHistory
             ? `\u2190 ${cursor + 1} / ${cards.length}`
-            : isSimpleSrs
-              ? `${simpleSrsLearned} / ${simpleSrsTotal}`
+            : isSrsMode
+              ? `${ratedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
               : `${ratedCount + 1} / ${originalCardCount}`}
         </Text>
         <Pressable onPress={handleGear} className="p-2">
@@ -2257,7 +2274,10 @@ function StudyScreen() {
 
       {/* Progress bar */}
       <View className="h-1 bg-border mx-4 rounded-full overflow-hidden">
-        <View className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
+        <View
+          className={`h-full rounded-full ${allDueComplete ? "bg-green-500" : "bg-primary"}`}
+          style={{ width: `${progress}%` }}
+        />
       </View>
 
       {/* Carousel -- sliding window rendered, scroll via translateX */}
