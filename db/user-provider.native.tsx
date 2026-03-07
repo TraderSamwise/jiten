@@ -3,6 +3,7 @@ import { open } from "@op-engineering/op-sqlite";
 import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { makeDefaultListId } from "@/lib/seed-default-lists";
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
@@ -52,7 +53,46 @@ export function UserDatabaseProvider({
         await db.execute(`PRAGMA user_version = ${USER_DB_MIGRATIONS.length}`);
       }
 
+      // Programmatic migration: rename random default IDs → deterministic slugs
       const wrapped = wrapUserDb(db);
+      const migrated = await wrapped.getFirstAsync<{ value: string }>(
+        "SELECT value FROM app_flags WHERE key = 'default_ids_migrated'",
+      );
+      if (!migrated) {
+        // Disable FKs during migration — UPDATE on PK internally does DELETE+INSERT
+        // which triggers CASCADE and destroys the FK references we just updated.
+        await db.execute("PRAGMA foreign_keys = OFF");
+        const defaults = await wrapped.getAllAsync<{ id: string; name: string }>(
+          "SELECT id, name FROM lists WHERE is_default = 1",
+        );
+        for (const list of defaults) {
+          const newId = makeDefaultListId(list.name);
+          if (list.id === newId) continue;
+          await wrapped.runAsync("UPDATE list_entries SET list_id = ? WHERE list_id = ?", [
+            newId,
+            list.id,
+          ]);
+          await wrapped.runAsync("UPDATE srs_cards SET list_id = ? WHERE list_id = ?", [
+            newId,
+            list.id,
+          ]);
+          await wrapped.runAsync("UPDATE lists SET id = ? WHERE id = ?", [newId, list.id]);
+        }
+        // Also migrate default books
+        const defaultBooks = await wrapped.getAllAsync<{ id: string; title: string }>(
+          "SELECT id, title FROM books WHERE is_default = 1",
+        );
+        for (const book of defaultBooks) {
+          const newId = makeDefaultListId("yume-juuya");
+          if (book.id === newId) continue;
+          await wrapped.runAsync("UPDATE books SET id = ? WHERE id = ?", [newId, book.id]);
+        }
+        await wrapped.runAsync(
+          "INSERT OR REPLACE INTO app_flags (key, value) VALUES ('default_ids_migrated', '1')",
+        );
+        await db.execute("PRAGMA foreign_keys = ON");
+      }
+
       setState({ userDb: wrapped, isReady: true });
     }
 

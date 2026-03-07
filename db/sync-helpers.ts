@@ -12,18 +12,24 @@ export async function softDelete(db: WrappedUserDb, table: string, where: string
 
 /** Table config for mutable (last-write-wins) tables */
 export const MUTABLE_TABLES = [
-  { name: "lists", pk: "id", timestampCol: "updated_at" },
-  { name: "list_entries", pk: "id", timestampCol: "updated_at" },
+  { name: "lists", pk: "id", timestampCol: "updated_at", pushFilter: "is_default = 0" },
+  {
+    name: "list_entries",
+    pk: "id",
+    timestampCol: "updated_at",
+    pushFilter: "list_id NOT LIKE 'default-%'",
+  },
   { name: "srs_cards", pk: "id", timestampCol: "updated_at" },
   {
     name: "books",
     pk: "id",
     timestampCol: "updated_at",
     excludeCols: ["html_content"],
+    pushFilter: "is_default = 0",
   },
   { name: "user_kanji_notes", pk: "literal", timestampCol: "updated_at" },
   { name: "confusion_pairs", pk: "id", timestampCol: "updated_at" },
-  { name: "app_flags", pk: "key", timestampCol: "updated_at" },
+  // app_flags removed — only contains local seeding flags, not user data
 ] as const;
 
 /** Table config for append-only (INSERT OR IGNORE merge) tables */
