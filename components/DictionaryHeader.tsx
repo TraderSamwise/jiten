@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Pressable, Platform } from "react-native";
+import { useRouter, useNavigation } from "expo-router";
+import { CommonActions } from "@react-navigation/native";
 import { useSafeGoBack, headerBgClass } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
@@ -45,13 +47,33 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   const searchMode = useSearchStore((s) => s.searchMode);
   const setSearchMode = useSearchStore((s) => s.setSearchMode);
   const { extendedDb } = useDatabase();
-  const isWordDetail = route.name === "word/[id]" || route.name === "gloss-group";
-  const isKanjiDetail = route.name === "kanji/[literal]";
+  const router = useRouter();
+  const navigation = useNavigation();
+  const isIndex = route.name === "index";
 
-  const navigateToSearch = () => goBack();
+  const popToRoot = useCallback(() => {
+    const state = navigation.getState();
+    if (!state || state.index === 0) return;
+    if (Platform.OS === "web") {
+      router.replace("/dictionary" as any);
+    } else {
+      navigation.dispatch(
+        CommonActions.reset({
+          ...state,
+          index: 0,
+          routes: [state.routes[0]],
+        }),
+      );
+    }
+  }, [navigation, router]);
+
+  const navigateToSearch = () => {
+    if (isIndex) return;
+    popToRoot();
+  };
 
   const handleSubmit = () => {
-    if ((isWordDetail || isKanjiDetail) && query.trim()) {
+    if (!isIndex && query.trim()) {
       navigateToSearch();
     }
   };
