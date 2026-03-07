@@ -21,6 +21,7 @@ import { useAuth, useUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
+import { HardSyncModal } from "@/components/HardSyncModal";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -90,6 +91,7 @@ export default function SettingsScreen() {
   const [dayResetHour, setDayResetHour] = useAtom(dayResetHourAtom);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showHardSyncModal, setShowHardSyncModal] = useState(false);
   const { isSignedIn } = useAuth();
   const { user } = useUser();
 
@@ -171,6 +173,15 @@ export default function SettingsScreen() {
       <Card className="mb-4">
         <CardTitle className="text-base">Data</CardTitle>
         <Separator className="my-2" />
+        {isSignedIn && (
+          <Button
+            variant="outline"
+            size="sm"
+            label="Hard Sync"
+            onPress={() => setShowHardSyncModal(true)}
+            className="mb-2"
+          />
+        )}
         <Button
           variant="destructive"
           size="sm"
@@ -178,6 +189,8 @@ export default function SettingsScreen() {
           onPress={() => setShowDeleteModal(true)}
         />
       </Card>
+
+      <HardSyncModal visible={showHardSyncModal} onClose={() => setShowHardSyncModal(false)} />
 
       <DeleteDataModal
         visible={showDeleteModal}
