@@ -531,8 +531,10 @@ export default function BookReaderScreen() {
 
         // Save total_chars on first load
         if (b.totalChars === 0) {
-          userDb.runAsync("UPDATE books SET total_chars = ? WHERE id = ?", [
+          const now = new Date().toISOString();
+          userDb.runAsync("UPDATE books SET total_chars = ?, updated_at = ? WHERE id = ?", [
             model.totalChars,
+            now,
             bookId,
           ]);
         }

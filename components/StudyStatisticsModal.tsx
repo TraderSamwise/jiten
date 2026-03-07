@@ -35,9 +35,10 @@ export function StudyStatisticsModal({
     if (!userDb) return;
 
     if (flashcardMode === "simple_srs") {
+      const now = new Date().toISOString();
       await userDb.runAsync(
-        "UPDATE srs_cards SET simple_stage = NULL, simple_n = NULL, simple_interval = NULL WHERE list_id = ?",
-        [listId],
+        "UPDATE srs_cards SET simple_stage = NULL, simple_n = NULL, simple_interval = NULL, updated_at = ? WHERE list_id = ?",
+        [now, listId],
       );
     } else if (flashcardMode === "srs") {
       const now = new Date().toISOString();
