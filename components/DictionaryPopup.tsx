@@ -324,7 +324,7 @@ export function DictionaryPopup({
         >
           <View
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
-            style={{ paddingBottom: insets.bottom }}
+            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
           >
             {renderContent()}
           </View>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, View, TextInput } from "react-native";
+import { Dimensions, Modal, Pressable, View, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
@@ -41,6 +41,7 @@ export function BookmarkPopover({
   const [membershipMap, setMembershipMap] = useState<Set<string>>(new Set());
   const [showNewList, setShowNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
+  const [popoverHeight, setPopoverHeight] = useState(0);
 
   const isKanji = kanjiLiteral != null;
 
@@ -136,7 +137,16 @@ export function BookmarkPopover({
         {/* Popover content */}
         <Pressable
           onPress={() => {}}
-          style={{ top: pos.top, right: pos.right }}
+          onLayout={(e) => setPopoverHeight(e.nativeEvent.layout.height)}
+          style={(() => {
+            const screenH = Dimensions.get("window").height;
+            const fitsBelow = pos.top + popoverHeight + 8 < screenH;
+            if (fitsBelow || popoverHeight === 0) {
+              return { top: pos.top, right: pos.right };
+            }
+            // Render upward: bottom = screenH - pos.top + gap
+            return { bottom: screenH - pos.top + 8, right: pos.right };
+          })()}
           className="absolute w-64 rounded-xl border border-border bg-background shadow-lg"
         >
           {/* New List row */}
