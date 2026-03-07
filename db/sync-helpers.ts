@@ -35,6 +35,18 @@ export const APPEND_TABLES = [
   { name: "game_scores", pk: "id", timestampCol: "played_at" },
 ] as const;
 
+/** Check if user has any meaningful local data (lists, cards, books, notes). */
+export async function hasLocalData(db: WrappedUserDb): Promise<boolean> {
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT
+      (SELECT COUNT(*) FROM lists WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM srs_cards WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM books WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM user_kanji_notes WHERE deleted_at IS NULL) as n`,
+  );
+  return !!(row && row.n > 0);
+}
+
 /** Wipe all user data rows. Schema stays intact — sync pull repopulates from remote. */
 export async function resetLocalUserData(db: WrappedUserDb) {
   const tables = [...MUTABLE_TABLES, ...APPEND_TABLES].map((t) => t.name);

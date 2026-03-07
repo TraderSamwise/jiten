@@ -4,7 +4,7 @@ import { useUserDb } from "./user-provider";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
 import { sync, type SyncResult } from "./sync-engine";
-import { resetLocalUserData } from "./sync-helpers";
+import { resetLocalUserData, hasLocalData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { getLastUser, setLastUser } from "@/lib/last-user";
 import type { Client } from "@libsql/client/web";
@@ -19,6 +19,8 @@ interface SyncContextType {
   tursoClient: Client | null;
   needsReconciliation: boolean;
   resolveReconciliation: (proceed: boolean) => void;
+  needsFirstSyncChoice: boolean;
+  resolveFirstSyncChoice: (choice: "use-cloud" | "use-local" | "merge") => void;
 }
 
 const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
@@ -33,6 +35,8 @@ const SyncContext = createContext<SyncContextType>({
   tursoClient: null,
   needsReconciliation: false,
   resolveReconciliation: () => {},
+  needsFirstSyncChoice: false,
+  resolveFirstSyncChoice: () => {},
 });
 
 export function useSync() {
@@ -56,6 +60,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   const [syncLabel, setSyncLabel] = useState("");
   const [lastError, setLastError] = useState<string | null>(null);
   const [needsReconciliation, setNeedsReconciliation] = useState(false);
+  const [needsFirstSyncChoice, setNeedsFirstSyncChoice] = useState(false);
   const [reconciled, setReconciled] = useState(false);
 
   const syncingRef = useRef(false);
@@ -86,10 +91,19 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       const lastUser = await getLastUser();
       if (cancelled) return;
 
-      if (!lastUser || lastUser === userId) {
-        // First sign-in or same user — record and proceed
-        await setLastUser(userId);
+      if (lastUser === userId) {
+        // Same user — proceed
         setReconciled(true);
+      } else if (!lastUser) {
+        // First sign-in — check for local data
+        const localData = await hasLocalData(userDb);
+        if (cancelled) return;
+        if (localData) {
+          setNeedsFirstSyncChoice(true);
+        } else {
+          await setLastUser(userId);
+          setReconciled(true);
+        }
       } else {
         // Different user — need reconciliation
         setNeedsReconciliation(true);
@@ -115,6 +129,25 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       }
     },
     [userId, userDb, onSignOut],
+  );
+
+  const resolveFirstSyncChoice = useCallback(
+    async (choice: "use-cloud" | "use-local" | "merge") => {
+      if (!userDb) return;
+      if (choice === "use-cloud") {
+        // Wipe local, pull from cloud
+        await resetLocalUserData(userDb);
+        useBookmarkStore.getState().load(userDb);
+      } else if (choice === "use-local") {
+        // Reset sync state so everything pushes fresh
+        await userDb.runAsync("DELETE FROM sync_meta");
+      }
+      // "merge" — just proceed with normal sync (LWW + append)
+      await setLastUser(userId);
+      setNeedsFirstSyncChoice(false);
+      setReconciled(true);
+    },
+    [userId, userDb],
   );
 
   const triggerSync = useCallback(
@@ -232,6 +265,8 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
         tursoClient: tursoRef.current,
         needsReconciliation,
         resolveReconciliation,
+        needsFirstSyncChoice,
+        resolveFirstSyncChoice,
       }}
     >
       {children}
