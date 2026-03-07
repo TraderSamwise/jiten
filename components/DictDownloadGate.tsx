@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Platform, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,20 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
   const { dictDb, isReady, isDownloaded, downloadStatus, startDownload, retryManifest } =
     useDatabase();
 
+  // On web, keep the gate overlay visible for one extra frame after the DB is ready
+  // so children (tabs) can mount underneath without a flash of empty black screen.
+  const ready = isReady && isDownloaded && !!dictDb;
+  const [gateVisible, setGateVisible] = useState(true);
+  useEffect(() => {
+    if (!ready) {
+      setGateVisible(true);
+      return;
+    }
+    // Let children render one frame under the overlay, then drop it
+    const raf = requestAnimationFrame(() => setGateVisible(false));
+    return () => cancelAnimationFrame(raf);
+  }, [ready]);
+
   if (!isReady) {
     return (
       <FullScreenGate>
@@ -49,7 +63,17 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
   }
 
   if (isDownloaded && dictDb) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        {Platform.OS === "web" && gateVisible && (
+          <FullScreenGate>
+            <ActivityIndicator size="large" />
+            <Text className="mt-4 text-muted-foreground">Preparing dictionary...</Text>
+          </FullScreenGate>
+        )}
+      </>
+    );
   }
 
   // DB was released to another tab — will reacquire on visibility change
