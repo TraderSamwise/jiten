@@ -357,13 +357,17 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         <Text className="text-sm font-medium text-muted-foreground mb-2">Readings</Text>
         {kanji.readingsOn.length > 0 && (
           <View className="flex-row items-baseline gap-2 mb-2">
-            <Text className="text-xs text-muted-foreground w-14">ON'yomi</Text>
+            <Text className="text-xs text-muted-foreground w-16" numberOfLines={1}>
+              ON'yomi
+            </Text>
             <Text className="flex-1 text-base text-foreground">{kanji.readingsOn.join("、")}</Text>
           </View>
         )}
         {kanji.readingsKun.length > 0 && (
           <View className="flex-row items-baseline gap-2 mb-2">
-            <Text className="text-xs text-muted-foreground w-14">KUN'yomi</Text>
+            <Text className="text-xs text-muted-foreground w-16" numberOfLines={1}>
+              KUN'yomi
+            </Text>
             <Text className="flex-1 text-base text-foreground">{kanji.readingsKun.join("、")}</Text>
           </View>
         )}
