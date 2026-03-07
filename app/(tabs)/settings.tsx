@@ -17,6 +17,7 @@ import {
 } from "@/stores/settings";
 import { getVersionString } from "@/lib/version";
 import { useAuth } from "@/lib/auth";
+import { useUser } from "@clerk/clerk-expo";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
 
@@ -29,8 +30,9 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 const HAS_AUTH = !!env.CLERK_PUBLISHABLE_KEY;
 
 function AccountCard() {
-  const { isSignedIn, userId, signOut } = useAuth();
-  const { syncStatus } = useSync();
+  const { isSignedIn, signOut } = useAuth();
+  const { user } = useUser();
+  const { syncStatus, triggerSync } = useSync();
   const router = useRouter();
 
   if (!isSignedIn) {
@@ -63,10 +65,17 @@ function AccountCard() {
     <Card className="mb-4">
       <CardTitle className="text-base">Account</CardTitle>
       <Separator className="my-2" />
-      <Text className="text-sm text-foreground mb-1">{userId}</Text>
-      <Text className="text-xs text-muted-foreground mb-3">
-        Sync: {syncStatus === "disabled" ? "off" : syncStatus}
+      <Text className="text-sm text-foreground mb-1">
+        {user?.primaryEmailAddress?.emailAddress ?? user?.id ?? "Signed in"}
       </Text>
+      <Button
+        variant="outline"
+        size="sm"
+        label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
+        onPress={() => triggerSync(true)}
+        disabled={syncStatus === "syncing"}
+        className="mb-2"
+      />
       <Button variant="outline" size="sm" label="Sign Out" onPress={() => signOut()} />
     </Card>
   );
