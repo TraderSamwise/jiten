@@ -4,24 +4,48 @@ import { tokenCache } from "@clerk/clerk-expo/token-cache";
 
 import { env } from "@/lib/env";
 
+export interface AuthState {
+  isSignedIn: boolean;
+  isLoaded: boolean;
+  userId: string | null;
+  signOut: () => Promise<void>;
+}
+
 /** true when no Clerk key is configured — app runs fully local */
 const LOCAL_MODE = !env.CLERK_PUBLISHABLE_KEY;
 
+const noop = async () => {};
+
 // Local-mode context: always signed in as "local" user
-const LocalAuthContext = createContext({
+const LocalAuthContext = createContext<AuthState>({
   isSignedIn: true,
   isLoaded: true,
   userId: "local",
+  signOut: noop,
 });
 
-function useLocalAuth() {
+function useLocalAuth(): AuthState {
   return useContext(LocalAuthContext);
+}
+
+function useClerkAuthAdapter(): AuthState {
+  const { isSignedIn, isLoaded, userId, signOut } = useClerkAuth();
+  return {
+    isSignedIn: isSignedIn ?? false,
+    isLoaded: isLoaded ?? false,
+    userId: userId ?? null,
+    signOut: async () => {
+      await signOut();
+    },
+  };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   if (LOCAL_MODE) {
     return (
-      <LocalAuthContext.Provider value={{ isSignedIn: true, isLoaded: true, userId: "local" }}>
+      <LocalAuthContext.Provider
+        value={{ isSignedIn: true, isLoaded: true, userId: "local", signOut: noop }}
+      >
         {children}
       </LocalAuthContext.Provider>
     );
@@ -35,10 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 /* eslint-disable react-hooks/rules-of-hooks -- LOCAL_MODE is a build-time constant */
-export function useAuth() {
+export function useAuth(): AuthState {
   if (LOCAL_MODE) {
     return useLocalAuth();
   }
-  return useClerkAuth();
+  return useClerkAuthAdapter();
 }
 /* eslint-enable react-hooks/rules-of-hooks */

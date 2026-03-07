@@ -1,7 +1,7 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
@@ -11,9 +11,10 @@ import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { BackgroundDownloadBanner } from "@/components/BackgroundDownloadBanner";
 import { UserDatabaseProvider } from "@/db/user-provider";
-import { SyncProvider } from "@/db/sync-provider";
+import { SyncProvider, useSync } from "@/db/sync-provider";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { useThemeEffect } from "@/lib/theme-effect";
+import { confirm } from "@/lib/confirm";
 import "../global.css";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -24,52 +25,64 @@ export const unstable_settings = {
 
 SplashScreen.preventAutoHideAsync();
 
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isSignedIn, isLoaded, userId } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
+function ReconciliationCheck() {
+  const { needsReconciliation, resolveReconciliation } = useSync();
+  const prompted = useRef(false);
 
   useEffect(() => {
+    if (!needsReconciliation || prompted.current) return;
+    prompted.current = true;
+
+    confirm(
+      "Different account",
+      "This device has data from a different account. Signing in will replace local data with your cloud data. Continue?",
+    ).then((proceed) => {
+      resolveReconciliation(proceed);
+      prompted.current = false;
+    });
+  }, [needsReconciliation, resolveReconciliation]);
+
+  return null;
+}
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  const { isSignedIn, isLoaded, userId, signOut } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+
+  // Fall back to unsigned mode if Clerk fails to load within 5 seconds
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setAuthTimedOut(true), 5000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
+
+  // Redirect signed-in users away from auth screens
+  useEffect(() => {
     if (!isLoaded) return;
-
     const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
-
-    if (!isSignedIn && !onAuthScreen) {
-      router.replace("/sign-in");
-    } else if (isSignedIn && onAuthScreen) {
+    if (isSignedIn && onAuthScreen) {
       router.replace("/dictionary");
     }
   }, [isSignedIn, isLoaded, segments]);
 
-  // Toggle the web navbar backdrop based on auth state. The has-navbar class
-  // drives a CSS ::before pseudo-element for the full-width tab bar backdrop.
-  // This lives here (not in tabs layout) because Expo Router on web mounts
-  // the (tabs) layout even on auth screens.
+  // Always add has-navbar on web once loaded (app tree is always mounted)
   useEffect(() => {
     if (Platform.OS !== "web" || !isLoaded) return;
-    if (isSignedIn) {
-      document.body.classList.add("has-navbar");
-    } else {
-      document.body.classList.remove("has-navbar");
-    }
-  }, [isSignedIn, isLoaded]);
+    document.body.classList.add("has-navbar");
+  }, [isLoaded]);
 
-  if (!isLoaded) return null;
+  if (!isLoaded && !authTimedOut) return null;
 
-  if (!isSignedIn) {
-    return (
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="sign-in" />
-        <Stack.Screen name="sign-up" />
-      </Stack>
-    );
-  }
+  const effectiveUserId = userId ?? "local";
 
   return (
     <DatabaseProvider>
       <DictDownloadGate>
-        <UserDatabaseProvider userId={userId!}>
-          <SyncProvider userId={userId!}>
+        <UserDatabaseProvider userId={effectiveUserId}>
+          <SyncProvider userId={effectiveUserId} onSignOut={signOut}>
+            <ReconciliationCheck />
             <View style={{ flex: 1 }}>
               {children}
               <BackgroundDownloadBanner />
@@ -166,12 +179,20 @@ export default function RootLayout() {
       >
         <ThemeProvider value={navTheme}>
           <AuthProvider>
-            <AuthGate>
+            <AppShell>
               <Stack>
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="sign-in"
+                  options={{ headerShown: false, presentation: "modal" }}
+                />
+                <Stack.Screen
+                  name="sign-up"
+                  options={{ headerShown: false, presentation: "modal" }}
+                />
               </Stack>
-            </AuthGate>
+            </AppShell>
           </AuthProvider>
         </ThemeProvider>
       </GestureHandlerRootView>

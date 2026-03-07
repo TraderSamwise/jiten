@@ -29,7 +29,10 @@ export function createTursoClient(userId: string): Client {
   });
 }
 
-/** Returns true if all required env vars for cloud sync are set */
+/** Returns true if all required env vars for cloud sync are set.
+ *  Disabled in __DEV__ by default to avoid spamming Turso on hot reloads.
+ *  Set EXPO_PUBLIC_DEV_SYNC=1 to enable sync during development. */
 export function isSyncEnabled(): boolean {
+  if (__DEV__ && !process.env.EXPO_PUBLIC_DEV_SYNC) return false;
   return !!(env.CLERK_PUBLISHABLE_KEY && env.TURSO_AUTH_TOKEN && env.TURSO_ORG);
 }

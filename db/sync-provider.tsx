@@ -4,7 +4,9 @@ import { useUserDb } from "./user-provider";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
 import { sync, type SyncResult } from "./sync-engine";
+import { resetLocalUserData } from "./sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { getLastUser, setLastUser } from "@/lib/last-user";
 import type { Client } from "@libsql/client/web";
 
 interface SyncContextType {
@@ -13,6 +15,8 @@ interface SyncContextType {
   lastSyncAt: string | null;
   lastError: string | null;
   triggerSync: () => Promise<SyncResult>;
+  needsReconciliation: boolean;
+  resolveReconciliation: (proceed: boolean) => void;
 }
 
 const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
@@ -23,20 +27,31 @@ const SyncContext = createContext<SyncContextType>({
   lastSyncAt: null,
   lastError: null,
   triggerSync: async () => noopResult,
+  needsReconciliation: false,
+  resolveReconciliation: () => {},
 });
 
 export function useSync() {
   return useContext(SyncContext);
 }
 
-export function SyncProvider({ userId, children }: { userId: string; children: React.ReactNode }) {
+interface SyncProviderProps {
+  userId: string;
+  onSignOut?: () => Promise<void>;
+  children: React.ReactNode;
+}
+
+export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps) {
   const userDb = useUserDb();
+  const isRealUser = userId !== "local" && isSyncEnabled();
   const [syncStatus, setSyncStatus] = useState<SyncContextType["syncStatus"]>(
-    isSyncEnabled() ? "idle" : "disabled",
+    isRealUser ? "idle" : "disabled",
   );
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [needsReconciliation, setNeedsReconciliation] = useState(false);
+  const [reconciled, setReconciled] = useState(false);
 
   const syncingRef = useRef(false);
   const tursoRef = useRef<Client | null>(null);
@@ -44,7 +59,7 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
 
   // Initialize Turso client
   useEffect(() => {
-    if (!isSyncEnabled()) return;
+    if (!isRealUser) return;
     try {
       tursoRef.current = createTursoClient(userId);
     } catch (err) {
@@ -55,10 +70,50 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
     return () => {
       tursoRef.current = null;
     };
-  }, [userId]);
+  }, [userId, isRealUser]);
+
+  // Check for account change before first sync
+  useEffect(() => {
+    if (!isRealUser || !userDb) return;
+
+    let cancelled = false;
+    (async () => {
+      const lastUser = await getLastUser();
+      if (cancelled) return;
+
+      if (!lastUser || lastUser === userId) {
+        // First sign-in or same user — record and proceed
+        await setLastUser(userId);
+        setReconciled(true);
+      } else {
+        // Different user — need reconciliation
+        setNeedsReconciliation(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, isRealUser, userDb]);
+
+  const resolveReconciliation = useCallback(
+    async (proceed: boolean) => {
+      if (proceed && userDb) {
+        await resetLocalUserData(userDb);
+        await setLastUser(userId);
+        useBookmarkStore.getState().load(userDb);
+        setNeedsReconciliation(false);
+        setReconciled(true);
+      } else {
+        setNeedsReconciliation(false);
+        onSignOut?.();
+      }
+    },
+    [userId, userDb, onSignOut],
+  );
 
   const triggerSync = useCallback(async (): Promise<SyncResult> => {
-    if (!isSyncEnabled() || !userDb || !tursoRef.current) return noopResult;
+    if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
     if (syncingRef.current) return noopResult; // Dedup
 
     syncingRef.current = true;
@@ -68,6 +123,8 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
     try {
       const result = await sync(userDb, tursoRef.current, setSyncProgress);
       if (result.ok) {
+        // Let the progress bar fill to 100% before hiding
+        await new Promise((r) => setTimeout(r, 500));
         setSyncStatus("idle");
         setLastError(null);
         setLastSyncAt(new Date().toISOString());
@@ -88,11 +145,11 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
     } finally {
       syncingRef.current = false;
     }
-  }, [userDb]);
+  }, [userDb, isRealUser]);
 
-  // Sync on mount and foreground
+  // Sync on mount and foreground — only after reconciliation passes
   useEffect(() => {
-    if (!isSyncEnabled() || !userDb) return;
+    if (!isRealUser || !userDb || !reconciled) return;
 
     // Initial sync
     triggerSync();
@@ -110,16 +167,16 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
       });
       return () => sub.remove();
     }
-  }, [userDb, triggerSync]);
+  }, [userDb, triggerSync, isRealUser, reconciled]);
 
   // Periodic sync every 60s
   useEffect(() => {
-    if (!isSyncEnabled() || !userDb) return;
+    if (!isRealUser || !userDb || !reconciled) return;
     intervalRef.current = setInterval(triggerSync, 60_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [userDb, triggerSync]);
+  }, [userDb, triggerSync, isRealUser, reconciled]);
 
   // Start background downloads (audio, extended DB) after initial sync completes.
   // This ensures sync data is available before large downloads begin.
@@ -128,7 +185,7 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
 
   useEffect(() => {
     if (bgDownloadsTriggered.current) return;
-    if (!isSyncEnabled()) {
+    if (!isRealUser) {
       bgDownloadsTriggered.current = true;
       triggerBackgroundDownloads();
       return;
@@ -141,10 +198,20 @@ export function SyncProvider({ userId, children }: { userId: string; children: R
       bgDownloadsTriggered.current = true;
       triggerBackgroundDownloads();
     }
-  }, [syncStatus, lastSyncAt, lastError, triggerBackgroundDownloads]);
+  }, [syncStatus, lastSyncAt, lastError, triggerBackgroundDownloads, isRealUser]);
 
   return (
-    <SyncContext.Provider value={{ syncStatus, syncProgress, lastSyncAt, lastError, triggerSync }}>
+    <SyncContext.Provider
+      value={{
+        syncStatus,
+        syncProgress,
+        lastSyncAt,
+        lastError,
+        triggerSync,
+        needsReconciliation,
+        resolveReconciliation,
+      }}
+    >
       {children}
     </SyncContext.Provider>
   );
