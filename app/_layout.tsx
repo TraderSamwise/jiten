@@ -1,11 +1,13 @@
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Modal, Platform, Pressable, View } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
@@ -43,6 +45,49 @@ function ReconciliationCheck() {
   }, [needsReconciliation, resolveReconciliation]);
 
   return null;
+}
+
+function FirstSyncCheck() {
+  const { needsFirstSyncChoice, resolveFirstSyncChoice } = useSync();
+
+  if (!needsFirstSyncChoice) return null;
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <Pressable className="flex-1 justify-center px-6 bg-black/50">
+        <View
+          className="rounded-2xl border border-border bg-background p-5"
+          style={
+            Platform.OS === "web"
+              ? { maxWidth: 500, width: "100%", alignSelf: "center" }
+              : undefined
+          }
+        >
+          <Text className="text-lg font-semibold text-foreground mb-2">Existing Local Data</Text>
+          <Text className="text-sm text-muted-foreground mb-4">
+            You have data on this device. How should we handle it with your cloud account?
+          </Text>
+          <View className="gap-2">
+            <Button
+              label="Merge"
+              variant="default"
+              onPress={() => resolveFirstSyncChoice("merge")}
+            />
+            <Button
+              label="Use Cloud Data"
+              variant="outline"
+              onPress={() => resolveFirstSyncChoice("use-cloud")}
+            />
+            <Button
+              label="Use Local Data"
+              variant="outline"
+              onPress={() => resolveFirstSyncChoice("use-local")}
+            />
+          </View>
+        </View>
+      </Pressable>
+    </Modal>
+  );
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -86,6 +131,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <UserDatabaseProvider userId={effectiveUserId}>
           <SyncProvider userId={effectiveUserId} onSignOut={signOut}>
             <ReconciliationCheck />
+            <FirstSyncCheck />
             <View style={{ flex: 1 }}>
               {children}
               <BackgroundDownloadBanner />
