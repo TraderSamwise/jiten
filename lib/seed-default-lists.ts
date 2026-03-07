@@ -43,6 +43,11 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+/** Deterministic ID for default lists/books — stable across devices for sync. */
+export function makeDefaultListId(name: string): string {
+  return "default-" + name.toLowerCase().replace(/\s+/g, "-");
+}
+
 export async function seedDefaultListsIfNeeded(
   userDb: WrappedUserDb,
   dictDb: SQLite.SQLiteDatabase,
@@ -119,7 +124,7 @@ async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
 
     if (literals.length === 0) continue;
 
-    const listId = generateId();
+    const listId = makeDefaultListId(def.name);
 
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
@@ -150,7 +155,7 @@ export async function seedDefaultBookIfNeeded(userDb: WrappedUserDb): Promise<vo
   if (flag) return;
 
   const now = new Date().toISOString();
-  const id = generateId();
+  const id = makeDefaultListId("yume-juuya");
 
   await userDb.runAsync(
     `INSERT INTO books (id, title, author, source, aozora_id, source_id, raw_content, is_default, created_at, updated_at)
@@ -191,11 +196,12 @@ export async function seedRtkLessonsIfNeeded(
 
     if (literals.length === 0) continue;
 
-    const listId = generateId();
+    const listName = `RTK Lesson ${lesson}`;
+    const listId = makeDefaultListId(listName);
 
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
-      [listId, `RTK Lesson ${lesson}`, null, now, now],
+      [listId, listName, null, now, now],
     );
 
     const BATCH_SIZE = 200;
@@ -234,7 +240,7 @@ async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
 
     if (entries.length === 0) continue;
 
-    const listId = generateId();
+    const listId = makeDefaultListId(def.name);
 
     await userDb.runAsync(
       "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",

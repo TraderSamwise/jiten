@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { makeDefaultListId } from "@/lib/seed-default-lists";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -75,6 +76,45 @@ async function openAndMigrateUserDb(): Promise<{
 
     sync: () => {},
   };
+
+  // Programmatic migration: rename random default IDs → deterministic slugs
+  // Disable FKs during migration — UPDATE on PK internally does DELETE+INSERT
+  // which triggers CASCADE and destroys the FK references we just updated.
+  const migrated = await wrapped.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_flags WHERE key = 'default_ids_migrated'",
+  );
+  if (!migrated) {
+    await db.execAsync("PRAGMA foreign_keys = OFF");
+    const defaults = await wrapped.getAllAsync<{ id: string; name: string }>(
+      "SELECT id, name FROM lists WHERE is_default = 1",
+    );
+    for (const list of defaults) {
+      const newId = makeDefaultListId(list.name);
+      if (list.id === newId) continue;
+      await wrapped.runAsync("UPDATE list_entries SET list_id = ? WHERE list_id = ?", [
+        newId,
+        list.id,
+      ]);
+      await wrapped.runAsync("UPDATE srs_cards SET list_id = ? WHERE list_id = ?", [
+        newId,
+        list.id,
+      ]);
+      await wrapped.runAsync("UPDATE lists SET id = ? WHERE id = ?", [newId, list.id]);
+    }
+    // Also migrate default books
+    const defaultBooks = await wrapped.getAllAsync<{ id: string; title: string }>(
+      "SELECT id, title FROM books WHERE is_default = 1",
+    );
+    for (const book of defaultBooks) {
+      const newId = makeDefaultListId("yume-juuya");
+      if (book.id === newId) continue;
+      await wrapped.runAsync("UPDATE books SET id = ? WHERE id = ?", [newId, book.id]);
+    }
+    await wrapped.runAsync(
+      "INSERT OR REPLACE INTO app_flags (key, value) VALUES ('default_ids_migrated', '1')",
+    );
+    await db.execAsync("PRAGMA foreign_keys = ON");
+  }
 
   return { raw: db, wrapped };
 }

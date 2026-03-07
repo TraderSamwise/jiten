@@ -30,6 +30,19 @@ async function setSyncMeta(db: WrappedUserDb, key: string, value: string): Promi
 // Remote schema initialization (versioned — only runs new migrations)
 // ---------------------------------------------------------------------------
 
+/**
+ * Filter migrations for remote DB: skip app-level indexes (only keep _updated
+ * indexes needed for delta sync) and skip data mutations (UPDATE/DELETE) that
+ * are only relevant locally (e.g. seed data fixups).
+ */
+function isRemoteRelevant(sql: string): boolean {
+  const t = sql.trim().toUpperCase();
+  if (t.startsWith("CREATE INDEX") || t.startsWith("CREATE UNIQUE INDEX"))
+    return sql.includes("_updated");
+  if (t.startsWith("UPDATE ") || t.startsWith("DELETE ")) return false;
+  return true;
+}
+
 /** Returns true if new migrations were applied (schema changed). */
 async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promise<boolean> {
   const stored = await getSyncMeta(localDb, "remote_schema_version");
@@ -39,30 +52,35 @@ async function ensureRemoteSchema(localDb: WrappedUserDb, turso: Client): Promis
   if (appliedVersion >= total - 1) return false;
 
   const pending = USER_DB_MIGRATIONS.slice(appliedVersion + 1);
+  // Filter out non-essential indexes and data mutations for remote
+  const remotePending = pending.filter(isRemoteRelevant);
   console.log(
-    `[Sync] Applying ${pending.length} remote migrations (${appliedVersion + 1}→${total - 1})`,
+    `[Sync] Applying ${remotePending.length}/${pending.length} remote migrations (${appliedVersion + 1}→${total - 1})`,
   );
 
-  // Try batch first (single request)
-  try {
-    await turso.batch(
-      pending.map((sql) => ({ sql })),
-      "write",
-    );
-  } catch (err) {
-    // Batch may fail if some migrations conflict — fall back to individual
-    for (const sql of pending) {
-      try {
-        await turso.execute(sql);
-      } catch (e) {
-        const m = String(e);
-        if (!m.includes("duplicate column") && !m.includes("already exists")) {
-          console.warn("[Sync] Remote migration warning:", m);
+  if (remotePending.length > 0) {
+    // Try batch first (single request)
+    try {
+      await turso.batch(
+        remotePending.map((sql) => ({ sql })),
+        "write",
+      );
+    } catch (err) {
+      // Batch may fail if some migrations conflict — fall back to individual
+      for (const sql of remotePending) {
+        try {
+          await turso.execute(sql);
+        } catch (e) {
+          const m = String(e);
+          if (!m.includes("duplicate column") && !m.includes("already exists")) {
+            console.warn("[Sync] Remote migration warning:", m);
+          }
         }
       }
     }
   }
 
+  // Version counter advances over full array even though some are filtered
   await setSyncMeta(localDb, "remote_schema_version", String(total - 1));
   // Invalidate persisted column cache since schema changed
   columnCache.clear();
@@ -230,8 +248,9 @@ async function pushAll(
     if (cols.length === 0) continue;
     const colList = cols.join(", ");
     const placeholders = cols.map(() => "?").join(", ");
+    const filter = "pushFilter" in table ? ` AND ${table.pushFilter}` : "";
     const rows = await localDb.getAllAsync<Record<string, any>>(
-      `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
+      `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?${filter}`,
       [lastSyncAt],
     );
     console.log(`[Sync] push ${table.name}: ${rows.length} rows`);
@@ -342,7 +361,10 @@ export async function sync(
     onLabel?.("");
     console.log(`[Sync] push: ${Date.now() - t0}ms (${pushed} stmts)`);
 
-    // 7. If pushed, increment remote push_version
+    // 7. Save last_sync_at immediately after push — prevents full re-push on interruption
+    await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
+
+    // 8. If pushed, increment remote push_version
     if (pushed > 0) {
       await turso.execute(
         "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('push_version', CAST(COALESCE((SELECT value FROM sync_meta WHERE key = 'push_version'), '0') AS INTEGER) + 1)",
@@ -356,9 +378,6 @@ export async function sync(
       // No push, but save remote version locally so next sync can skip pull
       await setSyncMeta(localDb, "last_seen_push_version", remoteVersion);
     }
-
-    // 8. Update last sync timestamp
-    await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
 
     console.log(`[Sync] Complete: ${Date.now() - t0}ms total — pulled ${pulled}, pushed ${pushed}`);
     return { ok: true, pulled, pushed };
