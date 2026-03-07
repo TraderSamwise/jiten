@@ -148,40 +148,57 @@ export default function RootLayout() {
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
 
   useThemeEffect();
 
-  // Prevent browser back from exiting the SPA.
-  // With backBehavior="none" on tabs, tab switches use replaceState (no new
-  // history entries), so browser back at the tab root would exit the app.
-  // Push a guard entry after expo-router initializes so there's always
-  // something to go back to, then re-push whenever the guard is hit.
+  // Intercept ALL browser history navigation (back/forward) in capture phase,
+  // BEFORE expo-router's popstate handler. Expo-router tries to restore stale
+  // React Navigation state from history entries, causing full page reloads when
+  // the state is out of sync (e.g., after router.replace()-based back navigation).
+  //
+  // Instead, we prevent expo-router from processing the event and use
+  // router.replace() to cleanly navigate to the URL the browser already moved to.
+  // This also handles the SPA exit guard (entries without expo-router state).
+  const routerRef = useRef(router);
+  routerRef.current = router;
   useEffect(() => {
     if (Platform.OS !== "web") return;
-    // Poll for expo-router's history state (it sets an `id` property).
-    // Once present, push a duplicate guard entry so browser back doesn't exit.
+
+    // Wait for expo-router to initialize (sets `id` in history state),
+    // then push a guard entry so browser back can't exit the SPA.
     let cancelled = false;
-    const pushGuard = () => {
-      window.history.pushState(window.history.state, "", window.location.href);
-    };
     const check = () => {
       if (cancelled) return;
       if (window.history.state?.id) {
-        pushGuard();
+        window.history.pushState(window.history.state, "", window.location.href);
       } else {
         requestAnimationFrame(check);
       }
     };
     requestAnimationFrame(check);
+
     const handler = (e: PopStateEvent) => {
+      // No expo-router state → SPA exit guard: re-push to prevent leaving
       if (!e.state?.id) {
-        pushGuard();
+        window.history.pushState(window.history.state, "", window.location.href);
+        return;
       }
+
+      // Has expo-router state → browser back/forward to a history entry.
+      // Stop expo-router from restoring potentially stale state.
+      e.stopImmediatePropagation();
+
+      // Navigate to the URL the browser already moved to, using replace
+      // so we don't add duplicate history entries.
+      const target = window.location.pathname + window.location.search;
+      routerRef.current.replace(target as any);
     };
-    window.addEventListener("popstate", handler);
+    // Capture phase fires before expo-router's bubble-phase listener
+    window.addEventListener("popstate", handler, { capture: true });
     return () => {
       cancelled = true;
-      window.removeEventListener("popstate", handler);
+      window.removeEventListener("popstate", handler, { capture: true });
     };
   }, []);
 
