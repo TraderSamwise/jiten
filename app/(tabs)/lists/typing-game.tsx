@@ -61,6 +61,7 @@ import { playEntryAudio } from "@/lib/audio";
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { findReadingConfusion, findMeaningConfusion } from "@/lib/confused-words";
 import { useWordFilter } from "@/hooks/useWordFilter";
+import { useSync } from "@/db/sync-provider";
 import type { DictEntry } from "@/db/types";
 
 // ─── Layout estimation constants ───
@@ -338,6 +339,16 @@ export default function TypingGameScreen() {
   const { webBgStyle } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb, audioDb } = useDatabase();
+  const { triggerSync, markDirty } = useSync();
+  const sessionDirtyRef = useRef(false);
+
+  // Sync on unmount if any practice events were logged during this session
+  useEffect(
+    () => () => {
+      if (sessionDirtyRef.current) triggerSync(true);
+    },
+    [],
+  );
 
   const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
@@ -531,6 +542,10 @@ export default function TypingGameScreen() {
     const currentEntry = words[currentWordIndex].entry;
     const converted = romajiToKana(raw);
     if (userDb && listId) {
+      if (!sessionDirtyRef.current) {
+        sessionDirtyRef.current = true;
+        markDirty();
+      }
       logPracticeEvent(userDb, {
         entryId: currentEntry.id,
         listId,
