@@ -6,6 +6,7 @@ import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { resetLocalUserData } from "@/db/sync-helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { useListsStore } from "@/stores/lists";
 import { alert } from "@/lib/confirm";
 
 interface HardSyncModalProps {
@@ -24,6 +25,7 @@ export function HardSyncModal({ visible, onClose }: HardSyncModalProps) {
     try {
       await resetLocalUserData(userDb);
       useBookmarkStore.getState().load(userDb);
+      useListsStore.getState().load(userDb);
       await triggerSync(true);
       onClose();
     } catch (err) {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronDown, ChevronRight } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
+import { useSync } from "@/db/sync-provider";
 import { getEntries } from "@/db/search";
 import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useListsStore } from "@/stores/lists";
@@ -32,6 +33,7 @@ export default function MarkedForReviewScreen() {
   const { webBgStyle, insets } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb } = useDatabase();
+  const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const dayResetHour = useAtomValue(dayResetHourAtom);
 
@@ -50,7 +52,7 @@ export default function MarkedForReviewScreen() {
 
   useEffect(() => {
     loadData();
-  }, [userDb, dictDb, scope, listId, dayResetHour]);
+  }, [userDb, dictDb, scope, listId, dayResetHour, lastSyncAt]);
 
   async function loadData() {
     if (!userDb) return;

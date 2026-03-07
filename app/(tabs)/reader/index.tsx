@@ -46,7 +46,7 @@ export { parseBookRow };
 export default function LibraryScreen() {
   const router = useRouter();
   const userDb = useUserDb();
-  const { triggerSync } = useSync();
+  const { triggerSync, lastSyncAt } = useSync();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -57,7 +57,7 @@ export default function LibraryScreen() {
       "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
     );
     setBooks(rows.map(parseBookRow));
-  }, [userDb]);
+  }, [userDb, lastSyncAt]);
 
   useFocusEffect(
     useCallback(() => {

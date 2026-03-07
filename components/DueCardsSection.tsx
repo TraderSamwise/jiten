@@ -3,6 +3,7 @@ import { View, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { ChevronRight } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
+import { useSync } from "@/db/sync-provider";
 import { useListsStore } from "@/stores/lists";
 import { srsEpochDaysToDate } from "@/stores/simple-srs";
 import type { FlashcardMode } from "@/db/types";
@@ -61,6 +62,7 @@ export function DueCardsSection({
   showHeader = true,
 }: DueCardsSectionProps) {
   const userDb = useUserDb();
+  const { lastSyncAt } = useSync();
   const [buckets, setBuckets] = useState<DayBucket[]>([]);
   const [addOrderStats, setAddOrderStats] = useState<{
     total: number;
@@ -71,7 +73,7 @@ export function DueCardsSection({
 
   useEffect(() => {
     if (userDb) loadStats();
-  }, [userDb, listId, flashcardMode]);
+  }, [userDb, listId, flashcardMode, lastSyncAt]);
 
   async function loadStats() {
     if (!userDb) return;
