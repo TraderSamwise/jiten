@@ -1,2 +1,3 @@
+yarn typecheck
 npx lint-staged
 ./scripts/check-dict-version.sh --strict

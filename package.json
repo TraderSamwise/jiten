@@ -19,6 +19,7 @@
     "check:dict": "./scripts/check-dict-version.sh",
     "test": "yarn build:reader && vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
