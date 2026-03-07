@@ -547,13 +547,14 @@ The `sync()` function runs a full bidirectional sync cycle:
 1. **Ensure remote schema** — applies pending user DB migrations to the remote Turso database (tracked via `remote_schema_version` in `sync_meta`)
 2. **Cache column metadata** — fetches `PRAGMA table_info()` for all tables, caches in `sync_meta.columns_cache` to avoid repeated discovery
 3. **Version check** — compares remote `push_version` counter against `last_seen_push_version`. If unchanged and no schema change, skips pull entirely
-4. **Pull (remote → local)** — fetches rows where `updated_at > last_sync_at`, applies using conflict resolution strategy per table type
+4. **Pull (remote → local)** — fetches rows where `updated_at > last_sync_at`, applies using conflict resolution strategy per table type. LWW lookups are chunked (500 PKs per query) to stay within SQLite's parameter limit. Each table's inserts are wrapped in a transaction for performance.
 5. **Push (local → remote)** — sends local changes since `last_sync_at` in 500-statement batches to avoid timeouts
-6. **Save state** — updates `last_sync_at`, increments remote `push_version` if rows were pushed
+6. **Blob column sync** — syncs large content columns (e.g. `books.raw_content`) separately. Pushes content once when remote is missing it; pulls when local is missing. Runs after the regular push so metadata rows exist on remote before content is attached.
+7. **Save state** — updates `last_sync_at`, increments remote `push_version` if rows were pushed
 
 #### Conflict resolution
 
-**Mutable tables** (lists, list_entries, srs_cards, books, user_kanji_notes, confusion_pairs): Last-Write-Wins (LWW) based on `updated_at` timestamp. Pull uses `INSERT OR REPLACE` only when `remote_ts >= local_ts`. Push uses `INSERT ... ON CONFLICT DO UPDATE` to avoid DELETE+INSERT cycles that break FK cascades.
+**Mutable tables** (lists, list_entries, srs_cards, books, user_kanji_notes, confusion_pairs): Last-Write-Wins (LWW) based on `updated_at` timestamp. Both pull and push use `INSERT ... ON CONFLICT DO UPDATE SET` — this avoids DELETE+INSERT cycles that break FK cascades and preserves local-only columns (like `raw_content`) that aren't part of the regular sync.
 
 **Append-only tables** (review_logs, practice_events, practice_sessions, confusion_events, game_scores): `INSERT OR IGNORE` in both directions. Primary key ensures idempotency — no conflicts possible.
 
@@ -563,15 +564,35 @@ Mutable tables use `deleted_at IS NOT NULL` to mark deletions. The `deleted_at` 
 
 #### Push filters
 
-Default/seeded data is excluded from sync to prevent overwriting other devices' seeds:
+Default/seeded data is excluded from push to prevent overwriting other devices' seeds:
 
-- `lists`: `is_default = 0`
-- `list_entries`: entries in non-default lists only
-- `books`: `is_default = 0`
+- `lists`: `is_default = 0` — default kanji/vocab lists are seeded locally
+- `list_entries`: `list_id NOT LIKE 'default-%'` — entries in default lists excluded
+
+Note: `books` has no push filter — all books (including default) sync metadata/progress. Content is handled separately via blob sync.
 
 #### Column exclusions
 
-`books.html_content` is excluded from push (too large — often megabytes of parsed HTML). Books sync metadata only; content is re-imported locally.
+`excludeCols` removes columns from the regular delta sync. These columns are never included in push/pull queries:
+
+- `books.html_content` — generated HTML, re-created locally
+- `books.raw_content` — large text content, synced via blob columns instead
+
+#### Blob columns (`blobCols`)
+
+Large columns that should sync once (not on every delta cycle) are configured as `blobCols` on table entries in `MUTABLE_TABLES`. Unlike regular columns, blob columns are synced by presence — pushed when remote is missing the value, pulled when local is missing it.
+
+```ts
+// Example: sync raw_content only for non-default books
+{
+  name: "books",
+  blobCols: { cols: ["raw_content"], filter: "is_default = 0" },
+}
+```
+
+This keeps progress updates lightweight (no megabytes re-pushed) while ensuring imported book content is available on all devices. The `filter` option restricts which rows participate — default books have content seeded locally so they don't need blob sync.
+
+**Important for new INSERT statements:** Any column used in the regular delta sync (i.e. not in `excludeCols`) must be set on INSERT. If `updated_at` is NULL, the row will never sync (`NULL > timestamp` is always false in SQL).
 
 #### Network error detection
 
@@ -719,6 +740,10 @@ Screens using this pattern:
 | Modal/popover that loads fresh on every open           | No sync watcher needed       |
 | Session screen (study, games) that loads once          | No sync watcher needed       |
 
+### Hard Sync (`components/HardSyncModal.tsx`)
+
+Available in Settings > Data when signed in. Wipes all local user data (`resetLocalUserData()` — clears all tables, `sync_meta`, and `app_flags`), reloads in-memory stores, then forces a full sync pull from Turso. Since `app_flags` are cleared, default lists and books are re-seeded on next mount.
+
 ### Data deletion (`components/DeleteDataModal.tsx`)
 
 Users can selectively delete data by category from Settings:
@@ -747,6 +772,7 @@ Mutable tables are soft-deleted (syncs to remote). Append tables are hard-delete
 | `api/provision-db.ts`                     | Vercel webhook: Clerk `user.created` → Turso DB creation                    |
 | `components/BackgroundDownloadBanner.tsx` | Sync/download progress UI                                                   |
 | `components/DeleteDataModal.tsx`          | Selective data deletion with category toggles                               |
+| `components/HardSyncModal.tsx`            | Full wipe + re-pull from cloud                                              |
 | `app/sign-in.tsx`                         | Email + password sign-in with MFA support                                   |
 | `app/sign-up.tsx`                         | Email + password sign-up with email verification                            |
 
