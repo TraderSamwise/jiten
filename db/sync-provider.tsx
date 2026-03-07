@@ -15,8 +15,9 @@ interface SyncContextType {
   syncLabel: string;
   lastSyncAt: string | null;
   lastError: string | null;
-  triggerSync: (force?: boolean) => Promise<SyncResult>;
+  triggerSync: (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>;
   markDirty: () => void;
+  isSilentSync: boolean;
   tursoClient: Client | null;
   needsReconciliation: boolean;
   resolveReconciliation: (proceed: boolean) => void;
@@ -34,6 +35,7 @@ const SyncContext = createContext<SyncContextType>({
   lastError: null,
   triggerSync: async () => noopResult,
   markDirty: () => {},
+  isSilentSync: false,
   tursoClient: null,
   needsReconciliation: false,
   resolveReconciliation: () => {},
@@ -70,6 +72,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dirtyRef = useRef(false);
   const isOfflineRef = useRef(false);
+  const [isSilentSync, setIsSilentSync] = useState(false);
 
   // Initialize Turso client
   useEffect(() => {
@@ -165,15 +168,20 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   // Helper to reset the periodic interval timer (called after successful sync)
   const resetInterval = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(triggerSyncRef.current, 120_000);
+    intervalRef.current = setInterval(() => triggerSyncRef.current({ silent: true }), 120_000);
   }, []);
 
   // We need a ref to triggerSync so resetInterval and the interval callback
   // always call the latest version without a circular dep.
-  const triggerSyncRef = useRef<(force?: boolean) => Promise<SyncResult>>(async () => noopResult);
+  const triggerSyncRef = useRef<
+    (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>
+  >(async () => noopResult);
 
   const triggerSync = useCallback(
-    async (force = false): Promise<SyncResult> => {
+    async (opts?: boolean | { force?: boolean; silent?: boolean }): Promise<SyncResult> => {
+      const force = typeof opts === "boolean" ? opts : (opts?.force ?? false);
+      const silent = typeof opts === "object" && opts?.silent === true;
+
       if (!isRealUser || !userDb || !tursoRef.current) return noopResult;
       if (syncingRef.current) return noopResult; // Dedup
 
@@ -181,6 +189,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
       if (!force && isOfflineRef.current) return noopResult;
 
       syncingRef.current = true;
+      setIsSilentSync(silent);
       setSyncStatus("syncing");
       setSyncProgress(0);
       setSyncLabel("");
@@ -227,6 +236,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
         return { ok: false, error: msg, pulled: 0, pushed: 0 };
       } finally {
         syncingRef.current = false;
+        setIsSilentSync(false);
       }
     },
     [userDb, isRealUser, resetInterval],
@@ -279,7 +289,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
   // Periodic sync every 2 minutes
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
-    intervalRef.current = setInterval(() => triggerSyncRef.current(), 120_000);
+    intervalRef.current = setInterval(() => triggerSyncRef.current({ silent: true }), 120_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -317,6 +327,7 @@ export function SyncProvider({ userId, onSignOut, children }: SyncProviderProps)
         lastError,
         triggerSync,
         markDirty,
+        isSilentSync,
         tursoClient: tursoRef.current,
         needsReconciliation,
         resolveReconciliation,
