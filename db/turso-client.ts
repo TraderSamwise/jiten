@@ -23,7 +23,7 @@ export function createTursoClient(userId: string, authToken: string): Client {
   }
   const dbName = hashUserId(userId);
   return createClient({
-    url: `https://${dbName}-${org}.turso.io`,
+    url: `libsql://${dbName}-${org}.turso.io`,
     authToken,
   });
 }
