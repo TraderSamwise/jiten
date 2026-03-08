@@ -927,20 +927,31 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
 - Max interval: 365 days
 - Due dates stored as fractional days since 2001-01-01 (Mac/Core Foundation epoch)
 
-**Session behavior (matching Midori):**
+**Session behavior (`app/(tabs)/lists/study.tsx`):**
 
-- Due review cards + up to 10 new cards loaded together, interleaved
-- Graduated cards (stage 1) pass in 1 correct answer → recalculate interval
+- **Dynamic deque**: maintains ~10 active cards at a time, pulling from pools as needed
+  - Two pools loaded at session start: due cards (priority) and new cards
+  - When active deque drops below 10 pending cards, pulls more from due pool first, then new pool
+  - This naturally introduces new cards as the deque thins out
+- **Re-queue**: failed/learning cards push to back of the active deque (~10 cards away, not 300+)
+- Graduated cards (stage 1) pass in 1 correct answer → recalculate interval, removed from session
 - New/learning cards (stage 0) need 3 correct to graduate
-- Failed cards re-queue to end of session — counter doesn't advance
-- Session counter tracks completed cards (graduated or passed review), not swipes
-- Session length is dynamic — failing cards extends the session
+- **Continuous session**: no checkpoint screen — session flows until all pools and deque are exhausted
+- **Progress bar**: tracks only due cards (not new cards) — turns green when all due cards graduated
+  - Counter: `completedDueCards / totalDueAtStart (totalInList)`
+  - `simpleDueIdsRef` tracks which cards were due at start; `completedSrsIdsRef` tracks graduated due cards
+- Session length is dynamic — failing cards extends the session, new cards trickle in continuously
 
-**reference data format** (for reference/import):
+**Midori internals** (documented implementation details):
 
-- Graduated: `{s:1, n:<due_midori_days>, l:<interval_days>}`
-- Learning: `{o:<order>, g:<grade>, l:<prev_interval>, m:<mature>, n:0, s:0, f:<failed>}`
+- DB format — Graduated: `{s:1, n:<due_midori_days>, l:<interval_days>}`
+- DB format — Learning: `{o:<order>, g:<grade>, l:<prev_interval>, m:<mature>, n:0, s:0, f:<failed>}`
   - `o`: position in 10-card batch, `g`: correct count in session, `m`: 1 if previously graduated, `f`: 1 if failed
+- Session engine: C++ `SpacedRepetition` class with review deque, new cards queue, timed heap
+  - `step()`: move due cards from timed heap → deque, if deque < 10 pull new cards, pop front
+  - Fail: card to back of deque, reps=0, interval=0
+  - Correct (learning): card to back of deque, reps++
+  - Graduate (reps reaches 3): card to timed heap (removed from session)
 
 ### FSRS (`ts-fsrs` library)
 
