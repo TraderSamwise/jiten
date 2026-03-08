@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
@@ -13,12 +13,20 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+// Module-level cache so results survive remounts (back navigation)
+let cachedQuery = "";
+let cachedResults: AozoraBook[] = [];
+
 export default function BrowseAozoraScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ q?: string }>();
   const userDb = useUserDb();
   const { triggerSync } = useSync();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AozoraBook[]>([]);
+  const initialQ = params.q ?? "";
+  const [query, setQuery] = useState(initialQ);
+  const [results, setResults] = useState<AozoraBook[]>(
+    initialQ && initialQ === cachedQuery ? cachedResults : [],
+  );
   const [searching, setSearching] = useState(false);
   const [downloading, setDownloading] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -27,11 +35,19 @@ export default function BrowseAozoraScreen() {
     const trimmed = q.trim();
     if (!trimmed) {
       setResults([]);
+      cachedQuery = "";
+      cachedResults = [];
+      return;
+    }
+    if (trimmed === cachedQuery && cachedResults.length > 0) {
+      setResults(cachedResults);
       return;
     }
     setSearching(true);
     try {
       const books = await searchBooks(trimmed);
+      cachedQuery = trimmed;
+      cachedResults = books;
       setResults(books);
     } catch (err) {
       alert("Search failed", err instanceof Error ? err.message : "Network error");
@@ -43,10 +59,11 @@ export default function BrowseAozoraScreen() {
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => doSearch(query), 400);
+    router.setParams(query.trim() ? { q: query.trim() } : { q: "" });
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, doSearch]);
+  }, [query, doSearch, router]);
 
   const handleDownload = useCallback(
     async (aozoraBook: AozoraBook) => {

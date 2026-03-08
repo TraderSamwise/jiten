@@ -1,16 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, FlatList, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { searchNovels, type SyosetuNovel } from "@/lib/syosetu-api";
 import { alert } from "@/lib/confirm";
 
+// Module-level cache so results survive remounts (back navigation)
+let cachedQuery = "";
+let cachedResults: SyosetuNovel[] = [];
+
 export default function BrowseSyosetuScreen() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SyosetuNovel[]>([]);
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initialQ = params.q ?? "";
+  const [query, setQuery] = useState(initialQ);
+  const [results, setResults] = useState<SyosetuNovel[]>(
+    initialQ && initialQ === cachedQuery ? cachedResults : [],
+  );
   const [searching, setSearching] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -18,11 +26,19 @@ export default function BrowseSyosetuScreen() {
     const trimmed = q.trim();
     if (!trimmed) {
       setResults([]);
+      cachedQuery = "";
+      cachedResults = [];
+      return;
+    }
+    if (trimmed === cachedQuery && cachedResults.length > 0) {
+      setResults(cachedResults);
       return;
     }
     setSearching(true);
     try {
       const novels = await searchNovels(trimmed);
+      cachedQuery = trimmed;
+      cachedResults = novels;
       setResults(novels);
     } catch (err) {
       alert("Search failed", err instanceof Error ? err.message : "Network error");
@@ -34,10 +50,11 @@ export default function BrowseSyosetuScreen() {
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => doSearch(query), 400);
+    router.setParams(query.trim() ? { q: query.trim() } : { q: "" });
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, doSearch]);
+  }, [query, doSearch, router]);
 
   const handleNovelPress = useCallback(
     (novel: SyosetuNovel) => {
