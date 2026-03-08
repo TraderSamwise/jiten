@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSegments } from "expo-router";
+import { useRouter, useSegments } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { useDatabase } from "@/db/provider";
 import { useSync } from "@/db/sync-provider";
@@ -19,6 +19,7 @@ const STATE_LABELS: Record<string, string> = {
 export function BackgroundDownloadBanner() {
   const { backgroundStatus } = useDatabase();
   const { syncStatus, syncProgress, syncLabel, lastError, isSilentSync } = useSync();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const segments = useSegments();
 
@@ -146,14 +147,22 @@ export function BackgroundDownloadBanner() {
       <View className="h-px bg-border" pointerEvents="none">
         <View className={`h-full ${barColor}`} style={{ width: `${displayPercent}%` }} />
       </View>
-      <View className={isWeb ? "" : "bg-secondary"} pointerEvents="none">
-        <View className="flex-row items-start justify-center px-4 pt-1 pb-4">
+      <View
+        className={isWeb ? "" : "bg-secondary"}
+        pointerEvents={isWeb && showSignedOut ? "auto" : "none"}
+      >
+        <Pressable
+          disabled={!(isWeb && showSignedOut)}
+          onPress={() => isWeb && showSignedOut && router.push("/sign-in")}
+          className="flex-row items-start justify-center px-4 pt-1 pb-4"
+          style={isWeb && showSignedOut ? { cursor: "pointer" } : undefined}
+        >
           <Text
             className={`text-xs ${showError ? "text-destructive" : showSignedOut ? "text-blue-500" : "text-secondary-foreground"}`}
           >
             {label}
           </Text>
-        </View>
+        </Pressable>
       </View>
     </View>
   );
