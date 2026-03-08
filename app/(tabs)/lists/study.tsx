@@ -2401,13 +2401,12 @@ function StudyScreen() {
   const isSimpleSrs = list?.flashcardMode === "simple_srs";
   const isSrsMode = list?.flashcardMode === "srs" || isSimpleSrs;
   const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
-  const progress = isSimpleSrs
-    ? simpleSrsTotal > 0
-      ? (simpleSrsLearned / simpleSrsTotal) * 100
-      : 0
-    : originalCardCount > 0
-      ? (ratedCount / originalCardCount) * 100
-      : 0;
+  const progress =
+    dueAtStart > 0
+      ? Math.min((ratedCount / dueAtStart) * 100, 100)
+      : originalCardCount > 0
+        ? (ratedCount / originalCardCount) * 100
+        : 0;
   const allDueComplete = isSrsMode && progress >= 100;
 
   return (
