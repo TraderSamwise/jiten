@@ -231,7 +231,7 @@ export async function importListToDb(
   // Check for name conflicts
   let name = data.list.name;
   const existing = await userDb.getFirstAsync<{ id: string }>(
-    "SELECT id FROM lists WHERE name = ?",
+    "SELECT id FROM lists WHERE name = ? AND deleted_at IS NULL",
     [name],
   );
   if (existing) {

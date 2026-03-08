@@ -314,7 +314,7 @@ export default function ListsIndexScreen() {
         // Refresh stores
         await loadLists();
         await useBookmarkStore.getState().load(userDb);
-        triggerSync(true);
+        triggerSync();
 
         router.push(`/lists/${newListId}`);
       } finally {

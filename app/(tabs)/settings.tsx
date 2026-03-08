@@ -303,7 +303,7 @@ export default function SettingsScreen() {
               variant="outline"
               size="sm"
               label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
-              onPress={() => triggerSync(true)}
+              onPress={() => triggerSync()}
               disabled={syncStatus === "syncing"}
               className="mb-2"
             />

@@ -72,7 +72,7 @@ export function DeleteDataModal({
         useBookmarkStore.getState().load(userDb);
         // Sync soft-deletes to remote
         if (tursoClient) {
-          await triggerSync(true);
+          await triggerSync();
         }
       }
 

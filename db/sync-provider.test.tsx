@@ -367,6 +367,92 @@ describe("SyncProvider", () => {
   });
 
   // -------------------------------------------------------------------------
+  // triggerSync marks dirty
+  // -------------------------------------------------------------------------
+
+  it("triggerSync marks dirty flag in database before syncing", async () => {
+    // Hold the sync open so it doesn't clear the dirty flag before we check
+    let resolveSync: (v: any) => void;
+    mockSync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+
+    await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
+      "last_sync_at",
+      new Date().toISOString(),
+    ]);
+    const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
+    await settle();
+    // Initial sync skipped (recent last_sync_at, not dirty)
+
+    // Call triggerSync (the public API used by list import, delete, etc.)
+    await act(async () => {
+      result.current.triggerSync();
+    });
+    await settle();
+
+    // Dirty flag should have been set in the database
+    const row = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM sync_meta WHERE key = ?",
+      ["sync_dirty"],
+    );
+    expect(row?.value).toBe("1");
+    // And sync should have been called
+    expect(mockSync).toHaveBeenCalled();
+
+    // Clean up: resolve the pending sync
+    await act(async () => {
+      resolveSync!({ ok: true, pulled: 0, pushed: 0 });
+    });
+    await advance(600);
+    await settle();
+  });
+
+  it("triggerSync persists dirty flag even when sync is already in progress", async () => {
+    // Make sync take a while so we can trigger a second one during it
+    let resolveSync: (v: any) => void;
+    mockSync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
+    await settle();
+
+    // First sync is now in progress (from init). Clear the dirty flag manually
+    // to simulate it being clean before the mutation.
+    await db.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]);
+
+    // Call triggerSync while the first sync is in progress — this is the
+    // exact scenario that used to lose data (mutation during active sync).
+    await act(async () => {
+      result.current.triggerSync();
+    });
+    await settle();
+
+    // Dirty flag must be persisted BEFORE the queued sync runs
+    const row = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM sync_meta WHERE key = ?",
+      ["sync_dirty"],
+    );
+    expect(row?.value).toBe("1");
+
+    // Resolve the in-progress sync so the queued one can run
+    await act(async () => {
+      resolveSync!({ ok: true, pulled: 0, pushed: 0 });
+    });
+    await settle();
+    // Wait for progress bar delay
+    await advance(600);
+    await settle();
+  });
+
+  // -------------------------------------------------------------------------
   // Disabled sync (local user)
   // -------------------------------------------------------------------------
 
