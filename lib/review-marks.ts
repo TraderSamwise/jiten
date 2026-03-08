@@ -279,11 +279,14 @@ function formatDayDisplay(dayLabel: string, resetHour: number): string {
   return weekdays[d.getUTCDay()] ?? dayLabel;
 }
 
+/** Matches SQLite strftime('%W') — Monday-start week number (00-53). */
 function getWeekLabel(dayLabel: string): string {
   const d = new Date(dayLabel + "T00:00:00Z");
   const jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const dayOfYear = Math.floor((d.getTime() - jan1.getTime()) / 86400000) + 1;
-  const weekNum = Math.floor((dayOfYear + jan1.getUTCDay() - 1) / 7);
+  const daysSinceJan1 = Math.floor((d.getTime() - jan1.getTime()) / 86400000);
+  const jan1Dow = jan1.getUTCDay(); // 0=Sun
+  const mondayOffset = jan1Dow === 0 ? 6 : jan1Dow - 1;
+  const weekNum = Math.floor((daysSinceJan1 + mondayOffset) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
