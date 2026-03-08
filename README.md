@@ -847,13 +847,37 @@ Mutable tables are soft-deleted (syncs to remote). Append tables are hard-delete
 | `app/sign-in.tsx`                         | Email + password sign-in with MFA support                                   |
 | `app/sign-up.tsx`                         | Email + password sign-up with email verification                            |
 
+## Dev Server
+
+For web development, run the dev server alongside Expo:
+
+```bash
+yarn serve:dev   # Start dev server on localhost:3001
+yarn web         # Start Expo web dev server (separate terminal)
+```
+
+The dev server (`scripts/serve-dev.ts`) provides two services on port 3001:
+
+1. **Dictionary file server** — serves `assets/dictionary.db`, `dict-manifest.json`, etc. with CORS headers. The `.env` file points `EXPO_PUBLIC_DICT_MANIFEST_URL` to `http://localhost:3001/dict-manifest.json`.
+
+2. **API proxy** — proxies external APIs to avoid CORS issues on web. Same routes as the Vercel rewrites in `vercel.json`:
+
+| Dev URL                              | Proxied to                    |
+| ------------------------------------ | ----------------------------- |
+| `localhost:3001/proxy/aozora/*`      | `https://www.aozora.gr.jp/*`  |
+| `localhost:3001/proxy/syosetu-api/*` | `https://api.syosetu.com/*`   |
+| `localhost:3001/proxy/syosetu/*`     | `https://ncode.syosetu.com/*` |
+
+In dev mode (`__DEV__`), `lib/proxy.ts` automatically routes proxy URLs to `localhost:3001`. In production, it uses relative paths handled by Vercel rewrites.
+
+Native (iOS/Android) doesn't need the proxy — it calls external APIs directly.
+
 ## Scripts
 
 ### Dictionary Database
 
 ```bash
 yarn migrate:dict  # Apply incremental dictionary migrations (the normal workflow)
-yarn serve:dict    # Serve dictionary files locally (localhost:3001)
 yarn publish:dict  # Upload dictionary assets to GitHub release
 ```
 

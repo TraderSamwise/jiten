@@ -1,13 +1,11 @@
 import { Platform } from "react-native";
 
 /**
- * On web, rewrite external URLs to go through Vercel's reverse proxy
- * to avoid CORS issues. On native, return the URL unchanged.
+ * On web, rewrite external URLs to go through a reverse proxy to avoid CORS.
+ * On native, return the URL unchanged.
  *
- * Vercel rewrites (in vercel.json):
- *   /proxy/aozora/*    → https://www.aozora.gr.jp/*
- *   /proxy/syosetu-api/* → https://api.syosetu.com/*
- *   /proxy/syosetu/*   → https://ncode.syosetu.com/*
+ * Dev:  http://localhost:3001/proxy/* (local dev server)
+ * Prod: /proxy/* (Vercel rewrites in vercel.json)
  */
 
 const PROXY_RULES: { host: string; prefix: string }[] = [
@@ -16,13 +14,17 @@ const PROXY_RULES: { host: string; prefix: string }[] = [
   { host: "ncode.syosetu.com", prefix: "/proxy/syosetu" },
 ];
 
+const isDev = __DEV__;
+const DEV_PROXY_ORIGIN = "http://localhost:3001";
+
 export function proxyUrl(url: string): string {
   if (Platform.OS !== "web") return url;
 
   for (const rule of PROXY_RULES) {
     const origin = `https://${rule.host}`;
     if (url.startsWith(origin)) {
-      return rule.prefix + url.slice(origin.length);
+      const path = rule.prefix + url.slice(origin.length);
+      return isDev ? DEV_PROXY_ORIGIN + path : path;
     }
   }
 
