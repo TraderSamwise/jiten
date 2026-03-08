@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Dimensions, Modal, Pressable, View, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
@@ -33,7 +33,10 @@ export function BookmarkPopover({
   onListToggled,
 }: BookmarkPopoverProps) {
   const insets = useSafeAreaInsets();
-  const pos = anchorPosition ?? { top: insets.top + 44, right: 8 };
+  // Remember last valid anchor so the popover doesn't snap during fade-out
+  const lastAnchorRef = useRef(anchorPosition);
+  if (anchorPosition) lastAnchorRef.current = anchorPosition;
+  const pos = anchorPosition ?? lastAnchorRef.current ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
   const addListToStore = useListsStore((s) => s.addList);
   const { markDirty } = useSync();
