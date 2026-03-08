@@ -95,8 +95,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
         >
           <Bookmark
             size={22}
-            fill={isBookmarked ? "currentColor" : "none"}
-            className="text-foreground"
+            className={isBookmarked ? "text-foreground fill-foreground" : "text-foreground"}
           />
         </Pressable>
       </View>
