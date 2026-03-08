@@ -307,15 +307,18 @@ export function goToPage(page: number): void {
   reportPageRendered();
 }
 
-let animTimer: ReturnType<typeof setTimeout> | null = null;
 let animTargetScroll = 0;
+let animTimer: ReturnType<typeof setTimeout> | null = null;
+const isSafari = /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 
-function cancelPageAnimation(): void {
-  if (animTimer !== null) {
-    clearTimeout(animTimer);
-    animTimer = null;
-    state.pageEl!.scrollLeft = -animTargetScroll;
-  }
+// Listen for scrollend to report position after native smooth scroll completes.
+// Only used on Safari — Chrome fires scrollend during JS animation frames too.
+export function setupScrollEndListener(): void {
+  if (!isSafari) return;
+  state.pageEl!.addEventListener("scrollend", function () {
+    reportScroll();
+    reportPageRendered();
+  });
 }
 
 // Scroll to an absolute offset (positive distance from right edge).
@@ -330,31 +333,34 @@ function scrollToOffset(offset: number): void {
   state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
 
   if (state.pageAnimations) {
-    // Step-based ease-out animation (~200ms)
-    const startScroll = -state.pageEl!.scrollLeft;
-    const distance = offset - startScroll;
-    const steps = 12;
-    let step = 0;
-    function tick() {
-      step++;
-      // Ease-out: 1 - (1 - t)^2
-      const t = step / steps;
-      const ease = 1 - (1 - t) * (1 - t);
-      const current = startScroll + distance * ease;
-      state.pageEl!.scrollLeft = -current;
-      if (step < steps) {
-        animTimer = setTimeout(tick, 16);
-      } else {
-        animTimer = null;
-        state.pageEl!.scrollLeft = -offset;
-        updatePageInfo();
-        reportScroll();
-        reportPageRendered();
+    if (isSafari) {
+      // Native smooth scroll — WebKit uses a spring curve that feels native
+      state.pageEl!.scrollTo({ left: -offset, behavior: "smooth" });
+      updatePageInfo();
+    } else {
+      // JS animation for Chrome (native smooth is too slow at 500ms)
+      const startScroll = -state.pageEl!.scrollLeft;
+      const distance = offset - startScroll;
+      const steps = 12;
+      let step = 0;
+      function tick() {
+        step++;
+        const t = step / steps;
+        const ease = 1 - (1 - t) * (1 - t);
+        state.pageEl!.scrollLeft = -(startScroll + distance * ease);
+        if (step < steps) {
+          animTimer = setTimeout(tick, 16);
+        } else {
+          animTimer = null;
+          state.pageEl!.scrollLeft = -offset;
+          updatePageInfo();
+          reportScroll();
+          reportPageRendered();
+        }
       }
+      animTimer = setTimeout(tick, 16);
+      updatePageInfo();
     }
-    animTimer = setTimeout(tick, 16);
-    // Update UI immediately for responsiveness
-    updatePageInfo();
   } else {
     state.pageEl!.scrollLeft = -offset;
     updatePageInfo();
@@ -365,6 +371,14 @@ function scrollToOffset(offset: number): void {
 
 // Page turns: scroll-relative (+-columnWidth from current scrollLeft).
 // Clears canonicalCharOffset — after a page turn, MFVC becomes the new anchor.
+function cancelPageAnimation(): void {
+  if (animTimer !== null) {
+    clearTimeout(animTimer);
+    animTimer = null;
+    state.pageEl!.scrollLeft = -animTargetScroll;
+  }
+}
+
 export function nextPage(): void {
   cancelPageAnimation();
   state.canonicalCharOffset = -1;
