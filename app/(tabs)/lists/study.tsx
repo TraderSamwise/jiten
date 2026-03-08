@@ -780,7 +780,7 @@ const StudyCardView = React.memo(
       <View style={{ flex: 1, position: "relative" }}>
         <Animated.View style={[frontFaceStyle, { flex: 1 }]}>
           <Card
-            className="flex-1 items-center justify-center bg-secondary dark:bg-zinc-900"
+            className="flex-1 items-center justify-center bg-secondary dark:bg-neutral-900"
             style={{ overflow: "hidden" }}
           >
             {renderOverlays()}
@@ -791,7 +791,7 @@ const StudyCardView = React.memo(
           style={[backFaceStyle, { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }]}
         >
           <Card
-            className="flex-1 items-center justify-center bg-secondary dark:bg-zinc-900"
+            className="flex-1 items-center justify-center bg-secondary dark:bg-neutral-900"
             style={{ overflow: "hidden", padding: 16 }}
           >
             {renderOverlays()}
