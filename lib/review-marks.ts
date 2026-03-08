@@ -44,7 +44,7 @@ export async function markForReview(
   const already = await isMarkedToday(userDb, entryId, kanjiLiteral, resetHour);
   if (already) return false;
 
-  const id = `${entryId}-${kanjiLiteral ?? ""}-${Date.now()}`;
+  const id = `${entryId}-${kanjiLiteral ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
   await userDb.runAsync(
     `INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)`,
@@ -269,22 +269,22 @@ function formatDayDisplay(dayLabel: string, resetHour: number): string {
   const today = getLogicalToday(resetHour);
   if (dayLabel === today) return "Today";
 
-  const todayDate = new Date(today + "T00:00:00");
+  const todayDate = new Date(today + "T00:00:00Z");
   const yesterdayDate = new Date(todayDate);
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
   if (dayLabel === yesterdayDate.toISOString().slice(0, 10)) return "Yesterday";
 
-  const d = new Date(dayLabel + "T00:00:00");
+  const d = new Date(dayLabel + "T00:00:00Z");
   const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  return weekdays[d.getDay()] ?? dayLabel;
+  return weekdays[d.getUTCDay()] ?? dayLabel;
 }
 
 function getWeekLabel(dayLabel: string): string {
-  const d = new Date(dayLabel + "T00:00:00");
-  const jan1 = new Date(d.getFullYear(), 0, 1);
+  const d = new Date(dayLabel + "T00:00:00Z");
+  const jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const dayOfYear = Math.floor((d.getTime() - jan1.getTime()) / 86400000) + 1;
-  const weekNum = Math.floor((dayOfYear + jan1.getDay() - 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  const weekNum = Math.floor((dayOfYear + jan1.getUTCDay() - 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
 function formatWeekDisplay(weekLabel: string): string {

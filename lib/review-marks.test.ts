@@ -45,10 +45,10 @@ describe("markForReview", () => {
   });
 
   test("allows same entry on different logical days", async () => {
-    // Insert a mark from "yesterday"
+    // Insert a mark from 2 days ago (UTC) to ensure different logical day
     const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(12, 0, 0, 0);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 2);
+    yesterday.setUTCHours(12, 0, 0, 0);
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["old-1", 1001, null, "list-1", yesterday.toISOString()],
@@ -93,10 +93,10 @@ describe("unmarkForReview", () => {
   });
 
   test("only removes today's mark, not older ones", async () => {
-    // Insert old mark
+    // Insert old mark (UTC)
     const old = new Date();
-    old.setDate(old.getDate() - 2);
-    old.setHours(12, 0, 0, 0);
+    old.setUTCDate(old.getUTCDate() - 2);
+    old.setUTCHours(12, 0, 0, 0);
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["old-1", 1001, null, "list-1", old.toISOString()],
@@ -152,12 +152,11 @@ describe("getMarkedByDay", () => {
   });
 
   test("groups marks into separate day bins", async () => {
-    // Use noon to avoid timezone edge cases
     const now = new Date();
-    now.setHours(12, 0, 0, 0);
+    now.setUTCHours(12, 0, 0, 0);
 
     const twoDaysAgo = new Date(now);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
 
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
@@ -212,7 +211,7 @@ describe("getMarkedByWeek", () => {
 
   test("groups marks into weeks", async () => {
     const now = new Date();
-    now.setHours(12, 0, 0, 0);
+    now.setUTCHours(12, 0, 0, 0);
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
@@ -235,7 +234,7 @@ describe("getMarkedByMonth", () => {
 
   test("groups marks into months with readable labels", async () => {
     const now = new Date();
-    now.setHours(12, 0, 0, 0);
+    now.setUTCHours(12, 0, 0, 0);
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
@@ -266,11 +265,11 @@ describe("getMarkedByMonth", () => {
 describe("getMarkedEntryIds", () => {
   test("returns unique entry IDs within date range", async () => {
     const now = new Date();
-    now.setHours(12, 0, 0, 0);
+    now.setUTCHours(12, 0, 0, 0);
     const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
     const end = new Date(now);
-    end.setDate(end.getDate() + 1);
+    end.setUTCDate(end.getUTCDate() + 1);
 
     await db.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
@@ -313,7 +312,7 @@ describe("getMarkedEntryIds", () => {
 describe("cleanupOldMarks", () => {
   test("deletes marks older than keepDays", async () => {
     const old = new Date();
-    old.setDate(old.getDate() - 100);
+    old.setUTCDate(old.getUTCDate() - 100);
     const recent = new Date();
 
     await db.runAsync(

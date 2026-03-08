@@ -104,7 +104,9 @@ export async function removeEntryFromList(userDb: WrappedUserDb, entryId: number
 
 export async function getEntryListIds(userDb: WrappedUserDb, entryId: number): Promise<string[]> {
   const rows = await userDb.getAllAsync<{ list_id: string }>(
-    "SELECT list_id FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL",
+    `SELECT le.list_id FROM list_entries le
+     JOIN lists l ON le.list_id = l.id
+     WHERE le.entry_id = ? AND le.kanji_literal IS NULL AND l.is_default = 0 AND le.deleted_at IS NULL AND l.deleted_at IS NULL`,
     [entryId],
   );
   return rows.map((r) => r.list_id);
@@ -187,7 +189,9 @@ export async function getKanjiListIds(
   kanjiLiteral: string,
 ): Promise<string[]> {
   const rows = await userDb.getAllAsync<{ list_id: string }>(
-    "SELECT list_id FROM list_entries WHERE kanji_literal = ? AND deleted_at IS NULL",
+    `SELECT le.list_id FROM list_entries le
+     JOIN lists l ON le.list_id = l.id
+     WHERE le.kanji_literal = ? AND l.is_default = 0 AND le.deleted_at IS NULL AND l.deleted_at IS NULL`,
     [kanjiLiteral],
   );
   return rows.map((r) => r.list_id);
