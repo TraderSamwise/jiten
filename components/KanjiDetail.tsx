@@ -38,6 +38,7 @@ import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
 import { StrokeOrderDiagram } from "@/components/StrokeOrderDiagram";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
+import { japaneseFontStyle } from "@/lib/japanese-font";
 import type { KanjiCharacter, SimilarKanji, DictEntry } from "@/db/types";
 
 interface KanjiDetailProps {
@@ -214,7 +215,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             JLPT N{kanji.jlptLevel}
           </Text>
         )}
-        <Text className="text-7xl font-bold text-foreground leading-tight">{kanji.literal}</Text>
+        <Text className="text-7xl text-foreground leading-tight" style={japaneseFontStyle(72)}>
+          {kanji.literal}
+        </Text>
         {kanji.heisigKeyword && (
           <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
         )}

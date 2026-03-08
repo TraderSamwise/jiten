@@ -55,6 +55,7 @@ import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
 import { reviewCard, Rating, getFsrsInstance, previewIntervals } from "@/stores/srs";
 import { formatInterval as formatDueInterval } from "@/lib/format-interval";
+import { japaneseFontStyle } from "@/lib/japanese-font";
 import {
   simpleGraduate,
   simpleReviewFail,
@@ -89,7 +90,7 @@ import type { Card as FsrsCard } from "ts-fsrs";
 const CONFUSION_COOLDOWN_HOURS = 24;
 
 const NEW_CARD_BATCH_SIZE = 5;
-const CARD_PEEK = 40;
+const CARD_PEEK = 24;
 const CARD_GAP = 16;
 const SWIPE_THRESHOLD = 50;
 const SWIPE_VELOCITY = 500;
@@ -425,7 +426,7 @@ function sortFaces(faces: CardFace[]): CardFace[] {
   return [...faces].sort((a, b) => FACE_ORDER[a] - FACE_ORDER[b]);
 }
 
-const BASE_FONT_SIZE = 96;
+const BASE_FONT_SIZE = 84;
 const MAX_ENGLISH_FONT_SIZE = 18;
 function scaledFontStyle(
   count: number,
@@ -435,7 +436,12 @@ function scaledFontStyle(
   const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
   let size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
   if (face === "english") size = Math.min(size, MAX_ENGLISH_FONT_SIZE);
-  return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
+  return {
+    fontSize: size,
+    lineHeight: Math.round(size * 1.3),
+    textAlign: "center" as const,
+    ...japaneseFontStyle(size),
+  };
 }
 
 // --- Self-contained card view: owns flip animation, stats, content rendering ---
