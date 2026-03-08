@@ -201,14 +201,15 @@ Handles format-aware text measurement and slicing for streaming pagination:
 
 Generates `<ruby>` annotations for kanji based on user's JLPT level settings. The pipeline:
 
-1. **Build kanji set** — `buildFuriganaKanjiSet()` queries dictionary for kanji at enabled JLPT levels. Returns `{ all: true }` or a `Set<string>` of specific characters.
+1. **Build kanji set** — `buildFuriganaKanjiSet()` queries dictionary for kanji at enabled JLPT levels. Returns `{ all: true, chars }` or `{ all: false, chars, enabledLevels }` where `enabledLevels` is a `Set<number>` of which JLPT levels are toggled on (5=easiest, 1=hardest).
 
 2. **Extract surfaces** — `extractSurfacesFromHtml()` scans visible text for kanji substrings (up to 10 chars). Also scans backward through preceding kana (up to 4 chars) to capture mixed kana-kanji words like しょう油, お寺, ご飯.
 
-3. **Batch dictionary lookup** — `batchLookup()` runs a three-phase query:
+3. **Batch dictionary lookup** — `resolveFuriganaBatch()` → `batchLookup()` runs a three-phase query:
    - Phase A: Find entry IDs by kanji table search
    - Phase B: Batch fetch kanji forms, kana readings, common flags
    - Phase C: Select best match per surface (prefer common entries, deinflect conjugated forms)
+   - Returns `FuriganaEntry` objects with `kanjiPart`, `reading`, `kanjiPartLen`, optional `wordJlpt` (word-level JLPT), and optional `irregularReading` flag.
 
 4. **Strip okurigana** — `stripOkurigana()` isolates the kanji portion from inflected words (e.g., 食べる → kanji=食, reading=た) so `<ruby>` wraps only the kanji.
 
@@ -216,15 +217,34 @@ Generates `<ruby>` annotations for kanji based on user's JLPT level settings. Th
    - Skips HTML tags, existing `<ruby>` blocks, `<rt>` content
    - Uses longest-first matching (しょう油 wins over 油 alone)
    - Respects paragraph boundaries (never matches across `</p><p>`)
-   - Filters by kanji set (only annotates kanji at the user's selected JLPT levels, but if any kanji in a multi-kanji word matches, the whole word gets furigana)
+   - Applies three-tier word-level JLPT filtering (see below)
 
-#### Level filtering behavior
+#### Level filtering algorithm
 
-With partial JLPT levels enabled (e.g., only N3):
+When `kanjiSet.all` is true (user selected "All"), every matched word gets furigana. Otherwise the algorithm uses three pieces of data — the kanji-level filter set, the word's `wordJlpt`, and the `irregularReading` flag — to decide per-word:
 
-- A word like 反省会 (反=N5, 省=N3, 会=N5) gets furigana if **any** kanji in the word matches the filter
-- The whole word gets a single `<ruby>` with the full reading, not individual kanji
-- Words where **no** kanji matches the filter get no furigana
+**1. Kanji match + word-level suppression (Category B)**
+
+If any kanji in the surface matches the enabled kanji set, the word is a candidate. But if `wordJlpt` is easier (higher number) than all enabled levels, furigana is suppressed. Example: user enables N2, 綺麗 has N2 kanji but is N5 vocabulary — everyone knows this word, no furigana needed.
+
+**2. No kanji match + irregular reading (Category A)**
+
+If no kanji matches the filter but the word has `irregularReading: true` and its `wordJlpt` is in `enabledLevels`, furigana is shown. This catches jukujikun and non-standard readings where you can't sound out the word from the kanji. Example: 今朝 (けさ) — both kanji are N5 but the reading is unpredictable.
+
+**3. No kanji match + standard reading (Category C)**
+
+If no kanji matches and the reading is standard (derivable from on/kun readings), no furigana. The word may be hard vocabulary but you can read the kanji. Example: 世話 (せわ) — N5 kanji, standard reading, furigana wouldn't help.
+
+**Fallback**: If `wordJlpt` is null (no JLPT data), the word falls back to kanji-level filtering only (show if any kanji matches, skip otherwise).
+
+#### Partial level example
+
+With only N3 enabled:
+
+- 反省会 (反=N5, 省=N3, 会=N5) — 省 matches N3 → shows furigana (whole word gets はんせいかい)
+- 今朝 (今=N5, 朝=N5, word=N3, irregular) — no kanji match but irregular + N3 word → shows furigana
+- 世話 (世=N5, 話=N5, word=N3, standard) — no kanji match, standard reading → no furigana
+- 綺麗 (綺=N2, 麗=N2, word=N5) with N2 enabled — kanji match but word is N5 (easier) → no furigana
 
 ### Dictionary lookup in reader
 

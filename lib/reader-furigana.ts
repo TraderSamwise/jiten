@@ -17,6 +17,7 @@ const LEVEL_MAP: Record<string, number | null> = {
 export interface FuriganaKanjiSet {
   all: boolean;
   chars: Set<string>;
+  enabledLevels?: Set<number>; // Which JLPT levels are turned on (5=easiest, 1=hardest)
 }
 
 export async function buildFuriganaKanjiSet(
@@ -26,9 +27,11 @@ export async function buildFuriganaKanjiSet(
   if (levels.all) return { all: true, chars: new Set() };
 
   const chars = new Set<string>();
+  const enabledLevels = new Set<number>();
   const queries: Promise<string[]>[] = [];
   for (const [key, dbLevel] of Object.entries(LEVEL_MAP)) {
     if (levels[key as FuriganaLevel]) {
+      if (dbLevel != null) enabledLevels.add(dbLevel);
       queries.push(getKanjiLiteralsByJlptAsync(dictDb, dbLevel));
     }
   }
@@ -38,7 +41,7 @@ export async function buildFuriganaKanjiSet(
       if (isKanji(lit)) chars.add(lit);
     }
   }
-  return { all: false, chars };
+  return { all: false, chars, enabledLevels };
 }
 
 /** Serialize a FuriganaKanjiSet for sending to the WebView. */
@@ -360,6 +363,7 @@ export interface FuriganaEntry {
   reading: string;
   kanjiPartLen: number;
   wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
+  irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
 }
 
 /**
@@ -482,10 +486,34 @@ export function applyFuriganaToHtml(
 
         if (!isMatch) continue;
 
-        // Check if any kanji in the matched surface is in the filter set
-        if (!kanjiSet.all && !surfaceChars.some((c) => kanjiSet.chars.has(c))) continue;
-
         const entry = furiganaMap.get(surface)!;
+
+        // ── Word-level JLPT filtering ──
+        if (!kanjiSet.all) {
+          const kanjiMatch = surfaceChars.some((c) => kanjiSet.chars.has(c));
+          const levels = kanjiSet.enabledLevels;
+
+          if (kanjiMatch) {
+            // Kanji matches enabled level — but suppress if word is too easy.
+            // "Too easy" = wordJlpt is higher (easier) than all enabled levels.
+            if (entry.wordJlpt != null && levels && levels.size > 0) {
+              let maxEnabled = 0; // highest (easiest) enabled level
+              for (const l of levels) {
+                if (l > maxEnabled) maxEnabled = l;
+              }
+              if (entry.wordJlpt > maxEnabled) continue; // word is easier → suppress
+            }
+          } else {
+            // No kanji match — only show if reading is irregular AND word JLPT
+            // matches an enabled level. This catches jukujikun like 今朝=けさ
+            // without adding noise for standard readings like 世話=せわ.
+            if (entry.irregularReading && entry.wordJlpt != null && levels?.has(entry.wordJlpt)) {
+              // fall through to show furigana
+            } else {
+              continue; // no kanji match, standard reading → skip
+            }
+          }
+        }
 
         out += `<ruby>${entry.kanjiPart}<rt>${entry.reading}</rt></ruby>`;
 
