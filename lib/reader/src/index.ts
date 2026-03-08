@@ -113,6 +113,15 @@ declare const window: Window & {
     const charAtTap = node.textContent!.charAt(offset);
     if (!charAtTap || !isJapanese(charAtTap)) return;
 
+    // Ignore taps that resolve to off-screen columns (highlight would bleed through edge)
+    const tapRange = document.createRange();
+    tapRange.setStart(node, offset);
+    tapRange.setEnd(node, Math.min(offset + 1, node.textContent!.length));
+    const charRect = tapRange.getBoundingClientRect();
+    const pageRect = state.pageEl!.getBoundingClientRect();
+    const charCx = (charRect.left + charRect.right) / 2;
+    if (charCx < pageRect.left || charCx > pageRect.right) return;
+
     state.lastTapNode = node;
     state.lastTapOffset = offset;
     state.lastTapAbsOffset = nodeOffsetToAbsolute(node, offset);
