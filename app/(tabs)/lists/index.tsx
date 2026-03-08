@@ -1,5 +1,13 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, ScrollView, Pressable, TextInput, Platform, InteractionManager } from "react-native";
+import {
+  View,
+  ScrollView,
+  Pressable,
+  TextInput,
+  Platform,
+  InteractionManager,
+  RefreshControl,
+} from "react-native";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
@@ -19,6 +27,7 @@ import { StudyProgressBar } from "@/components/ProgressBar";
 import { seedDefaultListsIfNeeded } from "@/lib/seed-default-lists";
 import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
+import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import type { WordList } from "@/db/types";
 
 function generateId(): string {
@@ -35,8 +44,10 @@ export default function ListsIndexScreen() {
   const addList = useListsStore((s) => s.addList);
   const removeList = useListsStore((s) => s.removeList);
   const updateList = useListsStore((s) => s.updateList);
-  const { triggerSync, markDirty } = useSync();
+  const { triggerSync, markDirty, isDirty, syncWithChoice, syncStatus } = useSync();
   const [showCreate, setShowCreate] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showSyncChoice, setShowSyncChoice] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -62,6 +73,35 @@ export default function ListsIndexScreen() {
       animatedMaxHeight.value = withTiming(0, { duration: 250 });
     }
   }, [defaultsExpanded, defaultsReady, expandedMaxHeight]);
+
+  const handleRefresh = useCallback(async () => {
+    if (syncStatus === "disabled") {
+      // Not signed in — just reload from DB
+      await loadLists();
+      return;
+    }
+    if (isDirty()) {
+      setShowSyncChoice(true);
+      return;
+    }
+    setRefreshing(true);
+    await triggerSync();
+    await loadLists();
+    await useBookmarkStore.getState().load(userDb!);
+    setRefreshing(false);
+  }, [syncStatus, isDirty, triggerSync, userDb]);
+
+  const handleSyncChoice = useCallback(
+    async (choice: "merge" | "use-cloud" | "use-local") => {
+      setShowSyncChoice(false);
+      setRefreshing(true);
+      await syncWithChoice(choice);
+      await loadLists();
+      await useBookmarkStore.getState().load(userDb!);
+      setRefreshing(false);
+    },
+    [syncWithChoice, userDb],
+  );
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     maxHeight: animatedMaxHeight.value,
@@ -389,6 +429,7 @@ export default function ListsIndexScreen() {
           paddingTop: 8,
           paddingBottom: 20,
         }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         {customLists.length === 0 && defaultLists.length === 0 && (
           <View className="items-center pt-10">
@@ -422,6 +463,13 @@ export default function ListsIndexScreen() {
           </View>
         )}
       </ScrollView>
+
+      <SyncChoiceModal
+        visible={showSyncChoice}
+        onChoice={handleSyncChoice}
+        title="Unsaved Local Changes"
+        description="You have local changes that haven't been synced yet. How should we handle the refresh?"
+      />
 
       {importing !== null && (
         <View

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, ActivityIndicator, Platform } from "react-native";
+import { View, ActivityIndicator, Platform, RefreshControl } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -15,6 +15,7 @@ import { alert, confirm } from "@/lib/confirm";
 import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
 import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
+import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import type { Book } from "@/db/types";
 
 function generateId(): string {
@@ -46,9 +47,11 @@ export { parseBookRow };
 export default function LibraryScreen() {
   const router = useRouter();
   const userDb = useUserDb();
-  const { triggerSync, lastSyncAt } = useSync();
+  const { triggerSync, isDirty, syncWithChoice, syncStatus, lastSyncAt } = useSync();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showSyncChoice, setShowSyncChoice] = useState(false);
 
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
@@ -58,6 +61,32 @@ export default function LibraryScreen() {
     );
     setBooks(rows.map(parseBookRow));
   }, [userDb, lastSyncAt]);
+
+  const handleRefresh = useCallback(async () => {
+    if (syncStatus === "disabled") {
+      await loadBooks();
+      return;
+    }
+    if (isDirty()) {
+      setShowSyncChoice(true);
+      return;
+    }
+    setRefreshing(true);
+    await triggerSync();
+    await loadBooks();
+    setRefreshing(false);
+  }, [syncStatus, isDirty, triggerSync, loadBooks]);
+
+  const handleSyncChoice = useCallback(
+    async (choice: "merge" | "use-cloud" | "use-local") => {
+      setShowSyncChoice(false);
+      setRefreshing(true);
+      await syncWithChoice(choice);
+      await loadBooks();
+      setRefreshing(false);
+    },
+    [syncWithChoice, loadBooks],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -200,6 +229,7 @@ export default function LibraryScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
         contentContainerStyle={{ paddingHorizontal: 16 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         ListEmptyComponent={
           <View className="items-center py-16">
             <Text className="text-muted-foreground text-center">
@@ -207,6 +237,13 @@ export default function LibraryScreen() {
             </Text>
           </View>
         }
+      />
+
+      <SyncChoiceModal
+        visible={showSyncChoice}
+        onChoice={handleSyncChoice}
+        title="Unsaved Local Changes"
+        description="You have local changes that haven't been synced yet. How should we handle the refresh?"
       />
     </View>
   );
