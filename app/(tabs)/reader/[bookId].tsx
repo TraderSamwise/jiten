@@ -396,7 +396,8 @@ export default function BookReaderScreen() {
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
   const { markDirty, triggerSync } = useSync();
-  const scrollDirtyRef = useRef(false);
+  // Track whether the initial scroll-restore has fired (don't mark dirty for it)
+  const initialScrollFiredRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
@@ -752,8 +753,11 @@ export default function BookReaderScreen() {
           setShowPopup(true);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.charOffset;
-          if (!scrollDirtyRef.current) {
-            scrollDirtyRef.current = true;
+          if (!initialScrollFiredRef.current) {
+            // First scroll event is the position restore on load — skip it
+            initialScrollFiredRef.current = true;
+          } else {
+            // Every real page change marks dirty
             markDirty();
           }
           if (userDb && bookId) {
