@@ -910,13 +910,37 @@ Setting: `stores/settings.ts` → `dayResetHourAtom`. UI: Settings → "Day Rese
 
 ### Simple SRS (`stores/simple-srs.ts`)
 
-Simple spaced repetition. Simple spaced repetition algorithm:
+Simple spaced repetition with a day-based epoch and fixed interval multipliers.
 
-- Due dates stored as days since 2001-01-01 (Mac epoch), fractional
-- Pass: interval ×1.9, Easy: interval ×2.9, Fail: reset to learning (n=0)
-- 3 correct in a row to graduate from learning
-- Re-graduation after lapse: interval ×0.5, clamped [1/3, 6.0]
-- Interval range: [1/3 day (~8h), 365 days]
+**Card states:**
+
+- `NULL` d → New (never seen)
+- `s:0` → Learning/lapsed (in-session, needs 3 correct to graduate)
+- `s:1` → Graduated (scheduled for future review)
+
+**Interval parameters:**
+
+- Initial interval: 1/3 day (~8 hours)
+- Correct: interval × 1.9 (chain: 0.33 → 0.63 → 1.20 → 2.29 → 4.34 → 8.25 → 15.68 → 29.79 → 56.61 → 107.55 → 204.37 → 365)
+- Easy: interval × 2.6125 (1.9 × 1.375 bonus)
+- Lapse: interval × 0.5
+- Max interval: 365 days
+- Due dates stored as fractional days since 2001-01-01 (Mac/Core Foundation epoch)
+
+**Session behavior (matching Midori):**
+
+- Due review cards + up to 10 new cards loaded together, interleaved
+- Graduated cards (stage 1) pass in 1 correct answer → recalculate interval
+- New/learning cards (stage 0) need 3 correct to graduate
+- Failed cards re-queue to end of session — counter doesn't advance
+- Session counter tracks completed cards (graduated or passed review), not swipes
+- Session length is dynamic — failing cards extends the session
+
+**reference data format** (for reference/import):
+
+- Graduated: `{s:1, n:<due_midori_days>, l:<interval_days>}`
+- Learning: `{o:<order>, g:<grade>, l:<prev_interval>, m:<mature>, n:0, s:0, f:<failed>}`
+  - `o`: position in 10-card batch, `g`: correct count in session, `m`: 1 if previously graduated, `f`: 1 if failed
 
 ### FSRS (`ts-fsrs` library)
 
