@@ -116,6 +116,8 @@ export interface WordList {
   typingMode: boolean;
   disableFlipAnimation: boolean;
   disableSwipeAnimation: boolean;
+  learningSteps: string[] | null;
+  relearningSteps: string[] | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -176,4 +178,6 @@ export interface SrsCardRow {
   simpleInterval: number | null;
   // Confusion detection cooldown
   lastConfusionCheck: string | null;
+  // FSRS learning step index
+  learningSteps: number;
 }

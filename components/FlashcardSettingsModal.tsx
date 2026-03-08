@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, Platform, View, Switch } from "react-native";
+import { Modal, Pressable, Platform, View, Switch, TextInput } from "react-native";
 import { useAtom } from "jotai";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,8 @@ export function FlashcardSettingsModal({
   const [flipAnimation, setFlipAnimation] = useAtom(flashcardFlipAnimationAtom);
   const [swipeAnimation, setSwipeAnimation] = useAtom(flashcardSwipeAnimationAtom);
   const [buttonAnimation, setButtonAnimation] = useAtom(flashcardButtonAnimationAtom);
+  const [learningStepsText, setLearningStepsText] = useState("");
+  const [relearningStepsText, setRelearningStepsText] = useState("");
 
   const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
 
@@ -74,6 +76,8 @@ export function FlashcardSettingsModal({
       setConfusionDetection(list.confusionDetection !== false);
       setVoiceMode(list.voiceMode ?? false);
       setTypingMode(list.typingMode ?? false);
+      setLearningStepsText(list.learningSteps ? list.learningSteps.join(", ") : "");
+      setRelearningStepsText(list.relearningSteps ? list.relearningSteps.join(", ") : "");
     }
   }, [visible, list]);
 
@@ -87,11 +91,44 @@ export function FlashcardSettingsModal({
     }
   }
 
+  function parseSteps(text: string): string[] | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const steps = trimmed.split(",").map((s) => s.trim());
+    const valid = steps.every((s) => /^\d+[mhd]$/.test(s) && parseInt(s) > 0);
+    if (!valid) return null;
+    return steps;
+  }
+
   async function handleSave() {
     if (!userDb) return;
+
+    // Validate learning steps if provided
+    let learningSteps: string[] | null = null;
+    let relearningSteps: string[] | null = null;
+    if (mode === "srs") {
+      if (learningStepsText.trim()) {
+        learningSteps = parseSteps(learningStepsText);
+        if (!learningSteps) {
+          alert(
+            "Invalid Steps",
+            "Learning steps must be comma-separated values like 1m, 10m, 1h, 1d",
+          );
+          return;
+        }
+      }
+      if (relearningStepsText.trim()) {
+        relearningSteps = parseSteps(relearningStepsText);
+        if (!relearningSteps) {
+          alert("Invalid Steps", "Relearning steps must be comma-separated values like 10m, 1h");
+          return;
+        }
+      }
+    }
+
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, learning_steps = ?, relearning_steps = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -100,6 +137,8 @@ export function FlashcardSettingsModal({
         confusionDetection ? 1 : 0,
         voiceMode ? 1 : 0,
         typingMode ? 1 : 0,
+        learningSteps ? JSON.stringify(learningSteps) : null,
+        relearningSteps ? JSON.stringify(relearningSteps) : null,
         now,
         listId,
       ],
@@ -113,6 +152,8 @@ export function FlashcardSettingsModal({
       confusionDetection,
       voiceMode,
       typingMode,
+      learningSteps,
+      relearningSteps,
       updatedAt: now,
     });
     markDirty();
@@ -183,6 +224,36 @@ export function FlashcardSettingsModal({
                 </Text>
               </Pressable>
             </View>
+
+            {/* Learning steps (FSRS only) */}
+            {mode === "srs" && (
+              <View className="mb-4">
+                <Text className="text-sm font-medium text-muted-foreground mb-2">
+                  Learning steps
+                </Text>
+                <TextInput
+                  value={learningStepsText}
+                  onChangeText={setLearningStepsText}
+                  placeholder="1m, 10m"
+                  placeholderTextColor="#999"
+                  className="border border-border rounded-lg px-3 py-2 text-sm text-foreground mb-3"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text className="text-sm font-medium text-muted-foreground mb-2">
+                  Relearning steps
+                </Text>
+                <TextInput
+                  value={relearningStepsText}
+                  onChangeText={setRelearningStepsText}
+                  placeholder="10m"
+                  placeholderTextColor="#999"
+                  className="border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            )}
 
             {/* Front faces */}
             <Text className="text-sm font-medium text-muted-foreground mb-2">Front</Text>

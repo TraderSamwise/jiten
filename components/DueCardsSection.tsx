@@ -126,11 +126,29 @@ export function DueCardsSection({
       );
       counts[0] += newRow?.c ?? 0;
 
-      const rows = await userDb.getAllAsync<{ due: string }>(
-        "SELECT due FROM srs_cards WHERE list_id = ? AND state != 0 AND deleted_at IS NULL",
+      // Learning/relearning cards: exact-time bucket check
+      const learningRows = await userDb.getAllAsync<{ due: string }>(
+        "SELECT due FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND deleted_at IS NULL",
         [listId],
       );
-      for (const row of rows) {
+      const now = new Date();
+      for (const row of learningRows) {
+        const dueDate = new Date(row.due);
+        // Learning cards due now go in bucket 0, future ones get day-bucketed
+        if (dueDate <= now) {
+          counts[0]++;
+        } else {
+          const idx = dateToBucketIndex(dueDate, dayResetHour);
+          counts[idx]++;
+        }
+      }
+
+      // Review cards: day-cutoff bucket check (existing behavior)
+      const reviewRows = await userDb.getAllAsync<{ due: string }>(
+        "SELECT due FROM srs_cards WHERE list_id = ? AND state = 2 AND deleted_at IS NULL",
+        [listId],
+      );
+      for (const row of reviewRows) {
         const dueDate = new Date(row.due);
         const idx = dateToBucketIndex(dueDate, dayResetHour);
         counts[idx]++;
