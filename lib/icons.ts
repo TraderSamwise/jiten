@@ -71,7 +71,7 @@ for (const icon of icons) {
   cssInterop(icon, {
     className: {
       target: "style",
-      nativeStyleToProp: { color: true },
+      nativeStyleToProp: { color: true, fill: true },
     },
   });
 }

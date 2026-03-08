@@ -226,8 +226,7 @@ export function DictionaryPopup({
               >
                 <Bookmark
                   size={20}
-                  fill={isBookmarked ? "currentColor" : "none"}
-                  className="text-foreground"
+                  className={isBookmarked ? "text-foreground fill-foreground" : "text-foreground"}
                 />
               </Pressable>
             )}
