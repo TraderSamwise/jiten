@@ -396,7 +396,7 @@ export function prevPage(): void {
   scrollToOffset(target);
 }
 
-// During drag-select near left edge: scroll slightly to reveal next column.
+// During drag-select near left edge: scroll forward to reveal next column.
 // Uses actual scrollLeft as base, stores pre-shift position.
 export function expandPageForHighlight(): boolean {
   const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
@@ -404,11 +404,8 @@ export function expandPageForHighlight(): boolean {
     parseFloat(getComputedStyle(state.contentEl!).lineHeight) || Math.round(fontSize * 1.5);
   const cW = state.columnWidth;
   const maxScroll = (state.totalPages - 1) * cW;
-  // Rate-limit: at most one shift per 200ms
   if (Date.now() - state.lastShiftTime < 200) return false;
-  // Cap total shift at one page width
   if (state.shiftOffset >= cW) return false;
-  // Save pre-shift position on first call
   if (state.shiftOffset === 0) {
     state.preShiftScroll = -state.pageEl!.scrollLeft;
   }
@@ -416,6 +413,26 @@ export function expandPageForHighlight(): boolean {
   const newOffset = Math.min(currentOffset + lineW, maxScroll);
   if (newOffset === currentOffset) return false;
   state.shiftOffset += newOffset - currentOffset;
+  state.lastShiftTime = Date.now();
+  state.pageEl!.scrollTo({ left: -newOffset, behavior: "smooth" });
+  return true;
+}
+
+// During drag-select near right edge: scroll backward to reveal previous column.
+export function contractPageForHighlight(): boolean {
+  const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
+  const lineW =
+    parseFloat(getComputedStyle(state.contentEl!).lineHeight) || Math.round(fontSize * 1.5);
+  const cW = state.columnWidth;
+  if (Date.now() - state.lastShiftTime < 200) return false;
+  if (state.shiftOffset <= -cW) return false;
+  if (state.shiftOffset === 0) {
+    state.preShiftScroll = -state.pageEl!.scrollLeft;
+  }
+  const currentOffset = -state.pageEl!.scrollLeft;
+  const newOffset = Math.max(currentOffset - lineW, 0);
+  if (newOffset === currentOffset) return false;
+  state.shiftOffset -= currentOffset - newOffset;
   state.lastShiftTime = Date.now();
   state.pageEl!.scrollTo({ left: -newOffset, behavior: "smooth" });
   return true;

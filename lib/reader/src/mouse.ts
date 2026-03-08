@@ -2,7 +2,13 @@ import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
-import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
+import {
+  nextPage,
+  prevPage,
+  expandPageForHighlight,
+  contractPageForHighlight,
+  resetPageShift,
+} from "./pagination";
 
 declare const window: Window & {
   __READER_CONFIG__: { scrollPosition: number };
@@ -14,6 +20,7 @@ export function setupMouseHandlers(): void {
   let mouseStartY = 0;
   let mouseStartAbs = -1;
   let mouseEndAbs = -1;
+  let prevMouseX = 0;
 
   const DECIDE_THRESHOLD = 15;
 
@@ -22,6 +29,7 @@ export function setupMouseHandlers(): void {
     if (state.dragMode !== "idle" && state.dragMode !== "undecided") return;
     resetPageShift();
     mouseStartX = e.clientX;
+    prevMouseX = e.clientX;
     mouseStartY = e.clientY;
     mouseStartAbs = -1;
     mouseEndAbs = -1;
@@ -58,12 +66,17 @@ export function setupMouseHandlers(): void {
     }
 
     if (state.dragMode === "selecting" && mouseStartAbs >= 0) {
-      // Expand page if cursor is near the left edge (end of page in vertical-rl)
+      // Peek page only if cursor is in edge zone AND moving toward that edge
       const rect = state.contentEl!.getBoundingClientRect();
       const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-      const edgeZone = rect.left + 16 + fontSize * 1.5;
-      if (e.clientX < edgeZone) {
+      const edgeZone = 16 + fontSize * 1.5;
+      const PEEK_THRESHOLD = 10;
+      if (e.clientX < rect.left + edgeZone && prevMouseX - e.clientX > PEEK_THRESHOLD) {
         expandPageForHighlight();
+        prevMouseX = e.clientX;
+      } else if (e.clientX > rect.right - edgeZone && e.clientX - prevMouseX > PEEK_THRESHOLD) {
+        contractPageForHighlight();
+        prevMouseX = e.clientX;
       }
 
       const endCaret = resolveCaretAt(e.clientX, e.clientY);
