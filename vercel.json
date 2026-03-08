@@ -2,15 +2,15 @@
   "rewrites": [
     {
       "source": "/proxy/aozora/:path*",
-      "destination": "https://www.aozora.gr.jp/:path*"
+      "destination": "/api/proxy?route=aozora&path=:path*"
     },
     {
       "source": "/proxy/syosetu-api/:path*",
-      "destination": "https://api.syosetu.com/:path*"
+      "destination": "/api/proxy?route=syosetu-api&path=:path*"
     },
     {
       "source": "/proxy/syosetu/:path*",
-      "destination": "https://ncode.syosetu.com/:path*"
+      "destination": "/api/proxy?route=syosetu&path=:path*"
     },
     {
       "source": "/((?!_next|assets|proxy|api).*)",
