@@ -44,6 +44,14 @@ export function parseListRow(row: any): WordList {
     typingMode: Boolean(row.typingMode ?? row.typing_mode ?? 0),
     disableFlipAnimation: Boolean(row.disableFlipAnimation ?? row.disable_flip_animation ?? 0),
     disableSwipeAnimation: Boolean(row.disableSwipeAnimation ?? row.disable_swipe_animation ?? 0),
+    learningSteps: (() => {
+      const raw = row.learningSteps ?? row.learning_steps;
+      return typeof raw === "string" ? JSON.parse(raw) : (raw ?? null);
+    })(),
+    relearningSteps: (() => {
+      const raw = row.relearningSteps ?? row.relearning_steps;
+      return typeof raw === "string" ? JSON.parse(raw) : (raw ?? null);
+    })(),
     isDefault: Boolean(row.isDefault ?? row.is_default ?? 0),
   };
 }

@@ -120,6 +120,8 @@ export function BookmarkPopover({
       typingMode: false,
       disableFlipAnimation: false,
       disableSwipeAnimation: false,
+      learningSteps: null,
+      relearningSteps: null,
       isDefault: false,
       createdAt: now,
       updatedAt: now,
