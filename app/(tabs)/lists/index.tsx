@@ -35,7 +35,7 @@ export default function ListsIndexScreen() {
   const addList = useListsStore((s) => s.addList);
   const removeList = useListsStore((s) => s.removeList);
   const updateList = useListsStore((s) => s.updateList);
-  const { triggerSync } = useSync();
+  const { triggerSync, markDirty } = useSync();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -199,6 +199,7 @@ export default function ListsIndexScreen() {
       id,
     ]);
     updateList(id, { name: renameValue.trim(), updatedAt: now });
+    markDirty();
     setRenamingId(null);
   }
 

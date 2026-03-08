@@ -10,7 +10,7 @@ interface KanjiNotesRow {
 
 export function useKanjiMnemonic(literal: string) {
   const userDb = useUserDb();
-  const { triggerSync } = useSync();
+  const { markDirty } = useSync();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [keyword, setKeyword] = useState<string | null>(null);
 
@@ -48,9 +48,9 @@ export function useKanjiMnemonic(literal: string) {
       } else {
         await softDelete(userDb, "user_kanji_notes", "literal = ?", [literal]);
       }
-      triggerSync();
+      markDirty();
     },
-    [userDb, literal, triggerSync],
+    [userDb, literal, markDirty],
   );
 
   const saveMnemonic = useCallback(

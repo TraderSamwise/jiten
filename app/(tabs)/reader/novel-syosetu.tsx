@@ -11,6 +11,7 @@ import {
   type SyosetuChapter,
 } from "@/lib/syosetu-api";
 import { alert } from "@/lib/confirm";
+import { useSync } from "@/db/sync-provider";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -24,6 +25,7 @@ export default function NovelSyosetuScreen() {
   }>();
   const router = useRouter();
   const userDb = useUserDb();
+  const { triggerSync } = useSync();
 
   const [sections, setSections] = useState<SyosetuTocSection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +85,7 @@ export default function NovelSyosetuScreen() {
           [id, bookTitle, writer ?? "", sourceId, rawContent, now, now],
         );
 
+        triggerSync();
         router.push(`/reader/${id}`);
       } catch (err) {
         alert("Download failed", err instanceof Error ? err.message : "Unknown error");
@@ -90,7 +93,7 @@ export default function NovelSyosetuScreen() {
         setDownloading(null);
       }
     },
-    [userDb, ncode, title, writer, router],
+    [userDb, ncode, title, writer, router, triggerSync],
   );
 
   const sectionListData = sections.map((section) => ({

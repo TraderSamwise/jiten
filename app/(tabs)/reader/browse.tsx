@@ -7,6 +7,7 @@ import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card"
 import { useUserDb } from "@/db/user-provider";
 import { searchBooks, fetchBookContent, getAuthorName, type AozoraBook } from "@/lib/aozora-api";
 import { alert } from "@/lib/confirm";
+import { useSync } from "@/db/sync-provider";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -15,6 +16,7 @@ function generateId(): string {
 export default function BrowseAozoraScreen() {
   const router = useRouter();
   const userDb = useUserDb();
+  const { triggerSync } = useSync();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<AozoraBook[]>([]);
   const [searching, setSearching] = useState(false);
@@ -86,6 +88,7 @@ export default function BrowseAozoraScreen() {
           ],
         );
 
+        triggerSync();
         router.push(`/reader/${id}`);
       } catch (err) {
         alert("Download failed", err instanceof Error ? err.message : "Unknown error");
@@ -93,7 +96,7 @@ export default function BrowseAozoraScreen() {
         setDownloading(null);
       }
     },
-    [userDb, router],
+    [userDb, router, triggerSync],
   );
 
   const renderItem = useCallback(

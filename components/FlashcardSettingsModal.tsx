@@ -12,6 +12,7 @@ import {
 } from "@/stores/settings";
 import { alert } from "@/lib/confirm";
 import { requestVoicePermissions } from "@/lib/voice-recognition";
+import { useSync } from "@/db/sync-provider";
 import type { CardFace, FlashcardMode } from "@/db/types";
 
 interface FlashcardSettingsModalProps {
@@ -34,6 +35,7 @@ export function FlashcardSettingsModal({
   onStartStudy,
 }: FlashcardSettingsModalProps) {
   const userDb = useUserDb();
+  const { markDirty } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const updateList = useListsStore((s) => s.updateList);
 
@@ -113,6 +115,7 @@ export function FlashcardSettingsModal({
       typingMode,
       updatedAt: now,
     });
+    markDirty();
     if (onStartStudy) {
       onStartStudy();
     } else {

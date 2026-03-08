@@ -6,6 +6,7 @@ import { DueCardsSection } from "@/components/DueCardsSection";
 import { useUserDb } from "@/db/user-provider";
 import { useListsStore } from "@/stores/lists";
 import { confirm } from "@/lib/confirm";
+import { useSync } from "@/db/sync-provider";
 import type { FlashcardMode } from "@/db/types";
 
 interface StudyStatisticsModalProps {
@@ -24,6 +25,7 @@ export function StudyStatisticsModal({
   onClearStatistics,
 }: StudyStatisticsModalProps) {
   const userDb = useUserDb();
+  const { markDirty } = useSync();
   const updateList = useListsStore((s) => s.updateList);
 
   async function handleClear() {
@@ -66,6 +68,7 @@ export function StudyStatisticsModal({
       updateList(listId, { studyPosition: 0, updatedAt: now });
     }
 
+    markDirty();
     onClearStatistics();
     onClose();
   }
