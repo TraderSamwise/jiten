@@ -3,6 +3,8 @@ import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
+import { setRecoveryDb, WebDbRecoveryScreen } from "@/components/WebDbRecoveryScreen";
+import { notifyDbError } from "@/components/GlobalErrorHandler";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -60,18 +62,35 @@ async function openAndMigrateUserDb(): Promise<{
   }
 
   const wrapped: WrappedUserDb = {
-    getAllAsync: <T,>(sql: string, params?: any[]): Promise<T[]> =>
-      db.getAllAsync<T>(sql, params ?? []),
+    getAllAsync: async <T,>(sql: string, params?: any[]): Promise<T[]> => {
+      try {
+        return await db.getAllAsync<T>(sql, params ?? []);
+      } catch (err) {
+        notifyDbError(err, sql);
+        throw err;
+      }
+    },
 
-    getFirstAsync: <T,>(sql: string, params?: any[]): Promise<T | null> =>
-      db.getFirstAsync<T>(sql, params ?? []),
+    getFirstAsync: async <T,>(sql: string, params?: any[]): Promise<T | null> => {
+      try {
+        return await db.getFirstAsync<T>(sql, params ?? []);
+      } catch (err) {
+        notifyDbError(err, sql);
+        throw err;
+      }
+    },
 
     runAsync: async (sql: string, params?: any[]) => {
-      const result = await db.runAsync(sql, params ?? []);
-      return {
-        changes: result.changes,
-        lastInsertRowId: result.lastInsertRowId,
-      };
+      try {
+        const result = await db.runAsync(sql, params ?? []);
+        return {
+          changes: result.changes,
+          lastInsertRowId: result.lastInsertRowId,
+        };
+      } catch (err) {
+        notifyDbError(err, sql);
+        throw err;
+      }
     },
 
     sync: () => {},
@@ -145,6 +164,7 @@ export function UserDatabaseProvider({
       wrapped
         .runAsync(`DELETE FROM review_marks WHERE marked_at < datetime('now', '-90 days')`)
         .catch(() => {});
+      setRecoveryDb(wrapped);
       setState({ userDb: wrapped, isReady: true });
       console.log("[UserDB Web] Initialized successfully");
     } catch (err) {
@@ -167,6 +187,7 @@ export function UserDatabaseProvider({
       unsubscribe = onReleaseRequested(() => {
         console.log("[UserDB Web] Releasing user DB for another tab");
         rawDbRef.current = null;
+        setRecoveryDb(null);
         setState({ userDb: null, isReady: true });
       });
     });
@@ -185,6 +206,15 @@ export function UserDatabaseProvider({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [userId, runInit]);
+
+  if (state.error && state.error !== "opfs-lock") {
+    return (
+      <WebDbRecoveryScreen
+        error={{ message: state.error, source: "Database Init" }}
+        onDismiss={() => setState({ userDb: null, isReady: true })}
+      />
+    );
+  }
 
   return <UserDbContext.Provider value={state}>{children}</UserDbContext.Provider>;
 }

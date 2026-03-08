@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { ErrorScreen, checkForUpdates } from "@/components/ErrorScreen";
+import { WebDbRecoveryScreen } from "@/components/WebDbRecoveryScreen";
 
 interface CaughtError {
   message: string;
@@ -7,7 +9,30 @@ interface CaughtError {
   source: string;
 }
 
+function isDbError(error: CaughtError): boolean {
+  // Errors explicitly reported by our DB wrapper
+  if (error.source === "Database Error") return true;
+  // Errors from expo-sqlite web worker — all flow through workerMessageHandler
+  const text = `${error.message} ${error.stack ?? ""}`;
+  return (
+    text.includes("workerMessageHandler") ||
+    text.includes("WorkerChannel") ||
+    text.includes("expo-sqlite")
+  );
+}
+
 let globalErrorSetter: ((error: CaughtError) => void) | null = null;
+
+/** Call this from DB wrappers to surface query errors as recoverable DB errors */
+export function notifyDbError(err: unknown, sql?: string) {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  globalErrorSetter?.({
+    message: sql ? `${message}\n\nQuery: ${sql}` : message,
+    stack,
+    source: "Database Error",
+  });
+}
 
 function setupGlobalHandlers() {
   // Catch uncaught JS exceptions
@@ -54,6 +79,11 @@ export function GlobalErrorHandler({ children }: { children: React.ReactNode }) 
 
   if (error) {
     const dismiss = () => setError(null);
+
+    if (Platform.OS === "web" && isDbError(error)) {
+      return <WebDbRecoveryScreen error={error} onDismiss={dismiss} />;
+    }
+
     return (
       <ErrorScreen
         source={error.source}
