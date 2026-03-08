@@ -402,10 +402,14 @@ function getFaceText(entry: DictEntry, face: CardFace): string {
     case "kana":
       return entry.kana[0]?.text ?? "";
     case "english": {
-      const glosses =
-        entry.senses[0]?.glosses.filter((g) => g.lang === "eng").map((g) => g.text) ?? [];
-      const sep = glosses.some((g) => g.includes(",")) ? "; " : ", ";
-      return glosses.join(sep);
+      const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+      const parts = entry.senses.map((sense, i) => {
+        const glosses = sense.glosses.filter((g) => g.lang === "eng").map((g) => g.text);
+        if (glosses.length === 0) return null;
+        const text = glosses.join(", ");
+        return entry.senses.length > 1 ? `${CIRCLED[i] ?? `(${i + 1})`} ${text}` : text;
+      });
+      return parts.filter(Boolean).join(" ");
     }
   }
 }
