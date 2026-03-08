@@ -29,7 +29,7 @@ interface SyncContextType {
   lastError: string | null;
   triggerSync: (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>;
   markDirty: () => void;
-  isDirty: () => boolean;
+  isDirty: boolean;
   syncWithChoice: (choice: "merge" | "use-cloud" | "use-local") => Promise<void>;
   isSilentSync: boolean;
   tursoClient: Client | null;
@@ -70,7 +70,7 @@ const SyncContext = createContext<SyncContextType>({
   lastError: null,
   triggerSync: async () => noopResult,
   markDirty: () => {},
-  isDirty: () => false,
+  isDirty: false,
   syncWithChoice: async () => {},
   isSilentSync: false,
   tursoClient: null,
@@ -112,6 +112,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   const dirtyRef = useRef(false);
   const isOfflineRef = useRef(false);
   const lastSyncCompletedRef = useRef(0);
+  const [isDirtyState, setIsDirtyState] = useState(false);
   const [isSilentSync, setIsSilentSync] = useState(false);
   // Len-1 sync queue: if a sync is requested while one is in progress, queue it.
   // If the queued entry was ever non-silent, it stays non-silent (sticky).
@@ -151,9 +152,10 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         ]),
       ]);
       if (cancelled) return;
-      const isDirty = !!dirtyRow;
-      if (isDirty) {
+      const wasDirty = !!dirtyRow;
+      if (wasDirty) {
         dirtyRef.current = true;
+        setIsDirtyState(true);
         triggerSyncRef.current(true);
       } else {
         // Skip if last sync was within the sync interval
@@ -239,12 +241,11 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   const markDirty = useCallback(() => {
     if (!userDb || dirtyRef.current) return;
     dirtyRef.current = true;
+    setIsDirtyState(true);
     userDb
       .runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", ["sync_dirty", "1"])
       .catch(() => {});
   }, [userDb]);
-
-  const isDirty = useCallback(() => dirtyRef.current, []);
 
   const syncWithChoice = useCallback(
     async (choice: "merge" | "use-cloud" | "use-local") => {
@@ -252,6 +253,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (choice === "use-cloud") {
         await resetLocalUserData(userDb);
         dirtyRef.current = false;
+        setIsDirtyState(false);
         await userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]);
         await reloadStores(userDb);
       } else if (choice === "use-local") {
@@ -319,6 +321,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           isOfflineRef.current = false;
           // Clear dirty flag after successful sync
           dirtyRef.current = false;
+          setIsDirtyState(false);
           userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]).catch(() => {});
           // Let the progress bar fill to 100% before hiding
           await new Promise((r) => setTimeout(r, 500));
@@ -447,7 +450,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         lastError,
         triggerSync,
         markDirty,
-        isDirty,
+        isDirty: isDirtyState,
         syncWithChoice,
         isSilentSync,
         tursoClient: tursoRef.current,

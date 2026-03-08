@@ -1,12 +1,4 @@
-import {
-  View,
-  ScrollView,
-  Pressable,
-  Platform,
-  StyleSheet,
-  Text,
-  useColorScheme,
-} from "react-native";
+import { View, ScrollView, Pressable, Platform, StyleSheet, Text } from "react-native";
 import { getVersionString, getVersionCode } from "@/lib/version";
 
 interface ErrorScreenProps {
@@ -24,7 +16,10 @@ export function ErrorScreen({
   primaryAction,
   secondaryAction,
 }: ErrorScreenProps) {
-  const dark = useColorScheme() === "dark";
+  const dark =
+    Platform.OS === "web"
+      ? document.documentElement.classList.contains("dark")
+      : require("react-native").useColorScheme() === "dark";
   const s = dark ? darkStyles : styles;
 
   return (
