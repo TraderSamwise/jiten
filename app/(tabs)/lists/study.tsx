@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Pressable,
@@ -7,10 +7,12 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  AppState,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
+import { viewportPosition } from "@/lib/viewport-position";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CustomHeaderScreen,
@@ -51,7 +53,8 @@ import {
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getEntries } from "@/db/search";
-import { reviewCard, Rating } from "@/stores/srs";
+import { reviewCard, Rating, getFsrsInstance, previewIntervals } from "@/stores/srs";
+import { formatInterval as formatDueInterval } from "@/lib/format-interval";
 import {
   simpleGraduate,
   simpleReviewFail,
@@ -135,7 +138,7 @@ function RatingFloat({
       pointerEvents="none"
       style={[
         {
-          position: "absolute",
+          position: viewportPosition,
           top: screenY - 8,
           left: screenX - 40,
           width: 80,
@@ -809,6 +812,7 @@ interface SrsSnapshot {
   simpleN: number | null;
   simpleInterval: number | null;
   lastConfusionCheck: string | null;
+  learningSteps: number;
 }
 
 type CardStatus = "pending" | "revealed" | "rated";
@@ -817,7 +821,7 @@ interface StudyCard {
   item: QueueItem;
   status: CardStatus;
   flipped: boolean;
-  rating?: "pass" | "fail" | "easy";
+  rating?: "pass" | "fail" | "easy" | "hard";
   snapshot?: SrsSnapshot | null;
   reviewLogId?: string | null;
   preStudyPosition?: number | null;
@@ -840,6 +844,7 @@ function captureSnapshot(card: SrsCardRow): SrsSnapshot {
     simpleN: card.simpleN,
     simpleInterval: card.simpleInterval,
     lastConfusionCheck: card.lastConfusionCheck,
+    learningSteps: card.learningSteps,
   };
 }
 
@@ -950,7 +955,7 @@ function StudyScreen() {
 
   const [loading, setLoading] = useState(true);
   const [navigating, setNavigating] = useState(false);
-  type SessionPhase = "studying" | "checkpoint" | "done";
+  type SessionPhase = "studying" | "checkpoint" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
   const [newCardsAvailable, setNewCardsAvailable] = useState(0);
   const [earlyReviewAvailable, setEarlyReviewAvailable] = useState(0);
@@ -978,6 +983,14 @@ function StudyScreen() {
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
   // Simple SRS: track correct-in-a-row per card (need 3 to graduate)
   const simpleCorrectCountRef = useRef(new Map<string, number>());
+
+  // FSRS learning timers: cardId → { timer, dueDate }
+  const pendingTimersRef = useRef(
+    new Map<string, { timer: ReturnType<typeof setTimeout>; due: Date }>(),
+  );
+  const [pendingTimerCount, setPendingTimerCount] = useState(0);
+  const [nextTimerDue, setNextTimerDue] = useState<Date | null>(null);
+  const [countdownText, setCountdownText] = useState("");
 
   // Confused words detection
   const [confusedWordsVisible, setConfusedWordsVisible] = useState(false);
@@ -1050,6 +1063,47 @@ function StudyScreen() {
       }).catch(() => {});
     }
   }, [sessionPhase]);
+
+  // Clear learning timers on unmount
+  useEffect(() => {
+    return () => clearAllTimers();
+  }, []);
+
+  // AppState: on resume, check if any pending learning cards are now due
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        const now = Date.now();
+        for (const [cardId, { timer, due }] of pendingTimersRef.current) {
+          if (due.getTime() <= now) {
+            clearTimeout(timer);
+            pendingTimersRef.current.delete(cardId);
+            insertPendingCard(cardId);
+          }
+        }
+        updateTimerState();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Countdown timer for pending learning cards
+  useEffect(() => {
+    if (!nextTimerDue) {
+      setCountdownText("");
+      return;
+    }
+    const tick = () => {
+      const diff = Math.max(0, nextTimerDue.getTime() - Date.now());
+      const totalSecs = Math.ceil(diff / 1000);
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
+      setCountdownText(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [nextTimerDue]);
 
   // Web: keyboard shortcuts for reveal / rating
   useEffect(() => {
@@ -1139,7 +1193,8 @@ function StudyScreen() {
     updated_at as updatedAt,
     simple_stage as simpleStage, simple_n as simpleN,
     simple_interval as simpleInterval,
-    last_confusion_check as lastConfusionCheck`;
+    last_confusion_check as lastConfusionCheck,
+    learning_steps as learningSteps`;
 
   /** Resolve SRS card rows into QueueItems with full dict entries */
   async function resolveCards(srsRows: SrsCardRow[]): Promise<QueueItem[]> {
@@ -1186,6 +1241,89 @@ function StudyScreen() {
     } else {
       setSessionPhase("studying");
     }
+  }
+
+  function updateTimerState() {
+    const timers = pendingTimersRef.current;
+    setPendingTimerCount(timers.size);
+    if (timers.size === 0) {
+      setNextTimerDue(null);
+      return;
+    }
+    let earliest: Date | null = null;
+    for (const [, { due }] of timers) {
+      if (!earliest || due < earliest) earliest = due;
+    }
+    setNextTimerDue(earliest);
+  }
+
+  function scheduleCardReturn(cardId: string, dueDate: Date) {
+    // Clear existing timer for this card if any
+    const existing = pendingTimersRef.current.get(cardId);
+    if (existing) clearTimeout(existing.timer);
+
+    const delay = dueDate.getTime() - Date.now();
+    if (delay <= 0) {
+      // Already due — insert immediately
+      insertPendingCard(cardId);
+      return;
+    }
+    const timer = setTimeout(() => {
+      pendingTimersRef.current.delete(cardId);
+      insertPendingCard(cardId);
+      updateTimerState();
+    }, delay);
+    pendingTimersRef.current.set(cardId, { timer, due: dueDate });
+    updateTimerState();
+  }
+
+  async function insertPendingCard(cardId: string) {
+    if (!userDb || !dictDb) return;
+    const row = await userDb.getFirstAsync<SrsCardRow>(
+      `${srsSelectClause} FROM srs_cards WHERE id = ? AND deleted_at IS NULL`,
+      [cardId],
+    );
+    if (!row) return;
+    const items = await resolveCards([row]);
+    if (items.length === 0) return;
+    const newStudyCard: StudyCard = { item: items[0], status: "pending", flipped: false };
+    // Insert at front of remaining cards (after cursor)
+    const updated = [...cardsRef.current];
+    updated.splice(cursor + 1, 0, newStudyCard);
+    cardsRef.current = updated;
+    setCards(updated);
+    // If we were at checkpoint/done, go back to studying
+    setSessionPhase("studying");
+  }
+
+  function reviewPendingNow() {
+    // Review the earliest pending card immediately
+    const timers = pendingTimersRef.current;
+    if (timers.size === 0) return;
+    let earliestId: string | null = null;
+    let earliestDue: Date | null = null;
+    for (const [id, { due }] of timers) {
+      if (!earliestDue || due < earliestDue) {
+        earliestId = id;
+        earliestDue = due;
+      }
+    }
+    if (earliestId) {
+      const entry = timers.get(earliestId);
+      if (entry) clearTimeout(entry.timer);
+      timers.delete(earliestId);
+      insertPendingCard(earliestId);
+      updateTimerState();
+    }
+  }
+
+  function clearAllTimers() {
+    for (const [, { timer }] of pendingTimersRef.current) {
+      clearTimeout(timer);
+    }
+    pendingTimersRef.current.clear();
+    setPendingTimerCount(0);
+    setNextTimerDue(null);
   }
 
   async function loadQueue(mode?: "due" | "new" | "early" | "both") {
@@ -1380,15 +1518,22 @@ function StudyScreen() {
           reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
 
         if (!mode || mode === "due") {
-          // Due review cards: everything due before end of logical day
+          // Learning/relearning cards: exact-time due check
+          const nowISO = new Date().toISOString();
+          const learningRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
+            [listId, nowISO],
+          );
+          // Review cards: day-cutoff due check
           const reviewRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
             [listId, dueCutoffISO],
           );
+          const allDueRows = [...learningRows, ...reviewRows];
 
-          if (reviewRows.length > 0) {
-            const items = await resolveCards(reviewRows);
-            setQueueCards(items, reviewRows.length);
+          if (allDueRows.length > 0) {
+            const items = await resolveCards(allDueRows);
+            setQueueCards(items, allDueRows.length);
           } else {
             // No due cards — check for new cards (fresh deck edge case)
             const newCount = await userDb.getFirstAsync<{ c: number }>(
@@ -1417,21 +1562,35 @@ function StudyScreen() {
           const items = await resolveCards(newRows);
           setQueueCards(items, 0);
         } else if (mode === "early") {
-          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+          const nowISO = new Date().toISOString();
+          // Early learning cards: due after now
+          const earlyLearning = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+            [listId, nowISO, ...reviewedIds],
+          );
+          // Early review cards: due after end of logical day
+          const earlyReview = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
             [listId, dueCutoffISO, ...reviewedIds],
           );
+          const earlyRows = [...earlyLearning, ...earlyReview].slice(0, 10);
           const items = await resolveCards(earlyRows);
           setQueueCards(items, 0);
         } else if (mode === "both") {
+          const nowISO = new Date().toISOString();
           const newRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
             [listId, NEW_CARD_BATCH_SIZE],
           );
-          const earlyRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+          const earlyLearning = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
+            [listId, nowISO, ...reviewedIds],
+          );
+          const earlyReview = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
             [listId, dueCutoffISO, ...reviewedIds],
           );
+          const earlyRows = [...earlyLearning, ...earlyReview].slice(0, 10);
           const combined = [...newRows, ...earlyRows];
           const items = await resolveCards(combined);
           setQueueCards(items, 0);
@@ -1491,17 +1650,28 @@ function StudyScreen() {
     setNewCardsAvailable(newCount);
     setEarlyReviewAvailable(earlyCount);
 
-    if (newCount === 0 && earlyCount === 0) {
+    // If FSRS mode and there are pending learning timers, show waiting screen
+    if (!isSimple && pendingTimersRef.current.size > 0) {
+      setSessionPhase("waiting");
+    } else if (newCount === 0 && earlyCount === 0) {
       setSessionPhase("done");
     } else {
       setSessionPhase("checkpoint");
     }
   }
 
-  function flashRating(which: "fail" | "pass" | "easy") {
+  function flashRating(which: "fail" | "pass" | "easy" | "hard") {
     if (!buttonAnimationEnabled) return;
-    const label = which === "fail" ? "Fail" : which === "easy" ? "Easy!" : "Pass";
-    const color = which === "fail" ? "#ef4444" : which === "easy" ? "#4ade80" : "#22c55e";
+    const label =
+      which === "fail" ? "Fail" : which === "hard" ? "Hard" : which === "easy" ? "Easy!" : "Pass";
+    const color =
+      which === "fail"
+        ? "#ef4444"
+        : which === "hard"
+          ? "#f59e0b"
+          : which === "easy"
+            ? "#3b82f6"
+            : "#22c55e";
     const ref = which === "fail" ? failButtonRef : passButtonRef;
     ref.current?.measureInWindow((x, y, width, height) => {
       const key = ++floatingKeyRef.current;
@@ -1552,7 +1722,11 @@ function StudyScreen() {
       await rateSimpleSrsCard(card, "fail");
     } else if (list?.flashcardMode === "srs" && card) {
       reviewLogId = generateId();
-      await rateSrsCard(card, Rating.Again, reviewLogId);
+      const result = await rateSrsCard(card, Rating.Again, reviewLogId);
+      // Schedule learning timer instead of immediate re-queue
+      if (result && (result.state === 1 || result.state === 3)) {
+        scheduleCardReturn(card.id, result.due);
+      }
     }
 
     // Mark dirty for sync on unmount
@@ -1561,7 +1735,7 @@ function StudyScreen() {
       markDirty();
     }
 
-    // Update current card to rated + append re-queue copy
+    // Update current card to rated + append re-queue copy (except FSRS — timer handles it)
     const updatedCards = [...cardsRef.current];
     updatedCards[cursor] = {
       ...updatedCards[cursor],
@@ -1572,8 +1746,10 @@ function StudyScreen() {
       preStudyPosition: null,
       wasNewSimpleSrs: card ? card.simpleStage == null : false,
     };
-    // Push failed card to end for re-review
-    updatedCards.push({ item, status: "pending", flipped: false, reQueueOf: cursor });
+    // Push failed card to end for re-review (non-FSRS only; FSRS uses timer)
+    if (list?.flashcardMode !== "srs") {
+      updatedCards.push({ item, status: "pending", flipped: false, reQueueOf: cursor });
+    }
     cardsRef.current = updatedCards;
     setCards(updatedCards);
 
@@ -1661,7 +1837,11 @@ function StudyScreen() {
     } else if (card) {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
       reviewLogId = generateId();
-      await rateSrsCard(card, rating, reviewLogId);
+      const result = await rateSrsCard(card, rating, reviewLogId);
+      // Schedule learning timer if card stays in learning/relearning
+      if (result && (result.state === 1 || result.state === 3)) {
+        scheduleCardReturn(card.id, result.due);
+      }
     }
 
     // Mark dirty for sync on unmount
@@ -1724,8 +1904,155 @@ function StudyScreen() {
     }
   }
 
-  async function rateSrsCard(card: SrsCardRow, rating: Rating, logId?: string) {
+  async function handleHard() {
+    flashRating("hard");
+    if (voiceAutoAdvanceRef.current) {
+      clearTimeout(voiceAutoAdvanceRef.current);
+      voiceAutoAdvanceRef.current = null;
+    }
+    if (isBrowsingHistory) {
+      await reRateCard("hard", false);
+      return;
+    }
+    const liveCard = cardsRef.current[cursor];
+    if (!liveCard) return;
+
+    const item = liveCard.item;
+    const card = item.srsCard;
+    const snapshot = card ? captureSnapshot(card) : null;
+    let reviewLogId: string | null = null;
+
+    if (card) {
+      reviewLogId = generateId();
+      await rateSrsCard(card, Rating.Hard, reviewLogId);
+    }
+
+    if (!sessionDirtyRef.current) {
+      sessionDirtyRef.current = true;
+      markDirty();
+    }
+
+    const updatedCards = [...cardsRef.current];
+    updatedCards[cursor] = {
+      ...updatedCards[cursor],
+      status: "rated",
+      rating: "hard",
+      snapshot,
+      reviewLogId,
+      preStudyPosition: null,
+      wasNewSimpleSrs: false,
+    };
+    cardsRef.current = updatedCards;
+    setCards(updatedCards);
+
+    if (userDb && listId && item.kind === "entry") {
+      const practiceMode = list?.typingMode
+        ? "typing_flashcard"
+        : list?.voiceMode
+          ? "voice"
+          : "flashcard";
+      const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
+      logPracticeEvent(userDb, {
+        entryId: item.entry.id,
+        listId,
+        practiceMode,
+        correct: true,
+        responseMs,
+        sessionId: sessionIdRef.current,
+      }).catch(() => {});
+    }
+
+    sessionCorrectRef.current++;
+    setReviewedCount((c) => c + 1);
+    if (card?.id) reviewedSrsIdsRef.current.add(card.id);
+
+    if (cursor + 1 >= updatedCards.length) {
+      enterCheckpoint();
+    } else {
+      moveCursor(cursor + 1);
+    }
+  }
+
+  async function handleEasy() {
+    flashRating("easy");
+    if (voiceAutoAdvanceRef.current) {
+      clearTimeout(voiceAutoAdvanceRef.current);
+      voiceAutoAdvanceRef.current = null;
+    }
+    if (isBrowsingHistory) {
+      await reRateCard("easy", true);
+      return;
+    }
+    const liveCard = cardsRef.current[cursor];
+    if (!liveCard) return;
+
+    const item = liveCard.item;
+    const card = item.srsCard;
+    const snapshot = card ? captureSnapshot(card) : null;
+    let reviewLogId: string | null = null;
+
+    if (card) {
+      reviewLogId = generateId();
+      await rateSrsCard(card, Rating.Easy, reviewLogId);
+    }
+
+    if (!sessionDirtyRef.current) {
+      sessionDirtyRef.current = true;
+      markDirty();
+    }
+
+    const updatedCards = [...cardsRef.current];
+    updatedCards[cursor] = {
+      ...updatedCards[cursor],
+      status: "rated",
+      rating: "easy",
+      snapshot,
+      reviewLogId,
+      preStudyPosition: null,
+      wasNewSimpleSrs: false,
+    };
+    cardsRef.current = updatedCards;
+    setCards(updatedCards);
+
+    if (userDb && listId && item.kind === "entry") {
+      const practiceMode = list?.typingMode
+        ? "typing_flashcard"
+        : list?.voiceMode
+          ? "voice"
+          : "flashcard";
+      const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
+      logPracticeEvent(userDb, {
+        entryId: item.entry.id,
+        listId,
+        practiceMode,
+        correct: true,
+        responseMs,
+        sessionId: sessionIdRef.current,
+      }).catch(() => {});
+    }
+
+    sessionCorrectRef.current++;
+    setReviewedCount((c) => c + 1);
+    if (card?.id) reviewedSrsIdsRef.current.add(card.id);
+
+    if (cursor + 1 >= updatedCards.length) {
+      enterCheckpoint();
+    } else {
+      moveCursor(cursor + 1);
+    }
+  }
+
+  async function rateSrsCard(
+    card: SrsCardRow,
+    rating: Rating,
+    logId?: string,
+  ): Promise<{ state: number; due: Date } | undefined> {
     if (!userDb) return;
+
+    const fsrsInstance = getFsrsInstance(
+      list?.learningSteps ?? undefined,
+      list?.relearningSteps ?? undefined,
+    );
 
     const fsrsCard: FsrsCard = {
       due: new Date(card.due),
@@ -1737,10 +2064,10 @@ function StudyScreen() {
       lapses: card.lapses,
       state: card.state,
       last_review: card.lastReview ? new Date(card.lastReview) : undefined,
-      learning_steps: 0,
+      learning_steps: card.learningSteps,
     };
 
-    const result = reviewCard(fsrsCard, rating);
+    const result = reviewCard(fsrsCard, rating, undefined, fsrsInstance);
     const updated = result.card;
     const now = new Date().toISOString();
 
@@ -1749,7 +2076,7 @@ function StudyScreen() {
         due = ?, stability = ?, difficulty = ?,
         elapsed_days = ?, scheduled_days = ?,
         reps = ?, lapses = ?, state = ?,
-        last_review = ?, updated_at = ?
+        last_review = ?, learning_steps = ?, updated_at = ?
        WHERE id = ?`,
       [
         updated.due.toISOString(),
@@ -1761,6 +2088,7 @@ function StudyScreen() {
         updated.lapses,
         updated.state,
         updated.last_review?.toISOString() ?? now,
+        updated.learning_steps,
         now,
         card.id,
       ],
@@ -1782,6 +2110,18 @@ function StudyScreen() {
         now,
       ],
     );
+
+    // Hard on review cards → auto-mark for review
+    if (rating === Rating.Hard && card.state === 2) {
+      await markForReview(userDb, card.entryId, card.kanjiLiteral, card.listId, dayResetHour);
+      setMarkedSet((prev) => {
+        const next = new Set(prev);
+        next.add(card.kanjiLiteral ? `k:${card.kanjiLiteral}` : `e:${card.entryId}`);
+        return next;
+      });
+    }
+
+    return { state: updated.state, due: updated.due };
   }
 
   /**
@@ -1991,7 +2331,7 @@ function StudyScreen() {
           due = ?, stability = ?, difficulty = ?,
           elapsed_days = ?, scheduled_days = ?,
           reps = ?, lapses = ?, state = ?,
-          last_review = ?, updated_at = ?
+          last_review = ?, learning_steps = ?, updated_at = ?
          WHERE id = ?`,
         [
           snap.due,
@@ -2003,6 +2343,7 @@ function StudyScreen() {
           snap.lapses,
           snap.state,
           snap.lastReview,
+          snap.learningSteps,
           now,
           card.id,
         ],
@@ -2045,14 +2386,14 @@ function StudyScreen() {
       });
     }
 
-    // Decrement reviewed count for pass/easy
-    if (studyCard.rating === "pass" || studyCard.rating === "easy") {
+    // Decrement reviewed count for pass/easy/hard
+    if (studyCard.rating === "pass" || studyCard.rating === "easy" || studyCard.rating === "hard") {
       setReviewedCount((c) => Math.max(0, c - 1));
     }
   }
 
   // --- reRateCard: replaces reRateFromHistory ---
-  async function reRateCard(action: "pass" | "easy" | "fail", isLongPress: boolean) {
+  async function reRateCard(action: "pass" | "easy" | "fail" | "hard", isLongPress: boolean) {
     const card = cards[cursor];
     if (!card || card.status !== "rated") return;
 
@@ -2085,6 +2426,10 @@ function StudyScreen() {
     //    Pass fromReRate=true to skip the isBrowsingHistory check (React state is stale)
     if (action === "fail") {
       await handleFail(true);
+    } else if (action === "hard") {
+      await handleHard();
+    } else if (action === "easy" && list?.flashcardMode === "srs") {
+      await handleEasy();
     } else {
       await handlePass(isLongPress, true);
     }
@@ -2285,6 +2630,41 @@ function StudyScreen() {
   const frontFaces = sortFaces(list?.frontFaces ?? ["kanji"]);
   const backFaces = sortFaces(list?.backFaces ?? ["english"]);
 
+  const isSimpleSrs = list?.flashcardMode === "simple_srs";
+  const isFsrsMode = list?.flashcardMode === "srs";
+  const isSrsMode = isFsrsMode || isSimpleSrs;
+  const currentSrsCard = currentCard?.item.srsCard;
+  const isFsrsReviewCard = isFsrsMode && currentSrsCard?.state === 2;
+
+  // Compute interval labels for FSRS buttons
+  const intervalLabels = useMemo(() => {
+    if (!isFsrsMode || !currentSrsCard) return null;
+    const fsrsInstance = getFsrsInstance(
+      list?.learningSteps ?? undefined,
+      list?.relearningSteps ?? undefined,
+    );
+    const fsrsCard: FsrsCard = {
+      due: new Date(currentSrsCard.due),
+      stability: currentSrsCard.stability,
+      difficulty: currentSrsCard.difficulty,
+      elapsed_days: currentSrsCard.elapsedDays,
+      scheduled_days: currentSrsCard.scheduledDays,
+      reps: currentSrsCard.reps,
+      lapses: currentSrsCard.lapses,
+      state: currentSrsCard.state,
+      last_review: currentSrsCard.lastReview ? new Date(currentSrsCard.lastReview) : undefined,
+      learning_steps: currentSrsCard.learningSteps,
+    };
+    const now = new Date();
+    const intervals = previewIntervals(fsrsCard, now, fsrsInstance);
+    return {
+      again: formatDueInterval(intervals[Rating.Again], now),
+      hard: formatDueInterval(intervals[Rating.Hard], now),
+      good: formatDueInterval(intervals[Rating.Good], now),
+      easy: formatDueInterval(intervals[Rating.Easy], now),
+    };
+  }, [isFsrsMode, currentSrsCard?.id, currentSrsCard?.state]);
+
   if (loading) {
     return (
       <CustomHeaderScreen>
@@ -2292,6 +2672,38 @@ function StudyScreen() {
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
           <Text className="mt-4 text-muted-foreground">Loading study session...</Text>
+        </View>
+      </CustomHeaderScreen>
+    );
+  }
+
+  if (sessionPhase === "waiting") {
+    return (
+      <CustomHeaderScreen>
+        <HeaderPlaceholder py="py-2" spacerHeight={40} />
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-2xl font-semibold mb-2">Learning in progress</Text>
+          {countdownText ? (
+            <Text className="text-4xl font-bold text-primary mb-4">{countdownText}</Text>
+          ) : null}
+          <Text className="text-lg text-muted-foreground text-center mb-2">
+            {pendingTimerCount} card{pendingTimerCount === 1 ? "" : "s"} waiting
+          </Text>
+          <Text className="text-sm text-muted-foreground text-center mb-6">
+            {reviewedCount} reviewed
+            {sessionCorrectRef.current > 0 ? `, ${sessionCorrectRef.current} correct` : ""}
+          </Text>
+          <Button className="w-64 mb-3" label="Review Now" onPress={reviewPendingNow} />
+          <Button
+            className="w-64"
+            label="Return to List"
+            variant="outline"
+            onPress={() => {
+              clearAllTimers();
+              setNavigating(true);
+              setTimeout(() => navigateBack(), 100);
+            }}
+          />
         </View>
       </CustomHeaderScreen>
     );
@@ -2382,8 +2794,6 @@ function StudyScreen() {
     );
   }
 
-  const isSimpleSrs = list?.flashcardMode === "simple_srs";
-  const isSrsMode = list?.flashcardMode === "srs" || isSimpleSrs;
   const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
   const progress =
     dueAtStart > 0
@@ -2554,7 +2964,52 @@ function StudyScreen() {
       )}
 
       {/* Rating buttons -- always visible */}
-      {sessionPhase === "studying" && (
+      {sessionPhase === "studying" && isFsrsReviewCard && (
+        <View
+          className="flex-row gap-2 mt-3"
+          style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
+        >
+          <Pressable
+            ref={failButtonRef}
+            onPress={() => handleFail()}
+            className="flex-1 items-center justify-center rounded-lg h-14 bg-red-500"
+          >
+            <Text className="font-medium text-white text-xs">Again</Text>
+            {intervalLabels && (
+              <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => handleHard()}
+            className="flex-1 items-center justify-center rounded-lg h-14 bg-amber-500"
+          >
+            <Text className="font-medium text-white text-xs">Hard</Text>
+            {intervalLabels && (
+              <Text className="text-white/70 text-[10px]">{intervalLabels.hard}</Text>
+            )}
+          </Pressable>
+          <Pressable
+            ref={passButtonRef}
+            onPress={() => handlePass(false)}
+            className="flex-1 items-center justify-center rounded-lg h-14 bg-green-500"
+          >
+            <Text className="font-medium text-white text-xs">Good</Text>
+            {intervalLabels && (
+              <Text className="text-white/70 text-[10px]">{intervalLabels.good}</Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => handleEasy()}
+            className="flex-1 items-center justify-center rounded-lg h-14 bg-blue-500"
+          >
+            <Text className="font-medium text-white text-xs">Easy</Text>
+            {intervalLabels && (
+              <Text className="text-white/70 text-[10px]">{intervalLabels.easy}</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+      {sessionPhase === "studying" && !isFsrsReviewCard && (
         <View
           className="flex-row gap-3 mt-3"
           style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
@@ -2562,22 +3017,30 @@ function StudyScreen() {
           <Pressable
             ref={failButtonRef}
             onPress={() => handleFail()}
-            className={`flex-1 items-center justify-center rounded-lg h-12 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
+            className={`flex-1 items-center justify-center rounded-lg h-14 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
           >
             <Text className="font-medium text-white">
               {preSelectedRating === "fail" ? "Fail \u21B5" : "Fail"}
             </Text>
+            {isFsrsMode && intervalLabels && (
+              <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
+            )}
           </Pressable>
           <Pressable
             ref={passButtonRef}
             onPressIn={handlePassPressIn}
             onPressOut={handlePassPressOut}
             onPress={handlePassPress}
-            className={`flex-1 items-center justify-center rounded-lg h-12 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
+            className={`flex-1 items-center justify-center rounded-lg h-14 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
           >
             <Text className="font-medium text-white">
               {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
             </Text>
+            {isFsrsMode && intervalLabels && (
+              <Text className="text-white/70 text-[10px]">
+                {longPressActive ? intervalLabels.easy : intervalLabels.good}
+              </Text>
+            )}
           </Pressable>
         </View>
       )}
