@@ -29,6 +29,8 @@ interface SyncContextType {
   lastError: string | null;
   triggerSync: (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>;
   markDirty: () => void;
+  isDirty: () => boolean;
+  syncWithChoice: (choice: "merge" | "use-cloud" | "use-local") => Promise<void>;
   isSilentSync: boolean;
   tursoClient: Client | null;
   needsReconciliation: boolean;
@@ -68,6 +70,8 @@ const SyncContext = createContext<SyncContextType>({
   lastError: null,
   triggerSync: async () => noopResult,
   markDirty: () => {},
+  isDirty: () => false,
+  syncWithChoice: async () => {},
   isSilentSync: false,
   tursoClient: null,
   needsReconciliation: false,
@@ -239,6 +243,29 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       .runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", ["sync_dirty", "1"])
       .catch(() => {});
   }, [userDb]);
+
+  const isDirty = useCallback(() => dirtyRef.current, []);
+
+  const syncWithChoice = useCallback(
+    async (choice: "merge" | "use-cloud" | "use-local") => {
+      if (!userDb) return;
+      if (choice === "use-cloud") {
+        await resetLocalUserData(userDb);
+        dirtyRef.current = false;
+        await userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]);
+        await reloadStores(userDb);
+      } else if (choice === "use-local") {
+        // Reset sync timestamps so everything pushes fresh
+        await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?)", [
+          "last_sync_at",
+          "last_seen_push_version",
+        ]);
+      }
+      // All paths: trigger a visible forced sync
+      await triggerSyncRef.current(true);
+    },
+    [userDb],
+  );
 
   // Helper to reset the periodic interval timer (called after successful sync)
   const resetInterval = useCallback(() => {
@@ -420,6 +447,8 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         lastError,
         triggerSync,
         markDirty,
+        isDirty,
+        syncWithChoice,
         isSilentSync,
         tursoClient: tursoRef.current,
         needsReconciliation,
