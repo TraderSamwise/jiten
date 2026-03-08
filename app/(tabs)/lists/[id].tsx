@@ -1,5 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { View, Pressable, InteractionManager, ActivityIndicator, Platform } from "react-native";
+import {
+  View,
+  Pressable,
+  InteractionManager,
+  ActivityIndicator,
+  Platform,
+  TextInput,
+} from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
@@ -14,7 +21,7 @@ import { GamesModal } from "@/components/GamesModal";
 import { Trash2, EllipsisVertical } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
-import { getEntries } from "@/db/search";
+import { getEntries, searchListEntries } from "@/db/search";
 import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow, type ListScrollCache } from "@/stores/lists";
@@ -59,7 +66,7 @@ async function resolvePageItems(dictDb: any, rows: ListEntryRow[]): Promise<List
 }
 
 export default function ListDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, q } = useLocalSearchParams<{ id: string; q?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
   const tabRouter = useTabRouter();
@@ -80,6 +87,10 @@ export default function ListDetailScreen() {
   const [reviewCount, setReviewCount] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const flashListRef = useRef<FlashListRef<ListItem>>(null);
+  const [search, setSearch] = useState(q ?? "");
+  const [searchResults, setSearchResults] = useState<ListItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
   const restoredOffsetRef = useRef<number | null>(null);
@@ -277,6 +288,81 @@ export default function ListDetailScreen() {
     loadingMoreRef.current = false;
   }, [dictDb, id]);
 
+  // Search within list — debounced, queries dict DB then intersects with list entries
+  const runSearch = useCallback(
+    async (query: string) => {
+      if (!dictDb || !userDb || !id) return;
+      const trimmed = query.trim();
+      if (!trimmed) {
+        setSearchResults(null);
+        setSearching(false);
+        return;
+      }
+
+      setSearching(true);
+
+      // Build set of word entry IDs in this list
+      const allRows = allRowsRef.current;
+      const wordIds = new Set<number>();
+      const kanjiLiterals: string[] = [];
+      for (const r of allRows) {
+        if (r.kanji_literal != null) kanjiLiterals.push(r.kanji_literal);
+        else wordIds.add(r.entry_id);
+      }
+
+      // Search word entries via dict DB
+      const matchedWordIds = await searchListEntries(dictDb, trimmed, wordIds);
+      const wordItems =
+        matchedWordIds.length > 0
+          ? await resolvePageItems(
+              dictDb,
+              matchedWordIds.map((eid) => ({ entry_id: eid, kanji_literal: null })),
+            )
+          : [];
+
+      // Search kanji entries by literal or meaning (simple client match — kanji lists are small)
+      const lower = trimmed.toLowerCase();
+      const matchedKanji = kanjiLiterals.filter((lit) => lit.includes(trimmed));
+      // Also match by meaning if input is ascii
+      let kanjiByMeaning: string[] = [];
+      if (/^[a-zA-Z\s]+$/.test(trimmed) && kanjiLiterals.length > 0) {
+        const allKanji = await getKanjiBatchAsync(dictDb, kanjiLiterals);
+        kanjiByMeaning = allKanji
+          .filter((k) => k.meanings.some((m) => m.toLowerCase().includes(lower)))
+          .map((k) => k.literal);
+      }
+      const uniqueKanji = [...new Set([...matchedKanji, ...kanjiByMeaning])];
+      const kanjiItems: ListItem[] =
+        uniqueKanji.length > 0
+          ? (await getKanjiBatchAsync(dictDb, uniqueKanji)).map((k) => ({
+              kind: "kanji" as const,
+              kanji: k,
+            }))
+          : [];
+
+      setSearchResults([...kanjiItems, ...wordItems]);
+      setSearching(false);
+    },
+    [dictDb, userDb, id],
+  );
+
+  // Trigger search on query change
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const trimmed = search.trim();
+    if (!trimmed) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    setSearchResults([]);
+    searchDebounceRef.current = setTimeout(() => runSearch(trimmed), 250);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [search, runSearch]);
+
   // Web only: onScroll handler for caching scroll position + manual pagination.
   // We handle pagination here instead of onEndReached on web to avoid
   // FlashList's internal layout effects creating a feedback loop with setState.
@@ -462,26 +548,54 @@ export default function ListDetailScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      {searching && (
+        <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+          <ActivityIndicator size="large" />
+        </View>
+      )}
       <FlashList
         ref={flashListRef}
-        data={items}
+        data={searchResults ?? items}
         renderItem={renderItem}
         keyExtractor={(item) => listItemKey(item)}
-        onEndReached={Platform.OS === "web" ? undefined : loadMore}
+        onEndReached={searchResults ? undefined : Platform.OS === "web" ? undefined : loadMore}
         onEndReachedThreshold={0.5}
-        onScroll={Platform.OS === "web" ? handleScroll : undefined}
+        onScroll={searchResults ? undefined : Platform.OS === "web" ? handleScroll : undefined}
         scrollEventThrottle={Platform.OS === "web" ? 200 : undefined}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 8,
           paddingBottom: 80,
         }}
+        ListHeaderComponent={
+          totalCount > 0 ? (
+            <View className="mb-2">
+              <TextInput
+                className="h-10 rounded-lg border border-border bg-background px-3 text-foreground"
+                placeholder={`Search ${totalCount} entries...`}
+                placeholderTextColor="#999"
+                value={search}
+                onChangeText={(text) => {
+                  setSearch(text);
+                  router.setParams(text.trim() ? { q: text.trim() } : { q: "" });
+                }}
+                clearButtonMode="while-editing"
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
-          <View className="items-center pt-10">
-            <Text className="text-muted-foreground text-center">
-              This list is empty.{"\n"}Search for words and add them here.
-            </Text>
-          </View>
+          !searching ? (
+            <View className="items-center pt-10">
+              <Text className="text-muted-foreground text-center">
+                {search.trim()
+                  ? "No matching entries."
+                  : "This list is empty.\nSearch for words and add them here."}
+              </Text>
+            </View>
+          ) : null
         }
         ListFooterComponent={
           loadingMore ? (

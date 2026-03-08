@@ -443,6 +443,18 @@ On web, `router.replace()` unmounts the list screen on back navigation. To prese
 | `app/(tabs)/lists/[id].tsx` | List detail with FlashList pagination + scroll cache      |
 | `stores/lists.ts`           | `ListScrollCache` type + `scrollCache` map in lists store |
 
+## List Search
+
+The list detail screen (`app/(tabs)/lists/[id].tsx`) supports searching within a list. Search queries persist via `?q=` URL param so they survive navigation.
+
+### Cross-database search workaround
+
+The dict DB and user DB are separate SQLite databases, so we can't do a cross-DB join. Instead, `searchListEntries()` in `db/search.ts` runs a normal dictionary search with a high limit (500 results), then intersects the results with the set of entry IDs in the list.
+
+**Limitation:** If a list has thousands of entries and the search term matches many words in the dictionary but only a few are in the list, results may be incomplete if those few fall outside the top 500 dict results. If this becomes a problem, the fix would be to add an `entryIdFilter` parameter to each internal search function (`searchJapanese`, `searchRomaji`, `searchEnglish`) with `AND entry_id IN (...)` constraints pushed into the SQL queries.
+
+Kanji entries in lists are searched separately via simple literal/meaning matching since kanji lists are small.
+
 ## Web Layout and Header System
 
 On web, the app is capped at 960px content width (centered) with a full-bleed navbar backdrop behind the tab bar. This requires special handling for headers, layout dimensions, and screens that manage their own headers.
