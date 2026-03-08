@@ -1,5 +1,6 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { Platform, Pressable, ScrollView, Switch, View } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { useAtom } from "jotai";
 import { useRouter } from "expo-router";
 import { alert } from "@/lib/confirm";
@@ -23,7 +24,8 @@ import { useSync } from "@/db/sync-provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
 import { HardSyncModal } from "@/components/HardSyncModal";
 import { useUserDb } from "@/db/user-provider";
-import { exportUserData, importBackup, type ImportResult } from "@/components/WebDbRecoveryScreen";
+import { attemptBackup, importBackup, type ImportResult } from "@/lib/data-backup";
+import { saveAndShareFile } from "@/lib/file-transfer";
 import { ProgressBar } from "@/components/ProgressBar";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
@@ -90,7 +92,6 @@ export default function SettingsScreen() {
   const { user } = useUser();
   const { syncStatus, triggerSync } = useSync();
   const userDb = useUserDb();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [exportStatus, setExportStatus] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [importStatus, setImportStatus] = useState<"idle" | "importing" | "done" | "error">("idle");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -315,7 +316,7 @@ export default function SettingsScreen() {
             />
           </>
         )}
-        {Platform.OS === "web" && userDb && (
+        {userDb && (
           <>
             <Button
               variant="outline"
@@ -331,7 +332,20 @@ export default function SettingsScreen() {
               onPress={async () => {
                 setExportStatus("exporting");
                 try {
-                  await exportUserData(userDb);
+                  const backup = await attemptBackup(userDb);
+                  const json = JSON.stringify(
+                    {
+                      version: 1,
+                      exportedAt: new Date().toISOString(),
+                      tables: backup.tables,
+                      succeeded: backup.succeeded,
+                      failed: backup.failed,
+                    },
+                    null,
+                    2,
+                  );
+                  const date = new Date().toISOString().slice(0, 10);
+                  await saveAndShareFile(`jiten-backup-${date}.json`, json, "application/json");
                   setExportStatus("done");
                   setTimeout(() => setExportStatus("idle"), 2000);
                 } catch {
@@ -353,45 +367,53 @@ export default function SettingsScreen() {
                     : "Import Data"
               }
               disabled={importStatus === "importing"}
-              onPress={() => {
-                if (!fileInputRef.current) {
-                  const input = document.createElement("input");
-                  input.type = "file";
-                  input.accept = ".json";
-                  input.style.display = "none";
-                  input.addEventListener("change", async () => {
-                    const file = input.files?.[0];
-                    if (!file) return;
-                    setImportStatus("importing");
-                    setImportProgress(0);
-                    setImportLabel("");
-                    try {
-                      const result = await importBackup(userDb, file, (pct, label) => {
-                        setImportProgress(pct);
-                        setImportLabel(label);
-                      });
-                      setImportResult(result);
-                      setImportStatus("done");
-                      if (result.failed.length > 0) {
-                        alert(
-                          "Partial import",
-                          `Imported ${result.succeeded.length} tables (${result.totalRows} rows).\nFailed: ${result.failed.map((f) => f.table).join(", ")}`,
-                        );
-                      }
-                    } catch (err) {
-                      setImportStatus("error");
-                      alert(
-                        "Import failed",
-                        err instanceof Error ? err.message : "Invalid backup file.",
-                      );
-                      setTimeout(() => setImportStatus("idle"), 2000);
-                    }
-                    input.value = "";
+              onPress={async () => {
+                try {
+                  const pickerResult = await DocumentPicker.getDocumentAsync({
+                    type: ["application/json"],
+                    copyToCacheDirectory: true,
                   });
-                  document.body.appendChild(input);
-                  fileInputRef.current = input;
+
+                  if (pickerResult.canceled || pickerResult.assets.length === 0) return;
+
+                  const asset = pickerResult.assets[0];
+
+                  let content: string;
+                  if (Platform.OS === "web") {
+                    const response = await fetch(asset.uri);
+                    content = await response.text();
+                  } else {
+                    const { readAsStringAsync, EncodingType } =
+                      await import("expo-file-system/legacy");
+                    content = await readAsStringAsync(asset.uri, {
+                      encoding: EncodingType.UTF8,
+                    });
+                  }
+
+                  setImportStatus("importing");
+                  setImportProgress(0);
+                  setImportLabel("");
+
+                  const result = await importBackup(userDb, content, (pct, label) => {
+                    setImportProgress(pct);
+                    setImportLabel(label);
+                  });
+                  setImportResult(result);
+                  setImportStatus("done");
+                  if (result.failed.length > 0) {
+                    alert(
+                      "Partial import",
+                      `Imported ${result.succeeded.length} tables (${result.totalRows} rows).\nFailed: ${result.failed.map((f) => f.table).join(", ")}`,
+                    );
+                  }
+                } catch (err) {
+                  setImportStatus("error");
+                  alert(
+                    "Import failed",
+                    err instanceof Error ? err.message : "Invalid backup file.",
+                  );
+                  setTimeout(() => setImportStatus("idle"), 2000);
                 }
-                fileInputRef.current.click();
               }}
               className="mb-2"
             />

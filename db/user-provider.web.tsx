@@ -3,7 +3,7 @@ import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
-import { setRecoveryDb, WebDbRecoveryScreen } from "@/components/WebDbRecoveryScreen";
+import { setRecoveryDb, DbRecoveryScreen } from "@/components/DbRecoveryScreen";
 import { notifyDbError } from "@/components/GlobalErrorHandler";
 
 function isOpfsLockError(err: unknown): boolean {
@@ -209,7 +209,7 @@ export function UserDatabaseProvider({
 
   if (state.error && state.error !== "opfs-lock") {
     return (
-      <WebDbRecoveryScreen
+      <DbRecoveryScreen
         error={{ message: state.error, source: "Database Init" }}
         onDismiss={() => setState({ userDb: null, isReady: true })}
       />

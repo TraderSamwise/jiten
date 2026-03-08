@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Platform } from "react-native";
 import { ErrorScreen, checkForUpdates } from "@/components/ErrorScreen";
-import { WebDbRecoveryScreen } from "@/components/WebDbRecoveryScreen";
+import { DbRecoveryScreen } from "@/components/DbRecoveryScreen";
 
 interface CaughtError {
   message: string;
@@ -87,8 +86,8 @@ export function GlobalErrorHandler({ children }: { children: React.ReactNode }) 
   if (error) {
     const dismiss = () => setError(null);
 
-    if (Platform.OS === "web" && isDbError(error)) {
-      return <WebDbRecoveryScreen error={error} onDismiss={dismiss} />;
+    if (isDbError(error)) {
+      return <DbRecoveryScreen error={error} onDismiss={dismiss} />;
     }
 
     return (
