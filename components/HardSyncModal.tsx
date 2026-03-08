@@ -26,7 +26,7 @@ export function HardSyncModal({ visible, onClose }: HardSyncModalProps) {
       await resetLocalUserData(userDb);
       useBookmarkStore.getState().load(userDb);
       useListsStore.getState().load(userDb);
-      await triggerSync(true);
+      await triggerSync();
       onClose();
     } catch (err) {
       alert("Hard Sync Failed", String(err));

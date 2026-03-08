@@ -27,7 +27,7 @@ interface SyncContextType {
   syncLabel: string;
   lastSyncAt: string | null;
   lastError: string | null;
-  triggerSync: (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>;
+  triggerSync: () => Promise<SyncResult>;
   markDirty: () => void;
   isDirty: boolean;
   syncWithChoice: (choice: "merge" | "use-cloud" | "use-local") => Promise<void>;
@@ -156,12 +156,12 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (wasDirty) {
         dirtyRef.current = true;
         setIsDirtyState(true);
-        triggerSyncRef.current(true);
+        doSyncRef.current(true);
       } else {
         // Skip if last sync was within the sync interval
         const elapsed = lastSyncRow ? Date.now() - new Date(lastSyncRow.value).getTime() : Infinity;
         if (elapsed < SYNC_INTERVAL_MS) return;
-        triggerSyncRef.current();
+        doSyncRef.current();
       }
     })();
     return () => {
@@ -264,7 +264,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         ]);
       }
       // All paths: trigger a visible forced sync
-      await triggerSyncRef.current(true);
+      await doSyncRef.current(true);
     },
     [userDb],
   );
@@ -277,18 +277,18 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       loopTickRef.current += 1;
       if (shouldSyncOnTick(loopTickRef.current, dirtyRef.current, FORCE_SYNC_EVERY_N)) {
         loopTickRef.current = 0;
-        triggerSyncRef.current({ silent: true });
+        doSyncRef.current({ silent: true });
       }
     }, SYNC_INTERVAL_MS);
   }, []);
 
-  // We need a ref to triggerSync so resetInterval and the interval callback
+  // We need a ref to doSync so resetInterval and the interval callback
   // always call the latest version without a circular dep.
-  const triggerSyncRef = useRef<
+  const doSyncRef = useRef<
     (opts?: boolean | { force?: boolean; silent?: boolean }) => Promise<SyncResult>
   >(async () => noopResult);
 
-  const triggerSync = useCallback(
+  const doSync = useCallback(
     async (opts?: boolean | { force?: boolean; silent?: boolean }): Promise<SyncResult> => {
       const force = typeof opts === "boolean" ? opts : (opts?.force ?? false);
       const silent = typeof opts === "object" && opts?.silent === true;
@@ -363,17 +363,23 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         const pending = pendingSyncRef.current;
         if (pending) {
           pendingSyncRef.current = null;
-          triggerSyncRef.current(pending);
+          doSyncRef.current(pending);
         }
       }
     },
     [userDb, isRealUser, resetInterval],
   );
 
-  // Keep triggerSyncRef up to date
+  // Public triggerSync: always marks dirty before syncing
+  const triggerSync = useCallback((): Promise<SyncResult> => {
+    markDirty();
+    return doSync(true);
+  }, [markDirty, doSync]);
+
+  // Keep doSyncRef up to date
   useEffect(() => {
-    triggerSyncRef.current = triggerSync;
-  }, [triggerSync]);
+    doSyncRef.current = doSync;
+  }, [doSync]);
 
   // Foreground/background listener
   useEffect(() => {
@@ -383,8 +389,8 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (state === "active") isOfflineRef.current = false;
       const elapsed = Date.now() - lastSyncCompletedRef.current;
       const action = getStateChangeAction(state, dirtyRef.current, elapsed, SYNC_INTERVAL_MS);
-      if (action === "visible") triggerSync();
-      else if (action === "silent") triggerSync({ silent: true });
+      if (action === "visible") doSync();
+      else if (action === "silent") doSync({ silent: true });
     };
 
     if (Platform.OS === "web") {
@@ -400,7 +406,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       });
       return () => sub.remove();
     }
-  }, [triggerSync, isRealUser, reconciled]);
+  }, [doSync, isRealUser, reconciled]);
 
   // Periodic sync loop (30s). Dirty-gated, with unconditional sync every Nth tick.
   useEffect(() => {
@@ -410,7 +416,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       loopTickRef.current += 1;
       if (shouldSyncOnTick(loopTickRef.current, dirtyRef.current, FORCE_SYNC_EVERY_N)) {
         loopTickRef.current = 0;
-        triggerSyncRef.current({ silent: true });
+        doSyncRef.current({ silent: true });
       }
     }, SYNC_INTERVAL_MS);
     return () => {
