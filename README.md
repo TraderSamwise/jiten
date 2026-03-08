@@ -43,12 +43,57 @@ test("example", async () => {
 
 ### Test mocks
 
-| Mock             | Path                              | Purpose                                     |
-| ---------------- | --------------------------------- | ------------------------------------------- |
-| React Native     | `test/__mocks__/react-native.ts`  | Stubs `Platform.OS`                         |
-| AsyncStorage     | `test/__mocks__/async-storage.ts` | In-memory key-value store                   |
-| Env              | `test/__mocks__/env.ts`           | Environment stubs                           |
-| SQLite (user DB) | `test/test-db.ts`                 | In-memory SQLite with full migration schema |
+| Mock             | Path                              | Purpose                                                         |
+| ---------------- | --------------------------------- | --------------------------------------------------------------- |
+| React Native     | `test/__mocks__/react-native.ts`  | Stubs `Platform.OS` and `AppState` with simulated state changes |
+| AsyncStorage     | `test/__mocks__/async-storage.ts` | In-memory key-value store                                       |
+| Env              | `test/__mocks__/env.ts`           | Environment stubs                                               |
+| SQLite (user DB) | `test/test-db.ts`                 | In-memory SQLite with full migration schema                     |
+
+### React component tests (jsdom)
+
+Tests that render React components (hooks, providers) use `@testing-library/react` with jsdom. Add `@vitest-environment jsdom` as a doc comment at the top of the test file — vitest picks this up automatically.
+
+`db/sync-provider.test.tsx` is the reference implementation. Key patterns:
+
+**Fake timers + async React effects:** The SyncProvider has chained async effects (reconciliation → token fetch → dirty check → sync). With `vi.useFakeTimers()`, any `setTimeout` or `setInterval` is frozen. Use a `settle()` helper that repeatedly advances timers by 0 and yields to the microtask queue:
+
+```tsx
+async function settle(rounds = 20) {
+  for (let i = 0; i < rounds; i++) {
+    vi.advanceTimersByTime(0);
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+```
+
+**Advancing time:** Wrap `vi.advanceTimersByTime(ms)` in `act()`, then call `settle()`:
+
+```tsx
+async function advance(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+  });
+  await settle(5);
+}
+```
+
+**AppState simulation:** The react-native mock exposes `AppState._simulateChange(state)` to trigger foreground/background transitions:
+
+```tsx
+act(() => {
+  (AppState as any)._simulateChange("background");
+});
+act(() => {
+  (AppState as any)._simulateChange("active");
+});
+```
+
+**Mocking heavy providers:** SyncProvider imports ~10 modules. Mock them all with `vi.mock()` before the import. Use `let mockUserDb` + `createTestDb()` for the real SQLite database (enables testing actual DB reads/writes in the provider). See `sync-provider.test.tsx` for the full mock setup.
+
+**Platform-specific module resolution:** `user-provider` has `.native.tsx` and `.web.tsx` variants with no bare `.ts` file. Vitest can't resolve the bare import, so an alias is added in `vitest.config.ts` pointing to the web variant.
 
 ## Platform Polymorphism
 
@@ -607,26 +652,52 @@ Orchestrates when and how sync runs. Exposes `useSync()` hook with:
 - `markDirty()` — marks data as changed, persists `sync_dirty` flag to `sync_meta`
 - `isSilentSync` — true when the current sync should not show progress UI
 
-#### Sync triggers
+#### Sync trigger rules
 
-| Trigger                                   | Behavior                                                        |
-| ----------------------------------------- | --------------------------------------------------------------- |
-| **Mount**                                 | Checks `sync_dirty` flag → forces sync if set, else normal sync |
-| **Tab focus / foreground**                | Clears offline flag, retries sync                               |
-| **2-minute timer**                        | `triggerSync({ silent: true })` — suppresses progress UI        |
-| **List import / delete**                  | `triggerSync(true)` — immediate forced sync                     |
-| **Screen unmount** (study, games, reader) | `triggerSync(true)` if dirty — syncs review progress on exit    |
-| **Manual** (settings)                     | `triggerSync({ force: true })`                                  |
+The sync system follows these rules exactly:
 
-#### Dirty flag
+1. **Dirty flag** — `markDirty()` persists `sync_dirty=1` to `sync_meta` (survives app kills). On app background/unmount, if dirty, a silent sync is attempted. If it fails (e.g. not enough time), the flag persists and triggers a visible sync on next app load.
+2. **Sync loop** — A single `setInterval` at `SYNC_INTERVAL_MS` (30s). Each tick increments a counter. If dirty, syncs silently. Every `FORCE_SYNC_EVERY_N` ticks (10 = 5 min), syncs unconditionally (catches remote-only changes). Both constants are factored out at the top of the file.
+3. **Visible sync triggers** — Importing, creating, or deleting lists/books calls `triggerSync()` for immediate visible sync.
+4. **markDirty actions** — Adding/removing a word from a list, changing ebook page (scroll), finishing a game, rating an SRS card, saving kanji notes, changing flashcard settings, clearing SRS statistics, renaming a list.
+5. **Foreground handler** — On app return to foreground: if dirty OR elapsed since last sync >= `SYNC_INTERVAL_MS`, visible sync. Otherwise skip.
+6. **Background handler** — On app going to background: if dirty, attempt silent sync (fire-and-forget).
+7. **Any sync clears dirty** — After any successful sync (loop, explicit, foreground), `dirtyRef` and persisted `sync_dirty` are cleared.
+8. **Any sync resets loop timer** — `resetInterval()` restarts the loop countdown and resets the tick counter.
+9. **App load** — Init effect checks persisted `sync_dirty` flag (→ forced visible sync) and `last_sync_at` elapsed time (→ visible sync if > `SYNC_INTERVAL_MS`).
+10. **Size-1 queue** — If a sync is in progress, exactly one more can be queued. `force` is sticky-true, `silent` is sticky-false. Queue drains in `finally`.
 
-`markDirty()` sets an in-memory ref and persists `sync_dirty=1` to the `sync_meta` table. This survives app kills — on next launch, the flag triggers an immediate sync. The flag is cleared only after a successful sync (any trigger — mount, timer, manual, event-driven — single code path).
+#### What calls what
 
-Small incremental changes (bookmark toggles, review card swipes, game progress, reading position updates) call `markDirty()` instead of triggering immediate sync. Sync fires on the next timer tick or screen unmount.
+| Action                            | Function                        | Visible?      |
+| --------------------------------- | ------------------------------- | ------------- |
+| Import/create/delete list or book | `triggerSync()`                 | Yes           |
+| Add/remove word from list         | `markDirty()`                   | No (deferred) |
+| Change ebook page / scroll        | `markDirty()`                   | No (deferred) |
+| Finish a game                     | `markDirty()`                   | No (deferred) |
+| Rate SRS card                     | `markDirty()`                   | No (deferred) |
+| Save kanji note                   | `markDirty()`                   | No (deferred) |
+| Change flashcard settings         | `markDirty()`                   | No (deferred) |
+| Clear SRS statistics              | `markDirty()`                   | No (deferred) |
+| Rename list                       | `markDirty()`                   | No (deferred) |
+| Manual sync (settings)            | `triggerSync(true)`             | Yes           |
+| Delete data modal                 | `triggerSync(true)`             | Yes           |
+| Hard sync                         | `triggerSync(true)`             | Yes           |
+| Loop tick (dirty)                 | `triggerSync({ silent: true })` | No            |
+| Loop tick (force, every Nth)      | `triggerSync({ silent: true })` | No            |
+| Return to foreground              | `triggerSync()`                 | Yes           |
+| Go to background (dirty)          | `triggerSync({ silent: true })` | No            |
+
+#### Writes that don't need sync
+
+- `review_marks` — intentionally local (temp session UI flags)
+- `seed-default-lists.ts` — deterministic seeding, excluded from push by filters (`is_default`, `list_id NOT LIKE 'default-%'`)
+- `app_flags` — local seeding state
+- `last_confusion_check` — local optimization flag
 
 #### Silent sync
 
-Timer-based syncs pass `silent: true` to suppress the progress banner. Mount, unmount, list import/delete, and manual syncs show the progress UI. Errors always show regardless of the silent flag.
+Loop and background syncs pass `silent: true` to suppress the progress banner. Foreground return, imports, deletes, and manual syncs show the progress UI. Errors always show regardless of the silent flag.
 
 #### Sync queue
 
@@ -642,11 +713,11 @@ The queue drains in the `finally` block after the current sync completes.
 
 Network errors set an `isOfflineRef` flag. While offline:
 
-- Timer and event syncs skip silently (no error banner)
+- Loop and background syncs skip silently (no error banner)
 - Forced syncs still attempt (gives one shot)
-- Tab focus / foreground clears the flag and retries
+- Foreground return clears the flag and retries
 
-No external dependencies (NetInfo, exponential backoff) — offline detection is purely based on failed fetch errors, and the 2-minute timer + dirty flag provides natural retry.
+No external dependencies (NetInfo, exponential backoff) — offline detection is purely based on failed fetch errors, and the 30s loop + dirty flag provides natural retry.
 
 #### Account change detection
 
