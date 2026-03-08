@@ -1079,6 +1079,55 @@ export async function getEntries(
   return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap, jlptMap);
 }
 
+/**
+ * Search within a user's list by intersecting dict search results with list entry IDs.
+ *
+ * WORKAROUND: Because the dict DB and user DB are separate SQLite databases,
+ * we can't do a cross-DB join. Instead we run a normal dict search with a high
+ * limit (500), then filter to only entries present in the given set. This means
+ * that if a list has thousands of entries and the search term matches many in
+ * the dict but only a few are in the list, results may be incomplete if those
+ * few fall outside the top 500 dict results. If this becomes a problem, the
+ * search functions would need an `entryIdFilter` parameter with IN-clause
+ * constraints pushed into each SQL query.
+ */
+export async function searchListEntries(
+  dictDb: SQLite.SQLiteDatabase,
+  query: string,
+  listEntryIds: Set<number>,
+  extendedDb?: SQLite.SQLiteDatabase | null,
+): Promise<number[]> {
+  const trimmed = query.trim();
+  if (!trimmed || listEntryIds.size === 0) return [];
+
+  const { hasJapanese, isAscii } = classifyInput(trimmed);
+
+  const scored: ScoredEntry[] = [];
+  if (hasJapanese) {
+    scored.push(...(await searchJapanese(dictDb, trimmed, 500)));
+  }
+  if (isAscii) {
+    const [romaji, eng] = await Promise.all([
+      searchRomaji(dictDb, trimmed, 500),
+      searchEnglish(dictDb, trimmed, 500, extendedDb),
+    ]);
+    scored.push(...romaji, ...eng);
+  }
+
+  // Deduplicate, keep highest score per entry
+  const best = new Map<number, number>();
+  for (const r of scored) {
+    if (!listEntryIds.has(r.entryId)) continue;
+    const existing = best.get(r.entryId);
+    if (!existing || r.score > existing) {
+      best.set(r.entryId, r.score);
+    }
+  }
+
+  // Return entry IDs sorted by relevance
+  return [...best.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+}
+
 export async function getWordsForKanjiAsync(
   db: SQLite.SQLiteDatabase,
   kanjiChar: string,
