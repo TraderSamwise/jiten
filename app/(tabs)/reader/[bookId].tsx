@@ -16,7 +16,15 @@ import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScr
 import { Text } from "@/components/ui/text";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
-import { ChevronLeft, ChevronDown, SlidersHorizontal, BookText, User } from "@/lib/icons";
+import {
+  ChevronLeft,
+  ChevronDown,
+  SlidersHorizontal,
+  BookText,
+  User,
+  Download,
+  Trash2,
+} from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { generateReaderHtml } from "@/lib/reader-html";
@@ -387,7 +395,7 @@ export default function BookReaderScreen() {
   const isDark = colorScheme === "dark";
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
-  const { markDirty } = useSync();
+  const { markDirty, triggerSync } = useSync();
   const scrollDirtyRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
@@ -501,10 +509,7 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!userDb || !bookId) return;
     (async () => {
-      const row = await userDb.getFirstAsync<any>(
-        "SELECT * FROM books WHERE id = ? AND deleted_at IS NULL",
-        [bookId],
-      );
+      const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
       if (!row) {
         goBack();
         return;
@@ -893,6 +898,19 @@ export default function BookReaderScreen() {
     [userDb, bookId],
   );
 
+  const handleToggleSaved = useCallback(async () => {
+    if (!userDb || !book) return;
+    const newSaved = book.saved === 1 ? 0 : 1;
+    const now = new Date().toISOString();
+    await userDb.runAsync("UPDATE books SET saved = ?, updated_at = ? WHERE id = ?", [
+      newSaved,
+      now,
+      book.id,
+    ]);
+    setBook({ ...book, saved: newSaved });
+    triggerSync();
+  }, [userDb, book, triggerSync]);
+
   const { webBgStyle } = useWebBackdrop(15);
 
   return (
@@ -908,6 +926,15 @@ export default function BookReaderScreen() {
         <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
           {book?.title ?? ""}
         </Text>
+        {book && book.source !== "import" && (
+          <Pressable onPress={handleToggleSaved} className="p-2">
+            {book.saved === 1 ? (
+              <Trash2 size={20} className="text-muted-foreground" />
+            ) : (
+              <Download size={20} className="text-muted-foreground" />
+            )}
+          </Pressable>
+        )}
         {book && extendedDb && (
           <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
             {nameMode ? (

@@ -180,4 +180,5 @@ export const USER_DB_MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_review_marks_date ON review_marks(marked_at)`,
   `CREATE INDEX IF NOT EXISTS idx_review_marks_entry_day ON review_marks(entry_id, kanji_literal, marked_at)`,
+  `ALTER TABLE books ADD COLUMN saved INTEGER NOT NULL DEFAULT 1`,
 ];

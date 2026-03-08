@@ -139,6 +139,7 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   lastReadAt: string | null;
+  saved: number;
 }
 
 // Discriminated union for items in a list
