@@ -1,5 +1,6 @@
 import { state } from "./state";
 import { clearHighlight, applyHighlight } from "./highlight";
+import { absoluteToNodeOffset } from "./text";
 import {
   paginate,
   goToPage,
@@ -7,7 +8,41 @@ import {
   alignToTargetChar,
   replaceOffscreenContent,
   prependBackSlice,
+  expandPageForHighlight,
+  contractPageForHighlight,
 } from "./pagination";
+
+// Check if a highlighted range extends off-screen and peek to reveal it.
+function peekForHighlight(absStart: number, absEnd: number): void {
+  if (absEnd <= absStart) return;
+  const pageRect = state.pageEl!.getBoundingClientRect();
+  const range = document.createRange();
+
+  // Check start of highlight (could be off-screen to the right = earlier in book)
+  const startPos = absoluteToNodeOffset(absStart);
+  if (startPos) {
+    range.setStart(startPos.node, startPos.offset);
+    range.setEnd(startPos.node, Math.min(startPos.offset + 1, startPos.node.textContent!.length));
+    const r = range.getBoundingClientRect();
+    if (r.width > 0 || r.height > 0) {
+      const cx = (r.left + r.right) / 2;
+      if (cx > pageRect.right) contractPageForHighlight();
+    }
+  }
+
+  // Check end of highlight (could be off-screen to the left = later in book)
+  const endChar = absEnd - 1;
+  const endPos = absoluteToNodeOffset(endChar);
+  if (endPos) {
+    range.setStart(endPos.node, endPos.offset);
+    range.setEnd(endPos.node, Math.min(endPos.offset + 1, endPos.node.textContent!.length));
+    const r = range.getBoundingClientRect();
+    if (r.width > 0 || r.height > 0) {
+      const cx = (r.left + r.right) / 2;
+      if (cx < pageRect.left) expandPageForHighlight();
+    }
+  }
+}
 
 function canonicalOrMFVC(): number {
   return state.canonicalCharOffset >= 0
@@ -38,6 +73,11 @@ export function setupMessageListener(): void {
         // Refine heuristic highlight with actual match length
         clearHighlight();
         applyHighlight(msg.start || 0, msg.length || 0);
+        // Peek if highlight extends off-screen
+        peekForHighlight(
+          state.lastTapAbsOffset + (msg.start || 0),
+          state.lastTapAbsOffset + (msg.start || 0) + (msg.length || 0),
+        );
       } else if (msg.type === "clearHighlight") {
         clearHighlight();
       } else if (msg.type === "setNextContent") {
