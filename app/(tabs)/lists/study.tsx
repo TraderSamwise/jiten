@@ -2834,7 +2834,7 @@ function StudyScreen() {
   const completedCount = useCompletedCount ? completedSrsIdsRef.current.size : ratedCount;
   const progressDenom = useCompletedCount ? dueAtStart : dueAtStart || originalCardCount;
   const progress = progressDenom > 0 ? Math.min((completedCount / progressDenom) * 100, 100) : 0;
-  const allDueComplete = isSrsMode && progress >= 100;
+  const allDueComplete = isSrsMode && progress >= 100 && cursor >= cards.length;
 
   return (
     <CustomHeaderScreen>
