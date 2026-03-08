@@ -5,7 +5,9 @@ import { ChevronRight } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { useListsStore } from "@/stores/lists";
-import { srsEpochDaysToDate } from "@/stores/simple-srs";
+import { srsEpochDaysToDate, endOfLogicalDayEpochDays } from "@/stores/simple-srs";
+import { useAtomValue } from "jotai";
+import { dayResetHourAtom } from "@/stores/settings";
 import type { FlashcardMode } from "@/db/types";
 
 interface DueCardsSectionProps {
@@ -34,11 +36,16 @@ function getDayLabels(): string[] {
   return labels;
 }
 
-function dateToBucketIndex(date: Date): number {
+function dateToBucketIndex(date: Date, resetHour: number): number {
+  // Use logical day boundary: today ends at resetHour tomorrow
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diff = Math.floor((date.getTime() - todayStart.getTime()) / (24 * 3600 * 1000));
-  if (diff <= 0) return 0;
+  const logicalDayStart = new Date(now);
+  if (now.getHours() < resetHour) {
+    logicalDayStart.setDate(logicalDayStart.getDate() - 1);
+  }
+  logicalDayStart.setHours(resetHour, 0, 0, 0);
+  const diff = Math.floor((date.getTime() - logicalDayStart.getTime()) / (24 * 3600 * 1000));
+  if (diff <= 0) return 0; // due today (before next reset)
   if (diff === 1) return 1;
   if (diff <= 6) return diff;
   return 7;
@@ -63,6 +70,7 @@ export function DueCardsSection({
 }: DueCardsSectionProps) {
   const userDb = useUserDb();
   const { lastSyncAt } = useSync();
+  const dayResetHour = useAtomValue(dayResetHourAtom);
   const [buckets, setBuckets] = useState<DayBucket[]>([]);
   const [addOrderStats, setAddOrderStats] = useState<{
     total: number;
@@ -73,7 +81,7 @@ export function DueCardsSection({
 
   useEffect(() => {
     if (userDb) loadStats();
-  }, [userDb, listId, flashcardMode, lastSyncAt]);
+  }, [userDb, listId, flashcardMode, lastSyncAt, dayResetHour]);
 
   async function loadStats() {
     if (!userDb) return;
@@ -108,7 +116,7 @@ export function DueCardsSection({
       );
       for (const row of rows) {
         const dueDate = srsEpochDaysToDate(row.dueDays);
-        const idx = dateToBucketIndex(dueDate);
+        const idx = dateToBucketIndex(dueDate, dayResetHour);
         counts[idx]++;
       }
     } else {
@@ -124,7 +132,7 @@ export function DueCardsSection({
       );
       for (const row of rows) {
         const dueDate = new Date(row.due);
-        const idx = dateToBucketIndex(dueDate);
+        const idx = dateToBucketIndex(dueDate, dayResetHour);
         counts[idx]++;
       }
     }

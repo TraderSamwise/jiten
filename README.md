@@ -872,6 +872,44 @@ In dev mode (`__DEV__`), `lib/proxy.ts` automatically routes proxy URLs to `loca
 
 Native (iOS/Android) doesn't need the proxy — it calls external APIs directly.
 
+## SRS and Day Boundary
+
+### Day reset hour
+
+The app uses a configurable "day reset hour" (default 3am, range 0–6) to define logical day boundaries. This affects:
+
+- **SRS due cutoff** — both Simple SRS and FSRS show all cards due before the next reset hour as "due today". A card due at 11pm tonight shows as due even if you study at 9am. This matches expected's behavior of showing all cards due within the current day, so time-of-day doesn't affect which cards appear.
+- **Stats and streaks** — daily activity, streaks, and heatmap data bin by logical day.
+- **Review marks** — marks are deduplicated per logical day.
+
+The cutoff is timezone-agnostic: it uses local time, so traveling across timezones shifts it naturally.
+
+Setting: `stores/settings.ts` → `dayResetHourAtom`. UI: Settings → "Day Reset Time".
+
+### Key functions
+
+| Function                               | File                   | Purpose                                               |
+| -------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| `endOfLogicalDayEpochDays(resetHour)` | `stores/simple-srs.ts` | Due cutoff for Simple SRS queries (epoch days)       |
+| `endOfLogicalDayISO(resetHour)`        | `stores/simple-srs.ts` | Due cutoff for FSRS queries (ISO string)              |
+| `getDayStart(date, resetHour)`         | `lib/day-boundary.ts`  | Start of logical day                                  |
+| `sqlDayExpr(column, resetHour)`        | `lib/day-boundary.ts`  | SQL fragment for binning timestamps into logical days |
+| `getLogicalToday(resetHour)`           | `lib/day-boundary.ts`  | Today's YYYY-MM-DD label                              |
+
+### Simple SRS (`stores/simple-srs.ts`)
+
+Simple spaced repetition. Simple spaced repetition algorithm:
+
+- Due dates stored as days since 2001-01-01 (Mac epoch), fractional
+- Pass: interval ×1.9, Easy: interval ×2.9, Fail: reset to learning (n=0)
+- 3 correct in a row to graduate from learning
+- Re-graduation after lapse: interval ×0.5, clamped [1/3, 6.0]
+- Interval range: [1/3 day (~8h), 365 days]
+
+### FSRS (`ts-fsrs` library)
+
+Full FSRS 5.0 implementation via `ts-fsrs`. Uses the same logical day cutoff for due cards.
+
 ## Scripts
 
 ### Dictionary Database
