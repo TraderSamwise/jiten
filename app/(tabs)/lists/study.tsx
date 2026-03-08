@@ -577,7 +577,10 @@ const StudyCardView = React.memo(
         item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face);
 
       if (face === "kana" && item.kind === "entry" && item.entry.pitchAccents.length > 0) {
-        const accent = item.entry.pitchAccents[0];
+        const targetReading = item.entry.kana[0]?.text;
+        const accent =
+          item.entry.pitchAccents.find((pa) => pa.reading === targetReading) ??
+          item.entry.pitchAccents[0];
         const moraCount = splitMorae(accent.reading).length;
         // Cap font size so all morae fit: card text area ≈ 45% of screen width
         const availableWidth = screenWidth * 0.45;
