@@ -359,6 +359,7 @@ export interface FuriganaEntry {
   kanjiPart: string;
   reading: string;
   kanjiPartLen: number;
+  wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
 }
 
 /**
