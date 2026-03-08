@@ -16,6 +16,8 @@ interface WebDbRecoveryScreenProps {
 
 // Module-level DB ref — set by user-provider.web.tsx after init
 let recoveryDb: WrappedUserDb | null = null;
+// Module-level auth state — set by app layout after auth loads
+let isUserSignedIn = false;
 
 export function setRecoveryDb(db: WrappedUserDb | null) {
   recoveryDb = db;
@@ -23,6 +25,10 @@ export function setRecoveryDb(db: WrappedUserDb | null) {
 
 export function getRecoveryDb(): WrappedUserDb | null {
   return recoveryDb;
+}
+
+export function setRecoverySignedIn(signedIn: boolean) {
+  isUserSignedIn = signedIn;
 }
 
 interface BackupResult {
@@ -71,6 +77,195 @@ const BACKUP_TABLES: {
       "SELECT id, list_id, game_type, game_mode, speed_preset, score, matches_made, triples_made, max_combo, accuracy, duration_ms, played_at FROM game_scores",
   },
 ];
+
+// Column names for each table — used for INSERT during import
+const TABLE_COLUMNS: Record<string, string[]> = {
+  lists: [
+    "id",
+    "name",
+    "description",
+    "flashcard_mode",
+    "front_faces",
+    "back_faces",
+    "study_position",
+    "configured",
+    "auto_play_audio",
+    "confusion_detection",
+    "voice_mode",
+    "typing_mode",
+    "disable_flip_animation",
+    "disable_swipe_animation",
+    "is_default",
+    "learning_steps",
+    "relearning_steps",
+    "created_at",
+    "updated_at",
+  ],
+  list_entries: ["id", "list_id", "entry_id", "kanji_literal", "added_at", "updated_at"],
+  srs_cards: [
+    "id",
+    "entry_id",
+    "list_id",
+    "due",
+    "stability",
+    "difficulty",
+    "elapsed_days",
+    "scheduled_days",
+    "reps",
+    "lapses",
+    "state",
+    "last_review",
+    "front_mode",
+    "back_mode",
+    "simple_stage",
+    "simple_n",
+    "simple_interval",
+    "last_confusion_check",
+    "kanji_literal",
+    "learning_steps",
+    "created_at",
+    "updated_at",
+  ],
+  review_logs: [
+    "id",
+    "card_id",
+    "rating",
+    "state",
+    "due",
+    "stability",
+    "difficulty",
+    "elapsed_days",
+    "scheduled_days",
+    "reviewed_at",
+  ],
+  books: [
+    "id",
+    "title",
+    "author",
+    "source",
+    "scroll_position",
+    "char_offset",
+    "total_chars",
+    "font_size",
+    "last_read_at",
+    "is_default",
+    "saved",
+    "created_at",
+    "updated_at",
+  ],
+  user_kanji_notes: ["literal", "mnemonic", "keyword"],
+  practice_sessions: [
+    "id",
+    "session_id",
+    "list_id",
+    "practice_mode",
+    "started_at",
+    "duration_ms",
+    "total_items",
+    "correct_count",
+  ],
+  game_scores: [
+    "id",
+    "list_id",
+    "game_type",
+    "game_mode",
+    "speed_preset",
+    "score",
+    "matches_made",
+    "triples_made",
+    "max_combo",
+    "accuracy",
+    "duration_ms",
+    "played_at",
+  ],
+};
+
+// Import order matters for FK constraints
+const IMPORT_ORDER = [
+  "lists",
+  "list_entries",
+  "srs_cards",
+  "review_logs",
+  "books",
+  "user_kanji_notes",
+  "practice_sessions",
+  "game_scores",
+];
+
+export interface ImportResult {
+  succeeded: string[];
+  failed: { table: string; error: string }[];
+  skipped: string[];
+  totalRows: number;
+}
+
+export async function importBackup(
+  db: WrappedUserDb,
+  file: File,
+  onProgress?: (percent: number, label: string) => void,
+): Promise<ImportResult> {
+  const text = await file.text();
+  const data = JSON.parse(text);
+
+  if (!data.version || !data.tables) {
+    throw new Error("Invalid backup file format");
+  }
+
+  // Count total rows across all tables for progress tracking
+  let totalRowCount = 0;
+  for (const tableName of IMPORT_ORDER) {
+    const rows = data.tables[tableName];
+    if (rows?.length) totalRowCount += rows.length;
+  }
+
+  const result: ImportResult = { succeeded: [], failed: [], skipped: [], totalRows: 0 };
+  let processedRows = 0;
+
+  for (const tableName of IMPORT_ORDER) {
+    const rows = data.tables[tableName];
+    if (!rows || rows.length === 0) {
+      result.skipped.push(tableName);
+      continue;
+    }
+
+    const cols = TABLE_COLUMNS[tableName];
+    if (!cols) {
+      result.skipped.push(tableName);
+      continue;
+    }
+
+    onProgress?.(
+      totalRowCount > 0 ? (processedRows / totalRowCount) * 100 : 0,
+      `Importing ${tableName}...`,
+    );
+
+    try {
+      const placeholders = cols.map(() => "?").join(", ");
+      const sql = `INSERT OR REPLACE INTO ${tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
+
+      for (const row of rows) {
+        const values = cols.map((col) => row[col] ?? null);
+        await db.runAsync(sql, values);
+        processedRows++;
+      }
+
+      result.succeeded.push(tableName);
+      result.totalRows += rows.length;
+    } catch (err) {
+      console.error(`[Import] Failed to import ${tableName}:`, err);
+      result.failed.push({ table: tableName, error: String(err) });
+      processedRows += rows.length;
+    }
+  }
+
+  onProgress?.(100, "Done");
+  return result;
+}
+
+export async function exportUserData(db: WrappedUserDb): Promise<void> {
+  const backup = await attemptBackup(db);
+  downloadBackup(backup);
+}
 
 async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
   const result: BackupResult = { tables: {}, succeeded: [], failed: [] };
@@ -158,6 +353,8 @@ export function WebDbRecoveryScreen({ error, onDismiss }: WebDbRecoveryScreenPro
     setBackupState("done");
   };
 
+  const isSynced = isUserSignedIn && !!syncInfo;
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>Database Error</Text>
@@ -178,37 +375,105 @@ export function WebDbRecoveryScreen({ error, onDismiss }: WebDbRecoveryScreenPro
         </View>
       )}
 
-      {/* Backup section */}
+      {/* Recovery instructions */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Data Backup</Text>
-        {backupState === "no-db" && (
-          <Text style={s.infoText}>Database could not be opened. Backup is not available.</Text>
-        )}
-        {backupState === "idle" && (
-          <Text style={s.infoText}>Attempt to back up your data before resetting.</Text>
-        )}
-        {backupState === "running" && <Text style={s.infoText}>Backing up tables...</Text>}
-        {backupState === "done" && backup && (
+        <Text style={s.sectionTitle}>How to recover</Text>
+        {isSynced ? (
           <>
-            <Text style={s.successText}>
-              Backed up {backup.succeeded.length} table{backup.succeeded.length !== 1 ? "s" : ""}
-              {backup.failed.length > 0 &&
-                ` (${backup.failed.length} failed: ${backup.failed.join(", ")})`}
+            <Text style={s.infoText}>
+              Your data is backed up to the cloud ({syncInfo}).
+              {"\n\n"}
+              <Text style={s.stepLabel}>Step 1:</Text> Try "Force Sync" below — this resets the
+              local database and re-downloads your data from the cloud. No data will be lost.
+              {"\n\n"}
+              <Text style={s.stepLabel}>Step 2:</Text> If that doesn't work, you can download a
+              local backup first, then reset manually.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.infoText}>
+              {syncInfo && !isUserSignedIn
+                ? `You previously synced (${syncInfo}) but are currently signed out.`
+                : "You are not signed in, so there is no cloud backup."}
+              {"\n\n"}
+              {syncInfo && !isUserSignedIn ? (
+                <>
+                  <Text style={s.stepLabel}>Step 1:</Text> Sign in first — then "Force Sync" will
+                  restore your data from the cloud after resetting.
+                  {"\n\n"}
+                  <Text style={s.stepLabel}>Step 2:</Text> If you can't sign in, download a local
+                  backup below before resetting.
+                </>
+              ) : (
+                <>
+                  <Text style={s.stepLabel}>Step 1:</Text> Download a backup of your local data.
+                  This saves your lists, flashcard progress, books, and stats as a JSON file.
+                  {"\n\n"}
+                  <Text style={s.stepLabel}>Step 2:</Text> Reset the database to clear the
+                  corruption.
+                  {"\n\n"}
+                  <Text style={s.stepLabel}>Tip:</Text> Sign in to enable cloud sync — your data
+                  will be automatically backed up and restored across devices.
+                </>
+              )}
+            </Text>
+            <Text style={s.warningText}>
+              Without a backup or cloud sync, resetting will permanently delete all local data.
             </Text>
           </>
         )}
       </View>
 
-      {/* Sync status */}
+      {/* Backup section */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Cloud Sync</Text>
-        <Text style={s.infoText}>{syncInfo ?? "Not signed in \u2014 local data only"}</Text>
-        {!syncInfo && (
-          <Text style={s.warningText}>Resetting will permanently delete all local data.</Text>
+        <Text style={s.sectionTitle}>Local Backup</Text>
+        {backupState === "no-db" && (
+          <Text style={s.infoText}>Database could not be opened. Backup is not available.</Text>
+        )}
+        {backupState === "idle" && (
+          <Text style={s.infoText}>
+            Attempt to back up your data before resetting. This reads each table individually — even
+            if some fail, you'll get a partial backup.
+          </Text>
+        )}
+        {backupState === "running" && <Text style={s.infoText}>Backing up tables...</Text>}
+        {backupState === "done" && backup && (
+          <Text style={s.successText}>
+            Backed up {backup.succeeded.length} table{backup.succeeded.length !== 1 ? "s" : ""}
+            {backup.failed.length > 0 &&
+              ` (${backup.failed.length} failed: ${backup.failed.join(", ")})`}
+          </Text>
         )}
       </View>
 
       {/* Actions */}
+
+      {/* Force sync — primary action for signed-in users */}
+      {isSynced && (
+        <Pressable style={s.buttonSuccess} onPress={resetDatabase}>
+          <Text style={s.buttonText}>Force Sync</Text>
+          <Text style={s.buttonSubtext}>Reset local database and restore from cloud</Text>
+        </Pressable>
+      )}
+
+      {/* Sign in — navigate directly, skips DB load */}
+      {!isUserSignedIn && (
+        <Pressable
+          style={s.buttonSuccess}
+          onPress={() => {
+            window.location.href = "/sign-in";
+          }}
+        >
+          <Text style={s.buttonText}>Sign In</Text>
+          <Text style={s.buttonSubtext}>
+            {syncInfo
+              ? "Sign in to restore your data from the cloud"
+              : "Enable cloud sync to protect your data"}
+          </Text>
+        </Pressable>
+      )}
+
       {backupState === "idle" && (
         <Pressable style={s.button} onPress={runBackup}>
           <Text style={s.buttonText}>Back Up Data</Text>
@@ -223,6 +488,11 @@ export function WebDbRecoveryScreen({ error, onDismiss }: WebDbRecoveryScreenPro
 
       <Pressable style={s.buttonDanger} onPress={resetDatabase}>
         <Text style={s.buttonText}>Reset Database</Text>
+        <Text style={s.buttonSubtext}>
+          {isSynced
+            ? "Delete local data (cloud data is safe)"
+            : "Delete all local data — cannot be undone"}
+        </Text>
       </Pressable>
 
       <Pressable style={s.buttonOutline} onPress={onDismiss}>
@@ -296,7 +566,10 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 13,
     color: "#e65100",
-    marginTop: 4,
+    marginTop: 8,
+  },
+  stepLabel: {
+    fontWeight: "700",
   },
   button: {
     backgroundColor: "#2196F3",
@@ -305,17 +578,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
   },
+  buttonSuccess: {
+    backgroundColor: "#2e7d32",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center" as const,
+    marginTop: 16,
+  },
   buttonDanger: {
     backgroundColor: "#d32f2f",
     padding: 14,
     borderRadius: 8,
-    alignItems: "center",
+    alignItems: "center" as const,
     marginTop: 10,
   },
   buttonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  buttonSubtext: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    marginTop: 2,
   },
   buttonOutline: {
     borderWidth: 1,
@@ -363,7 +648,7 @@ const darkStyles = StyleSheet.create({
   warningText: {
     fontSize: 13,
     color: "#ff9800",
-    marginTop: 4,
+    marginTop: 8,
   },
   title: { fontSize: 22, fontWeight: "700", color: "#ef5350", marginBottom: 16 },
   buttonOutline: {

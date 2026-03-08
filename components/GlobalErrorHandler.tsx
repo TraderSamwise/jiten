@@ -12,12 +12,19 @@ interface CaughtError {
 function isDbError(error: CaughtError): boolean {
   // Errors explicitly reported by our DB wrapper
   if (error.source === "Database Error") return true;
-  // Errors from expo-sqlite web worker — all flow through workerMessageHandler
+  // Errors from expo-sqlite web worker — all flow through workerMessageHandler.
+  // Also match common SQLite error strings as fallback in case function names get minified.
   const text = `${error.message} ${error.stack ?? ""}`;
   return (
     text.includes("workerMessageHandler") ||
     text.includes("WorkerChannel") ||
-    text.includes("expo-sqlite")
+    text.includes("expo-sqlite") ||
+    text.includes("SQL logic error") ||
+    text.includes("SQLITE_") ||
+    text.includes("database is locked") ||
+    text.includes("finalizing statement") ||
+    text.includes("no such table") ||
+    text.includes("no such column")
   );
 }
 

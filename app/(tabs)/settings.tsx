@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import { useAtom } from "jotai";
 import { useRouter } from "expo-router";
@@ -22,6 +22,9 @@ import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
 import { HardSyncModal } from "@/components/HardSyncModal";
+import { useUserDb } from "@/db/user-provider";
+import { exportUserData, importBackup, type ImportResult } from "@/components/WebDbRecoveryScreen";
+import { ProgressBar } from "@/components/ProgressBar";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -86,6 +89,13 @@ export default function SettingsScreen() {
   const { isSignedIn } = useAuth();
   const { user } = useUser();
   const { syncStatus, triggerSync } = useSync();
+  const userDb = useUserDb();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [exportStatus, setExportStatus] = useState<"idle" | "exporting" | "done" | "error">("idle");
+  const [importStatus, setImportStatus] = useState<"idle" | "importing" | "done" | "error">("idle");
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importLabel, setImportLabel] = useState("");
 
   function handleThemeChange(theme: ThemePreference) {
     setActiveTheme(theme);
@@ -161,45 +171,6 @@ export default function SettingsScreen() {
       </Card>
 
       {HAS_AUTH && <AccountCard />}
-
-      <Card className="mb-4">
-        <CardTitle className="text-base">Data</CardTitle>
-        <Separator className="my-2" />
-        {isSignedIn && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
-              onPress={() => triggerSync(true)}
-              disabled={syncStatus === "syncing"}
-              className="mb-2"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              label="Hard Sync"
-              onPress={() => setShowHardSyncModal(true)}
-              className="mb-2"
-            />
-          </>
-        )}
-        <Button
-          variant="destructive"
-          size="sm"
-          label="Delete Data"
-          onPress={() => setShowDeleteModal(true)}
-        />
-      </Card>
-
-      <HardSyncModal visible={showHardSyncModal} onClose={() => setShowHardSyncModal(false)} />
-
-      <DeleteDataModal
-        visible={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        isSignedIn={!!isSignedIn}
-        deleteAccount={isSignedIn && user ? () => user.delete() : undefined}
-      />
 
       <Card className="mb-4">
         <CardTitle className="text-base">Theme</CardTitle>
@@ -321,6 +292,145 @@ export default function SettingsScreen() {
           scheduling.
         </Text>
       </Card>
+
+      <Card className="mb-4">
+        <CardTitle className="text-base">Data</CardTitle>
+        <Separator className="my-2" />
+        {isSignedIn && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              label={syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
+              onPress={() => triggerSync(true)}
+              disabled={syncStatus === "syncing"}
+              className="mb-2"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label="Hard Sync"
+              onPress={() => setShowHardSyncModal(true)}
+              className="mb-2"
+            />
+          </>
+        )}
+        {Platform.OS === "web" && userDb && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              label={
+                exportStatus === "exporting"
+                  ? "Exporting..."
+                  : exportStatus === "done"
+                    ? "Exported!"
+                    : "Export Data"
+              }
+              disabled={exportStatus === "exporting"}
+              onPress={async () => {
+                setExportStatus("exporting");
+                try {
+                  await exportUserData(userDb);
+                  setExportStatus("done");
+                  setTimeout(() => setExportStatus("idle"), 2000);
+                } catch {
+                  setExportStatus("error");
+                  alert("Export failed", "Could not export data. Please try again.");
+                  setTimeout(() => setExportStatus("idle"), 2000);
+                }
+              }}
+              className="mb-2"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              label={
+                importStatus === "importing"
+                  ? "Importing..."
+                  : importStatus === "done"
+                    ? `Imported ${importResult?.totalRows ?? 0} rows`
+                    : "Import Data"
+              }
+              disabled={importStatus === "importing"}
+              onPress={() => {
+                if (!fileInputRef.current) {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = ".json";
+                  input.style.display = "none";
+                  input.addEventListener("change", async () => {
+                    const file = input.files?.[0];
+                    if (!file) return;
+                    setImportStatus("importing");
+                    setImportProgress(0);
+                    setImportLabel("");
+                    try {
+                      const result = await importBackup(userDb, file, (pct, label) => {
+                        setImportProgress(pct);
+                        setImportLabel(label);
+                      });
+                      setImportResult(result);
+                      setImportStatus("done");
+                      if (result.failed.length > 0) {
+                        alert(
+                          "Partial import",
+                          `Imported ${result.succeeded.length} tables (${result.totalRows} rows).\nFailed: ${result.failed.map((f) => f.table).join(", ")}`,
+                        );
+                      }
+                    } catch (err) {
+                      setImportStatus("error");
+                      alert(
+                        "Import failed",
+                        err instanceof Error ? err.message : "Invalid backup file.",
+                      );
+                      setTimeout(() => setImportStatus("idle"), 2000);
+                    }
+                    input.value = "";
+                  });
+                  document.body.appendChild(input);
+                  fileInputRef.current = input;
+                }
+                fileInputRef.current.click();
+              }}
+              className="mb-2"
+            />
+            {importStatus === "importing" && (
+              <View className="mb-2">
+                <ProgressBar percent={importProgress} />
+                {!!importLabel && (
+                  <Text className="text-xs text-muted-foreground mt-1">{importLabel}</Text>
+                )}
+              </View>
+            )}
+            {importStatus === "done" && importResult && (
+              <Text className="text-xs text-muted-foreground mb-2">
+                {importResult.succeeded.length > 0 &&
+                  `Restored: ${importResult.succeeded.join(", ")}`}
+                {importResult.failed.length > 0 &&
+                  `\nFailed: ${importResult.failed.map((f) => f.table).join(", ")}`}
+                {importResult.skipped.length > 0 &&
+                  `\nSkipped (empty): ${importResult.skipped.join(", ")}`}
+              </Text>
+            )}
+          </>
+        )}
+        <Button
+          variant="destructive"
+          size="sm"
+          label="Delete Data"
+          onPress={() => setShowDeleteModal(true)}
+        />
+      </Card>
+
+      <HardSyncModal visible={showHardSyncModal} onClose={() => setShowHardSyncModal(false)} />
+
+      <DeleteDataModal
+        visible={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        isSignedIn={!!isSignedIn}
+        deleteAccount={isSignedIn && user ? () => user.delete() : undefined}
+      />
 
       <View className="items-center pt-4 pb-8 border-t border-border mt-auto">
         <Text className="text-[10px] font-medium text-muted-foreground">{getVersionString()}</Text>

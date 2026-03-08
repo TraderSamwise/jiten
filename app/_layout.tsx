@@ -14,6 +14,7 @@ import { UserDatabaseProvider } from "@/db/user-provider";
 import { SyncProvider, useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
+import { setRecoverySignedIn } from "@/components/WebDbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
 import { confirm } from "@/lib/confirm";
 import "../global.css";
@@ -66,6 +67,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [isLoaded]);
 
   const onAuthScreen = segments[0] === "sign-in" || segments[0] === "sign-up";
+
+  // Keep recovery screen aware of auth state (it renders outside AuthProvider)
+  useEffect(() => {
+    if (isLoaded) setRecoverySignedIn(!!isSignedIn);
+  }, [isLoaded, isSignedIn]);
 
   // Redirect signed-in users away from auth screens
   useEffect(() => {
