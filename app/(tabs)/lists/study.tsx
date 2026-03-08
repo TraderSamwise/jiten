@@ -57,6 +57,8 @@ import {
   simpleReviewFail,
   simpleInitCard,
   dateToSrsEpochDays,
+  endOfLogicalDayEpochDays,
+  endOfLogicalDayISO,
   SIMPLE_SRS_REQUIRED_CORRECT,
 } from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
@@ -1291,6 +1293,7 @@ function StudyScreen() {
         setSimpleSrsTotal(totalRow?.c ?? 0);
         setSimpleSrsLearned(learnedRow?.c ?? 0);
 
+        const dueCutoffDays = endOfLogicalDayEpochDays(dayResetHour);
         const nowDays = dateToSrsEpochDays();
         const reviewedIds = [...reviewedSrsIdsRef.current];
         const excludeClause =
@@ -1299,12 +1302,12 @@ function StudyScreen() {
         let srsRows: SrsCardRow[] = [];
 
         if (!mode || mode === "due") {
-          // Due cards only
+          // Due cards: everything due before end of logical day
           const dueRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards
              WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
              ORDER BY simple_n ASC`,
-            [listId, nowDays],
+            [listId, dueCutoffDays],
           );
 
           if (dueRows.length > 0) {
@@ -1371,16 +1374,16 @@ function StudyScreen() {
         }
       } else {
         // FSRS mode
-        const now = new Date().toISOString();
+        const dueCutoffISO = endOfLogicalDayISO(dayResetHour);
         const reviewedIds = [...reviewedSrsIdsRef.current];
         const excludeClause =
           reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
 
         if (!mode || mode === "due") {
-          // Due review cards only
+          // Due review cards: everything due before end of logical day
           const reviewRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
-            [listId, now],
+            [listId, dueCutoffISO],
           );
 
           if (reviewRows.length > 0) {
@@ -1416,7 +1419,7 @@ function StudyScreen() {
         } else if (mode === "early") {
           const earlyRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, now, ...reviewedIds],
+            [listId, dueCutoffISO, ...reviewedIds],
           );
           const items = await resolveCards(earlyRows);
           setQueueCards(items, 0);
@@ -1427,7 +1430,7 @@ function StudyScreen() {
           );
           const earlyRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, now, ...reviewedIds],
+            [listId, dueCutoffISO, ...reviewedIds],
           );
           const combined = [...newRows, ...earlyRows];
           const items = await resolveCards(combined);
@@ -1461,11 +1464,11 @@ function StudyScreen() {
       );
       newCount = newRow?.c ?? 0;
 
-      const nowDays = dateToSrsEpochDays();
+      const dueCutoffDays = endOfLogicalDayEpochDays(dayResetHour);
       const earlyRow = await userDb.getFirstAsync<{ c: number }>(
         `SELECT COUNT(*) as c FROM srs_cards
          WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n > ? AND deleted_at IS NULL${excludeClause}`,
-        [listId, nowDays, ...reviewedIds],
+        [listId, dueCutoffDays, ...reviewedIds],
       );
       earlyCount = earlyRow?.c ?? 0;
     } else {
@@ -1476,11 +1479,11 @@ function StudyScreen() {
       );
       newCount = newRow?.c ?? 0;
 
-      const now = new Date().toISOString();
+      const dueCutoffISO = endOfLogicalDayISO(dayResetHour);
       const earlyRow = await userDb.getFirstAsync<{ c: number }>(
         `SELECT COUNT(*) as c FROM srs_cards
          WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause}`,
-        [listId, now, ...reviewedIds],
+        [listId, dueCutoffISO, ...reviewedIds],
       );
       earlyCount = earlyRow?.c ?? 0;
     }

@@ -52,6 +52,40 @@ export function isSimpleDue(card: SrsCardRow, now?: Date): boolean {
 }
 
 /**
+ * Get the end of the current logical day in day-based epoch units.
+ * Cards due before this cutoff are shown as "due today".
+ *  */
+export function endOfLogicalDayEpochDays(resetHour: number, now?: Date): number {
+  return dateToSrsEpochDays(getEndOfLogicalDay(resetHour, now));
+}
+
+/**
+ * Get the end of the current logical day as an ISO string (for FSRS due queries).
+ * Uses the same logic as endOfLogicalDayEpochDays but returns a string for SQL comparison.
+ */
+export function endOfLogicalDayISO(resetHour: number, now?: Date): string {
+  return getEndOfLogicalDay(resetHour, now).toISOString();
+}
+
+/**
+ * Get the end of the current logical day as a Date.
+ * If now is before resetHour, the logical day ends at resetHour today.
+ * If now is at or after resetHour, the logical day ends at resetHour tomorrow.
+ * Uses local time — timezone-agnostic (traveling shifts the cutoff naturally).
+ */
+export function getEndOfLogicalDay(resetHour: number, now?: Date): Date {
+  const ref = now ?? new Date();
+  const cutoff = new Date(ref);
+  if (ref.getHours() < resetHour) {
+    cutoff.setHours(resetHour, 0, 0, 0);
+  } else {
+    cutoff.setDate(cutoff.getDate() + 1);
+    cutoff.setHours(resetHour, 0, 0, 0);
+  }
+  return cutoff;
+}
+
+/**
  * Process a correct/easy answer for a card that has reached the graduation
  * threshold (3 correct in a row). Returns updated simple SRS fields.
  *
