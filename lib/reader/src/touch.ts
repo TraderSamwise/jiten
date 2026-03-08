@@ -2,7 +2,13 @@ import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
-import { nextPage, prevPage, expandPageForHighlight, resetPageShift } from "./pagination";
+import {
+  nextPage,
+  prevPage,
+  expandPageForHighlight,
+  contractPageForHighlight,
+  resetPageShift,
+} from "./pagination";
 
 declare const window: Window & {
   __READER_CONFIG__: { scrollPosition: number };
@@ -15,6 +21,7 @@ export function setupTouchHandlers(): void {
   let touchStartTime = 0;
   let dragStartAbs = -1;
   let dragEndAbs = -1;
+  let prevTouchX = 0;
 
   const DECIDE_THRESHOLD = 15;
 
@@ -23,6 +30,7 @@ export function setupTouchHandlers(): void {
     function (e: TouchEvent) {
       resetPageShift();
       touchStartX = e.touches[0].clientX;
+      prevTouchX = touchStartX;
       touchStartY = e.touches[0].clientY;
       touchStartTime = Date.now();
       dragStartAbs = -1;
@@ -65,12 +73,17 @@ export function setupTouchHandlers(): void {
       }
 
       if (state.dragMode === "selecting") {
-        // Expand page if finger is near the left edge (end of page in vertical-rl)
+        // Peek page only if finger is in edge zone AND moving toward that edge
         const rect = state.contentEl!.getBoundingClientRect();
         const fontSize = parseFloat(getComputedStyle(state.contentEl!).fontSize);
-        const edgeZone = rect.left + 16 + fontSize * 1.5;
-        if (cx < edgeZone) {
+        const edgeZone = 16 + fontSize * 1.5;
+        const PEEK_THRESHOLD = 10;
+        if (cx < rect.left + edgeZone && prevTouchX - cx > PEEK_THRESHOLD) {
           expandPageForHighlight();
+          prevTouchX = cx;
+        } else if (cx > rect.right - edgeZone && cx - prevTouchX > PEEK_THRESHOLD) {
+          contractPageForHighlight();
+          prevTouchX = cx;
         }
 
         const endCaret = resolveCaretAt(cx, cy);
