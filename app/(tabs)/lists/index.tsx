@@ -80,7 +80,7 @@ export default function ListsIndexScreen() {
       await loadLists();
       return;
     }
-    if (isDirty()) {
+    if (isDirty) {
       setShowSyncChoice(true);
       return;
     }
