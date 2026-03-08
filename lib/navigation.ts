@@ -2,6 +2,7 @@ import React, { useCallback } from "react";
 import { Platform } from "react-native";
 import { useRouter, useNavigation, usePathname } from "expo-router";
 import { HeaderBackButton } from "@react-navigation/elements";
+import { StackActions } from "@react-navigation/native";
 
 /** Transparent header background on web so the navbar backdrop shows through */
 export const webHeaderStyle =
@@ -73,23 +74,14 @@ export function useSafeGoBack(fallback: string) {
       return;
     }
 
-    // Web: never use router.back() — avoid cross-tab browser history
-    if (!state || state.index === 0) {
+    // Web: avoid router.back() which uses browser history and can cross tabs.
+    // Instead, dispatch a POP to the stack navigator — this updates the
+    // navigation state directly and Expo Router syncs the URL forward.
+    if (state && state.index > 0) {
+      navigation.dispatch(StackActions.pop());
+    } else {
       router.replace(fallback as any);
-      return;
     }
-
-    const prevRoute = state.routes[state.index - 1];
-    const targetPath = buildRoutePath(prevRoute, fallback);
-    const currentRoute = state.routes[state.index];
-    const currentPath = buildRoutePath(currentRoute, fallback);
-
-    if (targetPath === currentPath) {
-      // Phantom duplicate — already at target, no-op
-      return;
-    }
-
-    router.replace(targetPath as any);
   }, [router, navigation, fallback]);
 }
 
