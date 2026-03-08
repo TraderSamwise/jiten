@@ -60,6 +60,25 @@ import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
 
+/** Does this book's raw content contain source furigana? */
+function bookHasSourceFurigana(rawContent: string): boolean {
+  return /<ruby[\s>]/.test(rawContent) || hasAozoraMarkup(rawContent);
+}
+
+/** Should furigana layout be active? Accounts for source furigana + "default" toggle. */
+function hasFuriganaActive(
+  levels: Record<FuriganaLevel, boolean>,
+  bookHasSource: boolean,
+): boolean {
+  if (bookHasSource && levels.default) return true;
+  return Object.entries(levels).some(([k, v]) => k !== "default" && v);
+}
+
+/** Strip <ruby> tags keeping only base text (removes <rt> content) */
+function stripRubyTags(html: string): string {
+  return html.replace(/<ruby>([\s\S]*?)<rt>[\s\S]*?<\/rt><\/ruby>/g, "$1");
+}
+
 const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
 
@@ -368,7 +387,7 @@ export default function BookReaderScreen() {
   const isDark = colorScheme === "dark";
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
-  const { triggerSync, markDirty } = useSync();
+  const { markDirty } = useSync();
   const scrollDirtyRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
@@ -399,6 +418,8 @@ export default function BookReaderScreen() {
   // Furigana refs
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
   const furiganaLevelsRef = useRef(furiganaLevels);
+  const hasSourceFuriganaRef = useRef(false);
+  const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
 
   useEffect(() => {
     furiganaLevelsRef.current = furiganaLevels;
@@ -420,7 +441,9 @@ export default function BookReaderScreen() {
       const model = modelRef.current;
       if (!model || !dictDb) return;
       const isAozora = isAozoraRef.current;
-      const hasFuri = kanjiSetRef.current != null;
+      const bookHasSource = hasSourceFuriganaRef.current;
+      const levels = furiganaLevelsRef.current;
+      const hasFuri = kanjiSetRef.current != null || hasFuriganaActive(levels, bookHasSource);
 
       const screen = Dimensions.get("window");
       const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
@@ -436,7 +459,12 @@ export default function BookReaderScreen() {
         ? parseAozoraToHtml(slice.text, { strip: false })
         : plainTextToHtml(slice.text);
 
-      if (hasFuri && kanjiSetRef.current) {
+      // Strip source ruby if ALL furigana is disabled
+      if (isAozora && !hasFuri) {
+        sliceHtml = stripRubyTags(sliceHtml);
+      }
+
+      if (kanjiSetRef.current) {
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
         if (surfaces.length > 0) {
           const readings = await resolveFuriganaBatch(surfaces, dictDb);
@@ -490,15 +518,26 @@ export default function BookReaderScreen() {
         return;
       }
 
+      // Detect source furigana
+      const hasSource = bookHasSourceFurigana(b.rawContent);
+      hasSourceFuriganaRef.current = hasSource;
+      setHasSourceFurigana(hasSource);
+
       // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
       const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
 
       if (hasRubyTags) {
         // Pre-formatted HTML — send entire content (no slicing)
-        const readerHtml = generateReaderHtml(b.rawContent, {
+        const hasFuri = hasFuriganaActive(furiganaLevels, true);
+        let content = b.rawContent;
+        if (!hasFuri) {
+          content = stripRubyTags(content);
+        }
+        const readerHtml = generateReaderHtml(content, {
           fontSize: b.fontSize,
           isDark,
           scrollPosition: b.scrollPosition,
+          hasFurigana: hasFuri,
           pageAnimations,
         });
         setHtml(readerHtml);
@@ -510,7 +549,7 @@ export default function BookReaderScreen() {
         const model = parseBookContent(stripped, format);
 
         const screen = Dimensions.get("window");
-        const hasFuri = Object.values(furiganaLevels).some(Boolean);
+        const hasFuri = hasFuriganaActive(furiganaLevels, isAozora);
         const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
 
         // Legacy conversion: scroll_position → char_offset
@@ -543,8 +582,14 @@ export default function BookReaderScreen() {
           ? parseAozoraToHtml(slice.text, { strip: false })
           : plainTextToHtml(slice.text);
 
-        // Apply furigana if any levels are enabled
-        if (hasFuri && dictDb) {
+        // Strip source ruby if ALL furigana is disabled
+        if (isAozora && !hasFuri) {
+          sliceHtml = stripRubyTags(sliceHtml);
+        }
+
+        // Apply JLPT furigana if any non-default levels are enabled
+        const hasJlptFuri = Object.entries(furiganaLevels).some(([k, v]) => k !== "default" && v);
+        if (hasJlptFuri && dictDb) {
           const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
           kanjiSetRef.current = kanjiSet;
           const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
@@ -583,11 +628,11 @@ export default function BookReaderScreen() {
   // Re-apply furigana when levels change
   useEffect(() => {
     if (!book || !dictDb || !modelRef.current || html === null) return;
-    const hasFuri = Object.values(furiganaLevels).some(Boolean);
+    const hasJlptFuri = Object.entries(furiganaLevels).some(([k, v]) => k !== "default" && v);
 
     (async () => {
-      // Build kanji set (or clear it)
-      if (hasFuri) {
+      // Build kanji set (or clear it) — only for JLPT levels, not "default"
+      if (hasJlptFuri) {
         const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
         kanjiSetRef.current = kanjiSet;
       } else {
@@ -600,7 +645,7 @@ export default function BookReaderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [furiganaLevels, dictDb]);
 
-  // Save char offset on unmount + trigger sync if scroll position changed
+  // Save char offset on unmount
   useEffect(() => {
     return () => {
       if (userDb && bookId && scrollPosRef.current > 0) {
@@ -610,7 +655,6 @@ export default function BookReaderScreen() {
           bookId,
         ]);
       }
-      if (scrollDirtyRef.current) triggerSync(true);
     };
   }, [userDb, bookId]);
 
@@ -721,13 +765,19 @@ export default function BookReaderScreen() {
           const nextStart = globalLastChar + 1;
           if (nextStart < model.totalChars) {
             // Forward prefetch
-            const hasFuri = kanjiSetRef.current != null;
+            const hasFuri =
+              kanjiSetRef.current != null ||
+              hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
             let nextHtml = isAozoraRef.current
               ? parseAozoraToHtml(nextSlice.text, { strip: false })
               : plainTextToHtml(nextSlice.text);
+            // Strip source ruby if ALL furigana is disabled
+            if (isAozoraRef.current && !hasFuri) {
+              nextHtml = stripRubyTags(nextHtml);
+            }
             if (kanjiSetRef.current && dictDb) {
               const surfaces = extractSurfacesFromHtml(nextHtml, kanjiSetRef.current);
               if (surfaces.length > 0) {
@@ -760,7 +810,9 @@ export default function BookReaderScreen() {
           const localPage = msg.localPage ?? 1;
           if (localPage <= 2 && sliceCharOffsetRef.current > 0 && !backPrefetchingRef.current) {
             backPrefetchingRef.current = true;
-            const hasFuri = kanjiSetRef.current != null;
+            const hasFuri =
+              kanjiSetRef.current != null ||
+              hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const backStart = Math.max(0, sliceCharOffsetRef.current - cpp * 10);
@@ -770,6 +822,10 @@ export default function BookReaderScreen() {
               let backHtml = isAozoraRef.current
                 ? parseAozoraToHtml(backSlice.text, { strip: false })
                 : plainTextToHtml(backSlice.text);
+              // Strip source ruby if ALL furigana is disabled
+              if (isAozoraRef.current && !hasFuri) {
+                backHtml = stripRubyTags(backHtml);
+              }
               if (kanjiSetRef.current && dictDb) {
                 const surfaces = extractSurfacesFromHtml(backHtml, kanjiSetRef.current);
                 if (surfaces.length > 0) {
@@ -819,7 +875,9 @@ export default function BookReaderScreen() {
     (newSize: number) => {
       const rounded = Math.round(newSize);
       setFontSize(rounded);
-      const hasFuri = kanjiSetRef.current != null;
+      const hasFuri =
+        kanjiSetRef.current != null ||
+        hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
       const lineHeight = hasFuri ? `${rounded * 2}px` : `${Math.round(rounded * 1.5)}px`;
       readerRef.current?.postMessage(
         JSON.stringify({ type: "setFontSize", size: rounded, lineHeight }),
@@ -913,6 +971,9 @@ export default function BookReaderScreen() {
                   <View className="flex-row flex-wrap justify-center gap-1.5">
                     {(
                       [
+                        ...(hasSourceFurigana
+                          ? ([["default", "Default"]] as [FuriganaLevel, string][])
+                          : []),
                         ["n5", "N5"],
                         ["n4", "N4"],
                         ["n3", "N3"],
