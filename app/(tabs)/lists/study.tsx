@@ -89,7 +89,7 @@ import type { Card as FsrsCard } from "ts-fsrs";
 
 const CONFUSION_COOLDOWN_HOURS = 24;
 
-const NEW_CARD_BATCH_SIZE = 5;
+const NEW_CARD_BATCH_SIZE = 10;
 const CARD_PEEK = 24;
 const CARD_GAP = 16;
 const SWIPE_THRESHOLD = 50;
@@ -996,6 +996,8 @@ function StudyScreen() {
   const [simpleSrsTotal, setSimpleSrsTotal] = useState(0);
   // Simple SRS: track correct-in-a-row per card (need 3 to graduate)
   const simpleCorrectCountRef = useRef(new Map<string, number>());
+  // Simple SRS: track cards that completed this session (graduated or passed review)
+  const completedSrsIdsRef = useRef(new Set<string>());
 
   // FSRS learning timers: cardId → { timer, dueDate }
   const pendingTimersRef = useRef(
@@ -1249,6 +1251,7 @@ function StudyScreen() {
     setCursor(0);
     setOriginalCardCount(items.length);
     setDueAtStart(dueCount);
+    completedSrsIdsRef.current.clear();
     if (items.length === 0) {
       setSessionPhase("done");
     } else {
@@ -1461,32 +1464,41 @@ function StudyScreen() {
             [listId, dueCutoffDays],
           );
 
-          if (dueRows.length > 0) {
-            srsRows = dueRows;
-            const items = await resolveCards(srsRows);
-            setQueueCards(items, dueRows.length);
-          } else {
-            // No due cards — check for new cards (fresh deck edge case)
-            const newCount = await userDb.getFirstAsync<{ c: number }>(
-              "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL",
-              [listId],
-            );
-            if ((newCount?.c ?? 0) > 0 && reviewedCount === 0) {
-              // Fresh deck: load new cards directly, no checkpoint
-              const newRows = await userDb.getAllAsync<SrsCardRow>(
-                `${srsSelectClause} FROM srs_cards
-                 WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
-                 ORDER BY created_at ASC LIMIT ?`,
-                [listId, NEW_CARD_BATCH_SIZE],
-              );
-              const items = await resolveCards(newRows);
-              setQueueCards(items, 0);
+          // Also load new cards to mix into the session (dynamic refill)
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
+             ORDER BY created_at ASC LIMIT ?`,
+            [listId, NEW_CARD_BATCH_SIZE],
+          );
+
+          if (dueRows.length > 0 || newRows.length > 0) {
+            // Interleave new cards among due cards (every ~N due cards, insert a new card)
+            const combined: SrsCardRow[] = [];
+            if (newRows.length > 0 && dueRows.length > 0) {
+              const interval = Math.max(1, Math.floor(dueRows.length / newRows.length));
+              let newIdx = 0;
+              for (let i = 0; i < dueRows.length; i++) {
+                combined.push(dueRows[i]);
+                if ((i + 1) % interval === 0 && newIdx < newRows.length) {
+                  combined.push(newRows[newIdx++]);
+                }
+              }
+              // Append remaining new cards
+              while (newIdx < newRows.length) {
+                combined.push(newRows[newIdx++]);
+              }
             } else {
-              // Enter checkpoint or done
-              setLoading(false);
-              await enterCheckpoint();
-              return;
+              combined.push(...dueRows, ...newRows);
             }
+            srsRows = combined;
+            const items = await resolveCards(srsRows);
+            setQueueCards(items, combined.length);
+          } else {
+            // No due cards and no new cards — enter checkpoint or done
+            setLoading(false);
+            await enterCheckpoint();
+            return;
           }
         } else if (mode === "new") {
           const newRows = await userDb.getAllAsync<SrsCardRow>(
@@ -1846,6 +1858,8 @@ function StudyScreen() {
       const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
       if (!graduated) {
         shouldReQueue = true;
+      } else {
+        completedSrsIdsRef.current.add(card.id);
       }
     } else if (card) {
       const rating = isLongPress ? Rating.Easy : Rating.Good;
@@ -2174,13 +2188,19 @@ function StudyScreen() {
       graduated = true;
       simpleCorrectCountRef.current.delete(card.id);
     } else {
-      // CORRECT: increment correct count, check if reached graduation threshold
+      // CORRECT: behavior depends on card state
       if (isNew) {
         // First time seeing this card -- initialize and start counting
         updates = simpleInitCard();
         simpleCorrectCountRef.current.set(card.id, 1);
         // Not graduated yet (need 3 correct)
+      } else if (card.simpleStage === 1) {
+        // Already graduated, due for review -- pass once → done
+        updates = simpleGraduate(card, false, card.lapses > 0);
+        graduated = true;
+        simpleCorrectCountRef.current.delete(card.id);
       } else {
+        // Learning/lapsed card (stage 0) -- need 3 correct to graduate
         const count = (simpleCorrectCountRef.current.get(card.id) ?? 0) + 1;
         simpleCorrectCountRef.current.set(card.id, count);
 
@@ -2192,7 +2212,7 @@ function StudyScreen() {
         } else {
           // Still learning -- keep current state, card will be re-queued
           updates = {
-            simpleStage: card.simpleStage ?? 0,
+            simpleStage: 0,
             simpleN: 0, // immediately due
             simpleInterval: card.simpleInterval ?? 0,
           };
@@ -2381,8 +2401,9 @@ function StudyScreen() {
           card.id,
         ],
       );
-      // Reset correct count for this card on undo
+      // Reset correct count and completed status for this card on undo
       simpleCorrectCountRef.current.delete(card.id);
+      completedSrsIdsRef.current.delete(card.id);
       if (studyCard.wasNewSimpleSrs) {
         setSimpleSrsLearned((c) => Math.max(0, c - 1));
       }
@@ -2808,12 +2829,11 @@ function StudyScreen() {
   }
 
   const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
-  const progress =
-    dueAtStart > 0
-      ? Math.min((ratedCount / dueAtStart) * 100, 100)
-      : originalCardCount > 0
-        ? (ratedCount / originalCardCount) * 100
-        : 0;
+  // Simple SRS: count completed cards (graduated/passed review), not just rated
+  const useCompletedCount = list?.flashcardMode === "simple_srs";
+  const completedCount = useCompletedCount ? completedSrsIdsRef.current.size : ratedCount;
+  const progressDenom = useCompletedCount ? dueAtStart : dueAtStart || originalCardCount;
+  const progress = progressDenom > 0 ? Math.min((completedCount / progressDenom) * 100, 100) : 0;
   const allDueComplete = isSrsMode && progress >= 100;
 
   return (
@@ -2838,7 +2858,7 @@ function StudyScreen() {
           {isBrowsingHistory
             ? `\u2190 ${cursor + 1} / ${cards.length}`
             : isSrsMode
-              ? `${ratedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
+              ? `${completedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
               : `${ratedCount + 1} / ${originalCardCount}`}
         </Text>
         <Pressable onPress={handleGear} className="p-2">

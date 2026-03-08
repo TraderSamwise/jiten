@@ -1,18 +1,19 @@
 /**
  * Simple SRS engine.
  *
- * Algorithm:
+ * Model:
  * - Three actions: wrong (0), correct (1), easy (2)
  * - `n`: due date as days since 2001-01-01 (Mac/Core Foundation epoch), fractional
  * - `l`: interval in days until next review
  * - `s`: stage — 0 = learning/lapsed, 1 = graduated
  * - Due date = n (directly stored, not computed)
- * - Correct multiplier: ×1.9, Easy multiplier: ×2.9
+ * - Correct multiplier: ×1.9, Easy multiplier: ×2.6125 (1.9 × 1.375)
  * - Fail: preserve interval, reset correctCount, set n=0 (immediately due)
- * - Re-graduation (3 correct after lapse): interval ×0.5, clamp [1/3, 6.0]
- * - Normal graduation (never lapsed): interval ×1.9 (or ×2.9), clamp [1/3, 365]
- * - Need 3 correct in a row to graduate out of learning
- * - Initial interval: 0.8333 days (~20 hours)
+ * - Re-graduation (3 correct after lapse): interval ×0.5, clamp [1/3, 365]
+ * - Normal graduation (never lapsed): interval ×1.9 (or ×2.6125), clamp [1/3, 365]
+ * - Graduated cards due for review: pass once → done (recalculate interval)
+ * - New/learning cards: need 3 correct in a row to graduate
+ * - Initial interval: 0.3333 days (~8 hours)
  * - Max interval: 365 days
  */
 
@@ -20,12 +21,11 @@ import type { SrsCardRow } from "@/db/types";
 
 const MAC_EPOCH_MS = new Date("2001-01-01T00:00:00Z").getTime();
 const CORRECT_MULTIPLIER = 1.9;
-const EASY_MULTIPLIER = 2.9;
+const EASY_MULTIPLIER = 1.9 * 1.375; // 2.6125
 const MAX_INTERVAL = 365;
 const MIN_INTERVAL = 1 / 3; // 0.3333 days ≈ 8 hours
-const INITIAL_INTERVAL = 5 / 6; // 0.8333 days ≈ 20 hours
-const LAPSE_REGRAD_MAX = 6; // max interval after re-graduating from a lapse
-const REQUIRED_CORRECT = 3; // correct answers needed to graduate
+const INITIAL_INTERVAL = 1 / 3; // 0.3333 days ≈ 8 hours
+const REQUIRED_CORRECT = 3; // correct answers needed to graduate from learning
 
 /** Convert a JS Date to the app's day-based epoch (days since 2001-01-01). */
 export function dateToSrsEpochDays(date: Date = new Date()): number {
@@ -106,9 +106,9 @@ export function simpleGraduate(
   let newInterval: number;
 
   if (hasLapsed) {
-    // Re-graduating after a lapse: halve the interval, clamp [1/3, 6.0]
+    // Re-graduating after a lapse: halve the interval, clamp [1/3, 365]
     const currentInterval = card.simpleInterval ?? INITIAL_INTERVAL;
-    newInterval = Math.max(MIN_INTERVAL, Math.min(currentInterval * 0.5, LAPSE_REGRAD_MAX));
+    newInterval = Math.max(MIN_INTERVAL, Math.min(currentInterval * 0.5, MAX_INTERVAL));
   } else {
     // Normal pass: multiply interval
     const currentInterval = card.simpleInterval ?? INITIAL_INTERVAL;
