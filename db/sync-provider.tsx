@@ -38,7 +38,27 @@ interface SyncContextType {
 }
 
 const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
-const SYNC_INTERVAL_MS = 120_000;
+export const SYNC_INTERVAL_MS = 30_000; // Sync loop cadence (30s)
+export const FORCE_SYNC_EVERY_N = 10; // Every Nth tick, sync unconditionally (10 × 30s = 5 min)
+
+/** Pure decision: should the sync loop fire on this tick? */
+export function shouldSyncOnTick(tick: number, isDirty: boolean, forceEveryN: number): boolean {
+  return isDirty || tick >= forceEveryN;
+}
+
+/** Pure decision: what should happen on app state change? */
+export function getStateChangeAction(
+  state: "active" | "background",
+  isDirty: boolean,
+  elapsedMs: number,
+  syncIntervalMs: number,
+): "visible" | "silent" | "skip" {
+  if (state === "active") {
+    return isDirty || elapsedMs >= syncIntervalMs ? "visible" : "skip";
+  }
+  // Going to background
+  return isDirty ? "silent" : "skip";
+}
 
 const SyncContext = createContext<SyncContextType>({
   syncStatus: "disabled",
@@ -84,8 +104,10 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   const syncingRef = useRef(false);
   const tursoRef = useRef<Client | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loopTickRef = useRef(0);
   const dirtyRef = useRef(false);
   const isOfflineRef = useRef(false);
+  const lastSyncCompletedRef = useRef(0);
   const [isSilentSync, setIsSilentSync] = useState(false);
   // Len-1 sync queue: if a sync is requested while one is in progress, queue it.
   // If the queued entry was ever non-silent, it stays non-silent (sticky).
@@ -221,10 +243,14 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
   // Helper to reset the periodic interval timer (called after successful sync)
   const resetInterval = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(
-      () => triggerSyncRef.current({ silent: true }),
-      SYNC_INTERVAL_MS,
-    );
+    loopTickRef.current = 0;
+    intervalRef.current = setInterval(() => {
+      loopTickRef.current += 1;
+      if (shouldSyncOnTick(loopTickRef.current, dirtyRef.current, FORCE_SYNC_EVERY_N)) {
+        loopTickRef.current = 0;
+        triggerSyncRef.current({ silent: true });
+      }
+    }, SYNC_INTERVAL_MS);
   }, []);
 
   // We need a ref to triggerSync so resetInterval and the interval callback
@@ -272,7 +298,8 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           setSyncStatus("idle");
           setLastError(null);
           setLastSyncAt(new Date().toISOString());
-          // Reset the periodic interval so 2min countdown starts fresh
+          lastSyncCompletedRef.current = Date.now();
+          // Reset the periodic interval so 1min countdown starts fresh
           resetInterval();
           // Reload in-memory stores if data was pulled from remote
           if (result.pulled > 0) {
@@ -318,37 +345,44 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
     triggerSyncRef.current = triggerSync;
   }, [triggerSync]);
 
-  // Foreground listener — clear offline flag and retry sync
+  // Foreground/background listener
   useEffect(() => {
     if (!isRealUser || !reconciled) return;
 
+    const handleStateChange = (state: "active" | "background") => {
+      if (state === "active") isOfflineRef.current = false;
+      const elapsed = Date.now() - lastSyncCompletedRef.current;
+      const action = getStateChangeAction(state, dirtyRef.current, elapsed, SYNC_INTERVAL_MS);
+      if (action === "visible") triggerSync();
+      else if (action === "silent") triggerSync({ silent: true });
+    };
+
     if (Platform.OS === "web") {
       const onVisibility = () => {
-        if (document.visibilityState === "visible") {
-          isOfflineRef.current = false;
-          triggerSync();
-        }
+        handleStateChange(document.visibilityState === "visible" ? "active" : "background");
       };
       document.addEventListener("visibilitychange", onVisibility);
       return () => document.removeEventListener("visibilitychange", onVisibility);
     } else {
-      const sub = AppState.addEventListener("change", (state) => {
-        if (state === "active") {
-          isOfflineRef.current = false;
-          triggerSync();
-        }
+      const sub = AppState.addEventListener("change", (next) => {
+        if (next === "active") handleStateChange("active");
+        else if (next === "background" || next === "inactive") handleStateChange("background");
       });
       return () => sub.remove();
     }
   }, [triggerSync, isRealUser, reconciled]);
 
-  // Periodic sync every 2 minutes
+  // Periodic sync loop (30s). Dirty-gated, with unconditional sync every Nth tick.
   useEffect(() => {
     if (!isRealUser || !userDb || !reconciled) return;
-    intervalRef.current = setInterval(
-      () => triggerSyncRef.current({ silent: true }),
-      SYNC_INTERVAL_MS,
-    );
+    loopTickRef.current = 0;
+    intervalRef.current = setInterval(() => {
+      loopTickRef.current += 1;
+      if (shouldSyncOnTick(loopTickRef.current, dirtyRef.current, FORCE_SYNC_EVERY_N)) {
+        loopTickRef.current = 0;
+        triggerSyncRef.current({ silent: true });
+      }
+    }, SYNC_INTERVAL_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };

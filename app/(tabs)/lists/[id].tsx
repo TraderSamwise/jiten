@@ -119,12 +119,23 @@ export default function ListDetailScreen() {
     }
   }, [list?.name]);
 
+  // Initial load (with spinner)
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
       loadEntries();
     });
     return () => task.cancel();
-  }, [userDb, dictDb, id, lastSyncAt]);
+  }, [userDb, dictDb, id]);
+
+  // Silent refresh after sync (no spinner — entries already visible)
+  const prevSyncAt = useRef(lastSyncAt);
+  useEffect(() => {
+    if (prevSyncAt.current === lastSyncAt) return;
+    prevSyncAt.current = lastSyncAt;
+    if (lastSyncAt && items.length > 0) {
+      loadEntriesFresh(true);
+    }
+  }, [lastSyncAt]);
 
   useFocusEffect(
     useCallback(() => {
@@ -208,9 +219,9 @@ export default function ListDetailScreen() {
     await loadEntriesFresh();
   }
 
-  async function loadEntriesFresh() {
+  async function loadEntriesFresh(silent = false) {
     if (!userDb || !dictDb || !id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
     const rows = await userDb.getAllAsync<ListEntryRow>(
