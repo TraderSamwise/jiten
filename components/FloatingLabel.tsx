@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useContainerWidth } from "@/lib/use-container-width";
+import { viewportPosition } from "@/lib/viewport-position";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,7 +50,7 @@ export function FloatingLabel({ text, screenX, screenY, onDone }: FloatingLabelP
   return (
     <Animated.View
       style={[
-        { position: "absolute", top: screenY - 12, left: clampedLeft, zIndex: 50 },
+        { position: viewportPosition, top: screenY - 12, left: clampedLeft, zIndex: 50 },
         animatedStyle,
       ]}
       pointerEvents="none"
