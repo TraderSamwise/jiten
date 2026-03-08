@@ -14,7 +14,7 @@ import { UserDatabaseProvider } from "@/db/user-provider";
 import { SyncProvider, useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
-import { setRecoverySignedIn } from "@/components/WebDbRecoveryScreen";
+import { setRecoverySignedIn } from "@/components/DbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
 import { confirm } from "@/lib/confirm";
 import "../global.css";
