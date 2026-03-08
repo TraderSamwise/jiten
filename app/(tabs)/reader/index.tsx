@@ -39,6 +39,7 @@ function parseBookRow(row: any): Book {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastReadAt: row.last_read_at ?? null,
+    saved: row.saved ?? 1,
   };
 }
 
@@ -57,7 +58,7 @@ export default function LibraryScreen() {
     if (!userDb) return;
     await seedDefaultBookIfNeeded(userDb);
     const rows = await userDb.getAllAsync<any>(
-      "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
+      "SELECT * FROM books WHERE deleted_at IS NULL AND saved = 1 ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
     );
     setBooks(rows.map(parseBookRow));
   }, [userDb, lastSyncAt]);
@@ -67,7 +68,7 @@ export default function LibraryScreen() {
       await loadBooks();
       return;
     }
-    if (isDirty()) {
+    if (isDirty) {
       setShowSyncChoice(true);
       return;
     }

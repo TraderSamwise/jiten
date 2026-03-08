@@ -30,6 +30,12 @@ import {
   BarChart3,
   User,
   Flag,
+  RefreshCw,
+  Cloud,
+  CloudSync,
+  CloudUpload,
+  CloudBackup,
+  Download,
 } from "lucide-react-native";
 
 // Map className → style with color extraction so NativeWind
@@ -65,6 +71,12 @@ const icons = [
   BarChart3,
   User,
   Flag,
+  RefreshCw,
+  Cloud,
+  CloudSync,
+  CloudUpload,
+  CloudBackup,
+  Download,
 ];
 
 for (const icon of icons) {
@@ -107,4 +119,10 @@ export {
   BarChart3,
   User,
   Flag,
+  RefreshCw,
+  Cloud,
+  CloudSync,
+  CloudUpload,
+  CloudBackup,
+  Download,
 };
