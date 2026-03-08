@@ -6,7 +6,7 @@ import { focusAtom } from "jotai-optics";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
-export type FuriganaLevel = "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
+export type FuriganaLevel = "default" | "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
 export type ConnectGameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
@@ -16,6 +16,7 @@ export type ConnectBubbleKinds = { kanji: boolean; reading: boolean; meaning: bo
 // ─── Defaults ───
 
 export const defaultFuriganaLevels: Record<FuriganaLevel, boolean> = {
+  default: true,
   n5: false,
   n4: false,
   n3: false,

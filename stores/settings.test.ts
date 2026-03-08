@@ -37,6 +37,7 @@ describe("defaultSettings", () => {
       typingShowPitch: true,
       typingPlayAudio: false,
       readerFuriganaLevels: {
+        default: true,
         all: false,
         n1: false,
         n2: false,
