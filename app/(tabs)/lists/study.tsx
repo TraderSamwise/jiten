@@ -78,7 +78,6 @@ import {
 import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
 import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
 import { useSync } from "@/db/sync-provider";
-import { Banner } from "@/components/Banner";
 import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
 import type { Card as FsrsCard } from "ts-fsrs";
 
@@ -920,21 +919,11 @@ function StudyScreen() {
   const { webBgStyle } = useWebBackdrop();
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
-  const { triggerSync, markDirty } = useSync();
+  const { markDirty } = useSync();
   const sessionDirtyRef = useRef(false);
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
   const setLists = useListsStore((s) => s.setLists);
   const updateList = useListsStore((s) => s.updateList);
-  const [syncWarning, setSyncWarning] = useState(false);
-
-  // Sync on unmount if any SRS updates were made during this session
-  useEffect(
-    () => () => {
-      if (sessionDirtyRef.current) triggerSync(true);
-    },
-    [],
-  );
-
   const [localList, setLocalList] = useState<typeof storeList>(undefined);
   const list = storeList ?? localList;
   const flipAnimationEnabled = useAtomValue(flashcardFlipAnimationAtom);
@@ -1137,15 +1126,7 @@ function StudyScreen() {
 
   useEffect(() => {
     if (!dictDb || !userDb || !list) return;
-    // Attempt sync before loading queue (5s timeout), non-blocking
-    const syncAttempt = Promise.race([
-      triggerSync(),
-      new Promise((r) => setTimeout(r, 5000)),
-    ]).catch(() => {});
-    syncAttempt.then((result: any) => {
-      if (result && !result.ok) setSyncWarning(true);
-      loadQueue();
-    });
+    loadQueue();
   }, [dictDb, userDb, list?.id]);
 
   const srsSelectClause = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
@@ -2411,13 +2392,6 @@ function StudyScreen() {
 
   return (
     <CustomHeaderScreen>
-      <Banner
-        message="Couldn't sync — reviewing with local data"
-        severity="warning"
-        visible={syncWarning}
-        autoDismissMs={4000}
-        onDismiss={() => setSyncWarning(false)}
-      />
       {/* Header */}
       <View
         className={`flex-row items-center justify-between px-4 py-2 ${Platform.OS === "web" ? "border-b border-border" : ""}`}

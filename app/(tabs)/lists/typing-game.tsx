@@ -339,16 +339,8 @@ export default function TypingGameScreen() {
   const { webBgStyle } = useWebBackdrop();
   const userDb = useUserDb();
   const { dictDb, audioDb } = useDatabase();
-  const { triggerSync, markDirty } = useSync();
+  const { markDirty } = useSync();
   const sessionDirtyRef = useRef(false);
-
-  // Sync on unmount if any practice events were logged during this session
-  useEffect(
-    () => () => {
-      if (sessionDirtyRef.current) triggerSync(true);
-    },
-    [],
-  );
 
   const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");

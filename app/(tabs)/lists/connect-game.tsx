@@ -41,7 +41,7 @@ import type { TimedDuration } from "@/lib/connect-game/types";
 export default function ConnectGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const goBack = useSafeGoBack("/lists");
-  const { triggerSync, markDirty } = useSync();
+  const { markDirty } = useSync();
   const sessionDirtyRef = useRef(false);
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
@@ -71,14 +71,6 @@ export default function ConnectGameScreen() {
 
   // Word filter (SRS-based counts + filtering)
   const wordFilter = useWordFilter(listId);
-
-  // Sync on unmount if score was saved during this session
-  useEffect(
-    () => () => {
-      if (sessionDirtyRef.current) triggerSync(true);
-    },
-    [],
-  );
 
   // ─── Load high score ───
 
