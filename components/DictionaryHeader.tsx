@@ -67,14 +67,9 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
     }
   }, [navigation, router]);
 
-  const navigateToSearch = () => {
-    if (isIndex) return;
-    popToRoot();
-  };
-
   const handleSubmit = () => {
     if (!isIndex && query.trim()) {
-      navigateToSearch();
+      popToRoot();
     }
   };
 
@@ -92,7 +87,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
     >
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
         {back && (
-          <Pressable onPress={navigateToSearch} hitSlop={8} className="py-1">
+          <Pressable onPress={goBack} hitSlop={8} className="py-1">
             <ChevronLeft size={24} className="text-primary" />
           </Pressable>
         )}
