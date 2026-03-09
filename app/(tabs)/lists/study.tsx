@@ -2713,7 +2713,10 @@ function StudyScreen() {
           className={`text-sm ${allDueComplete ? "text-green-500 font-medium" : "text-muted-foreground"}`}
         >
           {isBrowsingHistory
-            ? `\u2190 ${cursor + 1} / ${cards.length}`
+            ? (() => {
+                const frontier = cards.findIndex((c) => c.status === "pending");
+                return `\u2190 ${cursor + 1} / ${frontier === -1 ? cards.length : frontier}`;
+              })()
             : isSrsMode
               ? `${completedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
               : `${ratedCount + 1} / ${originalCardCount}`}
