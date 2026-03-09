@@ -92,7 +92,7 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
         <Text className="text-4xl mb-2">辞典</Text>
         <Text className="text-xl font-semibold text-foreground mb-1">Jiten</Text>
         <Text className="text-sm text-muted-foreground text-center mb-6">
-          Japanese dictionary with flashcards
+          Japanese dictionary, reader, and flashcards
         </Text>
 
         {downloadStatus.state === "checking" && (
