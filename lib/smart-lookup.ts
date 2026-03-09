@@ -377,6 +377,81 @@ export async function nameLookupWithOffset(
   return [];
 }
 
+/**
+ * Decompose a compound word into sub-words, maximizing the number of common entries.
+ * Uses DP over all valid partitions (word length is small, typically ≤10 chars).
+ * Returns [] if the word can't be split into 2+ parts.
+ */
+export async function decomposeWord(
+  word: string,
+  dictDb: SQLite.SQLiteDatabase,
+): Promise<LookupResult[]> {
+  if (word.length < 2 || word.length > 20) return [];
+  const maxMatchLen = word.length - 1;
+  const n = word.length;
+
+  // Precompute: for each position, find all possible sub-word matches starting there
+  const matchesAt: Map<number, { len: number; result: LookupResult; isCommon: boolean }[]> =
+    new Map();
+
+  for (let pos = 0; pos < n; pos++) {
+    const remaining = word.slice(pos);
+    const tryLen = Math.min(remaining.length, maxMatchLen, 15);
+    const hits: { len: number; result: LookupResult; isCommon: boolean }[] = [];
+
+    for (let len = 1; len <= tryLen; len++) {
+      const substr = remaining.slice(0, len);
+      const candidates = deinflect(substr);
+
+      let best: LookupResult | null = null;
+      let bestCommon = false;
+
+      for (const candidate of candidates) {
+        const entries = await lookupExactJapanese(dictDb, candidate.word);
+        if (entries.length > 0) {
+          const hasCommon = entries.some((e) => e.common);
+          if (!best || (hasCommon && !bestCommon)) {
+            best = { matchedText: substr, entries, deinflectReasons: candidate.reasons };
+            bestCommon = hasCommon;
+          }
+        }
+      }
+
+      if (best) {
+        hits.push({ len, result: best, isCommon: bestCommon });
+      }
+    }
+
+    matchesAt.set(pos, hits);
+  }
+
+  // DP: dp[pos] = best partition of word[pos..n]
+  // Score: fewest parts first, then most common words as tiebreaker
+  const dp: (null | { partCount: number; commonCount: number; parts: LookupResult[] })[] =
+    new Array(n + 1).fill(null);
+  dp[n] = { partCount: 0, commonCount: 0, parts: [] };
+
+  for (let pos = n - 1; pos >= 0; pos--) {
+    const hits = matchesAt.get(pos) ?? [];
+    for (const hit of hits) {
+      const next = dp[pos + hit.len];
+      if (!next) continue;
+      const partCount = next.partCount + 1;
+      const commonCount = next.commonCount + (hit.isCommon ? 1 : 0);
+      const better =
+        !dp[pos] ||
+        partCount < dp[pos]!.partCount ||
+        (partCount === dp[pos]!.partCount && commonCount > dp[pos]!.commonCount);
+      if (better) {
+        dp[pos] = { partCount, commonCount, parts: [hit.result, ...next.parts] };
+      }
+    }
+  }
+
+  const best = dp[0];
+  return best && best.parts.length >= 2 ? best.parts : [];
+}
+
 /** Simple name lookup: greedy longest-first match from start of text. */
 export async function nameLookup(
   text: string,
