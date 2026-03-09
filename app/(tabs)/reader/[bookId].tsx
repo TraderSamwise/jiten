@@ -1104,6 +1104,7 @@ export default function BookReaderScreen() {
               setCopyTooltip(null);
               setCopied(false);
               readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
+              readerRef.current?.focus();
             }}
             results={lookupResults}
           />

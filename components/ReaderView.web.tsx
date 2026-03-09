@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 
 export interface ReaderViewRef {
   postMessage: (data: string) => void;
+  focus: () => void;
 }
 
 interface ReaderViewProps {
@@ -26,6 +27,9 @@ export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, on
   useImperativeHandle(ref, () => ({
     postMessage: (data: string) => {
       iframeRef.current?.contentWindow?.postMessage(data, "*");
+    },
+    focus: () => {
+      iframeRef.current?.focus();
     },
   }));
 

@@ -3,6 +3,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 export interface ReaderViewRef {
   postMessage: (data: string) => void;
+  focus: () => void;
 }
 
 interface ReaderViewProps {
@@ -17,6 +18,7 @@ export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, on
     postMessage: (data: string) => {
       webViewRef.current?.postMessage(data);
     },
+    focus: () => {},
   }));
 
   function handleMessage(event: WebViewMessageEvent) {
