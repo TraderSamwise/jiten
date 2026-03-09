@@ -776,7 +776,16 @@ The "merge" option proceeds with normal LWW + append sync — local and remote d
 
 ### Background downloads and sync ordering
 
-Background downloads (audio DB, extended DB) are deferred until the first sync attempt completes. This ensures sync data is available before large downloads begin. Managed via `triggerBackgroundDownloads()` in the database provider, gated on `syncStatus` transitioning to `idle` or `error` with a non-null `lastSyncAt` or `lastError`.
+Background downloads are deferred until the first sync attempt completes. This ensures sync data is available before large downloads begin. Managed via `triggerBackgroundDownloads()` in the database provider, gated on `syncStatus` transitioning to `idle` or `error` with a non-null `lastSyncAt` or `lastError`. The sync provider uses a `bgDownloadsTriggered` ref to ensure it only fires once per mount.
+
+The download queue runs sequentially in priority order:
+
+1. **Full dictionary** — replaces the mini DB with the complete dictionary (~49MB compressed). Opens the new DB atomically before closing the old one to avoid null-flash. Marks `dict-db-full` in AsyncStorage only after successful open/swap.
+2. **Audio** — word pronunciation MP3s (~190MB). Has resume support on native via `DownloadResumable` state persisted to AsyncStorage.
+3. **Strokes** — kanji stroke order data (~10MB)
+4. **Extended** — synonyms and names (~110MB)
+
+On native, background downloads are WiFi-gated. On web, the visibility handler retries incomplete background downloads when the tab regains focus. The `bgInitStarted` ref prevents concurrent executions and resets in `.finally()` to allow re-triggering.
 
 ### Sync UI (`components/BackgroundDownloadBanner.tsx`)
 
@@ -986,12 +995,28 @@ yarn migrate:dict  # Apply incremental dictionary migrations (the normal workflo
 yarn publish:dict  # Upload dictionary assets to GitHub release
 ```
 
-The dictionary lives in `assets/` as four files:
+The dictionary lives in `assets/` as five database files plus a manifest:
 
-- `dictionary.db` — core dictionary (~185MB): entries, kanji, kana, senses, pitch accents, FTS index
+- `dictionary.db` — full dictionary (~120MB): all entries, kanji, kana, senses, pitch accents, FTS index
+- `dictionary-mini.db` — mini dictionary (~32MB, ~13MB compressed): common entries (~22.5k) + all kanji tables. This is what users download at the gate — the full DB downloads in the background afterward.
 - `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
 - `dictionary-extended.db` — extended data (~110MB): synonyms (WordNet), names (JMnedict) with FTS5
-- `dict-manifest.json` — version and file sizes for the download client
+- `dict-manifest.json` — version, file sizes (full + mini + compressed), and download URLs
+
+#### Mini DB architecture
+
+The mini DB is a **derived artifact** — never edited directly. It's rebuilt automatically from the full `dictionary.db` by both `yarn build:db` and `yarn migrate:dict` using the shared `buildMiniDb()` function in `scripts/lib/build-mini.ts`.
+
+The mini DB contains:
+
+- All entries with `common = 1` (~22.5k words) plus their kanji, kana, senses, and pitch accents
+- All kanji tables verbatim (kanji_characters, kanji_radicals, kanji_similarity)
+- FTS indexes for glosses and kanji meanings
+- `dict_meta` table with version info
+
+On first install, users download only the mini DB (~13MB compressed). The full dictionary (~49MB compressed) downloads as the first background task. Once the full DB is ready, the provider swaps it in atomically (open new → swap refs → close old) and marks it via `dict-db-full` in AsyncStorage. If the download is interrupted (app close, network drop), it retries on next app foreground via the visibility handler.
+
+Words not in the mini DB show a placeholder message ("This entry will be available after the full dictionary downloads") in `WordDetail.tsx`.
 
 #### Two-tier versioning
 
@@ -1021,17 +1046,27 @@ There are two types of dictionary updates:
 **Minor update (client-side migration)** — for ADD COLUMN, small data updates, new indexes:
 
 1. Create a build-time migration: `scripts/dict-migrations/NNN-description.ts`
-2. Run `yarn migrate:dict` to apply it to your local `assets/dictionary.db`
+2. Run `yarn migrate:dict` to apply it to your local `assets/dictionary.db` (this also rebuilds `dictionary-mini.db` and updates `dict-manifest.json` automatically)
 3. Add a matching client migration in `db/dict-client-migrations.ts` with the SQL statements that will run on user devices
 4. Bump `DICT_VERSION` in `db/dict-version.ts` (leave `DICT_BASE_VERSION` unchanged)
 5. Deploy via OTA (`yarn update`) — devices apply the migration in-place, no download needed
 
 **Major update (full re-download)** — for new tables with large data, FTS rebuilds, audio changes:
 
-1. Create a build-time migration and run `yarn migrate:dict`
+1. Create a build-time migration and run `yarn migrate:dict` (rebuilds mini DB + manifest)
 2. Bump both `DICT_VERSION` and `DICT_BASE_VERSION` in `db/dict-version.ts`
-3. Run `yarn publish:dict` to upload to GitHub
-4. Deploy via OTA — devices re-download the full dictionary
+3. Run `yarn publish:dict` to upload to GitHub (publishes both `dictionary.db` and `dictionary-mini.db`)
+4. Deploy via OTA — devices re-download the mini dictionary at the gate, then full dictionary in background
+
+#### How migrations work with the mini DB
+
+The mini DB is always regenerated from the full DB — never migrated independently. The workflow:
+
+1. Write a build-time migration that modifies `dictionary.db` (e.g., add a column, change data)
+2. `yarn migrate:dict` applies the migration to the full DB, then calls `buildMiniDb()` to regenerate the mini DB from scratch
+3. Both DBs are always in sync because the mini is derived from the full
+
+If a migration adds a column to a table that exists in both DBs (e.g., `entries` or `kanji_characters`), you only write the migration once against the full DB. The mini rebuild copies the new column automatically. `buildMiniDb()` uses dynamic column detection via `PRAGMA table_info()` to handle schema differences gracefully — missing columns are filled with NULL.
 
 #### Client-side migrations
 
@@ -1060,7 +1095,7 @@ After a major update, upload to the [jiten-data](https://github.com/TraderSamwis
 yarn publish:dict
 ```
 
-The app downloads core first (blocking), then audio and extended data silently in the background (WiFi only on mobile). Not needed for minor updates (client migrations handle those via OTA).
+The app downloads the mini DB first (blocking gate), then the full dictionary, audio, strokes, and extended data sequentially in the background (WiFi only on native). Not needed for minor updates (client migrations handle those via OTA).
 
 #### Building extended data
 
@@ -1079,6 +1114,8 @@ yarn build:db
 > **WARNING**: This deletes the entire dictionary and regenerates everything from scratch, including TTS audio via Google Cloud API which costs real money (`GOOGLE_TTS_API_KEY` env var required). It takes 5-10+ minutes and should not be run without explicit instruction.
 >
 > You almost certainly want `yarn migrate:dict` instead. Only use `build:db` if the database is corrupted beyond repair or you need to regenerate from an entirely new JMDict release. The script will prompt for confirmation (bypass with `--force`).
+
+Both `yarn build:db` and `yarn migrate:dict` automatically rebuild `dictionary-mini.db` and update `dict-manifest.json` with current file sizes (full + mini + compressed).
 
 ### Midori Import
 

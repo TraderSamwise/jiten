@@ -192,7 +192,8 @@ export async function downloadFullDictionary(
   } else {
     await downloadNative(manifest, onProgress);
   }
-  await setDictFull();
+  // Note: setDictFull() is NOT called here — provider.tsx calls it
+  // after the DB is successfully opened and swapped in.
 }
 
 /** Clean up data left behind by previous broken download formats. */
