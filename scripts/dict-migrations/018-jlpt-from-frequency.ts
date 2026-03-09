@@ -21,13 +21,13 @@ const migration: DictMigration = {
     const applyEntries = db.transaction(() => {
       let updated = 0;
       for (const line of lines) {
-        // CSV: jmdict_id,kanji,reading,jlpt_level,frequency_rank
+        // CSV: jmdict_id,kanji,reading,jlpt_level,frequency_rank,source
         const firstComma = line.indexOf(",");
         const id = parseInt(line.slice(0, firstComma), 10);
-        // Parse jlpt_level (4th field) — need to handle quoted kanji/reading
+        // Parse jlpt_level — need to handle quoted kanji/reading so count from end.
+        // jlpt_level is 3rd-from-last (before frequency_rank and source).
         const parts = line.split(",");
-        // jlpt_level is always the second-to-last field
-        const jlptLevel = parseInt(parts[parts.length - 2], 10);
+        const jlptLevel = parseInt(parts[parts.length - 3], 10);
         if (isNaN(id) || isNaN(jlptLevel)) continue;
         const result = updateEntry.run(jlptLevel, id);
         if (result.changes > 0) updated++;
