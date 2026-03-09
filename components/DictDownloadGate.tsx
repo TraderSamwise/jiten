@@ -115,7 +115,7 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
               label={
                 downloadStatus.isUpdate
                   ? `Update Dictionary (${formatBytes(downloadStatus.manifest.compressedSizeBytes ?? downloadStatus.manifest.sizeBytes)})`
-                  : `Download Dictionary (${formatBytes(downloadStatus.manifest.compressedSizeBytes ?? downloadStatus.manifest.sizeBytes)})`
+                  : `Download Dictionary (${formatBytes(downloadStatus.manifest.miniCompressedSizeBytes || downloadStatus.manifest.miniSizeBytes || downloadStatus.manifest.compressedSizeBytes || downloadStatus.manifest.sizeBytes)})`
               }
               onPress={startDownload}
             />

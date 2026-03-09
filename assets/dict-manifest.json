@@ -1,10 +1,13 @@
 {
-  "version": 20,
-  "sizeBytes": 187125760,
+  "version": 21,
+  "sizeBytes": 119894016,
+  "compressedSizeBytes": 49066094,
+  "miniSizeBytes": 32133120,
+  "miniCompressedSizeBytes": 13171083,
   "audioSizeBytes": 198111232,
   "strokes": {
     "version": 1,
-    "sizeBytes": 0
+    "sizeBytes": 10088448
   },
   "extended": {
     "version": 1,

@@ -10,8 +10,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { DICT_VERSION } from "../db/dict-version";
 import { ASSETS_DIR } from "./lib/download";
+import { buildMiniDb } from "./lib/build-mini";
 
 const DB_PATH = path.join(ASSETS_DIR, "dictionary.db");
+const MINI_DB_PATH = path.join(ASSETS_DIR, "dictionary-mini.db");
 const MANIFEST_PATH = path.join(ASSETS_DIR, "dict-manifest.json");
 
 export interface DictMigration {
@@ -70,15 +72,26 @@ function setVersion(db: Database.Database, version: number): void {
   );
 }
 
-/** Update manifest.json with new version and file size. */
-function updateManifest(version: number): void {
+/** Rebuild mini DB and update manifest.json with new version and sizes. */
+function updateManifestAndMini(version: number): void {
   const stats = fs.statSync(DB_PATH);
+
+  // Rebuild mini DB from the migrated full DB
+  const miniResult = buildMiniDb(DB_PATH, MINI_DB_PATH);
+
+  // Compute compressed size of full DB
+  const { execSync } = require("child_process");
+  const compressedSize = parseInt(execSync(`gzip -c "${DB_PATH}" | wc -c`).toString().trim(), 10);
+
   let manifest: Record<string, unknown> = {};
   if (fs.existsSync(MANIFEST_PATH)) {
     manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf-8"));
   }
   manifest.version = version;
   manifest.sizeBytes = stats.size;
+  manifest.compressedSizeBytes = compressedSize;
+  manifest.miniSizeBytes = miniResult.sizeBytes;
+  manifest.miniCompressedSizeBytes = miniResult.compressedSizeBytes;
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
 }
 
@@ -103,7 +116,7 @@ async function main() {
   if (currentVersion >= DICT_VERSION) {
     console.log("\n✅ Already up to date.");
     db.close();
-    updateManifest(DICT_VERSION);
+    updateManifestAndMini(DICT_VERSION);
     return;
   }
 
@@ -126,9 +139,11 @@ async function main() {
   }
 
   db.exec("PRAGMA optimize");
+  console.log("Vacuuming...");
+  db.exec("VACUUM");
   db.close();
 
-  updateManifest(DICT_VERSION);
+  updateManifestAndMini(DICT_VERSION);
   console.log(`✅ Dictionary migrated to v${DICT_VERSION}`);
   console.log(`   Manifest updated at ${MANIFEST_PATH}`);
 }

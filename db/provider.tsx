@@ -4,8 +4,11 @@ import { Platform } from "react-native";
 import {
   isDictReady,
   isAudioReady,
+  isDictFull,
+  setDictFull,
   fetchManifest,
   downloadDictionary,
+  downloadFullDictionary,
   downloadAudio,
   checkForUpdate,
   getStoredDictVersion,
@@ -127,14 +130,19 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  // Background data init — audio + extended DB
+  // Background data init — full dict upgrade + audio + extended DB
   const initBackgroundData = useCallback(
     async (m?: DictManifest) => {
       const items: BackgroundDownloadItem[] = [];
       const strokesManifest = m?.strokes;
       const extManifest = m?.extended;
 
-      // Build initial status list — audio first, then strokes, then extended
+      // Full dict upgrade (highest priority — unlocks all entries)
+      const isFull = await isDictFull();
+      if (!isFull && m?.url) {
+        items.push({ key: "full-dict", label: "Full dictionary", state: "pending", progress: 0 });
+      }
+      // Then existing items — audio, strokes, extended
       if (m?.audioUrl) {
         items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
       }
@@ -159,6 +167,38 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {
           // Module check passed but call failed — assume WiFi
+        }
+      }
+
+      // Full dictionary upgrade (replaces mini DB)
+      if (!isFull && m?.url) {
+        try {
+          updateBgItem("full-dict", { state: "downloading" });
+          console.log("[DB] Downloading full dictionary in background...");
+
+          await downloadFullDictionary(m, (progress) => {
+            updateBgItem("full-dict", { state: "downloading", progress });
+          });
+
+          // Close current (mini) dict DB
+          if (dictDbRef.current) {
+            try {
+              await dictDbRef.current.closeAsync();
+            } catch {}
+            dictDbRef.current = null;
+            setDictDb(null);
+          }
+
+          // Reopen with full data
+          const db = await openDictDb();
+          dictDbRef.current = db;
+          setDictDb(db);
+
+          updateBgItem("full-dict", { state: "ready", progress: 1 });
+          console.log("[DB] Full dictionary ready");
+        } catch (err) {
+          console.warn("[DB] Full dict download failed (non-blocking):", err);
+          updateBgItem("full-dict", { state: "error", progress: 0 });
         }
       }
 
@@ -278,6 +318,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setIsDownloaded(true);
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
+
+        // Backwards compat: existing users who already have the full DB
+        // (isDictReady was true on init, no mini flag) should get dict-db-full set
+        const alreadyFull = await isDictFull();
+        if (!alreadyFull) {
+          await setDictFull();
+        }
 
         // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
         manifestForBg.current = fetchedManifest;
