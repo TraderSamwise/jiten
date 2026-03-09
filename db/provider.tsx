@@ -180,18 +180,35 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             updateBgItem("full-dict", { state: "downloading", progress });
           });
 
-          // Close old DB first so expo-sqlite drops the cached connection,
-          // then open fresh — the new file (full dict) gets a new handle.
-          // State goes directly from old→new (never null), no flash.
-          const oldDb = dictDbRef.current;
-          if (oldDb) {
-            try {
-              await oldDb.closeAsync();
-            } catch {}
+          // Swap DB: close old handle, open fresh connection to the new file.
+          // Delay close briefly to let any in-flight queries finish.
+          // If the swap fails, mark as full anyway (file is downloaded) and
+          // reload the app so the next init picks up the full DB cleanly.
+          try {
+            const oldDb = dictDbRef.current;
+            dictDbRef.current = null; // prevent new queries on old handle
+            if (oldDb) {
+              await new Promise((r) => setTimeout(r, 100));
+              try {
+                await oldDb.closeAsync();
+              } catch {}
+            }
+            const newDb = await openDictDb();
+            dictDbRef.current = newDb;
+            setDictDb(newDb);
+          } catch (swapErr) {
+            console.warn("[DB] Dict swap failed, will reload:", swapErr);
+            await setDictFull();
+            if (Platform.OS === "web") {
+              window.location.reload();
+            } else {
+              try {
+                const Updates = await import("expo-updates");
+                await Updates.reloadAsync();
+              } catch {}
+            }
+            return; // unreachable after reload, but satisfies control flow
           }
-          const newDb = await openDictDb();
-          dictDbRef.current = newDb;
-          setDictDb(newDb);
 
           // Mark as full only after successful DB open/swap
           await setDictFull();
