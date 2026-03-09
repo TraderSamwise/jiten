@@ -180,19 +180,19 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             updateBgItem("full-dict", { state: "downloading", progress });
           });
 
-          // Close current (mini) dict DB
-          if (dictDbRef.current) {
+          // Open full DB first, then swap refs atomically, then close old
+          const newDb = await openDictDb();
+          const oldDb = dictDbRef.current;
+          dictDbRef.current = newDb;
+          setDictDb(newDb);
+          if (oldDb) {
             try {
-              await dictDbRef.current.closeAsync();
+              await oldDb.closeAsync();
             } catch {}
-            dictDbRef.current = null;
-            setDictDb(null);
           }
 
-          // Reopen with full data
-          const db = await openDictDb();
-          dictDbRef.current = db;
-          setDictDb(db);
+          // Mark as full only after successful DB open/swap
+          await setDictFull();
 
           updateBgItem("full-dict", { state: "ready", progress: 1 });
           console.log("[DB] Full dictionary ready");
@@ -283,9 +283,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const bgInitStarted = useRef(false);
 
   const triggerBackgroundDownloads = useCallback(() => {
+    // Allow re-trigger on each app launch / visibility reacquire —
+    // background downloads (including full dict) must retry if interrupted.
     if (bgInitStarted.current) return;
     bgInitStarted.current = true;
-    initBackgroundData(manifestForBg.current);
+    initBackgroundData(manifestForBg.current).finally(() => {
+      // Reset so next visibility reacquire can re-trigger if needed
+      bgInitStarted.current = false;
+    });
   }, [initBackgroundData]);
 
   // Full init sequence — used on mount and on visibility reacquire
@@ -318,13 +323,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setIsDownloaded(true);
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
-
-        // Backwards compat: existing users who already have the full DB
-        // (isDictReady was true on init, no mini flag) should get dict-db-full set
-        const alreadyFull = await isDictFull();
-        if (!alreadyFull) {
-          await setDictFull();
-        }
 
         // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
         manifestForBg.current = fetchedManifest;
@@ -422,7 +420,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Failed to initialize",
       });
     }
-  }, [initBackgroundData]);
+  }, []);
 
   useEffect(() => {
     runInit();
@@ -446,11 +444,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    // Reacquire DB when tab becomes visible again
+    // Reacquire DB when tab becomes visible again, and retry background downloads
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && !dictDbRef.current) {
-        console.log("[DB] Tab visible, reacquiring dict DB...");
-        runInit();
+      if (document.visibilityState === "visible") {
+        if (!dictDbRef.current) {
+          console.log("[DB] Tab visible, reacquiring dict DB...");
+          runInit();
+        }
+        // Retry any incomplete background downloads on visibility reacquire
+        triggerBackgroundDownloads();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -459,7 +461,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       unsubscribe?.();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [runInit]);
+  }, [runInit, triggerBackgroundDownloads]);
 
   const retryManifest = useCallback(async () => {
     setDownloadStatus({ state: "checking" });
@@ -527,7 +529,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Download failed",
       });
     }
-  }, [manifest, initBackgroundData]);
+  }, [manifest]);
 
   return (
     <DatabaseContext.Provider
