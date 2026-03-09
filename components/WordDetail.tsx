@@ -24,8 +24,10 @@ import { Bookmark } from "@/lib/icons";
 import { useAtomValue } from "jotai";
 import { showRomajiAtom } from "@/stores/settings";
 import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
+import { japaneseFontStyle } from "@/lib/japanese-font";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
+import { decomposeWord, type LookupResult } from "@/lib/smart-lookup";
 import type { DictEntry } from "@/db/types";
 
 function isKanji(code: number): boolean {
@@ -53,6 +55,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
   const [bookmarkAnchor, setBookmarkAnchor] = useState<
     { top: number; right: number } | undefined
   >();
+  const [wordParts, setWordParts] = useState<LookupResult[]>([]);
 
   function measureAndRun(callback: () => void) {
     bookmarkRef.current?.measureInWindow((x, y, width, height) => {
@@ -69,6 +72,22 @@ export function WordDetail({ entryId }: WordDetailProps) {
     });
     return () => task.cancel();
   }, [dictDb, isReady, entryId]);
+
+  // Decompose compound word into sub-words
+  useEffect(() => {
+    if (!dictDb || !entry) {
+      setWordParts([]);
+      return;
+    }
+    const word = entry.kanji[0]?.text ?? entry.kana[0]?.text ?? "";
+    let cancelled = false;
+    decomposeWord(word, dictDb).then((parts) => {
+      if (!cancelled) setWordParts(parts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dictDb, entry]);
 
   useEffect(() => {
     navigation.setOptions({ headerRight: () => null });
@@ -203,6 +222,46 @@ export function WordDetail({ entryId }: WordDetailProps) {
           </View>
         ))}
       </Card>
+
+      {wordParts.length > 0 && (
+        <Card className="mb-4">
+          <Text className="text-sm font-semibold text-foreground mb-2">Word Parts</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {wordParts.map((part, i) => {
+              const partEntry = part.entries[0];
+              const reading = partEntry?.kana[0]?.text;
+              const gloss = partEntry?.senses[0]?.glosses
+                ?.filter((g) => g.lang === "eng")
+                .map((g) => g.text)
+                .join("; ");
+              return (
+                <Pressable
+                  key={i}
+                  onPress={() => partEntry && tabRouter.pushWord(partEntry.id)}
+                  className="rounded-lg border border-border px-3 py-2 bg-card active:bg-muted"
+                >
+                  <Text
+                    className="text-lg font-medium text-foreground"
+                    style={japaneseFontStyle(18)}
+                  >
+                    {part.matchedText}
+                  </Text>
+                  {reading && (
+                    <Text className="text-xs text-muted-foreground" style={japaneseFontStyle(12)}>
+                      {reading}
+                    </Text>
+                  )}
+                  {gloss && (
+                    <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                      {gloss}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+      )}
 
       {Platform.OS === "ios" && (
         <View className="mb-6">
