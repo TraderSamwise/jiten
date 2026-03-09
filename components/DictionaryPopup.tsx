@@ -310,7 +310,7 @@ export function DictionaryPopup({
         pointerEvents="box-none"
       >
         {/* Dismiss area — taps here close the popup, taps pass through to webview once unmounted */}
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <Pressable style={{ flex: 1, cursor: "default" as any }} onPress={onClose} />
 
         {/* Popup panel */}
         <Animated.View
