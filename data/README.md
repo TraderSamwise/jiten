@@ -1,76 +1,78 @@
-# Frequency-Based JLPT Word List
+# JLPT Word List (Waller + Frequency)
 
-A JLPT-level classification for **all 22,575 common JMdict entries**, generated from real frequency data. Intended as a drop-in replacement for Jonathan Waller's JLPT word lists (~7,200 words), which are the basis of virtually every free JLPT vocabulary list online.
+A JLPT-level classification for **all ~22,575 common JMdict entries**, using Jonathan Waller's community-verified JLPT vocab lists as the primary source and frequency-based ranking as a fallback for the remaining entries.
 
-## Why?
+## Why a hybrid approach?
 
-Every freely available JLPT word list traces back to the same source (Waller's lists from the old pre-2010 JLPT). Problems:
+Waller's JLPT word lists (~7,738 words after deduplication) are the basis of virtually every free JLPT vocabulary list online. They're community-verified and well-trusted, but only cover about a third of common JMdict entries. Pure frequency-based ranking covers everything but has inherent corpus biases.
 
-- Only covers ~7,200 of the ~22,500 common JMdict entries (32%)
-- Misclassifies basic vocabulary: 言う (to say) → N3, 町 (town) → N3, 魚 (fish) → N3
-- No updates since the JLPT format changed in 2010
-
-This list covers **all** common entries and uses frequency data to assign levels.
+This list uses both: Waller levels for the ~7,738 words he covers, and frequency-based ranking for the remaining ~14,837 words.
 
 ## File format
 
 `jlpt-words.csv` — a CSV with columns:
 
-| Column           | Description                                         |
-| ---------------- | --------------------------------------------------- |
-| `jmdict_id`      | JMdict entry sequence ID                            |
-| `kanji`          | Primary kanji form (empty for kana-only words)      |
-| `reading`        | Primary kana reading                                |
-| `jlpt_level`     | Assigned JLPT level (5=N5 easiest, 1=N1 hardest)    |
-| `frequency_rank` | Position in our frequency ranking (1=most frequent) |
+| Column           | Description                                          |
+| ---------------- | ---------------------------------------------------- |
+| `jmdict_id`      | JMdict entry sequence ID                             |
+| `kanji`          | Primary kanji form (empty for kana-only words)       |
+| `reading`        | Primary kana reading                                 |
+| `jlpt_level`     | Assigned JLPT level (5=N5 easiest, 1=N1 hardest)     |
+| `frequency_rank` | Position in our frequency ranking (1=most frequent)  |
+| `source`         | `waller` or `frequency` — how the level was assigned |
 
 ## Level distribution
 
-| Level     | Count      | Description                           |
-| --------- | ---------- | ------------------------------------- |
-| N5        | 800        | Most frequent — beginner essentials   |
-| N4        | 1,500      | Common everyday vocabulary            |
-| N3        | 3,700      | Intermediate vocabulary               |
-| N2        | 6,000      | Upper-intermediate                    |
-| N1        | 10,575     | Advanced — all remaining common words |
-| **Total** | **22,575** |                                       |
+| Level     | Waller     | Frequency   | Total       |
+| --------- | ---------- | ----------- | ----------- |
+| N5        | ~670       | ~130        | 800         |
+| N4        | ~632       | ~868        | 1,500       |
+| N3        | ~1,647     | ~2,053      | 3,700       |
+| N2        | ~1,735     | ~4,265      | 6,000       |
+| N1        | ~3,054     | ~7,521      | ~10,575     |
+| **Total** | **~7,738** | **~14,837** | **~22,575** |
 
 ## Methodology
 
-### Data sources
+### Primary source: Waller JLPT vocab
 
-1. **JPDB frequency list** (primary) — frequency rankings from a corpus of anime, novels, visual novels, and other Japanese media (~500K entries). Lemma-based: all conjugations of a verb are grouped under its dictionary form.
+Jonathan Waller's JLPT vocabulary lists, sourced via [mjuhanne/yomichan-jlpt-vocab](https://github.com/mjuhanne/yomichan-jlpt-vocab) (which maps them to JMdict sequence IDs). These cover ~7,738 unique JMdict entries across all five JLPT levels.
+
+When the same JMdict entry appears at multiple levels (e.g. different kanji forms of the same word listed at different levels), the **easiest** (highest-numbered) level is used.
+
+### Fallback: frequency-based ranking
+
+For the ~14,837 common JMdict entries not covered by Waller, JLPT levels are assigned based on combined frequency data:
+
+1. **JPDB frequency list** (primary signal) — frequency rankings from a corpus of anime, novels, visual novels, and other Japanese media. Lemma-based: all conjugations grouped under dictionary form.
    - Source: [MarvNC/jpdb-freq-list](https://github.com/MarvNC/jpdb-freq-list)
 
-2. **JMdict XML frequency tags** (secondary) — newspaper frequency data embedded in the raw JMdict XML (`nf01`–`nf48` tags from Mainichi Shimbun, plus `ichi1`/`news1` flags). Form-based: each conjugation counted separately.
+2. **JMdict XML frequency tags** (secondary signal) — newspaper frequency data from Mainichi Shimbun (`nf01`-`nf48` tags, plus `ichi1`/`news1` flags). Form-based: each conjugation counted separately.
    - Source: [EDRDG JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project)
 
 3. **JMdict (jmdict-simplified)** — the base word list. Only entries tagged as "common" are included.
    - Source: [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified)
 
-### Algorithm
+**POS-aware frequency combination** (fallback entries only):
 
-**POS-aware frequency combination:**
+JMdict newspaper frequency is form-based, so verbs/adjectives are systematically undercounted (食べる ranks ~12,000 because 食べた/食べて are separate entries). JPDB is lemma-based, so 食べる correctly ranks in the top 200.
 
-JMdict newspaper frequency is _form-based_ — it counts each conjugation separately. This means 食べる (to eat, dictionary form) has a low newspaper rank (~12,000) even though 食べた/食べて/食べました are all extremely common. JPDB is _lemma-based_ — all forms are grouped, so 食べる correctly ranks in the top 200.
+- **Verbs and adjectives**: pure JPDB frequency rank (JMdict newspaper data ignored)
+- **Nouns and other non-inflectable words**: JPDB as primary, with a bounded penalty for words disproportionately common in fiction vs. general usage
 
-- **Verbs and adjectives** (inflectable words): pure JPDB frequency rank. JMdict newspaper data is ignored because form-based counting systematically undercounts these.
-- **Nouns and other non-inflectable words**: JPDB frequency rank as primary signal, with a bounded penalty from JMdict newspaper data for words that appear disproportionately in fiction vs. general usage. The penalty only pushes words _down_ (toward less common), never up — so newspaper-common words aren't penalized.
+**N5 seed list** (~114 words, fallback entries only):
 
-**N5 seed list (~114 words):**
+Some universally-basic vocabulary (電車/train, 駅/station, 天気/weather) ranks low in novel frequency because fiction rarely discusses daily-life topics. A small seed list of textbook-standard N5 words is pinned to ensure they land in N5. This only applies to non-Waller entries — Waller entries always keep their Waller level.
 
-Some universally-basic vocabulary (電車/train, 駅/station, 天気/weather, 安い/cheap, etc.) ranks low in novel frequency because fiction rarely discusses daily-life topics like transportation, weather, and prices. A small seed list of textbook-standard N5 words is pinned to ensure they don't fall below N5 regardless of corpus frequency. These are hand-curated from standard beginner curriculum categories: transport, food, family, body parts, time, directions, seasons, school vocabulary.
+**Level assignment** (fallback entries):
 
-**Level assignment:**
-
-All entries are sorted by combined frequency rank, then assigned JLPT levels by cumulative position: the top 800 = N5, next 1,500 = N4, next 3,700 = N3, next 6,000 = N2, remainder = N1. These band sizes roughly match the real JLPT's vocabulary expectations at each level.
+Non-Waller entries are sorted by combined frequency rank and assigned cumulatively to fill remaining slots per level after accounting for Waller entries. Target sizes: N5=800, N4=1,500, N3=3,700, N2=6,000, N1=rest.
 
 ### Known limitations
 
-- **Novel/media bias**: JPDB over-represents literary and media vocabulary. Words like 姿 (figure/form) and 人間 (human being) rank very high because they're ubiquitous in fiction, even though they may feel "advanced" to learners.
-- **Daily-life underrepresentation**: Words common in everyday conversation but rare in fiction (切符/ticket, 天気/weather) are partially mitigated by the N5 seed list but may still rank lower than traditional JLPT at N4+ levels.
+- **Novel/media bias in fallback entries**: JPDB over-represents literary and media vocabulary. This only affects the ~14,837 frequency-assigned entries, not the Waller core.
+- **Daily-life underrepresentation**: Words common in everyday conversation but rare in fiction are partially mitigated by the N5 seed list.
 - **No grammar coverage**: JLPT tests grammar patterns as well as vocabulary. This list only covers words.
-- **Seed list is hand-curated**: The ~114 pinned N5 words are selected based on standard beginner curriculum, not a deterministic algorithm.
 
 ## Regenerating
 
@@ -80,10 +82,11 @@ If you have the Jiten source code:
 yarn build:jlpt
 ```
 
-This downloads the frequency data (cached in `.cache/`), processes it, and writes `data/jlpt-words.csv`.
+This downloads the Waller CSVs and frequency data (cached in `.cache/`), processes them, and writes `data/jlpt-words.csv`.
 
 ## License
 
 - **JMdict data**: CC-BY-SA 4.0 (Electronic Dictionary Research and Development Group)
+- **Waller JLPT vocab**: via [mjuhanne/yomichan-jlpt-vocab](https://github.com/mjuhanne/yomichan-jlpt-vocab)
 - **JPDB frequency data**: from [jpdb.io](https://jpdb.io) via [MarvNC/jpdb-freq-list](https://github.com/MarvNC/jpdb-freq-list)
 - **This derived list**: CC-BY-SA 4.0

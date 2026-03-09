@@ -1,19 +1,18 @@
 /**
- * Generate frequency-based JLPT word classifications for all common JMdict entries.
+ * Generate JLPT word classifications for all common JMdict entries.
  *
  * Usage: yarn build:jlpt
  *
  * Output: data/jlpt-words.csv
  *
- * Data sources:
- * 1. JMdict XML frequency tags (nf01-nf48, ichi1/2, news1/2) — primary
- * 2. JPDB frequency list (anime/novels/media corpus) — secondary
+ * Hybrid methodology:
+ * 1. Waller JLPT vocab lists (community-verified, ~7,738 words) — primary source
+ * 2. Frequency-based ranking (JPDB + JMdict nf) — fallback for remaining ~14,837 words
  *
  * Algorithm:
- * - JPDB (lemma-based) is primary; JMdict nf only used as penalty for
- *   literary-skewed words (high JPDB but rare in newspapers)
- * - Sort all ~22K common entries by combined rank
- * - Assign JLPT levels by position: N5=800, N4=1500, N3=3700, N2=6000, N1=rest
+ * - Waller entries keep their Waller-assigned JLPT level
+ * - Non-Waller entries are sorted by combined frequency rank and assigned
+ *   cumulatively to fill remaining slots per level (N5=800, N4=1500, N3=3700, N2=6000, N1=rest)
  */
 
 import * as fs from "fs";
@@ -21,6 +20,7 @@ import * as path from "path";
 import { loadJMdictFrequencies } from "./lib/jmdict-freq";
 import { loadNovelFrequencies, matchNovelFrequencies } from "./lib/novel-freq";
 import { CACHE_DIR } from "./lib/download";
+import { loadJlptVocab, downloadJlptCsvs } from "./lib/jlpt";
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(PROJECT_ROOT, "data");
@@ -84,6 +84,7 @@ interface RankedEntry {
   combinedRank: number;
   jlptLevel: number;
   glosses: string;
+  source: "waller" | "frequency";
 }
 
 // JMdict nf ranks massively undercount inflectable words because nf is form-based
@@ -137,7 +138,7 @@ function getFirstGloss(word: JMdictWord): string {
 }
 
 async function main() {
-  console.log("=== JLPT Word List Generator ===\n");
+  console.log("=== JLPT Word List Generator (Waller + Frequency) ===\n");
 
   // 1. Load JMdict simplified to get common entries list + metadata
   console.log("1. Loading JMdict simplified JSON...");
@@ -147,12 +148,27 @@ async function main() {
   );
   console.log(`   ${jmdict.words.length} total entries, ${commonWords.length} common entries`);
 
-  // 2. Load JMdict XML frequency data
-  console.log("\n2. Loading JMdict XML frequency tags...");
+  // 2. Load Waller JLPT vocab (primary source)
+  console.log("\n2. Loading Waller JLPT vocab...");
+  await downloadJlptCsvs();
+  const wallerLevels = loadJlptVocab(CACHE_DIR);
+  console.log(`   ${wallerLevels.size} entries from Waller`);
+
+  // Print Waller distribution
+  const wallerDist = new Map<number, number>();
+  for (const level of wallerLevels.values()) {
+    wallerDist.set(level, (wallerDist.get(level) ?? 0) + 1);
+  }
+  for (const level of [5, 4, 3, 2, 1]) {
+    console.log(`   N${level}: ${wallerDist.get(level) ?? 0}`);
+  }
+
+  // 3. Load JMdict XML frequency data
+  console.log("\n3. Loading JMdict XML frequency tags...");
   const jmdictFreq = await loadJMdictFrequencies();
 
-  // 3. Load JPDB frequency data
-  console.log("\n3. Loading JPDB frequency data...");
+  // 4. Load JPDB frequency data
+  console.log("\n4. Loading JPDB frequency data...");
   const jpdbRawFreq = await loadNovelFrequencies();
 
   // Build kanji/kana lookup for matching
@@ -168,9 +184,9 @@ async function main() {
   const jpdbFreq = matchNovelFrequencies(entryForms, jpdbRawFreq);
   console.log(`   ${jpdbFreq.size} common entries matched with JPDB frequency`);
 
-  // 4. Compute combined ranks using positional ranking
+  // 5. Compute combined ranks using positional ranking
   // (rank by position within each frequency list, then combine positions)
-  console.log("\n4. Computing combined frequency ranks...");
+  console.log("\n5. Computing combined frequency ranks...");
 
   // Collect all common entries with metadata
   interface EntryData {
@@ -276,6 +292,7 @@ async function main() {
     const { kanji, reading } = getPrimaryForm(entry.word);
     const glosses = getFirstGloss(entry.word);
 
+    const isWaller = wallerLevels.has(entry.id);
     rankedEntries.push({
       id: entry.id,
       kanji,
@@ -283,6 +300,7 @@ async function main() {
       combinedRank,
       jlptLevel: 0,
       glosses,
+      source: isWaller ? "waller" : "frequency",
     });
   }
 
@@ -295,13 +313,24 @@ async function main() {
   // Sort by combined rank (lowest = most frequent)
   rankedEntries.sort((a, b) => a.combinedRank - b.combinedRank);
 
-  // 5. Pin seed words, then assign JLPT levels by cumulative position
-  console.log("\n5. Assigning JLPT levels...");
+  // 6. Assign JLPT levels — Waller primary, frequency fallback
+  console.log("\n6. Assigning JLPT levels...");
+
+  // Waller entries get their Waller level directly
+  let wallerAssigned = 0;
+  for (const entry of rankedEntries) {
+    const wallerLevel = wallerLevels.get(entry.id);
+    if (wallerLevel != null) {
+      entry.jlptLevel = wallerLevel;
+      entry.source = "waller";
+      wallerAssigned++;
+    }
+  }
+  console.log(`   ${wallerAssigned} entries assigned from Waller`);
 
   // Seed list: universally-basic words that every beginner knows but may
   // rank low in novel frequency (daily-life vocab underrepresented in fiction).
-  // These get pinned to N5 by forcing combinedRank = 0 (sorts to top).
-  // Words already ranking in N5 are unaffected; this only rescues stragglers.
+  // Only applied to non-Waller entries — Waller entries keep their Waller level.
   const N5_SEED_KANJI = new Set([
     // Daily life nouns
     "電車",
@@ -418,7 +447,6 @@ async function main() {
   ]);
 
   const N5_SEED_READING = new Set([
-    // Kana-only words that are obviously N5
     "トイレ",
     "テレビ",
     "エアコン",
@@ -430,41 +458,76 @@ async function main() {
     "シャワー",
   ]);
 
+  // Non-Waller entries sorted by frequency for fallback assignment
+  const freqEntries = rankedEntries.filter((e) => e.source !== "waller");
+  freqEntries.sort((a, b) => a.combinedRank - b.combinedRank);
+
+  // Pin seed words to front of frequency list (only non-Waller ones)
   let pinned = 0;
-  for (const entry of rankedEntries) {
+  for (const entry of freqEntries) {
     if (N5_SEED_KANJI.has(entry.kanji) || N5_SEED_READING.has(entry.reading)) {
       if (entry.combinedRank > 0.035) {
-        // Only pin if not already in N5 range (top ~800 of ~22K ≈ 0.035)
-        entry.combinedRank = 0.034; // push into N5 range
+        entry.combinedRank = 0.034;
         pinned++;
       }
     }
   }
-  console.log(`   Pinned ${pinned} seed words to N5`);
+  console.log(`   Pinned ${pinned} seed words to N5 (frequency fallback)`);
 
-  // Re-sort after pinning
-  rankedEntries.sort((a, b) => a.combinedRank - b.combinedRank);
+  // Re-sort frequency entries after pinning
+  freqEntries.sort((a, b) => a.combinedRank - b.combinedRank);
 
-  for (let i = 0; i < rankedEntries.length; i++) {
-    const pos = i + 1; // 1-indexed position
-    // Find which level this position falls into
-    let level = 1; // default N1
-    let cumulative = 0;
-    for (const t of LEVEL_THRESHOLDS) {
-      cumulative += t.count;
-      if (pos <= cumulative) {
-        level = t.level;
-        break;
-      }
+  // Count how many Waller entries fill each level
+  const wallerPerLevel = new Map<number, number>();
+  for (const entry of rankedEntries) {
+    if (entry.source === "waller") {
+      wallerPerLevel.set(entry.jlptLevel, (wallerPerLevel.get(entry.jlptLevel) ?? 0) + 1);
     }
-    rankedEntries[i].jlptLevel = level;
   }
 
-  // 6. Generate CSV
-  console.log("\n6. Writing CSV...");
+  // Compute remaining capacity per level for frequency entries
+  const levelCapacity: { level: number; remaining: number }[] = [];
+  for (const t of LEVEL_THRESHOLDS) {
+    const wallerCount = wallerPerLevel.get(t.level) ?? 0;
+    levelCapacity.push({ level: t.level, remaining: Math.max(0, t.count - wallerCount) });
+  }
+
+  console.log("   Level capacity (Waller / remaining for frequency):");
+  for (const { level, remaining } of levelCapacity) {
+    const threshold = LEVEL_THRESHOLDS.find((t) => t.level === level);
+    const wallerCount = wallerPerLevel.get(level) ?? 0;
+    console.log(
+      `     N${level}: ${wallerCount} waller + ${remaining} frequency slots (target: ${threshold?.count ?? "rest"})`,
+    );
+  }
+  const wallerN1 = wallerPerLevel.get(1) ?? 0;
+  console.log(`     N1: ${wallerN1} waller + rest frequency`);
+
+  // Assign frequency entries cumulatively to fill remaining slots
+  let freqIdx = 0;
+  for (const { level, remaining } of levelCapacity) {
+    let assigned = 0;
+    while (assigned < remaining && freqIdx < freqEntries.length) {
+      freqEntries[freqIdx].jlptLevel = level;
+      freqIdx++;
+      assigned++;
+    }
+  }
+  // N1 = everything remaining
+  while (freqIdx < freqEntries.length) {
+    freqEntries[freqIdx].jlptLevel = 1;
+    freqIdx++;
+  }
+
+  // Sort all entries by frequency rank for output (Waller entries get their
+  // combinedRank position among all entries)
+  rankedEntries.sort((a, b) => a.combinedRank - b.combinedRank);
+
+  // 7. Generate CSV
+  console.log("\n7. Writing CSV...");
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const header = "jmdict_id,kanji,reading,jlpt_level,frequency_rank";
+  const header = "jmdict_id,kanji,reading,jlpt_level,frequency_rank,source";
   const lines = [header];
 
   for (let i = 0; i < rankedEntries.length; i++) {
@@ -472,13 +535,13 @@ async function main() {
     // Escape kanji/reading fields for CSV (wrap in quotes if they contain commas)
     const kanjiField = e.kanji.includes(",") ? `"${e.kanji}"` : e.kanji;
     const readingField = e.reading.includes(",") ? `"${e.reading}"` : e.reading;
-    lines.push(`${e.id},${kanjiField},${readingField},${e.jlptLevel},${i + 1}`);
+    lines.push(`${e.id},${kanjiField},${readingField},${e.jlptLevel},${i + 1},${e.source}`);
   }
 
   fs.writeFileSync(CSV_PATH, lines.join("\n") + "\n");
   console.log(`   Written ${rankedEntries.length} entries to ${CSV_PATH}`);
 
-  // 7. Print summary
+  // 8. Print summary
   console.log("\n=== Summary ===\n");
 
   const levelCounts = new Map<number, number>();
@@ -486,11 +549,21 @@ async function main() {
     levelCounts.set(e.jlptLevel, (levelCounts.get(e.jlptLevel) ?? 0) + 1);
   }
 
+  const wallerCount = rankedEntries.filter((e) => e.source === "waller").length;
+  const freqCount = rankedEntries.filter((e) => e.source === "frequency").length;
+
   console.log("Distribution:");
   for (const level of [5, 4, 3, 2, 1]) {
-    console.log(`  N${level}: ${levelCounts.get(level) ?? 0} words`);
+    const total = levelCounts.get(level) ?? 0;
+    const waller = rankedEntries.filter(
+      (e) => e.jlptLevel === level && e.source === "waller",
+    ).length;
+    const freq = total - waller;
+    console.log(`  N${level}: ${total} words (${waller} waller + ${freq} frequency)`);
   }
-  console.log(`  Total: ${rankedEntries.length} words`);
+  console.log(
+    `  Total: ${rankedEntries.length} words (${wallerCount} waller + ${freqCount} frequency)`,
+  );
 
   // Show first 20 words per level
   console.log("\nFirst 20 words per level:");
@@ -533,7 +606,9 @@ async function main() {
   for (const target of checkWords) {
     const entry = rankedEntries.find((e) => e.kanji === target || e.reading === target);
     if (entry) {
-      console.log(`  ${target}: N${entry.jlptLevel} (rank #${rankedEntries.indexOf(entry) + 1})`);
+      console.log(
+        `  ${target}: N${entry.jlptLevel} [${entry.source}] (rank #${rankedEntries.indexOf(entry) + 1})`,
+      );
     } else {
       console.log(`  ${target}: NOT FOUND`);
     }

@@ -76,7 +76,8 @@ export function loadJlptVocab(cacheDir: string): Map<number, number> {
       if (originIdx >= 0 && origin !== "waller") continue;
       const seq = parseInt(fields[seqIdx], 10);
       if (!Number.isFinite(seq)) continue;
-      if (!map.has(seq)) {
+      const existing = map.get(seq);
+      if (existing == null || level > existing) {
         map.set(seq, level);
       }
     }
