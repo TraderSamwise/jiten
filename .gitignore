@@ -57,6 +57,12 @@ assets/dictionary.db-wal
 assets/dictionary-audio.db
 assets/dictionary-audio.db-shm
 assets/dictionary-audio.db-wal
+assets/dictionary-mini.db
+assets/dictionary-mini.db-shm
+assets/dictionary-mini.db-wal
+assets/dictionary-strokes.db
+assets/dictionary-strokes.db-shm
+assets/dictionary-strokes.db-wal
 assets/dictionary-extended.db
 assets/dictionary-extended.db-shm
 assets/dictionary-extended.db-wal

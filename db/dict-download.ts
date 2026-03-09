@@ -25,8 +25,11 @@ export interface StrokesManifest {
 export interface DictManifest {
   version: number;
   url: string;
+  miniUrl?: string;
   sizeBytes: number;
   compressedSizeBytes?: number;
+  miniSizeBytes?: number;
+  miniCompressedSizeBytes?: number;
   audioSizeBytes?: number;
   audioUrl?: string;
   strokes?: StrokesManifest;
@@ -47,6 +50,7 @@ export type UpdateAction =
 
 const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
+const FULL_DB_KEY = "dict-db-full";
 const DB_NAME = "dictionary.db";
 const AUDIO_VERSION_KEY = "dict-audio-version";
 const AUDIO_DB_NAME = "dictionary-audio.db";
@@ -68,6 +72,15 @@ export async function setLocalVersion(version: number): Promise<void> {
   await AsyncStorage.setItem(FORMAT_KEY, String(DICT_VERSION));
 }
 
+export async function isDictFull(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(FULL_DB_KEY);
+  return v === "true";
+}
+
+export async function setDictFull(): Promise<void> {
+  await AsyncStorage.setItem(FULL_DB_KEY, "true");
+}
+
 export async function fetchManifest(): Promise<DictManifest> {
   const manifestUrl = env.DICT_MANIFEST_URL;
   let res: Response;
@@ -83,6 +96,9 @@ export async function fetchManifest(): Promise<DictManifest> {
   const base = manifestUrl.replace(/\/[^/]+$/, "");
   if (!data.url) {
     data.url = `${base}/dictionary.db`;
+  }
+  if (!data.miniUrl) {
+    data.miniUrl = `${base}/dictionary-mini.db`;
   }
   if (!data.audioUrl && data.audioSizeBytes) {
     data.audioUrl = `${base}/dictionary-audio.db`;
@@ -150,12 +166,33 @@ export async function downloadDictionary(
   onProgress?: (progress: number) => void,
   onStatusChange?: (status: string) => void,
 ): Promise<void> {
+  // Use mini URL for the gated download (smaller, faster)
+  const downloadUrl = manifest.miniUrl ?? manifest.url;
+  const downloadSize = manifest.miniSizeBytes ?? manifest.sizeBytes;
+  const downloadManifest = { ...manifest, url: downloadUrl, sizeBytes: downloadSize };
+
+  if (Platform.OS === "web") {
+    await downloadWeb(downloadManifest, onProgress, onStatusChange);
+  } else {
+    await downloadNative(downloadManifest, onProgress);
+  }
+  await setLocalVersion(manifest.version);
+  // Note: do NOT set dict-db-full — this is the mini version
+}
+
+export async function downloadFullDictionary(
+  manifest: DictManifest,
+  onProgress?: (progress: number) => void,
+  onStatusChange?: (status: string) => void,
+): Promise<void> {
+  // Download the full dictionary.db — same mechanism as the gate download
+  // but uses the full URL and overwrites the existing local DB
   if (Platform.OS === "web") {
     await downloadWeb(manifest, onProgress, onStatusChange);
   } else {
     await downloadNative(manifest, onProgress);
   }
-  await setLocalVersion(manifest.version);
+  await setDictFull();
 }
 
 /** Clean up data left behind by previous broken download formats. */

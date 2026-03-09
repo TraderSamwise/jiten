@@ -93,6 +93,17 @@ export function WordDetail({ entryId }: WordDetailProps) {
     navigation.setOptions({ headerRight: () => null });
   }, [navigation]);
 
+  // Entry not found after loading completes — may be unavailable in mini DB
+  if (!entry && dictDb && isReady) {
+    return (
+      <View className="flex-1 items-center justify-center p-6 bg-background">
+        <Text className="text-lg text-muted-foreground text-center">
+          This entry will be available after the full dictionary downloads.
+        </Text>
+      </View>
+    );
+  }
+
   if (!entry) {
     return (
       <View className="flex-1 items-center justify-center bg-background">

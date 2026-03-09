@@ -459,6 +459,7 @@ export default function SettingsScreen() {
               "dict-db-format",
               "dict-audio-version",
               "ext-db-version",
+              "dict-db-full",
             ]);
             if (Platform.OS === "web") {
               window.location.reload();

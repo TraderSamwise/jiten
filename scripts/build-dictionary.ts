@@ -16,6 +16,7 @@ import { buildAudioTable } from "./audio/build-audio-table";
 import { DICT_VERSION } from "../db/dict-version";
 import { downloadFile, CACHE_DIR as SHARED_CACHE_DIR } from "./lib/download";
 import { downloadJlptCsvs, loadJlptVocab, JLPT_LEVELS } from "./lib/jlpt";
+import { buildMiniDb } from "./lib/build-mini";
 
 const KANJIUM_URL =
   "https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt";
@@ -494,6 +495,10 @@ async function main() {
   const compressedSize = parseInt(execSync(`gzip -c "${DB_PATH}" | wc -c`).toString().trim(), 10);
   console.log(`  Core DB compressed: ${(compressedSize / 1024 / 1024).toFixed(1)} MB`);
 
+  // ─── Build mini dictionary (common entries + all kanji tables) ───
+  const MINI_DB_PATH = path.join(OUT_DIR, "dictionary-mini.db");
+  const miniResult = buildMiniDb(DB_PATH, MINI_DB_PATH);
+
   // Write manifest JSON for on-demand download
   // DB download URLs are derived at runtime from the manifest URL (sibling files)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
@@ -501,6 +506,8 @@ async function main() {
     version: DICT_VERSION,
     sizeBytes: coreStats.size,
     compressedSizeBytes: compressedSize,
+    miniSizeBytes: miniResult.sizeBytes,
+    miniCompressedSizeBytes: miniResult.compressedSizeBytes,
     audioSizeBytes: audioStats.size,
     strokes: {
       version: 1,
