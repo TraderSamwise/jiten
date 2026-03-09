@@ -3,7 +3,7 @@ import { Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useAtom } from "jotai";
 import { useRouter } from "expo-router";
-import { alert } from "@/lib/confirm";
+import { alert, confirm } from "@/lib/confirm";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
@@ -27,6 +27,8 @@ import { useUserDb } from "@/db/user-provider";
 import { attemptBackup, importBackup, type ImportResult } from "@/lib/data-backup";
 import { saveAndShareFile } from "@/lib/file-transfer";
 import { ProgressBar } from "@/components/ProgressBar";
+import * as SQLite from "expo-sqlite";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -437,6 +439,36 @@ export default function SettingsScreen() {
             )}
           </>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          label="Reset Dictionary"
+          onPress={async () => {
+            const proceed = await confirm(
+              "Reset Dictionary?",
+              "This will delete the downloaded dictionary and re-download it on next launch. Your user data will not be affected.",
+            );
+            if (!proceed) return;
+            try {
+              await SQLite.deleteDatabaseAsync("dictionary.db");
+              await SQLite.deleteDatabaseAsync("dictionary-audio.db");
+              await SQLite.deleteDatabaseAsync("dictionary-extended.db");
+            } catch {}
+            await AsyncStorage.multiRemove([
+              "dict-db-version",
+              "dict-db-format",
+              "dict-audio-version",
+              "ext-db-version",
+            ]);
+            if (Platform.OS === "web") {
+              window.location.reload();
+            } else {
+              const Updates = await import("expo-updates");
+              await Updates.reloadAsync();
+            }
+          }}
+          className="mb-2"
+        />
         <Button
           variant="destructive"
           size="sm"
