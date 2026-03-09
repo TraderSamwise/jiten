@@ -2,6 +2,10 @@
   "version": 20,
   "sizeBytes": 187125760,
   "audioSizeBytes": 198111232,
+  "strokes": {
+    "version": 1,
+    "sizeBytes": 0
+  },
   "extended": {
     "version": 1,
     "sizeBytes": 116158464

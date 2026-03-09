@@ -370,8 +370,8 @@ async function main() {
     GROUP BY s.entry_id;
   `);
 
-  // Build kanji index
-  await buildKanjiTables(db);
+  // Build kanji index (returns stroke data for separate DB)
+  const strokeDataMap = await buildKanjiTables(db);
 
   // Build word audio
   await buildAudioTable(db);
@@ -452,13 +452,60 @@ async function main() {
   console.log(`  Core DB: ${(coreStats.size / 1024 / 1024).toFixed(1)} MB`);
   console.log(`  Audio DB: ${(audioStats.size / 1024 / 1024).toFixed(1)} MB`);
 
+  // ─── Split strokes into separate DB ───
+  console.log("\n21. Building strokes database...");
+  const STROKES_DB_PATH = path.join(OUT_DIR, "dictionary-strokes.db");
+  if (fs.existsSync(STROKES_DB_PATH)) fs.unlinkSync(STROKES_DB_PATH);
+
+  const strokesDb = new Database(STROKES_DB_PATH);
+  strokesDb.pragma("journal_mode = WAL");
+
+  strokesDb.exec(`
+    CREATE TABLE kanji_strokes (
+      literal TEXT PRIMARY KEY,
+      stroke_paths TEXT NOT NULL
+    );
+  `);
+
+  const insertStroke = strokesDb.prepare(
+    "INSERT INTO kanji_strokes (literal, stroke_paths) VALUES (?, ?)",
+  );
+
+  let strokeCount = 0;
+  const insertAllStrokes = strokesDb.transaction(() => {
+    for (const [literal, strokePathsJson] of strokeDataMap) {
+      insertStroke.run(literal, strokePathsJson);
+      strokeCount++;
+    }
+  });
+  insertAllStrokes();
+
+  strokesDb.exec("VACUUM");
+  strokesDb.close();
+
+  const strokesStats = fs.statSync(STROKES_DB_PATH);
+  console.log(
+    `  Strokes DB: ${(strokesStats.size / 1024 / 1024).toFixed(1)} MB (${strokeCount} kanji)`,
+  );
+
+  // Compute gzip-compressed size (what GitHub CDN actually transfers)
+  console.log("\n22. Computing compressed sizes...");
+  const { execSync } = await import("child_process");
+  const compressedSize = parseInt(execSync(`gzip -c "${DB_PATH}" | wc -c`).toString().trim(), 10);
+  console.log(`  Core DB compressed: ${(compressedSize / 1024 / 1024).toFixed(1)} MB`);
+
   // Write manifest JSON for on-demand download
   // DB download URLs are derived at runtime from the manifest URL (sibling files)
   const manifestPath = path.join(OUT_DIR, "dict-manifest.json");
   const manifest = {
     version: DICT_VERSION,
     sizeBytes: coreStats.size,
+    compressedSizeBytes: compressedSize,
     audioSizeBytes: audioStats.size,
+    strokes: {
+      version: 1,
+      sizeBytes: strokesStats.size,
+    },
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(`Manifest: ${manifestPath}`);

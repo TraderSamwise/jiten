@@ -14,6 +14,10 @@ import {
   loadWebDictDb,
   loadWebAudioDb,
   storeDbBytes,
+  isStrokesReady,
+  downloadStrokesDb,
+  setStrokesVersion,
+  openStrokesDb,
   type DownloadStatus,
   type DictManifest,
   type BackgroundDownloadItem,
@@ -37,6 +41,7 @@ function isOpfsLockError(err: unknown): boolean {
 interface DatabaseContextType {
   dictDb: SQLite.SQLiteDatabase | null;
   audioDb: SQLite.SQLiteDatabase | null;
+  strokesDb: SQLite.SQLiteDatabase | null;
   extendedDb: SQLite.SQLiteDatabase | null;
   isReady: boolean;
   isDownloaded: boolean;
@@ -50,6 +55,7 @@ interface DatabaseContextType {
 const DatabaseContext = createContext<DatabaseContextType>({
   dictDb: null,
   audioDb: null,
+  strokesDb: null,
   extendedDb: null,
   isReady: false,
   isDownloaded: false,
@@ -100,6 +106,7 @@ async function openAudioDb(): Promise<SQLite.SQLiteDatabase> {
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [dictDb, setDictDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [audioDb, setAudioDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [strokesDb, setStrokesDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [extendedDb, setExtendedDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
@@ -110,6 +117,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [manifest, setManifest] = useState<DictManifest | null>(null);
   const dictDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const audioDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const strokesDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const extendedDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
 
   // Helper to update a single background item
@@ -123,11 +131,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const initBackgroundData = useCallback(
     async (m?: DictManifest) => {
       const items: BackgroundDownloadItem[] = [];
+      const strokesManifest = m?.strokes;
       const extManifest = m?.extended;
 
-      // Build initial status list — audio first (smaller, more immediately useful)
+      // Build initial status list — audio first, then strokes, then extended
       if (m?.audioUrl) {
         items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
+      }
+      if (strokesManifest) {
+        items.push({ key: "strokes", label: "Stroke data", state: "pending", progress: 0 });
       }
       if (extManifest) {
         items.push({ key: "extended", label: "Extended data", state: "pending", progress: 0 });
@@ -172,6 +184,30 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.warn("[DB] Audio init failed (non-blocking):", err);
         updateBgItem("audio", { state: "error", progress: 0 });
+      }
+
+      // Strokes DB download — kanji stroke order paths
+      if (strokesManifest?.url) {
+        try {
+          const strokeReady = await isStrokesReady(strokesManifest.version);
+          if (!strokeReady) {
+            updateBgItem("strokes", { state: "downloading" });
+            console.log("[DB] Downloading strokes DB in background...");
+            await downloadStrokesDb(strokesManifest.url, strokesManifest.sizeBytes, (progress) => {
+              updateBgItem("strokes", { state: "downloading", progress });
+            });
+            await setStrokesVersion(strokesManifest.version);
+          }
+
+          const sDb = await openStrokesDb();
+          strokesDbRef.current = sDb;
+          setStrokesDb(sDb);
+          updateBgItem("strokes", { state: "ready", progress: 1 });
+          console.log("[DB] Strokes DB ready");
+        } catch (err) {
+          console.warn("[DB] Strokes DB init failed (non-blocking):", err);
+          updateBgItem("strokes", { state: "error", progress: 0 });
+        }
       }
 
       // Extended DB download — pre-built .db file, just download and open
@@ -356,6 +392,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDictDb(null);
         audioDbRef.current = null;
         setAudioDb(null);
+        strokesDbRef.current = null;
+        setStrokesDb(null);
         extendedDbRef.current = null;
         setExtendedDb(null);
       });
@@ -449,6 +487,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       value={{
         dictDb,
         audioDb,
+        strokesDb,
         extendedDb,
         isReady,
         isDownloaded,

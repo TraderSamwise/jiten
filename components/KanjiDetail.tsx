@@ -33,20 +33,21 @@ import {
   getRadicalsForKanjiAsync,
   getKanjiUsingRadicalAsync,
   getKanjiBatchAsync,
+  getStrokePathsAsync,
 } from "@/db/kanji-search";
 import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
 import { StrokeOrderDiagram } from "@/components/StrokeOrderDiagram";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { japaneseFontStyle } from "@/lib/japanese-font";
-import type { KanjiCharacter, SimilarKanji, DictEntry } from "@/db/types";
+import type { KanjiCharacter, StrokePath, SimilarKanji, DictEntry } from "@/db/types";
 
 interface KanjiDetailProps {
   literal: string;
 }
 
 export function KanjiDetail({ literal }: KanjiDetailProps) {
-  const { dictDb, isReady } = useDatabase();
+  const { dictDb, strokesDb, isReady } = useDatabase();
   const router = useRouter();
   const tabRouter = useTabRouter();
   const setSearchMode = useSearchStore((s) => s.setSearchMode);
@@ -55,6 +56,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [similar, setSimilar] = useState<SimilarKanji[]>([]);
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
+  const [strokePaths, setStrokePaths] = useState<StrokePath[]>([]);
   const [words, setWords] = useState<DictEntry[]>([]);
   const [usedIn, setUsedIn] = useState<KanjiCharacter[]>([]);
   const [componentKanji, setComponentKanji] = useState<Map<string, KanjiCharacter>>(new Map());
@@ -111,6 +113,14 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     });
     return () => task.cancel();
   }, [dictDb, isReady, literal]);
+
+  // Lazy-load stroke paths from background-downloaded strokes DB
+  useEffect(() => {
+    if (!strokesDb || !literal) return;
+    getStrokePathsAsync(strokesDb, literal)
+      .then(setStrokePaths)
+      .catch(() => {});
+  }, [strokesDb, literal]);
 
   // Fetch kanji data for each radical/component to show meanings
   useEffect(() => {
@@ -253,10 +263,10 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       </View>
 
       {/* Stroke Order */}
-      {kanji.strokePaths.length > 0 && (
+      {strokePaths.length > 0 && (
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Stroke Order</Text>
-          <StrokeOrderDiagram strokes={kanji.strokePaths} />
+          <StrokeOrderDiagram strokes={strokePaths} />
         </Card>
       )}
 

@@ -16,12 +16,20 @@ export interface ExtendedManifest {
   url?: string; // derived from manifest base if absent
 }
 
+export interface StrokesManifest {
+  version: number;
+  sizeBytes: number;
+  url?: string; // derived from manifest base if absent
+}
+
 export interface DictManifest {
   version: number;
   url: string;
   sizeBytes: number;
+  compressedSizeBytes?: number;
   audioSizeBytes?: number;
   audioUrl?: string;
+  strokes?: StrokesManifest;
   extended?: ExtendedManifest;
 }
 
@@ -78,6 +86,11 @@ export async function fetchManifest(): Promise<DictManifest> {
   }
   if (!data.audioUrl && data.audioSizeBytes) {
     data.audioUrl = `${base}/dictionary-audio.db`;
+  }
+
+  // Derive strokes DB URL from manifest base
+  if (data.strokes && !data.strokes.url) {
+    data.strokes.url = `${base}/dictionary-strokes.db`;
   }
 
   // Derive extended DB URL from manifest base
@@ -599,4 +612,91 @@ export async function loadWebExtendedDb(): Promise<import("expo-sqlite").SQLiteD
   const data = await loadDbBytes("dictionary-extended");
   if (!data) return null;
   return deserializeWebDb(data, "extended");
+}
+
+// ─── Strokes DB support ───
+
+const STROKES_VERSION_KEY = "strokes-db-version";
+const STROKES_DB_NAME = "dictionary-strokes.db";
+
+export async function isStrokesReady(version: number): Promise<boolean> {
+  const v = await AsyncStorage.getItem(STROKES_VERSION_KEY);
+  return v !== null && parseInt(v, 10) >= version;
+}
+
+export async function downloadStrokesDb(
+  url: string,
+  sizeBytes: number,
+  onProgress?: (progress: number) => void,
+): Promise<void> {
+  if (Platform.OS === "web") {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Strokes DB download failed: ${res.status}`);
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("ReadableStream not supported");
+
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      onProgress?.(sizeBytes > 0 ? received / sizeBytes : 0);
+    }
+
+    const data = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    await storeDbBytes(data, "dictionary-strokes");
+  } else {
+    const FileSystem = require("expo-file-system/legacy");
+    const dbDir = `${FileSystem.documentDirectory}SQLite/`;
+    await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
+    const destPath = `${dbDir}${STROKES_DB_NAME}`;
+
+    const download = FileSystem.createDownloadResumable(
+      url,
+      destPath,
+      {},
+      (dp: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
+        onProgress?.(dp.totalBytesWritten / dp.totalBytesExpectedToWrite);
+      },
+    );
+
+    const result = await download.downloadAsync();
+    if (!result || result.status !== 200) {
+      throw new Error(`Strokes DB download failed with status ${result?.status}`);
+    }
+  }
+}
+
+export async function setStrokesVersion(version: number): Promise<void> {
+  await AsyncStorage.setItem(STROKES_VERSION_KEY, String(version));
+}
+
+/** Open the strokes database. */
+export async function openStrokesDb(): Promise<import("expo-sqlite").SQLiteDatabase> {
+  if (Platform.OS === "web") {
+    const { ensureLockAvailable } = await import("./web-lock");
+    await ensureLockAvailable();
+    const db = await loadWebStrokesDb();
+    if (!db) throw new Error("Strokes data missing");
+    return db;
+  }
+  const SQLite = require("expo-sqlite");
+  return SQLite.openDatabaseAsync(STROKES_DB_NAME);
+}
+
+/** Load strokes DB bytes from IndexedDB and return an in-memory SQLiteDatabase. */
+export async function loadWebStrokesDb(): Promise<import("expo-sqlite").SQLiteDatabase | null> {
+  const data = await loadDbBytes("dictionary-strokes");
+  if (!data) return null;
+  return deserializeWebDb(data, "strokes");
 }

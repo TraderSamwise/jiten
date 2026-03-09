@@ -305,6 +305,18 @@ export async function getSimilarByMeaningAsync(
   return rows.map(rowToKanjiCharacter);
 }
 
+/** Get stroke paths from the separate strokes DB (async). */
+export async function getStrokePathsAsync(
+  strokesDb: SQLite.SQLiteDatabase,
+  literal: string,
+): Promise<StrokePath[]> {
+  const row = await strokesDb.getFirstAsync<{ stroke_paths: string }>(
+    "SELECT stroke_paths FROM kanji_strokes WHERE literal = ?",
+    [literal],
+  );
+  return row ? parseJsonArray<StrokePath>(row.stroke_paths) : [];
+}
+
 /** Batch-fetch kanji by their literal characters (async). */
 export async function getKanjiBatchAsync(
   db: SQLite.SQLiteDatabase,

@@ -118,7 +118,8 @@ function parseLarsYencken(csvPath: string): Map<string, string[]> {
   return result;
 }
 
-export async function buildKanjiTables(db: Database.Database): Promise<void> {
+/** Returns a map of literal -> stroke_paths JSON for the separate strokes DB. */
+export async function buildKanjiTables(db: Database.Database): Promise<Map<string, string>> {
   console.log("\n═══ Building Kanji Index ═══\n");
 
   // ─── Step 1: Download sources ───
@@ -208,8 +209,7 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
       radical_nelson INTEGER,
       heisig_index INTEGER,
       unicode_codepoint TEXT NOT NULL,
-      stroke_paths TEXT,
-      similarity_vector BLOB
+      stroke_paths TEXT
     );
 
     CREATE TABLE kanji_radicals (
@@ -232,8 +232,8 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
     (literal, grade, stroke_count, frequency_rank, jlpt_old, jlpt_level,
      readings_on, readings_kun, meanings, nanori,
      radical_classical, radical_nelson, heisig_index, unicode_codepoint,
-     stroke_paths, similarity_vector)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     stroke_paths)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertRadical = db.prepare(
@@ -244,24 +244,17 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
     "INSERT OR REPLACE INTO kanji_similarity (literal, similar, score, rank) VALUES (?, ?, ?, ?)",
   );
 
-  // Insert all kanji characters
+  // Insert all kanji characters (stroke_paths deferred to separate DB)
+  const strokeDataMap = new Map<string, string>();
   let charCount = 0;
   const insertChars = db.transaction(() => {
     for (const literal of allKanji) {
       const kd = kanjidic.get(literal);
       const strokes = kanjivg.get(literal);
-      const vec = vectors.get(literal);
 
-      // Build stroke paths JSON
-      let strokePathsJson: string | null = null;
+      // Collect stroke paths for separate strokes DB
       if (strokes && strokes.length > 0) {
-        strokePathsJson = JSON.stringify(strokes.map((s) => ({ type: s.type, d: s.d })));
-      }
-
-      // Convert vector to blob
-      let vectorBlob: Buffer | null = null;
-      if (vec) {
-        vectorBlob = Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
+        strokeDataMap.set(literal, JSON.stringify(strokes.map((s) => ({ type: s.type, d: s.d }))));
       }
 
       insertChar.run(
@@ -279,14 +272,13 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
         kd?.radicalNelson ?? null,
         kd?.heisigIndex ?? null,
         kd?.unicodeCodepoint ?? literal.codePointAt(0)!.toString(16),
-        strokePathsJson,
-        vectorBlob,
+        null, // stroke_paths — deferred to dictionary-strokes.db
       );
       charCount++;
     }
   });
   insertChars();
-  console.log(`  ${charCount} kanji characters inserted`);
+  console.log(`  ${charCount} kanji characters inserted (stroke_paths deferred)`);
 
   // Insert radical decompositions
   let radCount = 0;
@@ -347,4 +339,6 @@ export async function buildKanjiTables(db: Database.Database): Promise<void> {
   `);
 
   console.log("\n═══ Kanji Index Complete ═══\n");
+
+  return strokeDataMap;
 }
