@@ -16,6 +16,7 @@ FILES=(
   "$ASSETS_DIR/dict-manifest.json"
   "$ASSETS_DIR/dictionary.db"
   "$ASSETS_DIR/dictionary-audio.db"
+  "$ASSETS_DIR/dictionary-strokes.db"
   "$ASSETS_DIR/dictionary-extended.db"
 )
 

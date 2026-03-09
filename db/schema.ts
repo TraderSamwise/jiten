@@ -71,7 +71,6 @@ export const kanjiCharacters = sqliteTable("kanji_characters", {
   heisigIndex: integer("heisig_index"),
   unicodeCodepoint: text("unicode_codepoint").notNull(),
   strokePaths: text("stroke_paths"), // JSON array of {type, d}
-  similarityVector: blob("similarity_vector"), // Float32Array as blob
   heisigKeyword: text("heisig_keyword"),
   heisigLesson: integer("heisig_lesson"),
 });

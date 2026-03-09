@@ -114,8 +114,8 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
             <Button
               label={
                 downloadStatus.isUpdate
-                  ? `Update Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`
-                  : `Download Dictionary (${formatBytes(downloadStatus.manifest.sizeBytes)})`
+                  ? `Update Dictionary (${formatBytes(downloadStatus.manifest.compressedSizeBytes ?? downloadStatus.manifest.sizeBytes)})`
+                  : `Download Dictionary (${formatBytes(downloadStatus.manifest.compressedSizeBytes ?? downloadStatus.manifest.sizeBytes)})`
               }
               onPress={startDownload}
             />

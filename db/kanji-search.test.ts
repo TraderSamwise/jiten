@@ -27,8 +27,7 @@ function setupTestDb(d: Database.Database) {
       radical_nelson INTEGER,
       heisig_index INTEGER,
       unicode_codepoint TEXT NOT NULL,
-      stroke_paths TEXT,
-      similarity_vector BLOB
+      stroke_paths TEXT
     );
 
     CREATE TABLE kanji_similarity (
