@@ -105,11 +105,11 @@ cleanup_backups() {
 commit_version() {
     local message=$1
     echo "📝 Committing version changes..."
-    git add "$VERSION_FILE"
-    # Native files may be gitignored — force-add if they exist
-    [ -f "$INFO_PLIST" ] && git add -f "$INFO_PLIST"
-    [ -f "$PBXPROJ" ] && git add -f "$PBXPROJ"
-    git commit -m "$message" --no-verify || {
+    # Commit only version files — don't pick up unrelated staged changes
+    local files=("$VERSION_FILE")
+    [ -f "$INFO_PLIST" ] && files+=("$INFO_PLIST")
+    [ -f "$PBXPROJ" ] && files+=("$PBXPROJ")
+    git commit -m "$message" --no-verify -- "${files[@]}" || {
         echo "⚠️  No changes to commit or commit failed"
         return 1
     }
