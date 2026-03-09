@@ -180,16 +180,18 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             updateBgItem("full-dict", { state: "downloading", progress });
           });
 
-          // Open full DB first, then swap refs atomically, then close old
-          const newDb = await openDictDb();
+          // Close old DB first so expo-sqlite drops the cached connection,
+          // then open fresh — the new file (full dict) gets a new handle.
+          // State goes directly from old→new (never null), no flash.
           const oldDb = dictDbRef.current;
-          dictDbRef.current = newDb;
-          setDictDb(newDb);
           if (oldDb) {
             try {
               await oldDb.closeAsync();
             } catch {}
           }
+          const newDb = await openDictDb();
+          dictDbRef.current = newDb;
+          setDictDb(newDb);
 
           // Mark as full only after successful DB open/swap
           await setDictFull();

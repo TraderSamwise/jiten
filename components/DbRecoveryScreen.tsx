@@ -63,8 +63,12 @@ async function resetDatabase() {
   if (Platform.OS === "web") {
     window.location.reload();
   } else {
-    const Updates = await import("expo-updates");
-    await Updates.reloadAsync();
+    try {
+      const Updates = await import("expo-updates");
+      await Updates.reloadAsync();
+    } catch {
+      // reloadAsync can fail — user must manually restart
+    }
   }
 }
 
