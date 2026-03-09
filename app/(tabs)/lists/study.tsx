@@ -88,7 +88,6 @@ import type { Card as FsrsCard } from "ts-fsrs";
 
 const CONFUSION_COOLDOWN_HOURS = 24;
 
-const NEW_CARD_BATCH_SIZE = 10;
 const CARD_PEEK = 24;
 const CARD_GAP = 16;
 const SWIPE_THRESHOLD = 50;
@@ -967,10 +966,8 @@ function StudyScreen() {
 
   const [loading, setLoading] = useState(true);
   const [navigating, setNavigating] = useState(false);
-  type SessionPhase = "studying" | "checkpoint" | "done" | "waiting";
+  type SessionPhase = "studying" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
-  const [newCardsAvailable, setNewCardsAvailable] = useState(0);
-  const [earlyReviewAvailable, setEarlyReviewAvailable] = useState(0);
   const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -995,11 +992,11 @@ function StudyScreen() {
   // Simple SRS: track cards that completed this session (graduated or passed review)
   const completedSrsIdsRef = useRef(new Set<string>());
 
-  // Simple SRS Dynamic deque: pools of cards to feed into the active deque
-  const simpleDuePoolRef = useRef<QueueItem[]>([]);
-  const simpleNewPoolRef = useRef<QueueItem[]>([]);
+  // Dynamic deque: pools of cards to feed into the active deque (both simple SRS and FSRS)
+  const duePoolRef = useRef<QueueItem[]>([]);
+  const newPoolRef = useRef<QueueItem[]>([]);
   // Track which card IDs were due at session start (for progress bar — excludes new cards)
-  const simpleDueIdsRef = useRef<Set<string>>(new Set());
+  const dueIdsRef = useRef<Set<string>>(new Set());
 
   // FSRS learning timers: cardId → { timer, dueDate }
   const pendingTimersRef = useRef(
@@ -1266,7 +1263,7 @@ function StudyScreen() {
    * the threshold, pull more from the due pool (priority) then new pool.
    * Returns the updated cards array (caller should setCards + cardsRef).
    */
-  function refillSimpleDeque(currentCards: StudyCard[], cursorPos: number): StudyCard[] {
+  function refillDeque(currentCards: StudyCard[], cursorPos: number): StudyCard[] {
     const pendingCount = currentCards.slice(cursorPos).filter((c) => c.status === "pending").length;
     const DEQUE_MIN = 10;
     if (pendingCount >= DEQUE_MIN) return currentCards;
@@ -1275,11 +1272,11 @@ function StudyScreen() {
     const pulled: QueueItem[] = [];
 
     // Pull from due pool first, then new pool
-    while (pulled.length < needed && simpleDuePoolRef.current.length > 0) {
-      pulled.push(simpleDuePoolRef.current.shift()!);
+    while (pulled.length < needed && duePoolRef.current.length > 0) {
+      pulled.push(duePoolRef.current.shift()!);
     }
-    while (pulled.length < needed && simpleNewPoolRef.current.length > 0) {
-      pulled.push(simpleNewPoolRef.current.shift()!);
+    while (pulled.length < needed && newPoolRef.current.length > 0) {
+      pulled.push(newPoolRef.current.shift()!);
     }
 
     if (pulled.length === 0) return currentCards;
@@ -1293,11 +1290,12 @@ function StudyScreen() {
   }
 
   /**
-   * Advance cursor for simple SRS: refill deque from pools, then move cursor
-   * or end session if nothing left.
+   * Advance cursor: refill deque from pools, then move cursor.
+   * For FSRS: if deque is empty but learning timers are pending, show waiting screen.
+   * For simple SRS: if deque is empty and pools are empty, show done screen.
    */
-  function advanceSimpleDeque(currentCards: StudyCard[], cursorPos: number) {
-    const refilled = refillSimpleDeque(currentCards, cursorPos + 1);
+  function advanceDeque(currentCards: StudyCard[], cursorPos: number) {
+    const refilled = refillDeque(currentCards, cursorPos + 1);
     cardsRef.current = refilled;
     setCards(refilled);
 
@@ -1305,6 +1303,9 @@ function StudyScreen() {
     const nextPending = refilled.findIndex((c, i) => i > cursorPos && c.status === "pending");
     if (nextPending >= 0) {
       moveCursor(nextPending);
+    } else if (list?.flashcardMode === "srs" && pendingTimersRef.current.size > 0) {
+      // FSRS: learning cards still on timers — show waiting screen
+      setSessionPhase("waiting");
     } else {
       setSessionPhase("done");
     }
@@ -1393,7 +1394,7 @@ function StudyScreen() {
     setNextTimerDue(null);
   }
 
-  async function loadQueue(mode?: "due" | "new" | "early" | "both") {
+  async function loadQueue() {
     if (!dictDb || !userDb || !list || !listId) return;
     setLoading(true);
     translateX.value = 0;
@@ -1488,7 +1489,7 @@ function StudyScreen() {
 
         const dueCutoffDays = endOfLogicalDayEpochDays(dayResetHour);
 
-        if (!mode || mode === "due") {
+        {
           // Dynamic deque: load all due + all new into pools,
           // then seed the active deque with the first batch.
           const dueRows = await userDb.getAllAsync<SrsCardRow>(
@@ -1508,13 +1509,13 @@ function StudyScreen() {
             const dueItems = await resolveCards(dueRows);
             const newItems = await resolveCards(newRows);
 
-            // Store in pools — refillSimpleDeque will pull from these
-            simpleDuePoolRef.current = dueItems;
-            simpleNewPoolRef.current = newItems;
-            simpleDueIdsRef.current = new Set(dueItems.map((item) => item.srsCard!.id));
+            // Store in pools — refillDeque will pull from these
+            duePoolRef.current = dueItems;
+            newPoolRef.current = newItems;
+            dueIdsRef.current = new Set(dueItems.map((item) => item.srsCard!.id));
 
             // Seed the deque: refill from empty state pulls first ~10
-            const seeded = refillSimpleDeque([], 0);
+            const seeded = refillDeque([], 0);
             setCards(seeded);
             setCursor(0);
             setOriginalCardCount(seeded.length);
@@ -1522,8 +1523,8 @@ function StudyScreen() {
             completedSrsIdsRef.current.clear();
             setSessionPhase("studying");
           } else {
-            simpleDuePoolRef.current = [];
-            simpleNewPoolRef.current = [];
+            duePoolRef.current = [];
+            newPoolRef.current = [];
             setCards([]);
             setCursor(0);
             setOriginalCardCount(0);
@@ -1533,91 +1534,52 @@ function StudyScreen() {
             return;
           }
         }
-        // Simple SRS uses dynamic deque — no "new"/"early"/"both" modes needed
       } else {
-        // FSRS mode
+        // FSRS mode — dynamic deque (same pattern as simple SRS)
         const dueCutoffISO = endOfLogicalDayISO(dayResetHour);
-        const reviewedIds = [...reviewedSrsIdsRef.current];
-        const excludeClause =
-          reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
 
-        if (!mode || mode === "due") {
-          // Learning/relearning cards: exact-time due check
+        {
           const nowISO = new Date().toISOString();
           const learningRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
             [listId, nowISO],
           );
-          // Review cards: day-cutoff due check
           const reviewRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
             [listId, dueCutoffISO],
           );
           const allDueRows = [...learningRows, ...reviewRows];
+          const newRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC`,
+            [listId],
+          );
 
-          if (allDueRows.length > 0) {
-            const items = await resolveCards(allDueRows);
-            setQueueCards(items, allDueRows.length);
+          if (allDueRows.length > 0 || newRows.length > 0) {
+            const dueItems = await resolveCards(allDueRows);
+            const newItems = await resolveCards(newRows);
+
+            duePoolRef.current = dueItems;
+            newPoolRef.current = newItems;
+            dueIdsRef.current = new Set(dueItems.map((item) => item.srsCard!.id));
+
+            const seeded = refillDeque([], 0);
+            setCards(seeded);
+            setCursor(0);
+            setOriginalCardCount(seeded.length);
+            setDueAtStart(allDueRows.length);
+            completedSrsIdsRef.current.clear();
+            setSessionPhase("studying");
           } else {
-            // No due cards — check for new cards (fresh deck edge case)
-            const newCount = await userDb.getFirstAsync<{ c: number }>(
-              "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
-              [listId],
-            );
-            if ((newCount?.c ?? 0) > 0 && reviewedCount === 0) {
-              // Fresh deck: load new cards directly, no checkpoint
-              const newRows = await userDb.getAllAsync<SrsCardRow>(
-                `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
-                [listId, NEW_CARD_BATCH_SIZE],
-              );
-              const items = await resolveCards(newRows);
-              setQueueCards(items, 0);
-            } else {
-              setLoading(false);
-              await enterCheckpoint();
-              return;
-            }
+            duePoolRef.current = [];
+            newPoolRef.current = [];
+            setCards([]);
+            setCursor(0);
+            setOriginalCardCount(0);
+            setDueAtStart(0);
+            setSessionPhase("done");
+            setLoading(false);
+            return;
           }
-        } else if (mode === "new") {
-          const newRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
-            [listId, NEW_CARD_BATCH_SIZE],
-          );
-          const items = await resolveCards(newRows);
-          setQueueCards(items, 0);
-        } else if (mode === "early") {
-          const nowISO = new Date().toISOString();
-          // Early learning cards: due after now
-          const earlyLearning = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, nowISO, ...reviewedIds],
-          );
-          // Early review cards: due after end of logical day
-          const earlyReview = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, dueCutoffISO, ...reviewedIds],
-          );
-          const earlyRows = [...earlyLearning, ...earlyReview].slice(0, 10);
-          const items = await resolveCards(earlyRows);
-          setQueueCards(items, 0);
-        } else if (mode === "both") {
-          const nowISO = new Date().toISOString();
-          const newRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`,
-            [listId, NEW_CARD_BATCH_SIZE],
-          );
-          const earlyLearning = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, nowISO, ...reviewedIds],
-          );
-          const earlyReview = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due > ? AND deleted_at IS NULL${excludeClause} ORDER BY due ASC LIMIT 10`,
-            [listId, dueCutoffISO, ...reviewedIds],
-          );
-          const earlyRows = [...earlyLearning, ...earlyReview].slice(0, 10);
-          const combined = [...newRows, ...earlyRows];
-          const items = await resolveCards(combined);
-          setQueueCards(items, 0);
         }
       }
     } catch (err) {
@@ -1627,46 +1589,6 @@ function StudyScreen() {
     sessionStartRef.current = new Date().toISOString();
     sessionCorrectRef.current = 0;
     setLoading(false);
-  }
-
-  /** Checkpoint screen between batches (FSRS only — simple SRS uses continuous deque) */
-  async function enterCheckpoint() {
-    if (!userDb || !listId || !list) return;
-
-    const reviewedIds = [...reviewedSrsIdsRef.current];
-    const excludeClause =
-      reviewedIds.length > 0 ? ` AND id NOT IN (${reviewedIds.map(() => "?").join(",")})` : "";
-
-    let newCount = 0;
-    let earlyCount = 0;
-
-    {
-      const newRow = await userDb.getFirstAsync<{ c: number }>(
-        "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
-        [listId],
-      );
-      newCount = newRow?.c ?? 0;
-
-      const dueCutoffISO = endOfLogicalDayISO(dayResetHour);
-      const earlyRow = await userDb.getFirstAsync<{ c: number }>(
-        `SELECT COUNT(*) as c FROM srs_cards
-         WHERE list_id = ? AND state != 0 AND due > ? AND deleted_at IS NULL${excludeClause}`,
-        [listId, dueCutoffISO, ...reviewedIds],
-      );
-      earlyCount = earlyRow?.c ?? 0;
-    }
-
-    setNewCardsAvailable(newCount);
-    setEarlyReviewAvailable(earlyCount);
-
-    // If there are pending learning timers, show waiting screen
-    if (pendingTimersRef.current.size > 0) {
-      setSessionPhase("waiting");
-    } else if (newCount === 0 && earlyCount === 0) {
-      setSessionPhase("done");
-    } else {
-      setSessionPhase("checkpoint");
-    }
   }
 
   function flashRating(which: "fail" | "pass" | "easy" | "hard") {
@@ -1789,14 +1711,10 @@ function StudyScreen() {
     if (card?.id) reviewedSrsIdsRef.current.add(card.id);
 
     // Advance to next card
-    if (list?.flashcardMode === "simple_srs") {
-      advanceSimpleDeque(updatedCards, cursor);
+    if (isSrsMode) {
+      advanceDeque(updatedCards, cursor);
     } else if (cursor + 1 >= updatedCards.length) {
-      if (list?.flashcardMode === "add_order") {
-        loadQueue();
-      } else {
-        enterCheckpoint();
-      }
+      loadQueue(); // add_order: load next batch
     } else {
       moveCursor(cursor + 1);
     }
@@ -1844,7 +1762,7 @@ function StudyScreen() {
       const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
       if (!graduated) {
         shouldReQueue = true;
-      } else if (simpleDueIdsRef.current.has(card.id)) {
+      } else if (dueIdsRef.current.has(card.id)) {
         // Only count due cards toward progress (not new cards)
         completedSrsIdsRef.current.add(card.id);
       }
@@ -1855,6 +1773,9 @@ function StudyScreen() {
       // Schedule learning timer if card stays in learning/relearning
       if (result && (result.state === 1 || result.state === 3)) {
         scheduleCardReturn(card.id, result.due);
+      } else if (result && dueIdsRef.current.has(card.id)) {
+        // Card graduated to review — count as completed due card
+        completedSrsIdsRef.current.add(card.id);
       }
     }
 
@@ -1907,14 +1828,10 @@ function StudyScreen() {
     if (card?.id) reviewedSrsIdsRef.current.add(card.id);
 
     // Advance
-    if (list?.flashcardMode === "simple_srs") {
-      advanceSimpleDeque(updatedCards, cursor);
+    if (isSrsMode) {
+      advanceDeque(updatedCards, cursor);
     } else if (cursor + 1 >= updatedCards.length) {
-      if (list?.flashcardMode === "add_order") {
-        loadQueue();
-      } else {
-        enterCheckpoint();
-      }
+      loadQueue(); // add_order: load next batch
     } else {
       moveCursor(cursor + 1);
     }
@@ -1940,7 +1857,12 @@ function StudyScreen() {
 
     if (card) {
       reviewLogId = generateId();
-      await rateSrsCard(card, Rating.Hard, reviewLogId);
+      const result = await rateSrsCard(card, Rating.Hard, reviewLogId);
+      if (result && (result.state === 1 || result.state === 3)) {
+        scheduleCardReturn(card.id, result.due);
+      } else if (result && dueIdsRef.current.has(card.id)) {
+        completedSrsIdsRef.current.add(card.id);
+      }
     }
 
     if (!sessionDirtyRef.current) {
@@ -1982,11 +1904,7 @@ function StudyScreen() {
     setReviewedCount((c) => c + 1);
     if (card?.id) reviewedSrsIdsRef.current.add(card.id);
 
-    if (cursor + 1 >= updatedCards.length) {
-      enterCheckpoint();
-    } else {
-      moveCursor(cursor + 1);
-    }
+    advanceDeque(updatedCards, cursor);
   }
 
   async function handleEasy() {
@@ -2009,7 +1927,12 @@ function StudyScreen() {
 
     if (card) {
       reviewLogId = generateId();
-      await rateSrsCard(card, Rating.Easy, reviewLogId);
+      const result = await rateSrsCard(card, Rating.Easy, reviewLogId);
+      if (result && (result.state === 1 || result.state === 3)) {
+        scheduleCardReturn(card.id, result.due);
+      } else if (result && dueIdsRef.current.has(card.id)) {
+        completedSrsIdsRef.current.add(card.id);
+      }
     }
 
     if (!sessionDirtyRef.current) {
@@ -2051,11 +1974,7 @@ function StudyScreen() {
     setReviewedCount((c) => c + 1);
     if (card?.id) reviewedSrsIdsRef.current.add(card.id);
 
-    if (cursor + 1 >= updatedCards.length) {
-      enterCheckpoint();
-    } else {
-      moveCursor(cursor + 1);
-    }
+    advanceDeque(updatedCards, cursor);
   }
 
   async function rateSrsCard(
@@ -2370,6 +2289,8 @@ function StudyScreen() {
       if (studyCard.reviewLogId) {
         await userDb.runAsync("DELETE FROM review_logs WHERE id = ?", [studyCard.reviewLogId]);
       }
+      // Reset completed status on undo
+      completedSrsIdsRef.current.delete(card.id);
     } else if (list?.flashcardMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
       await userDb.runAsync(
@@ -2725,52 +2646,6 @@ function StudyScreen() {
     );
   }
 
-  if (sessionPhase === "checkpoint") {
-    return (
-      <CustomHeaderScreen>
-        <HeaderPlaceholder py="py-2" spacerHeight={40} />
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-4xl mb-4">Due cards complete!</Text>
-          <Text className="text-lg text-muted-foreground text-center mb-6">
-            You reviewed {reviewedCount} card{reviewedCount === 1 ? "" : "s"}.
-          </Text>
-          {newCardsAvailable > 0 && (
-            <Button
-              className="mt-2 w-64"
-              label={`Learn New Cards (${newCardsAvailable} available)`}
-              onPress={() => loadQueue("new")}
-            />
-          )}
-          {earlyReviewAvailable > 0 && (
-            <Button
-              className="mt-2 w-64"
-              label={`Review Early (${earlyReviewAvailable} available)`}
-              variant="outline"
-              onPress={() => loadQueue("early")}
-            />
-          )}
-          {newCardsAvailable > 0 && earlyReviewAvailable > 0 && (
-            <Button
-              className="mt-2 w-64"
-              label="Both"
-              variant="outline"
-              onPress={() => loadQueue("both")}
-            />
-          )}
-          <Button
-            className="mt-4 w-64"
-            label="Return to List"
-            variant="outline"
-            onPress={() => {
-              setNavigating(true);
-              setTimeout(() => navigateBack(), 100);
-            }}
-          />
-        </View>
-      </CustomHeaderScreen>
-    );
-  }
-
   if (sessionPhase === "done") {
     return (
       <CustomHeaderScreen>
@@ -2811,15 +2686,12 @@ function StudyScreen() {
   }
 
   const ratedCount = cards.filter((c) => c.status === "rated" && c.reQueueOf == null).length;
-  // Simple SRS: count completed due cards (graduated/passed review), not just rated
-  const isSimpleSrsMode = list?.flashcardMode === "simple_srs";
-  const completedCount = isSimpleSrsMode ? completedSrsIdsRef.current.size : ratedCount;
-  const progressDenom = isSimpleSrsMode ? dueAtStart : dueAtStart || originalCardCount;
+  // SRS modes: count completed due cards (graduated out of learning), not just rated
+  const completedCount = isSrsMode ? completedSrsIdsRef.current.size : ratedCount;
+  const progressDenom = isSrsMode ? dueAtStart : dueAtStart || originalCardCount;
   const progress = progressDenom > 0 ? Math.min((completedCount / progressDenom) * 100, 100) : 0;
-  // Simple SRS: green as soon as all due cards graduated (session continues with new cards)
-  // Other modes: green only when cursor moves past all cards
-  const allDueComplete =
-    isSrsMode && progress >= 100 && (isSimpleSrsMode ? dueAtStart > 0 : cursor >= cards.length);
+  // SRS: green as soon as all due cards completed (session continues with new cards)
+  const allDueComplete = isSrsMode && progress >= 100 && dueAtStart > 0;
 
   return (
     <CustomHeaderScreen>
