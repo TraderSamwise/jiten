@@ -91,10 +91,13 @@ function stripOkurigana(
 // ─── Batch dictionary lookup ───
 
 const BATCH_SIZE = 500;
+let hasJlptCol: boolean | null = null;
 
 interface DictMatch {
   kanjiForm: string;
   kanaForm: string;
+  jlptLevel: number | null;
+  irregularReading: boolean;
 }
 
 async function batchLookup(
@@ -127,37 +130,92 @@ async function batchLookup(
 
   const idList = [...allIds];
 
-  // Phase B: Batch fetch forms + common flag
+  // Phase B: Batch fetch forms + common flag + jlpt_level + tags
   const entryKanji = new Map<number, string[]>();
   const entryKana = new Map<number, string>();
   const entryCommon = new Map<number, boolean>();
+  const entryJlpt = new Map<number, number | null>();
+  const entryIrregular = new Map<number, boolean>();
+
+  const IRREGULAR_TAGS = new Set(["ateji", "gikun", "iK", "ik"]);
 
   for (let i = 0; i < idList.length; i += BATCH_SIZE) {
     const batch = idList.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
 
+    // Fetch entries with jlpt_level (fallback for old DBs without the column)
+    let entryRowsPromise: Promise<{ id: number; common: number; jlpt_level: number | null }[]>;
+    if (hasJlptCol !== false) {
+      entryRowsPromise = dictDb
+        .getAllAsync<{ id: number; common: number; jlpt_level: number | null }>(
+          `SELECT id, common, jlpt_level FROM entries WHERE id IN (${ph})`,
+          batch,
+        )
+        .then((rows) => {
+          hasJlptCol = true;
+          return rows;
+        })
+        .catch((e) => {
+          if (hasJlptCol === null && String(e).includes("jlpt_level")) {
+            hasJlptCol = false;
+            return dictDb
+              .getAllAsync<{
+                id: number;
+                common: number;
+              }>(`SELECT id, common FROM entries WHERE id IN (${ph})`, batch)
+              .then((rows) => rows.map((r) => ({ ...r, jlpt_level: null as number | null })));
+          }
+          throw e;
+        });
+    } else {
+      entryRowsPromise = dictDb
+        .getAllAsync<{
+          id: number;
+          common: number;
+        }>(`SELECT id, common FROM entries WHERE id IN (${ph})`, batch)
+        .then((rows) => rows.map((r) => ({ ...r, jlpt_level: null as number | null })));
+    }
+
     const [kanjiRows, kanaRows, entryRows] = await Promise.all([
-      dictDb.getAllAsync<{ entry_id: number; text: string }>(
-        `SELECT entry_id, text FROM kanji WHERE entry_id IN (${ph}) ORDER BY rowid`,
+      dictDb.getAllAsync<{ entry_id: number; text: string; tags: string | null }>(
+        `SELECT entry_id, text, tags FROM kanji WHERE entry_id IN (${ph}) ORDER BY rowid`,
         batch,
       ),
-      dictDb.getAllAsync<{ entry_id: number; text: string }>(
-        `SELECT entry_id, text FROM kana WHERE entry_id IN (${ph}) ORDER BY rowid`,
+      dictDb.getAllAsync<{ entry_id: number; text: string; tags: string | null }>(
+        `SELECT entry_id, text, tags FROM kana WHERE entry_id IN (${ph}) ORDER BY rowid`,
         batch,
       ),
-      dictDb.getAllAsync<{ id: number; common: number }>(
-        `SELECT id, common FROM entries WHERE id IN (${ph})`,
-        batch,
-      ),
+      entryRowsPromise,
     ]);
 
-    for (const r of entryRows) entryCommon.set(r.id, !!r.common);
+    for (const r of entryRows) {
+      entryCommon.set(r.id, !!r.common);
+      entryJlpt.set(r.id, r.jlpt_level);
+    }
     for (const r of kanjiRows) {
       if (!entryKanji.has(r.entry_id)) entryKanji.set(r.entry_id, []);
       entryKanji.get(r.entry_id)!.push(r.text);
+      // Check for irregular reading tags
+      if (r.tags) {
+        try {
+          const tags: string[] = JSON.parse(r.tags);
+          if (tags.some((t) => IRREGULAR_TAGS.has(t))) {
+            entryIrregular.set(r.entry_id, true);
+          }
+        } catch {}
+      }
     }
     for (const r of kanaRows) {
       if (!entryKana.has(r.entry_id)) entryKana.set(r.entry_id, r.text);
+      // Check for irregular reading tags on kana too
+      if (r.tags) {
+        try {
+          const tags: string[] = JSON.parse(r.tags);
+          if (tags.some((t) => IRREGULAR_TAGS.has(t))) {
+            entryIrregular.set(r.entry_id, true);
+          }
+        } catch {}
+      }
     }
   }
 
@@ -176,7 +234,12 @@ async function batchLookup(
       const kanjiForm = kanjiTexts.find((k) => k === word) || kanjiTexts[0] || word;
 
       if (!bestMatch || (common && !bestCommon)) {
-        bestMatch = { kanjiForm, kanaForm: kana };
+        bestMatch = {
+          kanjiForm,
+          kanaForm: kana,
+          jlptLevel: entryJlpt.get(id) ?? null,
+          irregularReading: entryIrregular.get(id) ?? false,
+        };
         bestCommon = common;
       }
       if (bestCommon) break;
@@ -197,7 +260,7 @@ async function batchLookup(
 export async function resolveFuriganaBatch(
   surfaces: string[],
   dictDb: SQLite.SQLiteDatabase,
-): Promise<Record<string, { kanjiPart: string; reading: string; kanjiPartLen: number }>> {
+): Promise<Record<string, FuriganaEntry>> {
   // Deinflect all surfaces, collect unique search words
   const surfaceToDeinflected = new Map<string, string[]>();
   const allSearchWords = new Set<string>();
@@ -213,7 +276,7 @@ export async function resolveFuriganaBatch(
   const lookupMap = await batchLookup(dictDb, [...allSearchWords]);
 
   // Resolve each surface
-  const result: Record<string, { kanjiPart: string; reading: string; kanjiPartLen: number }> = {};
+  const result: Record<string, FuriganaEntry> = {};
 
   for (const surface of surfaces) {
     const deinflected = surfaceToDeinflected.get(surface)!;
@@ -225,7 +288,10 @@ export async function resolveFuriganaBatch(
           match.kanaForm,
         );
         if (reading) {
-          result[surface] = { kanjiPart, reading, kanjiPartLen };
+          const entry: FuriganaEntry = { kanjiPart, reading, kanjiPartLen };
+          if (match.jlptLevel != null) entry.wordJlpt = match.jlptLevel;
+          if (match.irregularReading) entry.irregularReading = true;
+          result[surface] = entry;
           break;
         }
       }
