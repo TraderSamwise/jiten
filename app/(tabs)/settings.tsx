@@ -453,12 +453,14 @@ export default function SettingsScreen() {
               await SQLite.deleteDatabaseAsync("dictionary.db");
               await SQLite.deleteDatabaseAsync("dictionary-audio.db");
               await SQLite.deleteDatabaseAsync("dictionary-extended.db");
+              await SQLite.deleteDatabaseAsync("dictionary-strokes.db");
             } catch {}
             await AsyncStorage.multiRemove([
               "dict-db-version",
               "dict-db-format",
               "dict-audio-version",
               "ext-db-version",
+              "strokes-db-version",
               "dict-db-full",
             ]);
             if (Platform.OS === "web") {
