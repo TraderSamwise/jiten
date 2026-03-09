@@ -10,7 +10,6 @@
  */
 
 import type { SQLiteDatabase } from "expo-sqlite";
-import migration020 from "./dict-client-migration-020";
 
 export interface ClientDictMigration {
   version: number;
@@ -22,7 +21,16 @@ export interface ClientDictMigration {
  * Add new migrations here when bumping DICT_VERSION ahead of DICT_BASE_VERSION.
  * Each entry must have a unique version number greater than DICT_BASE_VERSION.
  */
-export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [migration020];
+export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
+  // Example:
+  // {
+  //   version: 15,
+  //   description: "Add heisig_lesson column to kanji table",
+  //   sql: [
+  //     "ALTER TABLE kanji ADD COLUMN heisig_lesson INTEGER",
+  //   ],
+  // },
+];
 
 /**
  * Run pending client-side migrations on the dict DB.
