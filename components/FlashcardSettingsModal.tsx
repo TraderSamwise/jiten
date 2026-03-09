@@ -17,7 +17,7 @@ import type { CardFace, FlashcardMode } from "@/db/types";
 
 interface FlashcardSettingsModalProps {
   visible: boolean;
-  onClose: () => void;
+  onClose: (changed?: boolean) => void;
   listId: string;
   onStartStudy?: () => void;
 }
@@ -126,6 +126,26 @@ export function FlashcardSettingsModal({
       }
     }
 
+    // Detect noop — skip save + reload if nothing changed
+    if (list) {
+      const arrEq = (a: unknown[] | null | undefined, b: unknown[] | null | undefined) =>
+        JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+      const unchanged =
+        mode === list.flashcardMode &&
+        arrEq(frontFaces, list.frontFaces) &&
+        arrEq(backFaces, list.backFaces) &&
+        autoPlayAudio === list.autoPlayAudio &&
+        confusionDetection === (list.confusionDetection !== false) &&
+        voiceMode === (list.voiceMode ?? false) &&
+        typingMode === (list.typingMode ?? false) &&
+        arrEq(learningSteps, list.learningSteps) &&
+        arrEq(relearningSteps, list.relearningSteps);
+      if (unchanged) {
+        onClose(false);
+        return;
+      }
+    }
+
     const now = new Date().toISOString();
     await userDb.runAsync(
       "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, learning_steps = ?, relearning_steps = ?, configured = 1, updated_at = ? WHERE id = ?",
@@ -160,13 +180,13 @@ export function FlashcardSettingsModal({
     if (onStartStudy) {
       onStartStudy();
     } else {
-      onClose();
+      onClose(true);
     }
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => onClose(false)}>
+      <Pressable className="flex-1 justify-center px-6 bg-black/50" onPress={() => onClose(false)}>
         <Pressable onPress={() => {}}>
           <View
             className="rounded-2xl border border-border bg-background p-5"
@@ -393,7 +413,12 @@ export function FlashcardSettingsModal({
 
             {/* Actions */}
             <View className="flex-row gap-2">
-              <Button className="flex-1" variant="outline" label="Cancel" onPress={onClose} />
+              <Button
+                className="flex-1"
+                variant="outline"
+                label="Cancel"
+                onPress={() => onClose(false)}
+              />
               <Button
                 className="flex-1"
                 label={onStartStudy ? "Start Study" : "Save"}
