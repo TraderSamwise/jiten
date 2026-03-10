@@ -33,7 +33,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>14</string>
+	<string>15</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -49,6 +49,8 @@
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to use the microphone for voice-controlled flashcards.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your photo library for saving and sharing content.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to use speech recognition for voice-controlled flashcards.</string>
 	<key>NSUserActivityTypes</key>
