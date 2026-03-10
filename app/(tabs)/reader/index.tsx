@@ -1,5 +1,13 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, ActivityIndicator, Platform, RefreshControl, SectionList } from "react-native";
+import {
+  View,
+  ActivityIndicator,
+  Platform,
+  RefreshControl,
+  FlatList,
+  Pressable,
+  Linking,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
@@ -8,7 +16,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BookCard } from "@/components/BookCard";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
-import { Trash2 } from "@/lib/icons";
+import { Trash2, ExternalLink } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { alert, confirm } from "@/lib/confirm";
 import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
@@ -16,6 +24,8 @@ import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import type { Book } from "@/db/types";
+
+const isIOS = Platform.OS === "ios";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -54,6 +64,7 @@ export default function LibraryScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showSyncChoice, setShowSyncChoice] = useState(false);
+  const [tab, setTab] = useState<"books" | "articles">("books");
 
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
@@ -173,25 +184,27 @@ export default function LibraryScreen() {
     triggerSync();
   }
 
-  const sections = useMemo(() => {
-    const articleItems = books.filter((b) => b.source === "article");
-    const bookItems = books.filter((b) => b.source !== "article");
-    const result: { title: string; data: Book[] }[] = [];
-    if (articleItems.length > 0) result.push({ title: "Articles", data: articleItems });
-    if (bookItems.length > 0) result.push({ title: "Books", data: bookItems });
-    return result;
-  }, [books]);
+  const articles = useMemo(() => books.filter((b) => b.source === "article"), [books]);
+  const bookItems = useMemo(() => books.filter((b) => b.source !== "article"), [books]);
+  const listData = tab === "articles" ? articles : bookItems;
 
   const renderBook = useCallback(
     ({ item }: { item: Book }) => {
-      const actions: SwipeAction[] = [
-        {
-          label: "Delete",
-          icon: Trash2,
-          color: "#ef4444",
-          onPress: () => handleDelete(item.id),
-        },
-      ];
+      const actions: SwipeAction[] = [];
+      if (item.sourceUrl) {
+        actions.push({
+          label: "Open",
+          icon: ExternalLink,
+          color: "#3b82f6",
+          onPress: () => Linking.openURL(item.sourceUrl!),
+        });
+      }
+      actions.push({
+        label: "Delete",
+        icon: Trash2,
+        color: "#ef4444",
+        onPress: () => handleDelete(item.id),
+      });
 
       return (
         <SwipeableRow actions={actions}>
@@ -211,49 +224,79 @@ export default function LibraryScreen() {
         </View>
       )}
 
-      <View className="flex-row gap-2 px-4 py-3">
-        <Button
-          label="Aozora"
-          variant="outline"
-          size="sm"
-          onPress={() => router.push("/reader/browse")}
-          className="flex-1"
-        />
-        <Button
-          label="Syosetu"
-          variant="outline"
-          size="sm"
-          onPress={() => router.push("/reader/browse-syosetu")}
-          className="flex-1"
-        />
-        <Button
-          label="Import"
-          variant="outline"
-          size="sm"
-          onPress={handleImport}
-          className="flex-1"
-        />
-      </View>
+      {isIOS && (
+        <View className="flex-row mx-4 mt-3 mb-1 rounded-lg bg-muted p-0.5">
+          <Pressable
+            onPress={() => setTab("books")}
+            className={`flex-1 items-center py-1.5 rounded-md ${tab === "books" ? "bg-background" : ""}`}
+          >
+            <Text
+              className={`text-sm font-medium ${tab === "books" ? "text-foreground" : "text-muted-foreground"}`}
+            >
+              Books
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTab("articles")}
+            className={`flex-1 items-center py-1.5 rounded-md ${tab === "articles" ? "bg-background" : ""}`}
+          >
+            <Text
+              className={`text-sm font-medium ${tab === "articles" ? "text-foreground" : "text-muted-foreground"}`}
+            >
+              Articles
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
-      <SectionList
-        sections={sections}
+      {tab === "books" && (
+        <View className="flex-row gap-2 px-4 py-3">
+          <Button
+            label="Aozora"
+            variant="outline"
+            size="sm"
+            onPress={() => router.push("/reader/browse")}
+            className="flex-1"
+          />
+          <Button
+            label="Syosetu"
+            variant="outline"
+            size="sm"
+            onPress={() => router.push("/reader/browse-syosetu")}
+            className="flex-1"
+          />
+          <Button
+            label="Import"
+            variant="outline"
+            size="sm"
+            onPress={handleImport}
+            className="flex-1"
+          />
+        </View>
+      )}
+
+      <FlatList
+        data={listData}
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
-        renderSectionHeader={({ section }) => (
-          <View className="px-4 pt-4 pb-1 bg-background">
-            <Text className="text-sm font-semibold text-muted-foreground">{section.title}</Text>
-          </View>
-        )}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         ListEmptyComponent={
-          <View className="items-center py-16">
-            <Text className="text-muted-foreground text-center">
-              No books yet.{"\n"}Browse Aozora Bunko or import a .txt file.
-            </Text>
-          </View>
+          tab === "articles" ? (
+            <View className="items-center py-16 px-8">
+              <Text className="text-muted-foreground text-center">
+                No articles yet.{"\n\n"}Share a webpage from Safari using the share button, then tap
+                jiten to save it here.
+              </Text>
+            </View>
+          ) : (
+            <View className="items-center py-16">
+              <Text className="text-muted-foreground text-center">
+                No books yet.{"\n"}Browse Aozora Bunko or import a .txt file.
+              </Text>
+            </View>
+          )
         }
-        stickySectionHeadersEnabled={false}
       />
 
       <SyncChoiceModal
