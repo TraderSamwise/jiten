@@ -265,8 +265,12 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Stroke Order */}
       {strokePaths.length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Stroke Order</Text>
-          <StrokeOrderDiagram strokes={strokePaths} />
+          <StrokeOrderDiagram
+            strokes={strokePaths}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">Stroke Order</Text>
+            }
+          />
         </Card>
       )}
 
@@ -425,8 +429,13 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Components */}
       {radicals.filter((r) => r !== literal).length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
-          <CollapsibleSection collapsedHeight={90} fadeHeight={30}>
+          <CollapsibleSection
+            collapsedHeight={90}
+            fadeHeight={30}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">Components</Text>
+            }
+          >
             <View className="flex-row flex-wrap gap-2">
               {radicals
                 .filter((r) => r !== literal)
@@ -468,8 +477,15 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Similar Visually */}
       {similar.length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Visually</Text>
-          <CollapsibleSection collapsedHeight={90} fadeHeight={30}>
+          <CollapsibleSection
+            collapsedHeight={90}
+            fadeHeight={30}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">
+                Similar Visually
+              </Text>
+            }
+          >
             <View className="flex-row flex-wrap gap-2">
               {similar.map((s) => (
                 <Pressable
@@ -491,8 +507,15 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Similar Meaning */}
       {similarMeaning.length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">Similar Meaning</Text>
-          <CollapsibleSection collapsedHeight={90} fadeHeight={30}>
+          <CollapsibleSection
+            collapsedHeight={90}
+            fadeHeight={30}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">
+                Similar Meaning
+              </Text>
+            }
+          >
             <View className="flex-row flex-wrap gap-2">
               {similarMeaning.map((k) => (
                 <Pressable
@@ -512,10 +535,15 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
       {/* Used as component in */}
       {usedIn.length > 0 && (
         <Card className="mb-3">
-          <Text className="text-sm font-medium text-muted-foreground mb-2">
-            Used as Component in
-          </Text>
-          <CollapsibleSection collapsedHeight={90} fadeHeight={30}>
+          <CollapsibleSection
+            collapsedHeight={90}
+            fadeHeight={30}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">
+                Used as Component in
+              </Text>
+            }
+          >
             <View className="flex-row flex-wrap gap-2">
               {usedIn.map((k) => (
                 <Pressable

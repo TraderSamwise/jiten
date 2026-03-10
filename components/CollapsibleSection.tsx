@@ -10,6 +10,8 @@ interface CollapsibleSectionProps {
   collapsedHeight: number;
   /** Height of the fade gradient overlay. Defaults to 30. */
   fadeHeight?: number;
+  /** Optional header rendered above the collapsible content. Tapping it also toggles. */
+  header?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -22,6 +24,7 @@ interface CollapsibleSectionProps {
 export function CollapsibleSection({
   collapsedHeight,
   fadeHeight = 30,
+  header,
   children,
 }: CollapsibleSectionProps) {
   const { colorScheme } = useColorScheme();
@@ -62,7 +65,14 @@ export function CollapsibleSection({
   const inner = <Animated.View onLayout={onLayout}>{children}</Animated.View>;
 
   // Content confirmed to fit — render normally
-  if (fullHeight > 0 && !needsCollapse) return inner;
+  if (fullHeight > 0 && !needsCollapse) {
+    return (
+      <>
+        {header}
+        {inner}
+      </>
+    );
+  }
 
   // Single tree for both states — avoids remount flash on expand
   return (
@@ -72,6 +82,7 @@ export function CollapsibleSection({
         setHasToggled(true);
       }}
     >
+      {header}
       <Animated.View style={animatedStyle} pointerEvents={expanded ? "box-none" : "none"}>
         {inner}
       </Animated.View>
