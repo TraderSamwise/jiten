@@ -58,49 +58,40 @@ export function CollapsibleSection({
   // Content confirmed to fit — render normally
   if (fullHeight > 0 && !needsCollapse) return inner;
 
-  // Not yet measured or needs collapse — always clip to collapsedHeight
-
-  if (expanded) {
-    // Expanded: children are interactive, tap anywhere to collapse
-    return (
-      <Pressable onPress={() => setExpanded(false)}>
-        <Animated.View style={animatedStyle} pointerEvents="box-none">
-          {inner}
-        </Animated.View>
-      </Pressable>
-    );
-  }
-
-  // Collapsed (or pre-measurement): intercept all taps to expand, block child press events
+  // Single tree for both states — avoids remount flash on expand
   return (
     <Pressable
       onPress={() => {
-        setExpanded(true);
+        setExpanded((prev) => !prev);
         setHasToggled(true);
       }}
     >
-      <Animated.View style={animatedStyle}>{inner}</Animated.View>
-      {/* Touch blocker covers the content so child Pressables don't fire */}
-      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
-      <Animated.View
-        {...(hasToggled ? { entering: FadeIn.duration(200) } : {})}
-        exiting={FadeOut.duration(200)}
-        style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
-        pointerEvents="none"
-      >
-        {Platform.OS === "web" ? (
-          <View
-            style={
-              {
-                height: fadeHeight,
-                backgroundImage: `linear-gradient(${cardBgTransparent}, ${cardBg})`,
-              } as any
-            }
-          />
-        ) : (
-          <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
-        )}
+      <Animated.View style={animatedStyle} pointerEvents={expanded ? "box-none" : "none"}>
+        {inner}
       </Animated.View>
+      {/* Touch blocker covers the content so child Pressables don't fire when collapsed */}
+      {!expanded && <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />}
+      {!expanded && (
+        <Animated.View
+          {...(hasToggled ? { entering: FadeIn.duration(200) } : {})}
+          exiting={FadeOut.duration(200)}
+          style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
+          pointerEvents="none"
+        >
+          {Platform.OS === "web" ? (
+            <View
+              style={
+                {
+                  height: fadeHeight,
+                  backgroundImage: `linear-gradient(${cardBgTransparent}, ${cardBg})`,
+                } as any
+              }
+            />
+          ) : (
+            <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+          )}
+        </Animated.View>
+      )}
     </Pressable>
   );
 }
