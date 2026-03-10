@@ -4,7 +4,7 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
-  FlatList,
+  SectionList,
   Pressable,
   Linking,
 } from "react-native";
@@ -16,7 +16,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BookCard } from "@/components/BookCard";
 import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
-import { Trash2, ExternalLink } from "@/lib/icons";
+import { Trash2, ExternalLink, Bookmark } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { alert, confirm } from "@/lib/confirm";
 import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
@@ -26,6 +26,7 @@ import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import type { Book } from "@/db/types";
 
 const isIOS = Platform.OS === "ios";
+const STALE_DAYS = 30;
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -69,11 +70,25 @@ export default function LibraryScreen() {
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
     await seedDefaultBookIfNeeded(userDb);
+    // Load both saved and unsaved (but not deleted)
     const rows = await userDb.getAllAsync<any>(
-      "SELECT * FROM books WHERE deleted_at IS NULL AND saved = 1 ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
+      "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
     );
     setBooks(rows.map(parseBookRow));
   }, [userDb, lastSyncAt]);
+
+  // Auto-cleanup stale unsaved items on focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!userDb) return;
+      const cutoff = new Date(Date.now() - STALE_DAYS * 86400000).toISOString();
+      userDb.runAsync(
+        "DELETE FROM books WHERE saved = 0 AND created_at < ? AND deleted_at IS NULL",
+        [cutoff],
+      );
+      loadBooks();
+    }, [userDb, loadBooks]),
+  );
 
   const handleRefresh = useCallback(async () => {
     if (syncStatus === "disabled") {
@@ -101,12 +116,6 @@ export default function LibraryScreen() {
     [syncWithChoice, loadBooks],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      loadBooks();
-    }, [loadBooks]),
-  );
-
   async function handleImport() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -121,11 +130,9 @@ export default function LibraryScreen() {
 
       let content: string;
       if (Platform.OS === "web") {
-        // On web, fetch the blob URI and read as text
         const response = await fetch(asset.uri);
         const blob = await response.blob();
         content = await blob.text();
-        // If content looks garbled (common with SJIS), try SJIS decode
         if (content.includes("\ufffd")) {
           const buffer = await blob.arrayBuffer();
           const uint8 = new Uint8Array(buffer);
@@ -139,7 +146,6 @@ export default function LibraryScreen() {
             encoding: EncodingType.UTF8,
           });
         } catch {
-          // Try reading as binary and attempting SJIS decode
           const base64 = await readAsStringAsync(asset.uri, {
             encoding: EncodingType.Base64,
           });
@@ -184,21 +190,65 @@ export default function LibraryScreen() {
     triggerSync();
   }
 
-  const articles = useMemo(() => books.filter((b) => b.source === "article"), [books]);
-  const bookItems = useMemo(() => books.filter((b) => b.source !== "article"), [books]);
-  const listData = tab === "articles" ? articles : bookItems;
+  async function handleSave(bookId: string) {
+    if (!userDb) return;
+    const now = new Date().toISOString();
+    await userDb.runAsync("UPDATE books SET saved = 1, updated_at = ? WHERE id = ?", [now, bookId]);
+    setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, saved: 1 } : b)));
+    triggerSync();
+  }
+
+  async function handleUnsave(bookId: string) {
+    if (!userDb) return;
+    const now = new Date().toISOString();
+    await userDb.runAsync("UPDATE books SET saved = 0, updated_at = ? WHERE id = ?", [now, bookId]);
+    setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, saved: 0 } : b)));
+    triggerSync();
+  }
+
+  const isArticleTab = tab === "articles";
+  const allItems = useMemo(
+    () => books.filter((b) => (isArticleTab ? b.source === "article" : b.source !== "article")),
+    [books, isArticleTab],
+  );
+  const savedItems = useMemo(() => allItems.filter((b) => b.saved === 1), [allItems]);
+  const recentItems = useMemo(() => allItems.filter((b) => b.saved === 0), [allItems]);
+  const hasRecent = recentItems.length > 0;
+
+  const sections = useMemo(() => {
+    if (!hasRecent) {
+      // No unsaved items — flat list, no section headers
+      return [{ title: "", data: savedItems }];
+    }
+    const result: { title: string; data: Book[] }[] = [];
+    result.push({ title: "Recent", data: recentItems });
+    if (savedItems.length > 0) result.push({ title: "Saved", data: savedItems });
+    return result;
+  }, [hasRecent, recentItems, savedItems]);
 
   const renderBook = useCallback(
     ({ item }: { item: Book }) => {
       const actions: SwipeAction[] = [];
+
+      // Save / Unsave toggle
+      if (item.saved === 0) {
+        actions.push({
+          label: "Save",
+          icon: Bookmark,
+          color: "#3b82f6",
+          onPress: () => handleSave(item.id),
+        });
+      }
+
       if (item.sourceUrl) {
         actions.push({
           label: "Open",
           icon: ExternalLink,
-          color: "#3b82f6",
+          color: "#6b7280",
           onPress: () => Linking.openURL(item.sourceUrl!),
         });
       }
+
       actions.push({
         label: "Delete",
         icon: Trash2,
@@ -275,14 +325,21 @@ export default function LibraryScreen() {
         </View>
       )}
 
-      <FlatList
-        data={listData}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <View className="px-4 pt-4 pb-1 bg-background">
+              <Text className="text-sm font-semibold text-muted-foreground">{section.title}</Text>
+            </View>
+          ) : null
+        }
         contentContainerStyle={{ paddingHorizontal: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         ListEmptyComponent={
-          tab === "articles" ? (
+          isArticleTab ? (
             <View className="items-center py-16 px-8">
               <Text className="text-muted-foreground text-center">
                 No articles yet.{"\n\n"}Share a webpage from Safari using the share button, then tap
@@ -297,6 +354,7 @@ export default function LibraryScreen() {
             </View>
           )
         }
+        stickySectionHeadersEnabled={false}
       />
 
       <SyncChoiceModal

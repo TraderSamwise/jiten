@@ -127,6 +127,15 @@ export default function BrowseAozoraScreen() {
         ],
       );
 
+      // Evict oldest unsaved books beyond cap
+      if (saved === 0) {
+        await userDb.runAsync(
+          `DELETE FROM books WHERE saved = 0 AND deleted_at IS NULL AND source != 'article'
+           AND id NOT IN (SELECT id FROM books WHERE saved = 0 AND deleted_at IS NULL AND source != 'article' ORDER BY created_at DESC LIMIT 10)`,
+          [],
+        );
+      }
+
       triggerSync();
       setImportMap((prev) => new Map(prev).set(aozoraBook.bookId, { id, saved }));
       return id;
