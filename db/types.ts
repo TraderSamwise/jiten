@@ -142,6 +142,7 @@ export interface Book {
   updatedAt: string;
   lastReadAt: string | null;
   sourceUrl: string | null;
+  imageUrl: string | null;
   saved: number;
 }
 

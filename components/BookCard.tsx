@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { View, Image } from "react-native";
 import { PressableCard, CardTitle, CardDescription } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ProgressBar";
 import type { Book } from "@/db/types";
@@ -25,14 +25,34 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
   const lastRead = book.lastReadAt ? new Date(book.lastReadAt).toLocaleDateString() : null;
 
   return (
-    <PressableCard onPress={onPress} className="mb-2">
-      <CardTitle numberOfLines={1}>{book.title}</CardTitle>
-      {book.author ? <CardDescription numberOfLines={1}>{book.author}</CardDescription> : null}
-      {book.sourceUrl ? (
-        <CardDescription numberOfLines={1} className="text-xs">
-          {formatDomain(book.sourceUrl)}
-        </CardDescription>
-      ) : null}
+    <PressableCard onPress={onPress} className="mb-2 overflow-hidden">
+      {book.imageUrl ? (
+        <View className="flex-row">
+          <Image
+            source={{ uri: book.imageUrl }}
+            className="w-16 h-16 rounded-md mr-3"
+            resizeMode="cover"
+          />
+          <View className="flex-1 justify-center">
+            <CardTitle numberOfLines={2}>{book.title}</CardTitle>
+            {book.sourceUrl ? (
+              <CardDescription numberOfLines={1} className="text-xs">
+                {formatDomain(book.sourceUrl)}
+              </CardDescription>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <>
+          <CardTitle numberOfLines={1}>{book.title}</CardTitle>
+          {book.author ? <CardDescription numberOfLines={1}>{book.author}</CardDescription> : null}
+          {book.sourceUrl ? (
+            <CardDescription numberOfLines={1} className="text-xs">
+              {formatDomain(book.sourceUrl)}
+            </CardDescription>
+          ) : null}
+        </>
+      )}
       <View className="flex-row flex-wrap items-center gap-1.5 mt-1.5">
         {lastRead && (
           <View className="rounded-full bg-muted px-2 py-0.5">

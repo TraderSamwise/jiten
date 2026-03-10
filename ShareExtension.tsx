@@ -8,6 +8,7 @@ interface PreprocessingResults {
   url?: string;
   byline?: string;
   excerpt?: string;
+  imageUrl?: string;
 }
 
 export default function ShareExtension({ preprocessingResults }: InitialProps) {
@@ -18,6 +19,7 @@ export default function ShareExtension({ preprocessingResults }: InitialProps) {
     if (results.title) params.set("title", results.title);
     if (results.url) params.set("url", results.url);
     if (results.byline) params.set("byline", results.byline);
+    if (results.imageUrl) params.set("imageUrl", results.imageUrl);
     if (results.content) {
       // Truncate at 200KB to stay within URL scheme limits
       const content =

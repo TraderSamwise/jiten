@@ -5,6 +5,7 @@ export interface ArticleData {
   content: string;
   url: string;
   byline: string;
+  imageUrl: string;
 }
 
 function generateId(): string {
@@ -20,13 +21,14 @@ export async function importArticle(userDb: WrappedUserDb, article: ArticleData)
   const now = new Date().toISOString();
 
   await userDb.runAsync(
-    `INSERT INTO books (id, title, author, source, source_url, raw_content, created_at, updated_at)
-     VALUES (?, ?, ?, 'article', ?, ?, ?, ?)`,
+    `INSERT INTO books (id, title, author, source, source_url, image_url, raw_content, created_at, updated_at)
+     VALUES (?, ?, ?, 'article', ?, ?, ?, ?, ?)`,
     [
       id,
       article.title || "Untitled Article",
       article.byline || "",
       article.url,
+      article.imageUrl || null,
       article.content,
       now,
       now,
