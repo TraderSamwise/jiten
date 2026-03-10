@@ -21,6 +21,8 @@ module.exports = {
       buildNumber: String(APP_VERSION.buildNumber),
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSPhotoLibraryUsageDescription:
+          "Allow $(PRODUCT_NAME) to access your photo library for saving and sharing content.",
       },
     },
     android: {
