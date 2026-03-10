@@ -39,6 +39,7 @@ function parseBookRow(row: any): Book {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastReadAt: row.last_read_at ?? null,
+    sourceUrl: row.source_url ?? null,
     saved: row.saved ?? 1,
   };
 }

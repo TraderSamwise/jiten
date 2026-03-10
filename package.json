@@ -12,6 +12,7 @@
     "migrate:dict": "npx tsx scripts/migrate-dict.ts",
     "build:jlpt": "npx tsx scripts/build-jlpt-list.ts",
     "build:reader": "npx tsx lib/reader/build.ts",
+    "build:preprocessing": "npx tsx lib/share-extension/build-preprocessing.ts",
     "prestart": "yarn build:reader",
     "prebuild": "yarn build:reader",
     "serve:dev": "npx tsx scripts/serve-dev.ts",
@@ -63,6 +64,7 @@
     "expo-network": "^55.0.8",
     "expo-router": "~6.0.23",
     "expo-secure-store": "^15.0.8",
+    "expo-share-extension": "^5.0.6",
     "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-sqlite": "^16.0.10",
@@ -95,6 +97,7 @@
   },
   "devDependencies": {
     "@clerk/backend": "^3.0.1",
+    "@mozilla/readability": "^0.6.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/adm-zip": "^0.5.7",
