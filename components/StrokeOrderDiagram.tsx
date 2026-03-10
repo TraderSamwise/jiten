@@ -8,6 +8,8 @@ interface StrokeOrderDiagramProps {
   strokes: StrokePath[];
   /** Size of each frame. Defaults to 60. */
   size?: number;
+  /** Optional header rendered above the collapsible content. */
+  header?: React.ReactNode;
 }
 
 const GAP = 4; // gap-1 = 4px
@@ -20,11 +22,15 @@ const GAP = 4; // gap-1 = 4px
  * When content overflows one row, collapses to ~1.5 rows with a fade overlay.
  * Tap to expand/collapse with animation.
  */
-export function StrokeOrderDiagram({ strokes, size = 60 }: StrokeOrderDiagramProps) {
+export function StrokeOrderDiagram({ strokes, size = 60, header }: StrokeOrderDiagramProps) {
   if (strokes.length === 0) return null;
 
   return (
-    <CollapsibleSection collapsedHeight={size + GAP + size * 0.5} fadeHeight={size * 0.6}>
+    <CollapsibleSection
+      collapsedHeight={size + GAP + size * 0.5}
+      fadeHeight={size * 0.6}
+      header={header}
+    >
       <View className="flex-row flex-wrap gap-1">
         {strokes.map((_, stepIndex) => (
           <View
