@@ -185,4 +185,5 @@ export const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN learning_steps TEXT DEFAULT NULL`,
   `ALTER TABLE lists ADD COLUMN relearning_steps TEXT DEFAULT NULL`,
   `ALTER TABLE srs_cards ADD COLUMN learning_steps INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE books ADD COLUMN source_url TEXT DEFAULT NULL`,
 ];

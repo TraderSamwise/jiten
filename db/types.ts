@@ -131,7 +131,7 @@ export interface Book {
   author: string;
   aozoraId: number | null;
   sourceId: string | null;
-  source: "aozora" | "import" | "syosetu";
+  source: "aozora" | "import" | "syosetu" | "article";
   rawContent: string | null;
   htmlContent: string | null;
   scrollPosition: number;
@@ -141,6 +141,7 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   lastReadAt: string | null;
+  sourceUrl: string | null;
   saved: number;
 }
 

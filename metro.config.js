@@ -1,6 +1,7 @@
 const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
+const { withShareExtension } = require("expo-share-extension/metro");
 
 const config = getDefaultConfig(__dirname);
 
@@ -28,4 +29,23 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return result;
 };
 
-module.exports = withNativeWind(config, { input: "./global.css" });
+const finalConfig = withShareExtension(
+  withNativeWind(config, { input: "./global.css" }),
+);
+
+// expo-share-extension's rewrite only handles "index.bundle" → "index.share.bundle",
+// but Expo SDK 51+ uses ".expo/.virtual-metro-entry" as the entry point.
+// We must rewrite BEFORE the parent resolvers so the virtual entry is never seen.
+const parentRewrite = finalConfig.server.rewriteRequestUrl;
+finalConfig.server.rewriteRequestUrl = (url) => {
+  if (url.includes("shareExtension=true")) {
+    const rewritten = url.replace(
+      /\.expo\/\.virtual-metro-entry/,
+      "index.share",
+    );
+    return parentRewrite(rewritten);
+  }
+  return parentRewrite(url);
+};
+
+module.exports = finalConfig;

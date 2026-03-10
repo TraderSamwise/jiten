@@ -58,6 +58,18 @@ module.exports = {
             "Allow $(PRODUCT_NAME) to use speech recognition for voice-controlled flashcards.",
         },
       ],
+      [
+        "expo-share-extension",
+        {
+          preprocessingFile: "./lib/share-extension/preprocessing.js",
+          excludedPackages: [
+            "expo-dev-client",
+            "expo-splash-screen",
+            "expo-updates",
+            "@jamsch/expo-speech-recognition",
+          ],
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
