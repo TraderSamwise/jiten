@@ -52,6 +52,7 @@ const VERSION_KEY = "dict-db-version";
 const FORMAT_KEY = "dict-db-format";
 const FULL_DB_KEY = "dict-db-full";
 const DB_NAME = "dictionary.db";
+const FULL_DB_NAME = "dictionary-full.db";
 const AUDIO_VERSION_KEY = "dict-audio-version";
 const AUDIO_DB_NAME = "dictionary-audio.db";
 
@@ -185,15 +186,14 @@ export async function downloadFullDictionary(
   onProgress?: (progress: number) => void,
   onStatusChange?: (status: string) => void,
 ): Promise<void> {
-  // Download the full dictionary.db — same mechanism as the gate download
-  // but uses the full URL and overwrites the existing local DB
   if (Platform.OS === "web") {
+    // Web: overwrite the same IDB key — DBs are independent in-memory copies
     await downloadWeb(manifest, onProgress, onStatusChange);
   } else {
-    await downloadNative(manifest, onProgress);
+    // Native: download to a separate file so we can open it without closing
+    // the mini DB (closeAsync on an in-use DB causes native SIGSEGV)
+    await downloadNative(manifest, onProgress, FULL_DB_NAME);
   }
-  // Note: setDictFull() is NOT called here — provider.tsx calls it
-  // after the DB is successfully opened and swapped in.
 }
 
 /** Clean up data left behind by previous broken download formats. */
@@ -240,13 +240,14 @@ async function clearStaleWebData(oldFormat: number): Promise<void> {
 async function downloadNative(
   manifest: DictManifest,
   onProgress?: (progress: number) => void,
+  filename: string = DB_NAME,
 ): Promise<void> {
   const FileSystem = require("expo-file-system/legacy");
 
   const dbDir = `${FileSystem.documentDirectory}SQLite/`;
   await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
 
-  const destPath = `${dbDir}${DB_NAME}`;
+  const destPath = `${dbDir}${filename}`;
 
   const download = FileSystem.createDownloadResumable(
     manifest.url,

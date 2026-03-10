@@ -451,6 +451,7 @@ export default function SettingsScreen() {
             if (!proceed) return;
             try {
               await SQLite.deleteDatabaseAsync("dictionary.db");
+              await SQLite.deleteDatabaseAsync("dictionary-full.db");
               await SQLite.deleteDatabaseAsync("dictionary-audio.db");
               await SQLite.deleteDatabaseAsync("dictionary-extended.db");
               await SQLite.deleteDatabaseAsync("dictionary-strokes.db");
