@@ -9,6 +9,14 @@ interface BookCardProps {
   onPress: () => void;
 }
 
+function formatDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 export const BookCard = React.memo(function BookCard({ book, onPress }: BookCardProps) {
   const progress =
     book.totalChars > 0
@@ -20,15 +28,22 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
     <PressableCard onPress={onPress} className="mb-2">
       <CardTitle numberOfLines={1}>{book.title}</CardTitle>
       {book.author ? <CardDescription numberOfLines={1}>{book.author}</CardDescription> : null}
+      {book.sourceUrl ? (
+        <CardDescription numberOfLines={1} className="text-xs">
+          {formatDomain(book.sourceUrl)}
+        </CardDescription>
+      ) : null}
       <View className="flex-row flex-wrap items-center gap-1.5 mt-1.5">
         {lastRead && (
           <View className="rounded-full bg-muted px-2 py-0.5">
             <CardDescription className="text-xs">{lastRead}</CardDescription>
           </View>
         )}
-        <View className="rounded-full bg-muted px-2 py-0.5">
-          <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
-        </View>
+        {book.source !== "article" && (
+          <View className="rounded-full bg-muted px-2 py-0.5">
+            <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
+          </View>
+        )}
         {(book.charOffset > 0 || book.scrollPosition > 0) && (
           <>
             <View className="flex-1" />
