@@ -1,6 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { View, ActivityIndicator, Platform, RefreshControl } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, ActivityIndicator, Platform, RefreshControl, SectionList } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
@@ -173,6 +172,15 @@ export default function LibraryScreen() {
     triggerSync();
   }
 
+  const sections = useMemo(() => {
+    const articleItems = books.filter((b) => b.source === "article");
+    const bookItems = books.filter((b) => b.source !== "article");
+    const result: { title: string; data: Book[] }[] = [];
+    if (articleItems.length > 0) result.push({ title: "Articles", data: articleItems });
+    if (bookItems.length > 0) result.push({ title: "Books", data: bookItems });
+    return result;
+  }, [books]);
+
   const renderBook = useCallback(
     ({ item }: { item: Book }) => {
       const actions: SwipeAction[] = [
@@ -226,10 +234,15 @@ export default function LibraryScreen() {
         />
       </View>
 
-      <FlashList
-        data={books}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
         renderItem={renderBook}
+        renderSectionHeader={({ section }) => (
+          <View className="px-4 pt-4 pb-1 bg-background">
+            <Text className="text-sm font-semibold text-muted-foreground">{section.title}</Text>
+          </View>
+        )}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         ListEmptyComponent={
@@ -239,6 +252,7 @@ export default function LibraryScreen() {
             </Text>
           </View>
         }
+        stickySectionHeadersEnabled={false}
       />
 
       <SyncChoiceModal
