@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Platform, View, Pressable } from "react-native";
-import Animated, { useAnimatedStyle, withTiming, FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useColorScheme } from "nativewind";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -53,6 +53,12 @@ export function CollapsibleSection({
     };
   }, [expanded, fullHeight, collapsedHeight, needsCollapse, hasToggled]);
 
+  const gradientOpacity = useAnimatedStyle(() => {
+    return {
+      opacity: hasToggled ? withTiming(expanded ? 0 : 1, { duration: 250 }) : 1,
+    };
+  }, [expanded, hasToggled]);
+
   const inner = <Animated.View onLayout={onLayout}>{children}</Animated.View>;
 
   // Content confirmed to fit — render normally
@@ -71,27 +77,23 @@ export function CollapsibleSection({
       </Animated.View>
       {/* Touch blocker covers the content so child Pressables don't fire when collapsed */}
       {!expanded && <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />}
-      {!expanded && (
-        <Animated.View
-          {...(hasToggled ? { entering: FadeIn.duration(200) } : {})}
-          exiting={FadeOut.duration(200)}
-          style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
-          pointerEvents="none"
-        >
-          {Platform.OS === "web" ? (
-            <View
-              style={
-                {
-                  height: fadeHeight,
-                  backgroundImage: `linear-gradient(${cardBgTransparent}, ${cardBg})`,
-                } as any
-              }
-            />
-          ) : (
-            <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
-          )}
-        </Animated.View>
-      )}
+      <Animated.View
+        style={[{ position: "absolute", bottom: 0, left: 0, right: 0 }, gradientOpacity]}
+        pointerEvents="none"
+      >
+        {Platform.OS === "web" ? (
+          <View
+            style={
+              {
+                height: fadeHeight,
+                backgroundImage: `linear-gradient(${cardBgTransparent}, ${cardBg})`,
+              } as any
+            }
+          />
+        ) : (
+          <LinearGradient colors={[cardBgTransparent, cardBg]} style={{ height: fadeHeight }} />
+        )}
+      </Animated.View>
     </Pressable>
   );
 }
