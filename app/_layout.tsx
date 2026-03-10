@@ -6,20 +6,18 @@ import { Platform, View } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import * as Linking from "expo-linking";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
 import { BackgroundDownloadBanner } from "@/components/BackgroundDownloadBanner";
 import { UserDatabaseProvider } from "@/db/user-provider";
-import { useUserDb } from "@/db/user-provider";
 import { SyncProvider, useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { setRecoverySignedIn } from "@/components/DbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
 import { confirm } from "@/lib/confirm";
-import { importArticle } from "@/lib/article-import";
+
 import "../global.css";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -54,71 +52,6 @@ function FirstSyncCheck() {
   const { needsFirstSyncChoice, resolveFirstSyncChoice } = useSync();
 
   return <SyncChoiceModal visible={needsFirstSyncChoice} onChoice={resolveFirstSyncChoice} />;
-}
-
-function ArticleImportHandler() {
-  const userDb = useUserDb();
-  const router = useRouter();
-  const pendingUrl = useRef<string | null>(null);
-
-  const handleUrl = async (url: string) => {
-    if (!url) return;
-    const parsed = Linking.parse(url);
-    if (parsed.path !== "import-article") return;
-
-    const params = parsed.queryParams ?? {};
-    const title = (params.title as string) || "";
-    const content = (params.content as string) || "";
-    const articleUrl = (params.url as string) || "";
-    const byline = (params.byline as string) || "";
-
-    if (!content && !title) return;
-
-    if (!userDb) {
-      pendingUrl.current = url;
-      return;
-    }
-
-    try {
-      const bookId = await importArticle(userDb, {
-        title,
-        content,
-        url: articleUrl,
-        byline,
-      });
-      router.push(`/reader/${bookId}` as any);
-    } catch (e) {
-      console.error("Article import failed:", e);
-    }
-  };
-
-  // Process pending URL when userDb becomes available
-  useEffect(() => {
-    if (userDb && pendingUrl.current) {
-      const url = pendingUrl.current;
-      pendingUrl.current = null;
-      handleUrl(url);
-    }
-  }, [userDb]);
-
-  // Listen for deep links (iOS only)
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-
-    // Handle cold launch
-    Linking.getInitialURL().then((url) => {
-      if (url) handleUrl(url);
-    });
-
-    // Handle runtime deep links
-    const sub = Linking.addEventListener("url", (event) => {
-      handleUrl(event.url);
-    });
-
-    return () => sub.remove();
-  }, []);
-
-  return null;
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -168,7 +101,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <SyncProvider userId={effectiveUserId} onSignOut={signOut} getToken={getToken}>
             <ReconciliationCheck />
             <FirstSyncCheck />
-            <ArticleImportHandler />
             <View style={{ flex: 1 }}>
               {children}
               <BackgroundDownloadBanner />
@@ -293,6 +225,10 @@ export default function RootLayout() {
                 <Stack.Screen
                   name="sign-up"
                   options={{ headerShown: false, presentation: "modal" }}
+                />
+                <Stack.Screen
+                  name="import-article"
+                  options={{ headerShown: false, animation: "none" }}
                 />
               </Stack>
             </AppShell>
