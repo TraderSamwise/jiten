@@ -36,6 +36,7 @@ import {
   CloudUpload,
   CloudBackup,
   Download,
+  ExternalLink,
 } from "lucide-react-native";
 
 // Map className → style with color extraction so NativeWind
@@ -77,6 +78,7 @@ const icons = [
   CloudUpload,
   CloudBackup,
   Download,
+  ExternalLink,
 ];
 
 for (const icon of icons) {
@@ -125,4 +127,5 @@ export {
   CloudUpload,
   CloudBackup,
   Download,
+  ExternalLink,
 };
