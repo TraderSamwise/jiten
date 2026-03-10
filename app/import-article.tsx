@@ -11,6 +11,7 @@ export default function ImportArticleScreen() {
     content: string;
     url: string;
     byline: string;
+    imageUrl: string;
   }>();
   const router = useRouter();
   const userDb = useUserDb();
@@ -30,7 +31,9 @@ export default function ImportArticleScreen() {
       return;
     }
 
-    importArticle(userDb, { title, content, url: articleUrl, byline })
+    const imageUrl = params.imageUrl || "";
+
+    importArticle(userDb, { title, content, url: articleUrl, byline, imageUrl })
       .then((bookId) => {
         router.replace(`/reader/${bookId}` as any);
       })
