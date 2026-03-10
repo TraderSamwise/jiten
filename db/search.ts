@@ -87,6 +87,41 @@ function stemForLike(word: string): string {
   return w;
 }
 
+/** Simple English stemming for FTS: returns base forms so "passing" → ["passing", "pass"]. */
+function stemForFts(word: string): string[] {
+  const w = word.toLowerCase();
+  const stems = new Set<string>([w]);
+  // -ing: passing → pass, running → run, making → make
+  if (w.endsWith("ing") && w.length > 4) {
+    const base = w.slice(0, -3);
+    stems.add(base); // pass
+    stems.add(base + "e"); // make
+    // doubled consonant: running → run
+    if (base.length >= 2 && base[base.length - 1] === base[base.length - 2]) {
+      stems.add(base.slice(0, -1));
+    }
+  }
+  // -ed: passed → pass, closed → close
+  if (w.endsWith("ed") && w.length > 3) {
+    stems.add(w.slice(0, -2)); // pass
+    stems.add(w.slice(0, -1)); // close (via "closed" → "close")
+    const base = w.slice(0, -2);
+    if (base.length >= 2 && base[base.length - 1] === base[base.length - 2]) {
+      stems.add(base.slice(0, -1)); // stopped → stop
+    }
+  }
+  // -s/-es: passes → pass, flies → fly
+  if (w.endsWith("ies") && w.length > 4) {
+    stems.add(w.slice(0, -3) + "y"); // flies → fly
+  } else if (w.endsWith("es") && w.length > 3) {
+    stems.add(w.slice(0, -2)); // passes → pass
+    stems.add(w.slice(0, -1)); // closes → close
+  } else if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) {
+    stems.add(w.slice(0, -1)); // cats → cat
+  }
+  return [...stems];
+}
+
 /** Look up synonyms for a list of words from the synonyms table.
  *  Tries extendedDb first (v16+), falls back to main dict DB.
  *  maxPerWord caps synonyms per word to keep LIKE queries fast. */
@@ -187,6 +222,30 @@ function classifyInput(input: string): { hasJapanese: boolean; isAscii: boolean 
 
 // ─── Gloss matching ───
 
+/** Generate stemmed variants of a multi-word query phrase.
+ *  "passing over" → ["passing over", "pass over", "passe over"] */
+function stemmedQueryPhrases(query: string): string[] {
+  const words = query.split(" ");
+  if (words.length < 2) return [query];
+  // For each word, get its stems; produce cartesian product of phrases
+  const stemSets = words.map((w) => stemForFts(w));
+  const phrases = new Set<string>([query]);
+  // Only combine first-word stems with remaining words to avoid explosion
+  for (const stem of stemSets[0]) {
+    phrases.add([stem, ...words.slice(1)].join(" "));
+  }
+  // Also stem last word
+  if (stemSets.length > 1) {
+    for (const stem of stemSets[stemSets.length - 1]) {
+      phrases.add([...words.slice(0, -1), stem].join(" "));
+    }
+  }
+  // Stem all words at once
+  const allStemmed = stemSets.map((s) => s[0]).join(" ");
+  phrases.add(allStemmed);
+  return [...phrases];
+}
+
 function computeGlossBonus(
   glosses: string,
   query: string,
@@ -196,6 +255,8 @@ function computeGlossBonus(
 ): { score: number; matchedGloss: string | null } {
   const senseBonus = senseIndex === 0 ? 3000 : 1000;
   const exactBonus = isCommon ? 5000 : 0;
+  // Generate stemmed variants for multi-word queries
+  const queryVariants = stemmedQueryPhrases(query);
   try {
     const parsed = JSON.parse(glosses) as { lang: string; text: string }[];
     let best = 0;
@@ -204,29 +265,52 @@ function computeGlossBonus(
     for (const g of parsed) {
       if (g.lang !== "eng") continue;
       const gl = g.text.toLowerCase();
-      const isExact = gl === query || gl === "to " + query;
-      const isAnnotated =
-        !isExact &&
-        (gl.startsWith(query + " (") ||
-          gl.startsWith(query + "(") ||
-          gl.startsWith("to " + query + " (") ||
-          gl.startsWith("to " + query + "("));
-      if (isExact || isAnnotated) {
-        const posFactor = gi === 0 ? 1.0 : 0.5;
-        const s = senseBonus + Math.floor(exactBonus * posFactor);
-        if (s > best) {
-          best = s;
-          bestGloss = g.text;
+      for (const q of queryVariants) {
+        const isExact = gl === q || gl === "to " + q;
+        const isAnnotated =
+          !isExact &&
+          (gl.startsWith(q + " (") ||
+            gl.startsWith(q + "(") ||
+            gl.startsWith("to " + q + " (") ||
+            gl.startsWith("to " + q + "("));
+        if (isExact || isAnnotated) {
+          const posFactor = gi === 0 ? 1.0 : 0.5;
+          // Stemmed variants get slightly less bonus than exact query
+          const stemPenalty = q === query ? 1.0 : 0.9;
+          const s = Math.floor((senseBonus + Math.floor(exactBonus * posFactor)) * stemPenalty);
+          if (s > best) {
+            best = s;
+            bestGloss = g.text;
+          }
+        } else if (
+          gl.startsWith(q + " ") ||
+          gl.startsWith(q + ",") ||
+          gl.startsWith("to " + q + " ") ||
+          gl.startsWith("to " + q + ",")
+        ) {
+          const s = Math.floor(senseBonus * (q === query ? 1.0 : 0.9));
+          if (s > best) {
+            best = s;
+            bestGloss = g.text;
+          }
         }
-      } else if (
-        gl.startsWith(query + " ") ||
-        gl.startsWith(query + ",") ||
-        gl.startsWith("to " + query + " ") ||
-        gl.startsWith("to " + query + ",")
-      ) {
-        if (senseBonus > best) {
-          best = senseBonus;
-          bestGloss = g.text;
+        // Substring containment: query appears word-bounded inside the gloss
+        if (best < senseBonus && q.length > 2) {
+          const idx = gl.indexOf(q);
+          if (idx > 0) {
+            const before = gl[idx - 1];
+            const after = gl[idx + q.length] ?? "";
+            const wordStart = before === " " || before === ";" || before === "," || before === "(";
+            const wordEnd =
+              after === "" || after === " " || after === ";" || after === "," || after === ")";
+            if (wordStart && wordEnd) {
+              const containsBonus = Math.floor(senseBonus * 0.8 * (q === query ? 1.0 : 0.9));
+              if (containsBonus > best) {
+                best = containsBonus;
+                bestGloss = g.text;
+              }
+            }
+          }
         }
       }
       // Synonym match: boost entries whose gloss matches a synonym exactly
@@ -465,8 +549,40 @@ async function searchEnglishFts(
     }
   }
 
-  // Tier 2: AND of content words (only for multi-word queries)
+  // Tier 1.5: Stemmed AND — catches inflected forms (e.g. "passing over" → "pass" AND "over")
   const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  if (contentWords.length > 1) {
+    const stemmedGroups = contentWords.map((w) => {
+      const stems = stemForFts(w);
+      if (stems.length === 1) return `"${stems[0]}"*`;
+      return "(" + stems.map((s) => `"${s}"*`).join(" OR ") + ")";
+    });
+    const stemAndQuery = stemmedGroups.join(" AND ");
+    try {
+      const tier15Rows = await db.getAllAsync<{
+        entry_id: number;
+        priority: number;
+        common: number;
+      }>(
+        `SELECT fts.entry_id, e.priority, e.common
+         FROM glosses_fts fts
+         JOIN entries e ON fts.entry_id = e.id
+         WHERE glosses_fts MATCH ?
+         ORDER BY e.priority + (e.common * 50) DESC
+         LIMIT ?`,
+        [stemAndQuery, limit * 4],
+      );
+      const tier15 = await applyGlossBonus(db, tier15Rows, input, 750);
+      for (const r of tier15) {
+        if (!seenIds.has(r.entryId)) {
+          seenIds.add(r.entryId);
+          allResults.push(r);
+        }
+      }
+    } catch {}
+  }
+
+  // Tier 2: AND of content words (only for multi-word queries)
   if (contentWords.length > 1) {
     const andQuery = contentWords.map((w) => `"${w}"*`).join(" AND ");
     const tier2Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
@@ -535,6 +651,8 @@ async function searchEnglishFts(
       [orQuery, limit * 4],
     );
     const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
+    // Bonus for matching more content words (entries matching 2/3 words rank above 1/3)
+    await addWordCountBonus(db, tier3, contentWords);
     for (const r of tier3) {
       if (!seenIds.has(r.entryId)) {
         seenIds.add(r.entryId);
@@ -598,8 +716,43 @@ async function searchEnglishLike(
     }
   }
 
-  // Tier 2: AND of stemmed content words
+  // Tier 1.5 (LIKE): Stemmed AND — catches inflected forms (e.g. "passing over" → "pass" AND "over")
   const contentWords = cleaned.split(" ").filter((w) => !STOP_WORDS.has(w));
+  if (contentWords.length > 1) {
+    const stemGroups = contentWords.map((w) => stemForFts(w));
+    const whereGroupClauses = stemGroups.map(
+      (stems) => "(" + stems.map(() => "s.glosses LIKE ?").join(" OR ") + ")",
+    );
+    const havingGroupClauses = stemGroups.map(
+      (stems) =>
+        "SUM(CASE WHEN " +
+        stems.map(() => "s.glosses LIKE ?").join(" OR ") +
+        " THEN 1 ELSE 0 END) > 0",
+    );
+    const whereParams = stemGroups.flat().map((s) => `%${s}%`);
+    const havingParams = stemGroups.flat().map((s) => `%${s}%`);
+
+    const tier15Rows = await db.getAllAsync<{ entry_id: number; priority: number; common: number }>(
+      `SELECT s.entry_id, e.priority, e.common
+       FROM senses s
+       JOIN entries e ON s.entry_id = e.id
+       WHERE ${whereGroupClauses.join(" OR ")}
+       GROUP BY s.entry_id, e.priority, e.common
+       HAVING ${havingGroupClauses.join(" AND ")}
+       ORDER BY e.priority + (e.common * 50) DESC
+       LIMIT ?`,
+      [...whereParams, ...havingParams, limit * 4],
+    );
+    const tier15 = await applyGlossBonus(db, tier15Rows, input, 750);
+    for (const r of tier15) {
+      if (!seenIds.has(r.entryId)) {
+        seenIds.add(r.entryId);
+        allResults.push(r);
+      }
+    }
+  }
+
+  // Tier 2: AND of stemmed content words
   if (contentWords.length > 1) {
     const stems = contentWords.map(stemForLike);
     const likePatterns = stems.map((s) => `%${s}%`);
@@ -705,6 +858,7 @@ async function searchEnglishLike(
       [...likePatterns, limit * 4],
     );
     const tier3 = await applyGlossBonus(db, tier3Rows, input, 0);
+    await addWordCountBonus(db, tier3, contentWords);
     for (const r of tier3) {
       if (!seenIds.has(r.entryId)) {
         seenIds.add(r.entryId);
@@ -714,6 +868,28 @@ async function searchEnglishLike(
   }
 
   return allResults;
+}
+
+/** Add bonus to OR-tier results based on how many content words appear in their glosses. */
+async function addWordCountBonus(
+  db: SQLite.SQLiteDatabase,
+  results: ScoredEntry[],
+  contentWords: string[],
+): Promise<void> {
+  if (contentWords.length < 2) return;
+  const lowerWords = contentWords.map((w) => w.toLowerCase());
+  for (const r of results) {
+    const senseRows = await db.getAllAsync<{ glosses: string }>(
+      `SELECT glosses FROM senses WHERE entry_id = ?`,
+      [r.entryId],
+    );
+    const allGlossText = senseRows.map((s) => s.glosses.toLowerCase()).join(" ");
+    let matchCount = 0;
+    for (const w of lowerWords) {
+      if (allGlossText.includes(w)) matchCount++;
+    }
+    r.score += Math.max(0, matchCount - 1) * 500;
+  }
 }
 
 async function applyGlossBonus(
