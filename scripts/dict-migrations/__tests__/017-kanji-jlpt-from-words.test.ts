@@ -154,7 +154,7 @@ describe("Kanji JLPT derivation from words", () => {
 
     // These were wrong under Waller data, now correct with frequency-based levels
     expect(getLevel("隣")).toBe(5); // 隣り is N5 word
-    expect(getLevel("姿")).toBe(5); // 姿 is N5 (very common in novels + newspapers)
+    expect(getLevel("姿")).toBe(3); // 姿 derives N3 from word-level JLPT data
     expect(getLevel("犬")).toBe(5);
     expect(getLevel("猫")).toBe(5);
     expect(getLevel("難")).toBe(5); // 難しい is N5
