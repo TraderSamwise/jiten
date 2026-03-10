@@ -86,7 +86,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
       className={`border-b border-border ${headerBgClass}`}
     >
       <View className="flex-row items-center gap-2 px-4 pb-2 pt-2">
-        {back && (
+        {back && !isIndex && (
           <Pressable onPress={goBack} hitSlop={8} className="py-1">
             <ChevronLeft size={24} className="text-primary" />
           </Pressable>
