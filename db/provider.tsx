@@ -80,12 +80,14 @@ export function useDictDb() {
 }
 
 /**
- * Open the dict DB. On web, proactively asks other tabs to release
- * their OPFS locks first to prevent VFS corruption.
+ * Open the dict DB. On native, checks isDictFull() to open the full DB
+ * file (dictionary-full.db) vs the mini (dictionary.db). On web,
+ * proactively asks other tabs to release OPFS locks first.
  */
 async function openDictDb(): Promise<SQLite.SQLiteDatabase> {
   if (Platform.OS !== "web") {
-    return SQLite.openDatabaseAsync("dictionary.db");
+    const full = await isDictFull();
+    return SQLite.openDatabaseAsync(full ? "dictionary-full.db" : "dictionary.db");
   }
 
   const { ensureLockAvailable } = await import("./web-lock");
@@ -180,38 +182,16 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             updateBgItem("full-dict", { state: "downloading", progress });
           });
 
-          // Swap DB: close old handle, open fresh connection to the new file.
-          // Delay close briefly to let any in-flight queries finish.
-          // If the swap fails, mark as full anyway (file is downloaded) and
-          // reload the app so the next init picks up the full DB cleanly.
-          try {
-            const oldDb = dictDbRef.current;
-            dictDbRef.current = null; // prevent new queries on old handle
-            if (oldDb) {
-              await new Promise((r) => setTimeout(r, 100));
-              try {
-                await oldDb.closeAsync();
-              } catch {}
-            }
-            const newDb = await openDictDb();
-            dictDbRef.current = newDb;
-            setDictDb(newDb);
-          } catch (swapErr) {
-            console.warn("[DB] Dict swap failed, will reload:", swapErr);
-            await setDictFull();
-            if (Platform.OS === "web") {
-              window.location.reload();
-            } else {
-              try {
-                const Updates = await import("expo-updates");
-                await Updates.reloadAsync();
-              } catch {}
-            }
-            return; // unreachable after reload, but satisfies control flow
-          }
-
-          // Mark as full only after successful DB open/swap
+          // Mark as full before opening so openDictDb() picks the right file
           await setDictFull();
+
+          // Open the full DB as a new handle (dictionary-full.db on native,
+          // fresh in-memory copy on web). The old mini handle is never closed
+          // to avoid native SIGSEGV from closeAsync during in-flight queries.
+          // It leaks ~32MB for this session only; next launch opens one DB.
+          const newDb = await openDictDb();
+          dictDbRef.current = newDb;
+          setDictDb(newDb);
 
           updateBgItem("full-dict", { state: "ready", progress: 1 });
           console.log("[DB] Full dictionary ready");
