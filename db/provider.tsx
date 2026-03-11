@@ -6,6 +6,7 @@ import {
   isAudioReady,
   isDictFull,
   setDictFull,
+  clearDictFull,
   fetchManifest,
   downloadDictionary,
   downloadFullDictionary,
@@ -87,7 +88,16 @@ export function useDictDb() {
 async function openDictDb(): Promise<SQLite.SQLiteDatabase> {
   if (Platform.OS !== "web") {
     const full = await isDictFull();
-    return SQLite.openDatabaseAsync(full ? "dictionary-full.db" : "dictionary.db");
+    if (full) {
+      try {
+        return await SQLite.openDatabaseAsync("dictionary-full.db");
+      } catch (err) {
+        // Full DB missing or corrupt — clear flag and fall back to mini
+        console.warn("[DB] Full DB open failed, falling back to mini:", err);
+        await clearDictFull();
+      }
+    }
+    return SQLite.openDatabaseAsync("dictionary.db");
   }
 
   const { ensureLockAvailable } = await import("./web-lock");
