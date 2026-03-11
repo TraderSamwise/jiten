@@ -403,7 +403,9 @@ Trade-off: `router.replace()` swaps the top route instead of popping it, leaving
 
 ## Virtualized Lists (FlashList)
 
-We use `@shopify/flash-list` for long scrollable lists (list detail screen, dictionary results). FlashList wraps RecyclerListView, which uses `useLayoutEffect` internally for cell measurement and viewport management. This creates a **critical pitfall on web** that must be understood.
+**Always use `@shopify/flash-list` instead of React Native's `FlatList` or `SectionList`.** FlatList has cell recycling bugs with NativeWind where items render as empty shells after re-renders. FlashList handles recycling correctly and is used throughout the app (dictionary, lists, browse screens).
+
+FlashList wraps RecyclerListView, which uses `useLayoutEffect` internally for cell measurement and viewport management. This creates a **critical pitfall on web** that must be understood.
 
 ### The layout effect feedback loop
 
