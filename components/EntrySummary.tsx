@@ -46,6 +46,9 @@ export const EntrySummary = React.memo(function EntrySummary({
 
   // default variant
   const accents = primaryKana ? entry.pitchAccents.filter((pa) => pa.reading === primaryKana) : [];
+  const MAX_SENSES = 3;
+  const sensesToShow = entry.senses.slice(0, MAX_SENSES);
+  const hasMore = entry.senses.length > MAX_SENSES;
 
   return (
     <View className={bookmarkClass}>
@@ -71,15 +74,35 @@ export const EntrySummary = React.memo(function EntrySummary({
         {entry.common && <Badge variant="common" label="common" />}
         {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
       </View>
-      {(pos || primaryGloss) && (
-        <Text className="mt-1 text-sm text-foreground" numberOfLines={2}>
-          {pos && (
-            <Text className="text-xs text-muted-foreground italic">
-              {pos}
-              {"   "}
-            </Text>
-          )}
-          {primaryGloss}
+      {sensesToShow.map((sense, i) => {
+        const sensePos = sense.partOfSpeech?.join(", ");
+        const senseGloss = sense.glosses
+          .filter((g) => g.lang === "eng")
+          .map((g) => g.text)
+          .join("; ");
+        if (!sensePos && !senseGloss) return null;
+        return (
+          <Text
+            key={i}
+            className={`${i === 0 ? "mt-1" : "mt-0.5"} text-sm text-foreground`}
+            numberOfLines={2}
+          >
+            {sensesToShow.length > 1 && (
+              <Text className="text-xs text-muted-foreground">{i + 1}. </Text>
+            )}
+            {sensePos && (
+              <Text className="text-xs text-muted-foreground italic">
+                {sensePos}
+                {"   "}
+              </Text>
+            )}
+            {senseGloss}
+          </Text>
+        );
+      })}
+      {hasMore && (
+        <Text className="mt-0.5 text-xs text-muted-foreground">
+          +{entry.senses.length - MAX_SENSES} more…
         </Text>
       )}
     </View>

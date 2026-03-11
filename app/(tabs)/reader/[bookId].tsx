@@ -738,14 +738,15 @@ export default function BookReaderScreen() {
                   length: results[0].matchedText.length,
                 }),
               );
-              // Show copy tooltip at tap position
-              if (pendingTapPos.current) {
-                setCopyTooltip({
-                  text: results[0].matchedText,
-                  x: pendingTapPos.current.x,
-                  y: pendingTapPos.current.y,
-                });
-              }
+            }
+            // Show copy tooltip at tap position (even with no results)
+            if (pendingTapPos.current) {
+              const tappedText = results.length > 0 ? results[0].matchedText : text;
+              setCopyTooltip({
+                text: tappedText,
+                x: pendingTapPos.current.x,
+                y: pendingTapPos.current.y,
+              });
             }
           }
           setLookupLoading(false);
