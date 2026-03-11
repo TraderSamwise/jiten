@@ -17,7 +17,6 @@ import {
   goToPage,
   nextPage,
   prevPage,
-  setupScrollEndListener,
 } from "./pagination";
 import { setupTouchHandlers } from "./touch";
 import { setupMouseHandlers } from "./mouse";
@@ -59,9 +58,6 @@ declare const window: Window & {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: "percentTap" }));
     }
   });
-
-  // Scroll-end listener for native smooth scroll reporting
-  setupScrollEndListener();
 
   // Touch / swipe / drag-select
   setupTouchHandlers();
