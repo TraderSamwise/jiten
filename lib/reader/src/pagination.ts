@@ -92,18 +92,14 @@ function padEndToGrid(): void {
 function padBeginToGrid(deficit: number): void {
   // Already padded — grid is aligned, nothing to do.
   if (document.getElementById("begin-spacer")) return;
-  // deficit = how far past 0 the grid would go (= cW - currentOffset).
-  // Pad by deficit so that (currentOffset + deficit) is a multiple of cW,
-  // making offset 0 a clean grid position.
-  const pad = deficit;
-  if (pad <= 0) return;
+  if (deficit <= 0) return;
   const spacer = document.createElement("div");
   spacer.id = "begin-spacer";
   spacer.style.minHeight = "1px";
-  spacer.style.width = pad + "px";
+  spacer.style.width = deficit + "px";
   state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
   // Compensate scroll so the visible content doesn't jump
-  state.pageEl!.scrollLeft -= pad;
+  state.pageEl!.scrollLeft -= deficit;
   // Recalculate pagination with the new spacer
   state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
   padEndToGrid(); // end spacer might need updating too
@@ -186,7 +182,6 @@ export function alignToTargetChar(targetLocalChar: number): void {
 export function measureLastVisibleChar(): number {
   // Use pageEl (the actual visible column) not contentEl (which includes padding).
   const viewRect = state.pageEl!.getBoundingClientRect();
-  const pageRect = viewRect;
 
   const walker = textWalker(state.pageEl!);
   let charCount = 0;
@@ -253,7 +248,6 @@ export function measureFirstVisibleChar(): number {
   // Use pageEl (the actual visible column) not contentEl (which includes padding
   // and would pick up chars from adjacent clipped columns).
   const viewRect = state.pageEl!.getBoundingClientRect();
-  const pageRect = viewRect;
 
   const walker = textWalker(state.pageEl!);
   let charCount = 0;
@@ -336,7 +330,12 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
 function updatePageInfo(): void {
   const firstChar = measureFirstVisibleChar();
   const globalChar = state.sliceCharOffset + firstChar;
-  const pct = state.totalChars > 0 ? ((globalChar / state.totalChars) * 100).toFixed(1) : "0.0";
+  const isLastPage = state.currentPage >= state.totalPages && state.totalChars > 0;
+  const pct = isLastPage
+    ? "100.0"
+    : state.totalChars > 0
+      ? ((globalChar / state.totalChars) * 100).toFixed(1)
+      : "0.0";
   state.pageNumEl!.textContent = pct + "%";
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
