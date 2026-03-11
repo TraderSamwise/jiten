@@ -3,7 +3,16 @@
  * upright display in vertical (vertical-rl) typesetting.
  */
 function toFullwidthPunctuation(text: string): string {
-  return text.replace(/\?/g, "？").replace(/!/g, "！").replace(/~/g, "〜");
+  return text
+    .replace(/\?/g, "？")
+    .replace(/!/g, "！")
+    .replace(/~/g, "〜")
+    .replace(
+      /([^<]*?)(<[^>]*>|$)/g,
+      (_, textPart, tag) =>
+        textPart.replace(/[0-9]/g, (ch: string) => String.fromCharCode(ch.charCodeAt(0) + 0xfee0)) +
+        (tag ?? ""),
+    );
 }
 
 /**
