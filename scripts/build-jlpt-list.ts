@@ -7,11 +7,13 @@
  *
  * Hybrid methodology:
  * 1. Waller JLPT vocab lists (community-verified, ~7,738 words) — primary source
- * 2. Frequency-based ranking (JPDB + JMdict nf) — fallback for remaining ~14,837 words
+ * 2. Manual audit overrides (data/jlpt-audit-*.csv) — corrections from human + LLM review
+ * 3. Frequency-based ranking (JPDB + JMdict nf) — fallback for remaining ~14,837 words
  *
  * Algorithm:
- * - Waller entries keep their Waller-assigned JLPT level
- * - Non-Waller entries are sorted by combined frequency rank and assigned
+ * - Waller entries keep their Waller-assigned JLPT level (unless overridden by audit)
+ * - Audit overrides are applied after Waller assignment
+ * - Non-Waller/non-audit entries are sorted by combined frequency rank and assigned
  *   cumulatively to fill remaining slots per level (N5=800, N4=1500, N3=3700, N2=6000, N1=rest)
  */
 
@@ -25,6 +27,39 @@ import { loadJlptVocab, downloadJlptCsvs } from "./lib/jlpt";
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(PROJECT_ROOT, "data");
 const CSV_PATH = path.join(OUT_DIR, "jlpt-words.csv");
+
+/**
+ * Load all audit override files (data/jlpt-audit-*.csv).
+ * Returns a map of JMdict ID → audited JLPT level.
+ * When the same ID appears in multiple audit files, the last one wins.
+ */
+function loadAuditOverrides(): Map<number, number> {
+  const overrides = new Map<number, number>();
+  const auditFiles = fs
+    .readdirSync(OUT_DIR)
+    .filter((f) => f.startsWith("jlpt-audit-") && f.endsWith(".csv"))
+    .sort(); // process in alphabetical order
+
+  for (const file of auditFiles) {
+    const filePath = path.join(OUT_DIR, file);
+    const lines = fs.readFileSync(filePath, "utf-8").trim().split("\n");
+    // Skip header
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",");
+      const jmdictId = parseInt(cols[0], 10);
+      const wallerLevel = parseInt(cols[3], 10);
+      const auditLevel = parseInt(cols[6], 10);
+      if (isNaN(jmdictId) || isNaN(auditLevel)) continue;
+      // Only override if audit disagrees with Waller
+      if (auditLevel !== wallerLevel) {
+        overrides.set(jmdictId, auditLevel);
+      }
+    }
+    console.log(`   Loaded ${file}: ${lines.length - 1} entries`);
+  }
+
+  return overrides;
+}
 
 // JLPT level thresholds (cumulative count)
 const LEVEL_THRESHOLDS = [
@@ -84,7 +119,7 @@ interface RankedEntry {
   combinedRank: number;
   jlptLevel: number;
   glosses: string;
-  source: "waller" | "frequency";
+  source: "waller" | "frequency" | "audit";
 }
 
 // JMdict nf ranks massively undercount inflectable words because nf is form-based
@@ -328,6 +363,20 @@ async function main() {
   }
   console.log(`   ${wallerAssigned} entries assigned from Waller`);
 
+  // Apply audit overrides (human + LLM reviewed corrections)
+  console.log("\n   Loading audit overrides...");
+  const auditOverrides = loadAuditOverrides();
+  let auditApplied = 0;
+  for (const entry of rankedEntries) {
+    const auditLevel = auditOverrides.get(entry.id);
+    if (auditLevel != null) {
+      entry.jlptLevel = auditLevel;
+      entry.source = "audit";
+      auditApplied++;
+    }
+  }
+  console.log(`   ${auditApplied} entries overridden by audit`);
+
   // Seed list: universally-basic words that every beginner knows but may
   // rank low in novel frequency (daily-life vocab underrepresented in fiction).
   // Only applied to non-Waller entries — Waller entries keep their Waller level.
@@ -458,11 +507,11 @@ async function main() {
     "シャワー",
   ]);
 
-  // Non-Waller entries sorted by frequency for fallback assignment
-  const freqEntries = rankedEntries.filter((e) => e.source !== "waller");
+  // Non-Waller/non-audit entries sorted by frequency for fallback assignment
+  const freqEntries = rankedEntries.filter((e) => e.source === "frequency");
   freqEntries.sort((a, b) => a.combinedRank - b.combinedRank);
 
-  // Pin seed words to front of frequency list (only non-Waller ones)
+  // Pin seed words to front of frequency list (only frequency-assigned ones)
   let pinned = 0;
   for (const entry of freqEntries) {
     if (N5_SEED_KANJI.has(entry.kanji) || N5_SEED_READING.has(entry.reading)) {
@@ -477,31 +526,31 @@ async function main() {
   // Re-sort frequency entries after pinning
   freqEntries.sort((a, b) => a.combinedRank - b.combinedRank);
 
-  // Count how many Waller entries fill each level
-  const wallerPerLevel = new Map<number, number>();
+  // Count how many Waller + audit entries fill each level
+  const fixedPerLevel = new Map<number, number>();
   for (const entry of rankedEntries) {
-    if (entry.source === "waller") {
-      wallerPerLevel.set(entry.jlptLevel, (wallerPerLevel.get(entry.jlptLevel) ?? 0) + 1);
+    if (entry.source === "waller" || entry.source === "audit") {
+      fixedPerLevel.set(entry.jlptLevel, (fixedPerLevel.get(entry.jlptLevel) ?? 0) + 1);
     }
   }
 
   // Compute remaining capacity per level for frequency entries
   const levelCapacity: { level: number; remaining: number }[] = [];
   for (const t of LEVEL_THRESHOLDS) {
-    const wallerCount = wallerPerLevel.get(t.level) ?? 0;
-    levelCapacity.push({ level: t.level, remaining: Math.max(0, t.count - wallerCount) });
+    const fixedCount = fixedPerLevel.get(t.level) ?? 0;
+    levelCapacity.push({ level: t.level, remaining: Math.max(0, t.count - fixedCount) });
   }
 
-  console.log("   Level capacity (Waller / remaining for frequency):");
+  console.log("   Level capacity (waller+audit / remaining for frequency):");
   for (const { level, remaining } of levelCapacity) {
     const threshold = LEVEL_THRESHOLDS.find((t) => t.level === level);
-    const wallerCount = wallerPerLevel.get(level) ?? 0;
+    const fixedCount = fixedPerLevel.get(level) ?? 0;
     console.log(
-      `     N${level}: ${wallerCount} waller + ${remaining} frequency slots (target: ${threshold?.count ?? "rest"})`,
+      `     N${level}: ${fixedCount} waller+audit + ${remaining} frequency slots (target: ${threshold?.count ?? "rest"})`,
     );
   }
-  const wallerN1 = wallerPerLevel.get(1) ?? 0;
-  console.log(`     N1: ${wallerN1} waller + rest frequency`);
+  const fixedN1 = fixedPerLevel.get(1) ?? 0;
+  console.log(`     N1: ${fixedN1} waller+audit + rest frequency`);
 
   // Assign frequency entries cumulatively to fill remaining slots
   let freqIdx = 0;
@@ -550,6 +599,7 @@ async function main() {
   }
 
   const wallerCount = rankedEntries.filter((e) => e.source === "waller").length;
+  const auditCount = rankedEntries.filter((e) => e.source === "audit").length;
   const freqCount = rankedEntries.filter((e) => e.source === "frequency").length;
 
   console.log("Distribution:");
@@ -558,11 +608,14 @@ async function main() {
     const waller = rankedEntries.filter(
       (e) => e.jlptLevel === level && e.source === "waller",
     ).length;
-    const freq = total - waller;
-    console.log(`  N${level}: ${total} words (${waller} waller + ${freq} frequency)`);
+    const audit = rankedEntries.filter((e) => e.jlptLevel === level && e.source === "audit").length;
+    const freq = total - waller - audit;
+    console.log(
+      `  N${level}: ${total} words (${waller} waller + ${audit} audit + ${freq} frequency)`,
+    );
   }
   console.log(
-    `  Total: ${rankedEntries.length} words (${wallerCount} waller + ${freqCount} frequency)`,
+    `  Total: ${rankedEntries.length} words (${wallerCount} waller + ${auditCount} audit + ${freqCount} frequency)`,
   );
 
   // Show first 20 words per level

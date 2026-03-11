@@ -1,0 +1,131 @@
+jmdict_id,kanji,reading,waller_level,freq_rank,freq_level,audit_level,reason
+1465580,入る,いる,1,34,5,5,Same JMdict entry as はいる — one of the most basic verbs
+1598820,留める,とどめる,1,135,5,2,"Literary/formal ""to stop; to hold back"" — common in writing but not beginner"
+1430610,直ぐ,すぐ,1,234,5,4,"Extremely common adverb ""immediately"" taught early"
+1451180,動き,うごき,1,238,5,3,Noun form of 動く (N4) — natural N3 nominalization
+1480210,反応,はんのう,1,242,5,3,"Common word ""reaction"" — heard in daily life"
+1242170,近づく,ちかづく,1,263,5,3,Compound of 近い (N5) — straightforward N3
+1437260,的,てき,1,284,5,3,Extremely common suffix -的 used in everyday speech
+1588410,生む,うむ,1,325,5,3,"Basic verb ""to give birth; to produce"""
+1522370,本気,ほんき,1,336,5,3,"Very common ""serious/for real"" — used colloquially"
+1387280,先に,さきに,1,369,5,4,"Basic adverb ""ahead; beforehand"" — early intermediate"
+1333330,襲う,おそう,1,387,5,2,"Common verb ""to attack"" but not beginner vocab"
+1354600,丈,たけ,1,435,5,2,Height/stature — somewhat literary but common in fiction
+1156990,易い,やすい,1,507,5,4,"Very common suffix -やすい ""easy to do"" taught early"
+1565120,呟く,つぶやく,1,522,5,2,To mutter/murmur — common in novels but N2 vocabulary
+1232920,距離,きょり,1,551,5,2,Distance — standard N2
+1310720,死,し,1,561,5,3,Death as standalone noun — common concept
+1285990,告げる,つげる,1,577,5,2,To tell/announce — literary register, N2
+1317970,自信,じしん,1,580,5,3,Self-confidence — common in daily conversation
+1211310,耐える,たえる,1,620,5,2,To endure — standard N2 verb
+1329670,受け入れる,うけいれる,1,625,5,2,To accept — compound verb, N2
+1349370,床,とこ,1,647,5,2,"とこ reading is literary ""bed/alcove"" — distinct from ゆか (floor)"
+1005340,,さん,1,656,5,5,Basic honorific suffix taught day one
+1297800,作戦,さくせん,1,664,5,2,Strategy/tactics — N2
+1390420,戦闘,せんとう,1,685,5,2,Combat/battle — thematic N2
+1611610,間違う,まちがう,1,720,5,4,To make a mistake — very basic verb
+1445670,怒り,いかり,1,729,5,2,Anger (noun) — N2
+1326940,取り戻す,とりもどす,1,730,5,2,To take back/recover — compound verb, N2
+1269510,後悔,こうかい,1,757,5,2,Regret — N2
+1518080,訪れる,おとずれる,1,761,5,2,To visit (literary) — N2
+1166180,一部,いちぶ,1,769,5,3,One part; partially — common
+1543130,予想,よそう,1,775,5,3,Expectation/prediction — common
+1238380,興奮,こうふん,1,776,5,2,Excitement — N2
+1309800,指示,しじ,1,784,5,2,Instruction/direction — N2
+1252310,警戒,けいかい,1,791,5,2,Vigilance/caution — N2
+1483185,彼方,あちら,5,6007,1,5,"Polite ""over there"" — standard N5 demonstrative"
+1335000,１０日,とおか,5,6071,1,5,Calendar day — standard N5
+1268570,５日,いつか,5,6093,1,5,Calendar day — standard N5
+1524730,毎晩,まいばん,5,6126,1,5,Every evening — basic time word
+1307320,４日,よっか,5,6266,1,5,Calendar day — standard N5
+1203650,外国人,がいこくじん,5,6326,1,5,Foreigner — basic N5 compound
+1138860,,ラジオ,5,6331,1,5,Radio — basic loanword
+1213170,漢字,かんじ,5,6389,1,5,Kanji — taught in first Japanese class
+1289470,今晩,こんばん,5,6391,1,5,Tonight — basic greeting word
+1342540,始め,はじめ,5,6587,1,5,Beginning — basic N5
+1002330,お祖母さん,おばあさん,5,6605,1,5,Grandmother — basic family term
+1042820,,ギター,5,6630,1,5,Guitar — basic loanword
+1092820,,ネクタイ,5,6813,1,5,Necktie — basic clothing word
+1576050,一昨日,おととい,5,6817,1,5,Day before yesterday — basic time word
+1178590,鉛筆,えんぴつ,5,7116,1,5,Pencil — basic classroom word
+1318400,自動車,じどうしゃ,5,7179,1,5,Automobile — basic N5
+1246740,靴下,くつした,5,7247,1,5,Socks — basic clothing
+1318970,辞書,じしょ,5,7426,1,5,Dictionary — basic classroom word
+1255890,月曜日,げつようび,5,7465,1,5,Monday — days of week are N5
+1162130,一月,ひとつき,5,7494,1,5,One month — basic counter
+1584350,毎月,まいつき,5,7620,1,5,Every month — basic time word
+1319220,七つ,ななつ,5,7633,1,5,"Native counter ""seven"" — N5"
+1153520,飴,あめ,5,7665,1,4,Candy — common but not core N5 vocabulary
+1078750,,テープ,5,7733,1,5,Tape — basic loanword
+1125150,,ポスト,5,7735,1,5,Mailbox/post — basic loanword
+1524690,毎週,まいしゅう,5,7753,1,5,Every week — basic time word
+1597150,煙草,タバコ,5,7766,1,4,Cigarette/tobacco — common word but N4 is more appropriate
+1592340,曇り,くもり,5,7783,1,5,Cloudy — basic weather word
+1595020,醤油,しょうゆ,5,7896,1,5,Soy sauce — essential daily-life word
+1083590,,デパート,5,7927,1,5,Department store — basic loanword
+1173750,映画館,えいがかん,5,7963,1,5,Movie theater — basic N5 location
+1243320,金曜日,きんようび,5,7964,1,5,Friday — days of week are N5
+1920240,何の,どの,5,8000,1,5,Which — basic demonstrative
+1586330,朝ごはん,あさごはん,5,8020,1,5,Breakfast — basic meal word
+1194870,花瓶,かびん,5,8237,1,4,Vase — not core beginner vocab
+1585315,六つ,むっつ,5,8259,1,5,"Native counter ""six"" — N5"
+1557630,零,れい,5,8355,1,5,Zero — basic number
+2839962,０,ゼロ,5,8357,1,5,Zero — basic number
+1592970,交差点,こうさてん,5,8494,1,4,Intersection — useful but N4 is more appropriate
+1602340,昼ご飯,ひるごはん,5,8782,1,5,Lunch — basic meal word
+1382590,石鹸,せっけん,5,9108,1,4,Soap — daily item but complex kanji, N4
+1579630,７日,なのか,5,9189,1,5,Calendar day — standard N5
+1376460,晴れ,はれ,5,9285,1,5,Sunny/clear — basic weather
+1253020,鶏肉,とりにく,5,9294,1,5,Chicken (meat) — basic food word
+1002100,お手洗い,おてあらい,5,9306,1,5,Restroom — basic daily word
+1073900,,スリッパ,5,9471,1,5,Slippers — basic household word
+1420900,地下鉄,ちかてつ,5,9506,1,5,Subway — basic transportation
+1597530,茶碗,ちゃわん,5,9510,1,4,Rice bowl/teacup — common but N4
+1385170,切符,きっぷ,5,9519,1,5,Ticket — basic travel word
+1039220,,カレンダー,5,9526,1,5,Calendar — basic loanword
+1601340,晩御飯,ばんごはん,5,9626,1,5,Dinner — basic meal word
+1231580,牛肉,ぎゅうにく,5,9677,1,5,Beef — basic food word
+1583250,,いいえ,5,9680,1,5,No — most basic word
+1583095,八つ,やっつ,5,9752,1,5,"Native counter ""eight"" — N5"
+1457440,豚肉,ぶたにく,5,9789,1,5,Pork — basic food word
+1109380,,フィルム,5,9871,1,4,Film — somewhat dated loanword
+1008450,,では,5,9881,1,5,Well then — basic conjunction
+1552750,留学生,りゅうがくせい,5,10240,1,5,Exchange student — basic N5 compound
+1074270,,セーター,5,10368,1,5,Sweater — basic clothing loanword
+1413890,大使館,たいしかん,5,10395,1,4,Embassy — not core beginner vocab
+1272500,交番,こうばん,5,10423,1,5,Police box — basic location word
+1372190,水曜日,すいようび,5,10476,1,5,Wednesday — days of week are N5
+1561470,６日,むいか,5,10619,1,5,Calendar day — standard N5
+1201940,灰皿,はいざら,5,10634,1,4,Ashtray — niche item, N4
+1123590,,ボールペン,5,10661,1,5,Ballpoint pen — basic stationery
+1378690,生まれる,うまれる,5,10740,1,5,To be born — fundamental verb
+1466940,如何して,どうして,5,10904,1,5,Why — basic question word
+1070790,,ストーブ,5,11051,1,5,Heater/stove — basic household word
+1576060,一昨年,おととし,5,11112,1,5,Year before last — basic time word
+1194290,火曜日,かようび,5,11229,1,5,Tuesday — days of week are N5
+1042650,粁,キロメートル,5,11350,1,5,Kilometer — basic unit (ignore obscure kanji)
+1600850,２０日,はつか,5,11373,1,5,Calendar day — standard N5
+1612860,然うして,そうして,5,11423,1,5,And then — basic conjunction
+1534890,木曜日,もくようび,5,11506,1,5,Thursday — days of week are N5
+1526360,万年筆,まんねんひつ,5,11641,1,4,Fountain pen — somewhat dated, N4
+1385070,切手,きって,5,11827,1,5,Postage stamp — standard N5
+1144940,,レコード,5,11842,1,4,Record — dated technology
+1472740,背広,せびろ,5,12017,1,4,Business suit — dated word, most say スーツ now
+1184270,下さい,ください,5,12198,1,5,Please — most fundamental polite form
+1297960,作文,さくぶん,5,12381,1,4,Essay/composition — school word but N4
+1243600,九つ,ここのつ,5,12450,1,5,"Native counter ""nine"" — N5"
+1476920,８日,ようか,5,12734,1,5,Calendar day — standard N5
+1002120,お巡りさん,おまわりさん,5,12759,1,4,Police officer (colloquial) — N4
+1046810,瓦,グラム,5,12973,1,5,Gram — basic unit (ignore obscure kanji)
+1476960,八百屋,やおや,5,12993,1,4,Greengrocer — somewhat dated
+1542430,郵便局,ゆうびんきょく,5,13370,1,5,Post office — basic location
+1243850,９日,ここのか,5,13498,1,5,Calendar day — standard N5
+1293660,再来年,さらいねん,5,14018,1,5,Year after next — basic time word
+1157000,易しい,やさしい,5,14484,1,5,Easy — basic adjective
+1546590,葉書,はがき,5,14814,1,4,Postcard — less common in modern life
+1042620,瓩,キログラム,5,15286,1,5,Kilogram — basic unit (ignore obscure kanji)
+1148640,Ｙシャツ,ワイシャツ,5,16221,1,4,Dress shirt — dated term
+1138960,,ラジカセ,5,17580,1,4,Radio cassette player — obsolete technology
+1000420,彼の,あの,5,18273,1,5,That — most basic demonstrative
+1315140,字引,じびき,5,20326,1,3,Dictionary (archaic) — 辞書 is the modern word
+1074260,洋袴,ズボン,5,22363,1,5,Trousers — common word (kanji form is obscure but word itself is basic)

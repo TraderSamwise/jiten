@@ -1,48 +1,76 @@
-# JLPT Word List (Waller + Frequency)
+# JLPT Word List (Waller + Audit + Frequency)
 
-A JLPT-level classification for **all ~22,575 common JMdict entries**, using Jonathan Waller's community-verified JLPT vocab lists as the primary source and frequency-based ranking as a fallback for the remaining entries.
+A JLPT-level classification for **all ~22,575 common JMdict entries**, using three data sources in priority order:
 
-## Why a hybrid approach?
+1. **Manual audit overrides** — human + LLM reviewed corrections to Waller misclassifications
+2. **Jonathan Waller's JLPT vocab lists** — community-verified, ~7,738 words
+3. **Frequency-based ranking** — fallback for the remaining ~14,837 words
 
-Waller's JLPT word lists (~7,738 words after deduplication) are the basis of virtually every free JLPT vocabulary list online. They're community-verified and well-trusted, but only cover about a third of common JMdict entries. Pure frequency-based ranking covers everything but has inherent corpus biases.
+## Why a three-layer approach?
 
-This list uses both: Waller levels for the ~7,738 words he covers, and frequency-based ranking for the remaining ~14,837 words.
+Waller's JLPT word lists (~7,738 words after deduplication) are the basis of virtually every free JLPT vocabulary list online. They're community-verified and well-trusted, but contain systematic errors — e.g. common words like 直ぐ (immediately) and 間違う (to make a mistake) classified as N1, or archaic terms like 字引 classified as N5.
+
+The audit layer identifies these misclassifications by comparing Waller's levels against corpus frequency data, then manually reviewing each outlier to determine the correct level. Audit overrides are stored in separate CSV files (`jlpt-audit-*.csv`) for full provenance tracking.
+
+Pure frequency-based ranking covers the ~14,837 entries not in Waller's lists, but has inherent corpus biases (fiction/anime over-represents literary vocabulary, under-represents daily-life vocabulary).
+
+## Files
+
+| File               | Description                                          |
+| ------------------ | ---------------------------------------------------- |
+| `jlpt-words.csv`   | Final combined JLPT classifications (22,575 entries) |
+| `jlpt-audit-*.csv` | Audit override records with reasoning                |
 
 ## File format
 
 `jlpt-words.csv` — a CSV with columns:
 
-| Column           | Description                                          |
-| ---------------- | ---------------------------------------------------- |
-| `jmdict_id`      | JMdict entry sequence ID                             |
-| `kanji`          | Primary kanji form (empty for kana-only words)       |
-| `reading`        | Primary kana reading                                 |
-| `jlpt_level`     | Assigned JLPT level (5=N5 easiest, 1=N1 hardest)     |
-| `frequency_rank` | Position in our frequency ranking (1=most frequent)  |
-| `source`         | `waller` or `frequency` — how the level was assigned |
+| Column           | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| `jmdict_id`      | JMdict entry sequence ID                                       |
+| `kanji`          | Primary kanji form (empty for kana-only words)                 |
+| `reading`        | Primary kana reading                                           |
+| `jlpt_level`     | Assigned JLPT level (5=N5 easiest, 1=N1 hardest)               |
+| `frequency_rank` | Position in our frequency ranking (1=most frequent)            |
+| `source`         | `waller`, `audit`, or `frequency` — how the level was assigned |
 
-## Level distribution
+`jlpt-audit-*.csv` — audit record files with columns:
 
-| Level     | Waller     | Frequency   | Total       |
-| --------- | ---------- | ----------- | ----------- |
-| N5        | ~670       | ~130        | 800         |
-| N4        | ~632       | ~868        | 1,500       |
-| N3        | ~1,647     | ~2,053      | 3,700       |
-| N2        | ~1,735     | ~4,265      | 6,000       |
-| N1        | ~3,054     | ~7,521      | ~10,575     |
-| **Total** | **~7,738** | **~14,837** | **~22,575** |
+| Column         | Description                         |
+| -------------- | ----------------------------------- |
+| `jmdict_id`    | JMdict entry sequence ID            |
+| `kanji`        | Primary kanji form                  |
+| `reading`      | Primary kana reading                |
+| `waller_level` | Original Waller JLPT level          |
+| `freq_rank`    | Position in frequency ranking       |
+| `freq_level`   | What frequency data suggests        |
+| `audit_level`  | Manually determined correct level   |
+| `reason`       | Brief explanation of the assessment |
 
 ## Methodology
 
-### Primary source: Waller JLPT vocab
+### 1. Primary source: Waller JLPT vocab
 
 Jonathan Waller's JLPT vocabulary lists, sourced via [mjuhanne/yomichan-jlpt-vocab](https://github.com/mjuhanne/yomichan-jlpt-vocab) (which maps them to JMdict sequence IDs). These cover ~7,738 unique JMdict entries across all five JLPT levels.
 
 When the same JMdict entry appears at multiple levels (e.g. different kanji forms of the same word listed at different levels), the **easiest** (highest-numbered) level is used.
 
-### Fallback: frequency-based ranking
+### 2. Audit overrides
 
-For the ~14,837 common JMdict entries not covered by Waller, JLPT levels are assigned based on combined frequency data:
+Waller's list contains misclassifications that are identified by comparing against corpus frequency data:
+
+- **Finding outliers**: Words where Waller's level disagrees with frequency-derived level by 2+ JLPT levels are flagged for review.
+- **Manual review**: Each flagged word is individually assessed considering: actual difficulty, when learners typically encounter it, standard textbook placement, and whether the frequency data is skewed by corpus bias.
+- **Provenance**: Each audit round produces a dated CSV file (`jlpt-audit-*.csv`) with the original level, frequency data, audited level, and reasoning. These files are permanent records.
+
+The audit process identified two systematic issues in Waller's data:
+
+- **Waller too hard**: Common words misclassified at N1 (e.g. すぐ, 反応, 間違う) — these are corrected to appropriate levels
+- **Waller too easy**: Daily-life vocabulary correctly at N5 despite low corpus frequency (e.g. 鉛筆, 辞書, 切手) — frequency data is biased here, Waller is usually right
+
+### 3. Fallback: frequency-based ranking
+
+For the ~14,837 common JMdict entries not covered by Waller or audit, JLPT levels are assigned based on combined frequency data:
 
 1. **JPDB frequency list** (primary signal) — frequency rankings from a corpus of anime, novels, visual novels, and other Japanese media. Lemma-based: all conjugations grouped under dictionary form.
    - Source: [MarvNC/jpdb-freq-list](https://github.com/MarvNC/jpdb-freq-list)
@@ -62,17 +90,18 @@ JMdict newspaper frequency is form-based, so verbs/adjectives are systematically
 
 **N5 seed list** (~114 words, fallback entries only):
 
-Some universally-basic vocabulary (電車/train, 駅/station, 天気/weather) ranks low in novel frequency because fiction rarely discusses daily-life topics. A small seed list of textbook-standard N5 words is pinned to ensure they land in N5. This only applies to non-Waller entries — Waller entries always keep their Waller level.
+Some universally-basic vocabulary (電車/train, 駅/station, 天気/weather) ranks low in novel frequency because fiction rarely discusses daily-life topics. A small seed list of textbook-standard N5 words is pinned to ensure they land in N5. This only applies to frequency-assigned entries.
 
 **Level assignment** (fallback entries):
 
-Non-Waller entries are sorted by combined frequency rank and assigned cumulatively to fill remaining slots per level after accounting for Waller entries. Target sizes: N5=800, N4=1,500, N3=3,700, N2=6,000, N1=rest.
+Frequency entries are sorted by combined frequency rank and assigned cumulatively to fill remaining slots per level after accounting for Waller + audit entries. Target sizes: N5=800, N4=1,500, N3=3,700, N2=6,000, N1=rest.
 
 ### Known limitations
 
-- **Novel/media bias in fallback entries**: JPDB over-represents literary and media vocabulary. This only affects the ~14,837 frequency-assigned entries, not the Waller core.
+- **Novel/media bias in fallback entries**: JPDB over-represents literary and media vocabulary. This only affects frequency-assigned entries, not Waller or audit entries.
 - **Daily-life underrepresentation**: Words common in everyday conversation but rare in fiction are partially mitigated by the N5 seed list.
 - **No grammar coverage**: JLPT tests grammar patterns as well as vocabulary. This list only covers words.
+- **Audit coverage**: Only extreme outliers (4+ level disagreement) have been audited so far. 2-3 level disagreements may contain additional misclassifications.
 
 ## Regenerating
 
@@ -82,7 +111,7 @@ If you have the Jiten source code:
 yarn build:jlpt
 ```
 
-This downloads the Waller CSVs and frequency data (cached in `.cache/`), processes them, and writes `data/jlpt-words.csv`.
+This downloads the Waller CSVs and frequency data (cached in `.cache/`), loads audit override files from `data/jlpt-audit-*.csv`, and writes `data/jlpt-words.csv`.
 
 ## License
 
