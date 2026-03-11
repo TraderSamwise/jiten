@@ -901,7 +901,7 @@ yarn web         # Start Expo web dev server (separate terminal)
 
 The dev server (`scripts/serve-dev.ts`) provides two services on port 3001:
 
-1. **Dictionary file server** — serves `assets/dictionary.db`, `dict-manifest.json`, etc. with CORS headers. The `.env` file points `EXPO_PUBLIC_DICT_MANIFEST_URL` to `http://localhost:3001/dict-manifest.json`.
+1. **Dictionary file server** — serves files directly from `assets/` (`dictionary.db`, `dictionary-extended.db`, `dict-manifest.json`, etc.) with CORS headers. The `.env` file points `EXPO_PUBLIC_DICT_MANIFEST_URL` to `http://localhost:3001/dict-manifest.json`. **Important**: since the dev server serves `assets/` live, corrupting or deleting any DB file there immediately breaks your local dev environment and simulator.
 
 2. **API proxy** — proxies external APIs to avoid CORS issues on web. Same routes as the Vercel rewrites in `vercel.json`:
 
@@ -1101,11 +1101,31 @@ The app downloads the mini DB first (blocking gate), then the full dictionary, a
 
 #### Building extended data
 
+> **Always patch the existing DB** — never run a full rebuild unless you have no base DB to patch. See the principle below.
+
+To add new data to the extended DB (e.g. a new table), patch the existing `assets/dictionary-extended.db` directly using `better-sqlite3`:
+
 ```bash
-yarn build:extended  # Build dictionary-extended.db from WordNet + JMnedict
+# Example: add a table and seed data into the existing extended DB
+node -e "
+const Database = require('better-sqlite3');
+const db = new Database('assets/dictionary-extended.db');
+db.exec('CREATE TABLE IF NOT EXISTS ...');
+// insert data...
+db.prepare('INSERT OR REPLACE INTO ext_meta (key, value) VALUES (?, ?)').run('version', '2');
+db.close();
+"
 ```
 
-This generates `assets/dictionary-extended.db` containing synonyms and names. Run `yarn publish:dict` afterward to upload. The extended DB is a pre-built SQLite file — the app downloads and opens it directly with no client-side processing.
+The extended DB has no client migration system — when `manifest.extended.version` exceeds the device's local version, the app re-downloads the entire file. After patching, run `yarn publish:dict` to upload.
+
+> **WARNING**: `yarn build:extended` is **destructive** — it deletes the existing `assets/dictionary-extended.db` before rebuilding (`fs.unlinkSync`). If the build is interrupted, the file is gone. Since `yarn serve:dev` serves directly from `assets/`, this immediately breaks your local dev environment.
+
+`yarn build:extended` regenerates the entire extended DB from scratch (WordNet + JMnedict download). This is slow and should only be used if you don't have a base DB to patch. If you need a clean base, pull it from the GitHub release first:
+
+```bash
+cd assets && gh release download v1 --repo TraderSamwise/jiten-data --pattern 'dictionary-extended.db'
+```
 
 #### Full rebuild from scratch (almost never needed)
 
@@ -1116,6 +1136,12 @@ yarn build:db
 > **WARNING**: This deletes the entire dictionary and regenerates everything from scratch, including TTS audio via Google Cloud API which costs real money (`GOOGLE_TTS_API_KEY` env var required). It takes 5-10+ minutes and should not be run without explicit instruction.
 >
 > You almost certainly want `yarn migrate:dict` instead. Only use `build:db` if the database is corrupted beyond repair or you need to regenerate from an entirely new JMDict release. The script will prompt for confirmation (bypass with `--force`).
+
+#### Principle: always patch, never rebuild
+
+> **Never run a full rebuild** of any database (`build:db`, `build:extended`) unless you literally have no base file to work with. Full rebuilds are slow, expensive (TTS audio costs real money), and unnecessary for incremental changes.
+>
+> The correct workflow is always: **patch the existing DB file** (via `yarn migrate:dict` for the main DB, or direct SQLite manipulation for extended/audio/strokes), then publish. If the local DB file is missing or corrupted, pull it from the GitHub release first and then patch — don't regenerate from scratch.
 
 Both `yarn build:db` and `yarn migrate:dict` automatically rebuild `dictionary-mini.db` and update `dict-manifest.json` with current file sizes (full + mini + compressed).
 

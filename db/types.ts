@@ -63,6 +63,21 @@ export interface SearchResults {
   englishMatches?: EnglishMatchEntry[];
 }
 
+export interface CounterReading {
+  number: string;
+  numberKanji: string;
+  combinedKanji: string;
+  reading: string;
+}
+
+export interface CounterEntry {
+  counterId: number;
+  counterKanji: string;
+  counterReading: string;
+  counterGloss: string | null;
+  readings: CounterReading[];
+}
+
 // ─── Kanji types ───
 
 export interface KanjiCharacter {
