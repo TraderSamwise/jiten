@@ -68,6 +68,19 @@ The audit process identified two systematic issues in Waller's data:
 - **Waller too hard**: Common words misclassified at N1 (e.g. すぐ, 反応, 間違う) — these are corrected to appropriate levels
 - **Waller too easy**: Daily-life vocabulary correctly at N5 despite low corpus frequency (e.g. 鉛筆, 辞書, 切手) — frequency data is biased here, Waller is usually right
 
+**Audit statistics:**
+
+| Round     | Disagreement | Words reviewed | Overrides | Kept as-is |
+| --------- | ------------ | -------------- | --------- | ---------- |
+| 4-step    | e.g. N1↔N5   | 130            | 53        | 77         |
+| 3-step    | e.g. N1↔N4   | 292            | 114       | 178        |
+| 2-step    | e.g. N1↔N3   | 1,326          | 347       | 979        |
+| **Total** |              | **1,748**      | **514**   | **1,234**  |
+
+An additional **2,791 words** have a 1-step disagreement between Waller and frequency (e.g. N3 vs N4). These are not audited — a single level of disagreement is normal variation, and Waller's community-verified levels are trusted in these cases.
+
+Of the 7,212 unique Waller entries (after deduplication), 2,673 agree with frequency exactly, 2,791 disagree by 1 step (trusted), and 1,748 disagree by 2+ steps (all audited). Every Waller entry has been either verified or reviewed.
+
 ### 3. Fallback: frequency-based ranking
 
 For the ~14,837 common JMdict entries not covered by Waller or audit, JLPT levels are assigned based on combined frequency data:
@@ -101,7 +114,7 @@ Frequency entries are sorted by combined frequency rank and assigned cumulativel
 - **Novel/media bias in fallback entries**: JPDB over-represents literary and media vocabulary. This only affects frequency-assigned entries, not Waller or audit entries.
 - **Daily-life underrepresentation**: Words common in everyday conversation but rare in fiction are partially mitigated by the N5 seed list.
 - **No grammar coverage**: JLPT tests grammar patterns as well as vocabulary. This list only covers words.
-- **Audit coverage**: Only extreme outliers (4+ level disagreement) have been audited so far. 2-3 level disagreements may contain additional misclassifications.
+- **Audit coverage**: All words with 2+ level disagreement between Waller and frequency have been audited (1,748 words across three rounds). Single-level disagreements (2,791 words) are unaudited — Waller is trusted for these.
 
 ## Regenerating
 
