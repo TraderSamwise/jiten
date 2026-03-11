@@ -82,6 +82,10 @@ export async function setDictFull(): Promise<void> {
   await AsyncStorage.setItem(FULL_DB_KEY, "true");
 }
 
+export async function clearDictFull(): Promise<void> {
+  await AsyncStorage.removeItem(FULL_DB_KEY);
+}
+
 export async function fetchManifest(): Promise<DictManifest> {
   const manifestUrl = env.DICT_MANIFEST_URL;
   let res: Response;
@@ -126,6 +130,16 @@ export async function isDictReady(): Promise<boolean> {
     await clearStaleWebData(format);
     await AsyncStorage.removeItem(VERSION_KEY);
     await AsyncStorage.removeItem(FORMAT_KEY);
+    // Invalidate full DB so it gets re-downloaded with the new version
+    await AsyncStorage.removeItem(FULL_DB_KEY);
+    if (Platform.OS !== "web") {
+      try {
+        const FileSystem = require("expo-file-system/legacy");
+        const fullPath = `${FileSystem.documentDirectory}SQLite/${FULL_DB_NAME}`;
+        await FileSystem.deleteAsync(fullPath, { idempotent: true });
+        console.log("[DB] Deleted stale full dictionary DB");
+      } catch {}
+    }
     return false;
   }
   return version !== null && version >= DICT_VERSION && format === DICT_VERSION;
