@@ -1110,3 +1110,97 @@ describe("Edge cases and robustness", () => {
     // Each substring is valid even if it won't match anything in dict
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 15. COMPOUND INFLECTION CHAINS (passive+past, causative+past, etc.)
+//     Passive, causative, and potential forms are ichidan verbs.
+//     Their conjugations (past, negative, te-form) must chain through
+//     to the original godan/suru/kuru base form.
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Compound inflection chains — passive/causative/potential + conjugation", () => {
+  // ── Godan passive + past ──
+  test("手渡された (す passive past) → 手渡す", () => {
+    expect(hasCandidate("手渡された", "手渡す")).toBe(true);
+  });
+
+  test("書かれた (く passive past) → 書く", () => {
+    expect(hasCandidate("書かれた", "書く")).toBe(true);
+  });
+
+  test("読まれた (む passive past) → 読む", () => {
+    expect(hasCandidate("読まれた", "読む")).toBe(true);
+  });
+
+  test("買われた (う passive past) → 買う", () => {
+    expect(hasCandidate("買われた", "買う")).toBe(true);
+  });
+
+  test("遊ばれた (ぶ passive past) → 遊ぶ", () => {
+    expect(hasCandidate("遊ばれた", "遊ぶ")).toBe(true);
+  });
+
+  // ── Godan passive + negative ──
+  test("書かれない (く passive negative) → 書く", () => {
+    expect(hasCandidate("書かれない", "書く")).toBe(true);
+  });
+
+  test("話されない (す passive negative) → 話す", () => {
+    expect(hasCandidate("話されない", "話す")).toBe(true);
+  });
+
+  // ── Godan passive + te-form ──
+  test("読まれて (む passive te-form) → 読む", () => {
+    expect(hasCandidate("読まれて", "読む")).toBe(true);
+  });
+
+  // ── Godan causative + past ──
+  test("買わせた (う causative past) → 買う", () => {
+    expect(hasCandidate("買わせた", "買う")).toBe(true);
+  });
+
+  test("書かせた (く causative past) → 書く", () => {
+    expect(hasCandidate("書かせた", "書く")).toBe(true);
+  });
+
+  test("読ませた (む causative past) → 読む", () => {
+    expect(hasCandidate("読ませた", "読む")).toBe(true);
+  });
+
+  // ── Godan potential + past ──
+  test("書けた (く potential past) → 書く", () => {
+    expect(hasCandidate("書けた", "書く")).toBe(true);
+  });
+
+  test("読めた (む potential past) → 読む", () => {
+    expect(hasCandidate("読めた", "読む")).toBe(true);
+  });
+
+  test("話せた (す potential past) → 話す", () => {
+    expect(hasCandidate("話せた", "話す")).toBe(true);
+  });
+
+  // ── Suru passive + past ──
+  test("された (suru passive past) → する", () => {
+    expect(hasCandidate("された", "する")).toBe(true);
+  });
+
+  test("勉強された (compound suru passive past) → 勉強する", () => {
+    expect(hasCandidate("勉強された", "勉強する")).toBe(true);
+  });
+
+  // ── Suru causative + past ──
+  test("させた (suru causative past) → する", () => {
+    expect(hasCandidate("させた", "する")).toBe(true);
+  });
+
+  // ── Godan passive + polite ──
+  test("書かれます (く passive polite) → 書く", () => {
+    expect(hasCandidate("書かれます", "書く")).toBe(true);
+  });
+
+  // ── Godan causative + negative ──
+  test("読ませない (む causative negative) → 読む", () => {
+    expect(hasCandidate("読ませない", "読む")).toBe(true);
+  });
+});
