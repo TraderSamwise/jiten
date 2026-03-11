@@ -330,7 +330,8 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
 function updatePageInfo(): void {
   const firstChar = measureFirstVisibleChar();
   const globalChar = state.sliceCharOffset + firstChar;
-  const isLastPage = state.currentPage >= state.totalPages && state.totalChars > 0;
+  const isLastPage =
+    state.currentPage >= state.totalPages && state.totalChars > 0 && animTimer === null;
   const pct = isLastPage
     ? "100.0"
     : state.totalChars > 0
@@ -529,6 +530,7 @@ export function reportScroll(): void {
     JSON.stringify({
       type: "scroll",
       charOffset: globalChar,
+      isLastPage: state.currentPage >= state.totalPages,
     }),
   );
 }

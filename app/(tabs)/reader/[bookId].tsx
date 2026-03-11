@@ -764,11 +764,10 @@ export default function BookReaderScreen() {
             markDirty();
           }
           if (userDb && bookId) {
-            userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
-              msg.charOffset,
-              new Date().toISOString(),
-              bookId,
-            ]);
+            userDb.runAsync(
+              "UPDATE books SET char_offset = ?, read_complete = ?, updated_at = ? WHERE id = ?",
+              [msg.charOffset, msg.isLastPage ? 1 : 0, new Date().toISOString(), bookId],
+            );
           }
         } else if (msg.type === "pageRendered") {
           const model = modelRef.current;
