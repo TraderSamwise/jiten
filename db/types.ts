@@ -144,6 +144,7 @@ export interface Book {
   sourceUrl: string | null;
   imageUrl: string | null;
   saved: number;
+  readComplete: number;
 }
 
 // Discriminated union for items in a list

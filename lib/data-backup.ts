@@ -39,7 +39,7 @@ export const BACKUP_TABLES: {
   {
     name: "books",
     query:
-      "SELECT id, title, author, source, scroll_position, char_offset, total_chars, font_size, last_read_at, is_default, saved, created_at, updated_at FROM books",
+      "SELECT id, title, author, source, scroll_position, char_offset, total_chars, font_size, last_read_at, is_default, saved, read_complete, created_at, updated_at FROM books",
   },
   { name: "user_kanji_notes", query: "SELECT literal, mnemonic, keyword FROM user_kanji_notes" },
   {

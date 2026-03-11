@@ -18,8 +18,9 @@ function formatDomain(url: string): string {
 }
 
 export const BookCard = React.memo(function BookCard({ book, onPress }: BookCardProps) {
-  const progress =
-    book.totalChars > 0
+  const progress = book.readComplete
+    ? 100
+    : book.totalChars > 0
       ? Math.round((book.charOffset / book.totalChars) * 100)
       : Math.round(book.scrollPosition * 100);
   const lastRead = book.lastReadAt ? new Date(book.lastReadAt).toLocaleDateString() : null;

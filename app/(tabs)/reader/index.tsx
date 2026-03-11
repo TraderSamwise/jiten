@@ -52,6 +52,7 @@ function parseBookRow(row: any): Book {
     sourceUrl: row.source_url ?? null,
     imageUrl: row.image_url ?? null,
     saved: row.saved ?? 1,
+    readComplete: row.read_complete ?? 0,
   };
 }
 
