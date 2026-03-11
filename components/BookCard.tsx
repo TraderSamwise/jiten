@@ -65,7 +65,7 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
             <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
           </View>
         )}
-        {(book.charOffset > 0 || book.scrollPosition > 0) && (
+        {(book.charOffset > 0 || book.scrollPosition > 0 || book.readComplete) && (
           <>
             <View className="flex-1" />
             <View className="rounded-full bg-muted px-2 py-0.5">
