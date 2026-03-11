@@ -330,13 +330,7 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
 function updatePageInfo(): void {
   const firstChar = measureFirstVisibleChar();
   const globalChar = state.sliceCharOffset + firstChar;
-  const isLastPage =
-    state.currentPage >= state.totalPages && state.totalChars > 0 && animTimer === null;
-  const pct = isLastPage
-    ? "100.0"
-    : state.totalChars > 0
-      ? ((globalChar / state.totalChars) * 100).toFixed(1)
-      : "0.0";
+  const pct = state.totalChars > 0 ? ((globalChar / state.totalChars) * 100).toFixed(1) : "0.0";
   state.pageNumEl!.textContent = pct + "%";
   state.btnNext!.disabled = state.currentPage >= state.totalPages;
   state.btnPrev!.disabled = state.currentPage <= 1;
