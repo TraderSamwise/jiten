@@ -11,6 +11,12 @@ declare const window: Window & {
   ReactNativeWebView: { postMessage(msg: string): void };
 };
 
+/** Ceil that snaps to the nearest integer when within sub-pixel tolerance. */
+function ceilPages(scrollW: number, colW: number): number {
+  const raw = scrollW / colW;
+  return raw - Math.floor(raw) < 0.01 ? Math.round(raw) : Math.ceil(raw);
+}
+
 function getContentW(): number {
   const cs = getComputedStyle(state.contentEl!);
   return (
@@ -48,7 +54,59 @@ export function paginate(): void {
   // Snap page width to whole lines so page boundaries never cut through text
   state.columnWidth = Math.floor(cW / lineW) * lineW;
   state.pageEl!.style.width = state.columnWidth + "px";
-  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
+  // Remove stale spacers before measuring (content changed)
+  removeSpacers();
+  state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  padEndToGrid();
+}
+
+// ---------------------------------------------------------------------------
+// Edge spacers: keep scrollWidth an exact multiple of columnWidth so the page
+// grid never produces partial-page scrolls at either end.
+// ---------------------------------------------------------------------------
+
+function removeSpacers(): void {
+  document.getElementById("end-spacer")?.remove();
+  document.getElementById("begin-spacer")?.remove();
+}
+
+/** Pad the END (left side in vertical-rl) so the last page is reachable. */
+function padEndToGrid(): void {
+  const cW = state.columnWidth;
+  const target = state.totalPages * cW;
+  const current = state.pageEl!.scrollWidth;
+  if (current >= target) return;
+  let spacer = document.getElementById("end-spacer");
+  if (!spacer) {
+    spacer = document.createElement("div");
+    spacer.id = "end-spacer";
+    spacer.style.minHeight = "1px";
+    state.pageEl!.appendChild(spacer);
+  }
+  spacer.style.width = target - current + "px";
+}
+
+/** Pad the BEGINNING (right side in vertical-rl) so the first page aligns
+ *  to the grid. Called once from prevPage when the grid would go below offset 0.
+ *  Inserts a spacer and shifts scrollLeft to compensate. */
+function padBeginToGrid(deficit: number): void {
+  // Already padded — grid is aligned, nothing to do.
+  if (document.getElementById("begin-spacer")) return;
+  // deficit = how far past 0 the grid would go (= cW - currentOffset).
+  // Pad by deficit so that (currentOffset + deficit) is a multiple of cW,
+  // making offset 0 a clean grid position.
+  const pad = deficit;
+  if (pad <= 0) return;
+  const spacer = document.createElement("div");
+  spacer.id = "begin-spacer";
+  spacer.style.minHeight = "1px";
+  spacer.style.width = pad + "px";
+  state.pageEl!.insertBefore(spacer, state.pageEl!.firstChild);
+  // Compensate scroll so the visible content doesn't jump
+  state.pageEl!.scrollLeft -= pad;
+  // Recalculate pagination with the new spacer
+  state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  padEndToGrid(); // end spacer might need updating too
 }
 
 // Find the nearest char to absOffset that has a non-zero bounding rect.
@@ -268,8 +326,10 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
     state.pageEl!.appendChild(temp.firstChild);
   }
 
-  // Recalculate pagination
-  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
+  // Recalculate pagination (remove end spacer first so scrollWidth is accurate)
+  document.getElementById("end-spacer")?.remove();
+  state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  padEndToGrid();
   updatePageInfo();
 }
 
@@ -377,6 +437,11 @@ export function prevPage(): void {
   cancelPageAnimation();
   state.canonicalCharOffset = -1;
   const cW = state.columnWidth;
+  const raw = -state.pageEl!.scrollLeft - cW;
+  if (raw < 0) {
+    // Grid doesn't reach offset 0 — pad the beginning so it does
+    padBeginToGrid(-raw);
+  }
   const target = Math.max(-state.pageEl!.scrollLeft - cW, 0);
   scrollToOffset(target);
 }
@@ -472,6 +537,8 @@ export function reportScroll(): void {
 // Prepend content for backward navigation.
 // Adjusts scrollLeft by the exact prepend width to keep content stable.
 export function prependBackSlice(html: string, charCount?: number): void {
+  // Remove spacers before measuring — they'll be re-added after
+  removeSpacers();
   const prevScrollWidth = state.pageEl!.scrollWidth;
   const prevScrollLeft = state.pageEl!.scrollLeft;
 
@@ -491,7 +558,8 @@ export function prependBackSlice(html: string, charCount?: number): void {
   state.totalPrependWidth += newContentWidth;
 
   // Recalculate pagination
-  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
+  state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  padEndToGrid();
   state.currentPage = Math.round(-state.pageEl!.scrollLeft / state.columnWidth) + 1;
   state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
   updatePageInfo();
