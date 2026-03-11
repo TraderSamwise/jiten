@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, FlatList, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -22,39 +23,42 @@ export default function BrowseSyosetuScreen() {
   const [searching, setSearching] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const doSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) {
-      setResults([]);
-      cachedQuery = "";
-      cachedResults = [];
-      return;
-    }
-    if (trimmed === cachedQuery && cachedResults.length > 0) {
-      setResults(cachedResults);
-      return;
-    }
-    setSearching(true);
-    try {
-      const novels = await searchNovels(trimmed);
-      cachedQuery = trimmed;
-      cachedResults = novels;
-      setResults(novels);
-    } catch (err) {
-      alert("Search failed", err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSearching(false);
-    }
-  }, []);
+  const doSearch = useCallback(
+    async (q: string) => {
+      const trimmed = q.trim();
+      router.setParams(trimmed ? { q: trimmed } : { q: "" });
+      if (!trimmed) {
+        setResults([]);
+        cachedQuery = "";
+        cachedResults = [];
+        return;
+      }
+      if (trimmed === cachedQuery && cachedResults.length > 0) {
+        setResults(cachedResults);
+        return;
+      }
+      setSearching(true);
+      try {
+        const novels = await searchNovels(trimmed);
+        cachedQuery = trimmed;
+        cachedResults = novels;
+        setResults(novels);
+      } catch (err) {
+        alert("Search failed", err instanceof Error ? err.message : "Network error");
+      } finally {
+        setSearching(false);
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => doSearch(query), 400);
-    router.setParams(query.trim() ? { q: query.trim() } : { q: "" });
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, doSearch, router]);
+  }, [query, doSearch]);
 
   const handleNovelPress = useCallback(
     (novel: SyosetuNovel) => {
@@ -96,18 +100,19 @@ export default function BrowseSyosetuScreen() {
         />
       </View>
 
-      {searching && (
-        <View className="items-center py-8">
-          <ActivityIndicator size="large" />
-          <Text className="mt-2 text-muted-foreground">Searching...</Text>
-        </View>
-      )}
-
-      <FlatList
+      <FlashList
         data={results}
         keyExtractor={(item) => item.ncode}
         renderItem={renderItem}
         contentContainerStyle={{ paddingHorizontal: 16 }}
+        ListHeaderComponent={
+          searching ? (
+            <View className="items-center py-8">
+              <ActivityIndicator size="large" />
+              <Text className="mt-2 text-muted-foreground">Searching...</Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           !searching ? (
             <View className="items-center py-16">

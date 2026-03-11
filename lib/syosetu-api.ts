@@ -37,12 +37,12 @@ export async function searchNovels(query: string): Promise<SyosetuNovel[]> {
   if (!Array.isArray(data) || data.length < 2) return [];
 
   return data.slice(1).map((item: any) => ({
-    ncode: (item.ncode as string).toLowerCase(),
-    title: item.title as string,
-    writer: item.writer as string,
-    story: item.story as string,
-    totalChapters: item.general_all_no as number,
-    length: item.length as number,
+    ncode: (item.ncode ?? "").toLowerCase(),
+    title: item.title ?? "",
+    writer: item.writer ?? "",
+    story: item.story ?? "",
+    totalChapters: item.general_all_no ?? 0,
+    length: item.length ?? 0,
     isComplete: item.end === 1,
   }));
 }
