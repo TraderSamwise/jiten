@@ -1,5 +1,5 @@
 /**
- * Build script: Generates dictionary-extended.db containing synonyms + names.
+ * Build script: Generates dictionary-extended.db containing synonyms + names + counter readings.
  *
  * The app downloads this pre-built SQLite DB in the background — no client-side
  * parsing or importing needed.
@@ -21,6 +21,7 @@ import { downloadFile, CACHE_DIR, ASSETS_DIR } from "./lib/download";
 const DICT_DB_PATH = path.join(ASSETS_DIR, "dictionary.db");
 const EXT_DB_PATH = path.join(ASSETS_DIR, "dictionary-extended.db");
 const MANIFEST_PATH = path.join(ASSETS_DIR, "dict-manifest.json");
+const COUNTER_CSV_PATH = path.resolve(__dirname, "../../jiten-data/counter-readings.csv");
 
 // ─── Schema ───
 
@@ -44,6 +45,17 @@ function createSchema(db: InstanceType<typeof Database>) {
       translation TEXT,
       category TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS counter_readings (
+      counter_id INTEGER NOT NULL,
+      counter_kanji TEXT NOT NULL,
+      counter_reading TEXT NOT NULL,
+      counter_gloss TEXT,
+      number TEXT NOT NULL,
+      number_kanji TEXT NOT NULL,
+      combined_kanji TEXT NOT NULL,
+      reading TEXT NOT NULL
+    );
   `);
 }
 
@@ -54,6 +66,11 @@ function buildIndexes(db: InstanceType<typeof Database>) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_kanji ON names(kanji)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_kana ON names(kana)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_ext_names_category ON names(category)");
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_ext_counter_reading ON counter_readings(counter_reading)",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_counter_kanji ON counter_readings(counter_kanji)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ext_counter_id ON counter_readings(counter_id)");
 
   // FTS5 index for translation search
   try {
@@ -287,6 +304,85 @@ async function insertNames(db: InstanceType<typeof Database>): Promise<number> {
   return data.words.length;
 }
 
+// ─── Counter Readings ───
+
+/** Parse a CSV line respecting quoted fields */
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      fields.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+function insertCounterReadings(db: InstanceType<typeof Database>): number {
+  console.log("\n=== Building counter readings ===\n");
+
+  if (!fs.existsSync(COUNTER_CSV_PATH)) {
+    throw new Error(
+      `counter-readings.csv not found at ${COUNTER_CSV_PATH}. Clone jiten-data next to jiten.`,
+    );
+  }
+
+  const csv = fs.readFileSync(COUNTER_CSV_PATH, "utf-8").replace(/\r/g, "");
+  const lines = csv.split("\n").filter((l) => l.trim());
+  const header = parseCsvLine(lines[0]);
+  const verifiedIdx = header.indexOf("verified_reading");
+  const rows = lines.slice(1);
+
+  console.log(`  ${rows.length} readings from CSV`);
+
+  const insert = db.prepare(
+    `INSERT INTO counter_readings
+      (counter_id, counter_kanji, counter_reading, counter_gloss, number, number_kanji, combined_kanji, reading)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  const insertMany = db.transaction((csvRows: string[]) => {
+    for (const row of csvRows) {
+      const cols = parseCsvLine(row);
+      const verifiedReading = cols[verifiedIdx];
+      if (!verifiedReading) continue;
+
+      insert.run(
+        parseInt(cols[0], 10), // counter_id
+        cols[1], // counter_kanji
+        cols[2], // counter_reading
+        cols[3], // counter_gloss
+        cols[4], // number
+        cols[5], // number_kanji
+        cols[6], // combined_kanji
+        verifiedReading,
+      );
+    }
+  });
+
+  insertMany(rows);
+  console.log(`  ${rows.length} counter readings inserted`);
+
+  return rows.length;
+}
+
 // ─── Main ───
 
 async function main() {
@@ -303,9 +399,10 @@ async function main() {
 
   const synonymCount = await insertSynonyms(db);
   const nameCount = await insertNames(db);
+  const counterCount = insertCounterReadings(db);
 
   // Write version metadata
-  const version = 1;
+  const version = 2;
   db.prepare("INSERT OR REPLACE INTO ext_meta (key, value) VALUES (?, ?)").run(
     "version",
     String(version),
@@ -323,7 +420,7 @@ async function main() {
 
   const dbSize = fs.statSync(EXT_DB_PATH).size;
   console.log(`\n  Written: ${EXT_DB_PATH} (${(dbSize / 1024 / 1024).toFixed(1)} MB)`);
-  console.log(`  ${synonymCount} synonyms, ${nameCount} names`);
+  console.log(`  ${synonymCount} synonyms, ${nameCount} names, ${counterCount} counter readings`);
 
   // Update manifest
   if (!fs.existsSync(MANIFEST_PATH)) {
