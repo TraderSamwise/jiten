@@ -58,6 +58,38 @@ function isKanji(ch: string): boolean {
   return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf);
 }
 
+function isDigit(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return (code >= 0x0030 && code <= 0x0039) || (code >= 0xff10 && code <= 0xff19);
+}
+
+const DIGIT_TO_KANJI: Record<string, string> = {
+  "0": "〇",
+  "\uff10": "〇",
+  "1": "一",
+  "\uff11": "一",
+  "2": "二",
+  "\uff12": "二",
+  "3": "三",
+  "\uff13": "三",
+  "4": "四",
+  "\uff14": "四",
+  "5": "五",
+  "\uff15": "五",
+  "6": "六",
+  "\uff16": "六",
+  "7": "七",
+  "\uff17": "七",
+  "8": "八",
+  "\uff18": "八",
+  "9": "九",
+  "\uff19": "九",
+};
+
+function normalizeDigitsToKanji(s: string): string {
+  return s.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
+}
+
 // ─── Okurigana stripping ───
 
 function isKana(ch: string): boolean {
@@ -268,6 +300,14 @@ export async function resolveFuriganaBatch(
   for (const surface of surfaces) {
     const candidates = deinflect(surface);
     const words = candidates.map((c) => c.word);
+    // Also try digit→kanji normalized forms (e.g. １人 → 一人)
+    const normalized = normalizeDigitsToKanji(surface);
+    if (normalized !== surface) {
+      const normCandidates = deinflect(normalized);
+      for (const c of normCandidates) {
+        if (!words.includes(c.word)) words.push(c.word);
+      }
+    }
     surfaceToDeinflected.set(surface, words);
     for (const w of words) allSearchWords.add(w);
   }
@@ -338,8 +378,16 @@ export function extractSurfacesFromHtml(html: string, kanjiSet: FuriganaKanjiSet
   };
 
   for (let i = 0; i < chars.length; i++) {
-    if (!isKanji(chars[i])) continue;
-    // Generate surfaces starting from this kanji position.
+    if (!isKanji(chars[i]) && !isDigit(chars[i])) continue;
+
+    // For digits, only extract if followed by kanji (counter pattern: １人, ３日)
+    if (isDigit(chars[i])) {
+      let j = i;
+      while (j < chars.length && isDigit(chars[j])) j++;
+      if (j >= chars.length || !isKanji(chars[j])) continue;
+    }
+
+    // Generate surfaces starting from this position.
     // A word like 反省会 needs to be extracted even if only 省 matches the filter,
     // so the dictionary lookup returns the correct whole-word reading.
     addSurfacesFrom(i);
@@ -533,7 +581,7 @@ export function applyFuriganaToHtml(
     // We match at any position, but only emit ruby if the matched word
     // contains at least one kanji from the filter set. This ensures whole-word
     // context-aware readings (e.g. 反省会 gets はんせいかい, not 省=しょう alone).
-    const tryMatch = isKanji(ch) || (isKana(ch) && kanaBeforeKanji(html, i));
+    const tryMatch = isKanji(ch) || isDigit(ch) || (isKana(ch) && kanaBeforeKanji(html, i));
     if (tryMatch) {
       let matched = false;
       const remaining = getVisibleCharsFrom(html, i);

@@ -1194,19 +1194,47 @@ export async function searchDictionary(
  * Only does `WHERE text = ?` on kanji/kana tables — no prefix matching,
  * no English/romaji search, no synonym expansion, no scoring.
  */
+const DIGIT_TO_KANJI: Record<string, string> = {
+  "0": "〇",
+  "\uff10": "〇",
+  "1": "一",
+  "\uff11": "一",
+  "2": "二",
+  "\uff12": "二",
+  "3": "三",
+  "\uff13": "三",
+  "4": "四",
+  "\uff14": "四",
+  "5": "五",
+  "\uff15": "五",
+  "6": "六",
+  "\uff16": "六",
+  "7": "七",
+  "\uff17": "七",
+  "8": "八",
+  "\uff18": "八",
+  "9": "九",
+  "\uff19": "九",
+};
+
+function normalizeDigitsToKanji(s: string): string {
+  return s.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
+}
+
 export async function lookupExactJapanese(
   db: SQLite.SQLiteDatabase,
   text: string,
 ): Promise<DictEntry[]> {
   const hiragana = toHiragana(text);
+  const normalized = normalizeDigitsToKanji(text);
 
   const rows = await db.getAllAsync<{ entry_id: number }>(
     `SELECT DISTINCT entry_id FROM (
-       SELECT entry_id FROM kanji WHERE text = ?
+       SELECT entry_id FROM kanji WHERE text = ? OR text = ?
        UNION
        SELECT entry_id FROM kana WHERE text = ? OR text = ?
      )`,
-    [text, hiragana, text],
+    [text, normalized, hiragana, text],
   );
 
   if (rows.length === 0) return [];

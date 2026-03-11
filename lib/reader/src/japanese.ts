@@ -7,6 +7,8 @@ export function isJapanese(ch: string): boolean {
     (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified
     (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
     (code >= 0xff66 && code <= 0xff9f) || // Half-width katakana
+    (code >= 0x0030 && code <= 0x0039) || // ASCII digits 0-9
+    (code >= 0xff10 && code <= 0xff19) || // Fullwidth digits ０-９
     (code >= 0x3000 && code <= 0x303f) // CJK punctuation (々 etc.)
   );
 }
@@ -23,6 +25,12 @@ export function isKanji(ch: string): boolean {
   return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf);
 }
 
+export function isDigit(ch: string): boolean {
+  if (!ch) return false;
+  const code = ch.charCodeAt(0);
+  return (code >= 0x0030 && code <= 0x0039) || (code >= 0xff10 && code <= 0xff19);
+}
+
 // Heuristic word boundary detection (instant, no dictionary).
 // Finds approximate word end from a tap position by scanning forward.
 // Rules: kanji runs together, kana after kanji is okurigana, pure kana
@@ -30,7 +38,9 @@ export function isKanji(ch: string): boolean {
 export function guessWordLength(text: string): number {
   if (!text || text.length === 0) return 0;
   let i = 0;
-  // Leading kanji
+  // Leading fullwidth digits (e.g. ３匹, １日)
+  while (i < text.length && isDigit(text[i])) i++;
+  // Leading kanji (or kanji after digits)
   while (i < text.length && isKanji(text[i])) i++;
   if (i > 0) {
     // Okurigana: kana following kanji (e.g. 走って → 走 + って)
@@ -47,15 +57,18 @@ export function guessWordLength(text: string): number {
 // to find where the word likely starts.
 export function guessWordStart(text: string, tapOffset: number): number {
   let i = tapOffset;
-  // If tapped char is kana, scan back through kana, then kanji
-  // If tapped char is kanji, scan back through kanji only
+  // If tapped char is kana, scan back through kana, then kanji, then digits
+  // If tapped char is kanji, scan back through kanji, then digits
+  // If tapped char is fullwidth digit, scan back through digits only
   if (isKanji(text[i])) {
     while (i > 0 && isKanji(text[i - 1])) i--;
+    while (i > 0 && isDigit(text[i - 1])) i--;
   } else if (isKana(text[i])) {
-    // Scan back through kana
     while (i > 0 && isKana(text[i - 1])) i--;
-    // Then scan back through kanji (okurigana pattern: kanji + kana)
     while (i > 0 && isKanji(text[i - 1])) i--;
+    while (i > 0 && isDigit(text[i - 1])) i--;
+  } else if (isDigit(text[i])) {
+    while (i > 0 && isDigit(text[i - 1])) i--;
   }
   return i;
 }
