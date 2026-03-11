@@ -7,10 +7,12 @@ import { EntryCard } from "@/components/EntryCard";
 import { GlossGroupCard } from "@/components/GlossGroupCard";
 import { KanjiCard } from "@/components/KanjiCard";
 import { NameCard } from "@/components/NameCard";
+import { CounterCard } from "@/components/CounterCard";
 import { useSearchStore } from "@/stores/search";
 import { useDatabase } from "@/db/provider";
 import { searchDictionary } from "@/db/search";
 import { searchNames, type NameFilter } from "@/db/name-search";
+import { searchCounters } from "@/db/counter-search";
 import {
   searchKanjiByMeaningAsync,
   searchKanjiByReadingAsync,
@@ -19,7 +21,7 @@ import {
   getKanjiAsync,
 } from "@/db/kanji-search";
 import { groupByGloss } from "@/lib/gloss-groups";
-import type { DictEntry, GlossGroup, KanjiCharacter, NameEntry } from "@/db/types";
+import type { DictEntry, GlossGroup, KanjiCharacter, NameEntry, CounterEntry } from "@/db/types";
 
 interface Section {
   title: string;
@@ -148,6 +150,8 @@ export default function SearchScreen() {
   const setNameResults = useSearchStore((s) => s.setNameResults);
   const nameFilter = useSearchStore((s) => s.nameFilter);
   const setNameFilter = useSearchStore((s) => s.setNameFilter);
+  const counterResults = useSearchStore((s) => s.counterResults);
+  const setCounterResults = useSearchStore((s) => s.setCounterResults);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGenRef = useRef(0);
   const router = useRouter();
@@ -272,6 +276,37 @@ export default function SearchScreen() {
     };
   }, [extendedDb, isReady, query, searchMode, nameFilter]);
 
+  // Counter mode search
+  useEffect(() => {
+    if (searchMode !== "counter") return;
+    if (!extendedDb || !isReady) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setCounterResults([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const gen = ++searchGenRef.current;
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchCounters(extendedDb, trimmed);
+        if (gen !== searchGenRef.current) return;
+        setCounterResults(results);
+      } catch (err) {
+        if (gen !== searchGenRef.current) return;
+        console.error("Counter search error:", err);
+        setCounterResults([]);
+      }
+    }, 200);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [extendedDb, isReady, query, searchMode]);
+
   const sections = useMemo<Section[]>(() => {
     if (searchMode !== "normal") return [];
     const s: Section[] = [];
@@ -362,6 +397,17 @@ export default function SearchScreen() {
 
   // Names mode
   if (searchMode === "names") {
+    if (!extendedDb) {
+      return (
+        <View className="flex-1 items-center justify-center bg-background px-8">
+          <Text className="text-2xl">名前</Text>
+          <Text className="mt-2 text-center text-muted-foreground">
+            Name search will be available once extended data finishes downloading.
+          </Text>
+        </View>
+      );
+    }
+
     const filterChips: { key: NameFilter; label: string }[] = [
       { key: "all", label: "All" },
       { key: "person", label: "People" },
@@ -411,6 +457,51 @@ export default function SearchScreen() {
               <View className="items-center pt-10">
                 <Text className="text-2xl">名前</Text>
                 <Text className="mt-2 text-muted-foreground">Search Japanese names</Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+    );
+  }
+
+  // Counter mode
+  if (searchMode === "counter") {
+    if (!extendedDb) {
+      return (
+        <View className="flex-1 items-center justify-center bg-background px-8">
+          <Text className="text-2xl">数え方</Text>
+          <Text className="mt-2 text-center text-muted-foreground">
+            Counter search will be available once extended data finishes downloading.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View className="flex-1 bg-background">
+        {isSearching && (
+          <View className="absolute inset-0 z-10 items-center justify-center" pointerEvents="none">
+            <ActivityIndicator size="large" />
+          </View>
+        )}
+
+        <FlashList
+          data={counterResults}
+          keyExtractor={(item) => `${item.counterId}`}
+          renderItem={({ item }) => <CounterCard counter={item} />}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
+          ListEmptyComponent={
+            query.trim() && !isSearching ? (
+              <View className="items-center pt-10">
+                <Text className="text-muted-foreground">No counters found</Text>
+              </View>
+            ) : !query.trim() ? (
+              <View className="items-center pt-10">
+                <Text className="text-2xl">数え方</Text>
+                <Text className="mt-2 text-muted-foreground">
+                  Search counters by word, reading, or meaning
+                </Text>
               </View>
             ) : null
           }

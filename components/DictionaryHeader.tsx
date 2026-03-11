@@ -16,20 +16,23 @@ const MODE_LABELS: Record<SearchMode, string> = {
   kanji: "漢",
   radical: "部",
   names: "名",
+  counter: "数",
 };
 
 const MODE_CYCLE: Record<SearchMode, SearchMode> = {
   normal: "kanji",
   kanji: "radical",
   radical: "names",
-  names: "normal",
+  names: "counter",
+  counter: "normal",
 };
 
-const MODE_CYCLE_NO_NAMES: Record<SearchMode, SearchMode> = {
+const MODE_CYCLE_NO_EXT: Record<SearchMode, SearchMode> = {
   normal: "kanji",
   kanji: "radical",
   radical: "normal",
   names: "normal",
+  counter: "normal",
 };
 
 const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
@@ -37,6 +40,7 @@ const MODE_PLACEHOLDERS: Record<SearchMode, string> = {
   kanji: "Search kanji by meaning or reading...",
   radical: "",
   names: "Search names...",
+  counter: "Search counters...",
 };
 
 export function DictionaryHeader({ back, options, route }: NativeStackHeaderProps) {
@@ -74,7 +78,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   };
 
   const cycleMode = () => {
-    const cycle = extendedDb ? MODE_CYCLE : MODE_CYCLE_NO_NAMES;
+    const cycle = extendedDb ? MODE_CYCLE : MODE_CYCLE_NO_EXT;
     setSearchMode(cycle[searchMode]);
   };
 
