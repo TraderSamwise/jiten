@@ -48,7 +48,7 @@ export function paginate(): void {
   // Snap page width to whole lines so page boundaries never cut through text
   state.columnWidth = Math.floor(cW / lineW) * lineW;
   state.pageEl!.style.width = state.columnWidth + "px";
-  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
 }
 
 // Find the nearest char to absOffset that has a non-zero bounding rect.
@@ -269,7 +269,7 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
   }
 
   // Recalculate pagination
-  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
   updatePageInfo();
 }
 
@@ -311,16 +311,6 @@ let animTargetScroll = 0;
 let animTimer: ReturnType<typeof setTimeout> | null = null;
 const isSafari = /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 
-// Listen for scrollend to report position after native smooth scroll completes.
-// Only used on Safari — Chrome fires scrollend during JS animation frames too.
-export function setupScrollEndListener(): void {
-  if (!isSafari) return;
-  state.pageEl!.addEventListener("scrollend", function () {
-    reportScroll();
-    reportPageRendered();
-  });
-}
-
 // Scroll to an absolute offset (positive distance from right edge).
 // Handles animated vs instant, derives currentPage, reports to RN.
 function scrollToOffset(offset: number): void {
@@ -333,34 +323,29 @@ function scrollToOffset(offset: number): void {
   state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
 
   if (state.pageAnimations) {
-    if (isSafari) {
-      // Native smooth scroll — WebKit uses a spring curve that feels native
-      state.pageEl!.scrollTo({ left: -offset, behavior: "smooth" });
-      updatePageInfo();
-    } else {
-      // JS animation for Chrome (native smooth is too slow at 500ms)
-      const startScroll = -state.pageEl!.scrollLeft;
-      const distance = offset - startScroll;
-      const steps = 12;
-      let step = 0;
-      function tick() {
-        step++;
-        const t = step / steps;
-        const ease = 1 - (1 - t) * (1 - t);
-        state.pageEl!.scrollLeft = -(startScroll + distance * ease);
-        if (step < steps) {
-          animTimer = setTimeout(tick, 16);
-        } else {
-          animTimer = null;
-          state.pageEl!.scrollLeft = -offset;
-          updatePageInfo();
-          reportScroll();
-          reportPageRendered();
-        }
+    // JS animation for all browsers — Safari's scrollend doesn't fire on
+    // overflow:hidden elements, so native smooth scroll breaks prefetch.
+    const startScroll = -state.pageEl!.scrollLeft;
+    const distance = offset - startScroll;
+    const steps = isSafari ? 14 : 12;
+    let step = 0;
+    function tick() {
+      step++;
+      const t = step / steps;
+      const ease = 1 - (1 - t) * (1 - t);
+      state.pageEl!.scrollLeft = -(startScroll + distance * ease);
+      if (step < steps) {
+        animTimer = setTimeout(tick, 16);
+      } else {
+        animTimer = null;
+        state.pageEl!.scrollLeft = -offset;
+        updatePageInfo();
+        reportScroll();
+        reportPageRendered();
       }
-      animTimer = setTimeout(tick, 16);
-      updatePageInfo();
     }
+    animTimer = setTimeout(tick, 16);
+    updatePageInfo();
   } else {
     state.pageEl!.scrollLeft = -offset;
     updatePageInfo();
@@ -506,7 +491,7 @@ export function prependBackSlice(html: string, charCount?: number): void {
   state.totalPrependWidth += newContentWidth;
 
   // Recalculate pagination
-  state.totalPages = Math.max(1, Math.round(state.pageEl!.scrollWidth / state.columnWidth));
+  state.totalPages = Math.max(1, Math.ceil(state.pageEl!.scrollWidth / state.columnWidth));
   state.currentPage = Math.round(-state.pageEl!.scrollLeft / state.columnWidth) + 1;
   state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));
   updatePageInfo();

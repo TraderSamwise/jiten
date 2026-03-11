@@ -421,6 +421,7 @@ export default function BookReaderScreen() {
   // Streaming prefetch refs — used by handleMessage for pageRendered
   const modelRef = useRef<TextModel | null>(null);
   const sliceCharOffsetRef = useRef(0);
+  const fwdLoadedEndRef = useRef(0); // furthest global char loaded into WebView
   const isAozoraRef = useRef(false);
   const backPrefetchingRef = useRef(false);
 
@@ -462,6 +463,7 @@ export default function BookReaderScreen() {
       const targetLocalChar = charOffset - startChar;
 
       sliceCharOffsetRef.current = startChar;
+      fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
       backPrefetchingRef.current = false;
 
       let sliceHtml = isAozora
@@ -572,6 +574,7 @@ export default function BookReaderScreen() {
         // Store refs for streaming prefetch
         modelRef.current = model;
         sliceCharOffsetRef.current = startChar;
+        fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
         isAozoraRef.current = isAozora;
 
         // Save total_chars on first load
@@ -772,14 +775,15 @@ export default function BookReaderScreen() {
           if (!model) return;
           const globalLastChar = sliceCharOffsetRef.current + msg.lastCharIndex;
           const nextStart = globalLastChar + 1;
-          if (nextStart < model.totalChars) {
-            // Forward prefetch
+          if (nextStart < model.totalChars && nextStart >= fwdLoadedEndRef.current) {
+            // Forward prefetch — only when content actually needs extending
             const hasFuri =
               kanjiSetRef.current != null ||
               hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
+            const newEnd = Math.min(nextStart + cpp * 3, model.totalChars);
             let nextHtml = isAozoraRef.current
               ? parseAozoraToHtml(nextSlice.text, { strip: false })
               : plainTextToHtml(nextSlice.text);
@@ -798,6 +802,7 @@ export default function BookReaderScreen() {
               }
               nextHtml = injectRubySpacers(nextHtml);
             }
+            fwdLoadedEndRef.current = newEnd;
             readerRef.current?.postMessage(
               JSON.stringify({
                 type: "setNextContent",
@@ -806,14 +811,6 @@ export default function BookReaderScreen() {
               }),
             );
           }
-
-          // Send debug info to WebView
-          readerRef.current?.postMessage(
-            JSON.stringify({
-              type: "debug",
-              text: `sliceOff: ${sliceCharOffsetRef.current}  globalLast: ${globalLastChar}/${modelRef.current?.totalChars}  fwd: ${nextStart < model.totalChars ? "yes" : "end"}`,
-            }),
-          );
 
           // Backward prefetch trigger
           const localPage = msg.localPage ?? 1;
