@@ -176,7 +176,7 @@ export default function LibraryScreen() {
       if (!userDb) return;
 
       await userDb.runAsync(
-        `INSERT INTO books (id, title, author, source, raw_content, created_at, updated_at)
+        `INSERT OR IGNORE INTO books (id, title, author, source, raw_content, created_at, updated_at)
          VALUES (?, ?, '', 'import', ?, ?, ?)`,
         [id, title, content, now, now],
       );

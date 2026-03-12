@@ -20,7 +20,7 @@ function generateId(): string {
 
 export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEvent): Promise<void> {
   await userDb.runAsync(
-    `INSERT INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, assisted, response_ms, typed_answer, reviewed_at, session_id)
+    `INSERT OR IGNORE INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, assisted, response_ms, typed_answer, reviewed_at, session_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),
@@ -51,7 +51,7 @@ export async function logSessionSummary(
   },
 ): Promise<void> {
   await userDb.runAsync(
-    `INSERT INTO practice_sessions (id, session_id, list_id, practice_mode, started_at, duration_ms, total_items, correct_count)
+    `INSERT OR IGNORE INTO practice_sessions (id, session_id, list_id, practice_mode, started_at, duration_ms, total_items, correct_count)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),
@@ -89,7 +89,7 @@ export async function recordConfusion(
 
   if (result.changes === 0) {
     await userDb.runAsync(
-      `INSERT INTO confusion_pairs (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
+      `INSERT OR IGNORE INTO confusion_pairs (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       [
         generateId(),
@@ -118,7 +118,7 @@ async function logConfusionEvent(
   practiceMode?: PracticeMode,
 ): Promise<void> {
   await userDb.runAsync(
-    `INSERT INTO confusion_events (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, list_id, practice_mode, confused_at)
+    `INSERT OR IGNORE INTO confusion_events (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, list_id, practice_mode, confused_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),

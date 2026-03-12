@@ -116,7 +116,7 @@ export default function BrowseAozoraScreen() {
       const author = getAuthorName(aozoraBook);
 
       await userDb.runAsync(
-        `INSERT INTO books (id, title, author, aozora_id, source, source_id, raw_content, saved, created_at, updated_at)
+        `INSERT OR IGNORE INTO books (id, title, author, aozora_id, source, source_id, raw_content, saved, created_at, updated_at)
          VALUES (?, ?, ?, ?, 'aozora', ?, ?, ?, ?, ?)`,
         [
           id,

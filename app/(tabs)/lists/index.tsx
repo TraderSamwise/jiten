@@ -214,7 +214,7 @@ export default function ListsIndexScreen() {
       updatedAt: now,
     };
     await userDb.runAsync(
-      "INSERT INTO lists (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO lists (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
       [list.id, list.name, list.description, list.createdAt, list.updatedAt],
     );
     addList({ ...list, entryCount: 0 });

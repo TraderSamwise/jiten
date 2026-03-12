@@ -1,3 +1,4 @@
 yarn typecheck
 yarn lint-staged
 ./scripts/check-dict-version.sh --strict
+./scripts/check-safe-inserts.sh

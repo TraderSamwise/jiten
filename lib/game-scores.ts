@@ -16,7 +16,7 @@ export interface GameScoreRecord {
 export async function saveGameScore(userDb: WrappedUserDb, record: GameScoreRecord): Promise<void> {
   const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
   await userDb.runAsync(
-    `INSERT INTO game_scores (id, list_id, game_type, game_mode, speed_preset, score, matches_made, triples_made, max_combo, accuracy, duration_ms, played_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO game_scores (id, list_id, game_type, game_mode, speed_preset, score, matches_made, triples_made, max_combo, accuracy, duration_ms, played_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       record.listId,
