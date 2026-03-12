@@ -36,12 +36,16 @@ export function UserDatabaseProvider({
     let db: DB | null = null;
 
     async function init() {
+      console.log("[UserDB Native] Opening user.db...");
       db = open({ name: "user.db" });
 
       // Run only pending migrations (tracked via PRAGMA user_version)
       const vr = await db.execute("PRAGMA user_version");
       const currentVersion = (vr.rows?.[0] as any)?.user_version ?? 0;
       const pending = USER_DB_MIGRATIONS.slice(currentVersion);
+      console.log(
+        `[UserDB Native] Version ${currentVersion}, ${pending.length} pending migrations`,
+      );
       for (const sql of pending) {
         try {
           await db.execute(sql);
@@ -51,6 +55,7 @@ export function UserDatabaseProvider({
       }
       if (pending.length > 0) {
         await db.execute(`PRAGMA user_version = ${USER_DB_MIGRATIONS.length}`);
+        console.log(`[UserDB Native] Migrated to version ${USER_DB_MIGRATIONS.length}`);
       }
 
       // Programmatic migration: rename random default IDs → deterministic slugs
@@ -103,11 +108,12 @@ export function UserDatabaseProvider({
         .runAsync(`DELETE FROM review_marks WHERE marked_at < datetime('now', '-90 days')`)
         .catch(() => {});
 
+      console.log("[UserDB Native] Initialized successfully");
       setState({ userDb: wrapped, isReady: true });
     }
 
     init().catch((err) => {
-      console.error("[UserDB] Init error:", err);
+      console.error("[UserDB Native] Init error:", err);
       setState({ userDb: null, isReady: true });
     });
 

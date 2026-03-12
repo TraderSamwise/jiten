@@ -66,6 +66,12 @@ async function openAndMigrateUserDb(): Promise<{
       try {
         return await db.getAllAsync<T>(sql, params ?? []);
       } catch (err) {
+        console.error(
+          "[UserDB Web] getAllAsync FAILED:",
+          String(err),
+          "\n  SQL:",
+          sql.slice(0, 200),
+        );
         notifyDbError(err, sql);
         throw err;
       }
@@ -75,6 +81,12 @@ async function openAndMigrateUserDb(): Promise<{
       try {
         return await db.getFirstAsync<T>(sql, params ?? []);
       } catch (err) {
+        console.error(
+          "[UserDB Web] getFirstAsync FAILED:",
+          String(err),
+          "\n  SQL:",
+          sql.slice(0, 200),
+        );
         notifyDbError(err, sql);
         throw err;
       }
@@ -88,6 +100,7 @@ async function openAndMigrateUserDb(): Promise<{
           lastInsertRowId: result.lastInsertRowId,
         };
       } catch (err) {
+        console.error("[UserDB Web] runAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
         notifyDbError(err, sql);
         throw err;
       }
