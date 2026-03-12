@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   Easing,
+  ReduceMotion,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 
@@ -32,8 +33,16 @@ export function FloatingLabel({ text, screenX, screenY, onDone }: FloatingLabelP
   useEffect(() => {
     if (textW === null) return;
     opacity.value = 1;
-    translateY.value = withTiming(-48, { duration: 3000, easing: Easing.out(Easing.quad) });
-    opacity.value = withTiming(0, { duration: 3000, easing: Easing.in(Easing.quad) });
+    translateY.value = withTiming(-48, {
+      duration: 3000,
+      easing: Easing.out(Easing.quad),
+      reduceMotion: ReduceMotion.Never,
+    });
+    opacity.value = withTiming(0, {
+      duration: 3000,
+      easing: Easing.in(Easing.quad),
+      reduceMotion: ReduceMotion.Never,
+    });
     const timer = setTimeout(onDone, 3100);
     return () => clearTimeout(timer);
   }, [textW]);
