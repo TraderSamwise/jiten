@@ -6,6 +6,8 @@ import { CommonActions } from "@react-navigation/native";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
 import { importArticle } from "@/lib/article-import";
+import { useSetAtom } from "jotai";
+import { libraryTabAtom } from "@/stores/reader";
 
 export default function ImportArticleScreen() {
   const params = useLocalSearchParams<{
@@ -18,6 +20,7 @@ export default function ImportArticleScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const userDb = useUserDb();
+  const setLibraryTab = useSetAtom(libraryTabAtom);
   const imported = useRef(false);
 
   useEffect(() => {
@@ -38,6 +41,8 @@ export default function ImportArticleScreen() {
 
     importArticle(userDb, { title, content, url: articleUrl, byline, imageUrl })
       .then((bookId) => {
+        // Set library to articles tab so going back lands on the right tab
+        setLibraryTab("articles");
         // Reset the entire navigation tree atomically so the reader tab has
         // the correct stack [index, [bookId]] — same as tapping an existing
         // book. No intermediate screen flash, correct back gesture direction.
@@ -48,7 +53,10 @@ export default function ImportArticleScreen() {
               {
                 name: "(tabs)",
                 state: {
+                  index: 2, // reader tab
                   routes: [
+                    { name: "dictionary" },
+                    { name: "lists" },
                     {
                       name: "reader",
                       state: {
@@ -56,6 +64,7 @@ export default function ImportArticleScreen() {
                         routes: [{ name: "index" }, { name: "[bookId]", params: { bookId } }],
                       },
                     },
+                    { name: "settings" },
                   ],
                 },
               },
