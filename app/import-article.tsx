@@ -35,7 +35,11 @@ export default function ImportArticleScreen() {
 
     importArticle(userDb, { title, content, url: articleUrl, byline, imageUrl })
       .then((bookId) => {
-        router.replace(`/reader/${bookId}` as any);
+        // Navigate to library first, then push reader — this gives the reader
+        // tab the correct stack [index, [bookId]] so the back gesture swipes
+        // in the right direction (same as tapping an existing book).
+        router.replace("/reader" as any);
+        setTimeout(() => router.push(`/reader/${bookId}` as any), 0);
       })
       .catch((e) => {
         console.error("Article import failed:", e);
