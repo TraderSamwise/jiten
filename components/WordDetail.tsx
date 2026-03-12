@@ -20,6 +20,7 @@ import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
 import { useDatabase } from "@/db/provider";
 import { getEntry } from "@/db/search";
+import { getCountersForWord } from "@/db/counter-search";
 import { Bookmark } from "@/lib/icons";
 import { useAtomValue } from "jotai";
 import { showRomajiAtom } from "@/stores/settings";
@@ -43,7 +44,7 @@ interface WordDetailProps {
 }
 
 export function WordDetail({ entryId }: WordDetailProps) {
-  const { dictDb, isReady } = useDatabase();
+  const { dictDb, extendedDb, isReady } = useDatabase();
   const navigation = useNavigation();
   const tabRouter = useTabRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
@@ -56,6 +57,14 @@ export function WordDetail({ entryId }: WordDetailProps) {
     { top: number; right: number } | undefined
   >();
   const [wordParts, setWordParts] = useState<LookupResult[]>([]);
+  const [counters, setCounters] = useState<
+    {
+      counterId: number;
+      counterKanji: string;
+      counterReading: string;
+      counterGloss: string | null;
+    }[]
+  >([]);
 
   function measureAndRun(callback: () => void) {
     bookmarkRef.current?.measureInWindow((x, y, width, height) => {
@@ -88,6 +97,17 @@ export function WordDetail({ entryId }: WordDetailProps) {
       cancelled = true;
     };
   }, [dictDb, entry]);
+
+  // Fetch counters for this word (if extended DB available)
+  useEffect(() => {
+    if (!extendedDb || !entryId) {
+      setCounters([]);
+      return;
+    }
+    getCountersForWord(extendedDb, entryId)
+      .then(setCounters)
+      .catch(() => {});
+  }, [extendedDb, entryId]);
 
   useEffect(() => {
     navigation.setOptions({ headerRight: () => null });
@@ -272,6 +292,29 @@ export function WordDetail({ entryId }: WordDetailProps) {
             })}
           </View>
         </Card>
+      )}
+
+      {counters.length > 0 && (
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Counters</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {counters.map((c) => (
+              <Pressable
+                key={c.counterId}
+                onPress={() => tabRouter.pushCounter(c.counterId)}
+                className="rounded-lg border border-border px-3 py-2 bg-card active:bg-muted"
+              >
+                <Text className="text-lg font-medium text-foreground">{c.counterKanji}</Text>
+                <Text className="text-xs text-muted-foreground">{c.counterReading}</Text>
+                {c.counterGloss && (
+                  <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                    {c.counterGloss}
+                  </Text>
+                )}
+              </Pressable>
+            ))}
+          </View>
+        </View>
       )}
 
       {Platform.OS === "ios" && (

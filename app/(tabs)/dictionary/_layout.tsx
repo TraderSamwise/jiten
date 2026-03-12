@@ -13,6 +13,7 @@ export default function DictionaryLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="word/[id]" />
       <Stack.Screen name="kanji/[literal]" />
+      <Stack.Screen name="counter/[counterId]" />
       <Stack.Screen name="gloss-group" />
     </Stack>
   );

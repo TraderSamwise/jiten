@@ -98,6 +98,61 @@ export async function searchCounters(
   }
 }
 
+/**
+ * Get a single counter by ID with all its readings.
+ */
+export async function getCounter(
+  extDb: SQLiteDatabase,
+  counterId: number,
+): Promise<CounterEntry | null> {
+  const rows = await extDb.getAllAsync<CounterRow>(
+    `SELECT counter_id, counter_kanji, counter_reading, counter_gloss,
+            number, number_kanji, combined_kanji, reading
+     FROM counter_readings
+     WHERE counter_id = ?
+     ORDER BY CASE number WHEN '何' THEN 11 ELSE CAST(number AS INTEGER) END`,
+    [counterId],
+  );
+
+  if (rows.length === 0) return null;
+  return groupRows(rows)[0];
+}
+
+/**
+ * Get all noun JMdict IDs that use a given counter.
+ */
+export async function getNounsForCounter(
+  extDb: SQLiteDatabase,
+  counterId: number,
+): Promise<number[]> {
+  const rows = await extDb.getAllAsync<{ jmdict_id: number }>(
+    `SELECT jmdict_id FROM noun_counter_mappings WHERE counter_id = ? ORDER BY jmdict_id`,
+    [counterId],
+  );
+  return rows.map((r) => r.jmdict_id);
+}
+
+/**
+ * Get counters for a given word (noun→counter lookup).
+ * Returns minimal counter info for display on word detail pages.
+ */
+export async function getCountersForWord(
+  extDb: SQLiteDatabase,
+  jmdictId: number,
+): Promise<
+  { counterId: number; counterKanji: string; counterReading: string; counterGloss: string | null }[]
+> {
+  return extDb.getAllAsync(
+    `SELECT DISTINCT cr.counter_id AS counterId, cr.counter_kanji AS counterKanji,
+            cr.counter_reading AS counterReading, cr.counter_gloss AS counterGloss
+     FROM noun_counter_mappings ncm
+     JOIN counter_readings cr ON cr.counter_id = ncm.counter_id
+     WHERE ncm.jmdict_id = ?
+     ORDER BY cr.counter_id`,
+    [jmdictId],
+  );
+}
+
 /** Japanese input: match on counter_kanji or counter_reading (prefix). */
 async function matchJapanese(
   extDb: SQLiteDatabase,
