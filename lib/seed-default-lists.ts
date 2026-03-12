@@ -127,7 +127,7 @@ async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
     const listId = makeDefaultListId(def.name);
 
     await userDb.runAsync(
-      "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+      "INSERT OR IGNORE INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
       [listId, def.name, null, now, now],
     );
 
@@ -140,7 +140,7 @@ async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
         params.push(generateId(), listId, now, row.literal);
       }
       await userDb.runAsync(
-        `INSERT INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
         params,
       );
     }
@@ -158,12 +158,15 @@ export async function seedDefaultBookIfNeeded(userDb: WrappedUserDb): Promise<vo
   const id = makeDefaultListId("yume-juuya");
 
   await userDb.runAsync(
-    `INSERT INTO books (id, title, author, source, aozora_id, source_id, raw_content, is_default, created_at, updated_at)
+    `INSERT OR IGNORE INTO books (id, title, author, source, aozora_id, source_id, raw_content, is_default, created_at, updated_at)
      VALUES (?, ?, ?, 'aozora', ?, ?, ?, 1, ?, ?)`,
     [id, "夢十夜", "夏目漱石", 799, "799", STARTER_BOOK_CONTENT, now, now],
   );
 
-  await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [BOOK_FLAG_KEY, "1"]);
+  await userDb.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
+    BOOK_FLAG_KEY,
+    "1",
+  ]);
 }
 
 const RTK_FLAG_KEY = "rtk_lessons_seeded";
@@ -200,7 +203,7 @@ export async function seedRtkLessonsIfNeeded(
     const listId = makeDefaultListId(listName);
 
     await userDb.runAsync(
-      "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+      "INSERT OR IGNORE INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
       [listId, listName, null, now, now],
     );
 
@@ -213,13 +216,16 @@ export async function seedRtkLessonsIfNeeded(
         params.push(generateId(), listId, now, row.literal);
       }
       await userDb.runAsync(
-        `INSERT INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
         params,
       );
     }
   }
 
-  await userDb.runAsync("INSERT INTO app_flags (key, value) VALUES (?, ?)", [RTK_FLAG_KEY, "1"]);
+  await userDb.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
+    RTK_FLAG_KEY,
+    "1",
+  ]);
   return true;
 }
 
@@ -243,7 +249,7 @@ async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
     const listId = makeDefaultListId(def.name);
 
     await userDb.runAsync(
-      "INSERT INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+      "INSERT OR IGNORE INTO lists (id, name, description, is_default, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
       [listId, def.name, null, now, now],
     );
 
@@ -256,7 +262,7 @@ async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
         params.push(generateId(), listId, row.id, now);
       }
       await userDb.runAsync(
-        `INSERT INTO list_entries (id, list_id, entry_id, added_at) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at) VALUES ${placeholders}`,
         params,
       );
     }
