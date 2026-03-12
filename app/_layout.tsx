@@ -6,6 +6,7 @@ import { Platform, View } from "react-native";
 import { useColorScheme } from "nativewind";
 import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DatabaseProvider } from "@/db/provider";
 import { DictDownloadGate } from "@/components/DictDownloadGate";
@@ -204,6 +205,7 @@ export default function RootLayout() {
 
   return (
     <GlobalErrorHandler>
+      <ReducedMotionConfig mode={ReduceMotion.Never} />
       <GestureHandlerRootView
         style={{
           flex: 1,
