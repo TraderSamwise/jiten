@@ -238,12 +238,17 @@ export function DbRecoveryScreen({ error, onDismiss }: DbRecoveryScreenProps) {
       {backupState === "idle" && (
         <Pressable style={s.button} onPress={runBackup}>
           <Text style={s.buttonText}>Back Up Data</Text>
+          <Text style={s.buttonSubtext}>Save lists, flashcards, and books as a JSON file</Text>
         </Pressable>
       )}
 
       {backupState === "done" && backup && (
         <Pressable style={s.button} onPress={() => saveBackupFile(backup)}>
           <Text style={s.buttonText}>Download Backup</Text>
+          <Text style={s.buttonSubtext}>
+            {backup.succeeded.length} table{backup.succeeded.length !== 1 ? "s" : ""} backed up
+            {backup.failed.length > 0 ? `, ${backup.failed.length} failed` : ""}
+          </Text>
         </Pressable>
       )}
 
@@ -258,6 +263,7 @@ export function DbRecoveryScreen({ error, onDismiss }: DbRecoveryScreenProps) {
 
       <Pressable style={s.buttonOutline} onPress={onDismiss}>
         <Text style={s.buttonOutlineText}>Dismiss</Text>
+        <Text style={s.buttonOutlineSubtext}>Continue using the app without fixing</Text>
       </Pressable>
     </ScrollView>
   );
@@ -337,21 +343,21 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 12,
   },
   buttonSuccess: {
     backgroundColor: "#2e7d32",
     padding: 14,
     borderRadius: 8,
     alignItems: "center" as const,
-    marginTop: 16,
+    marginTop: 12,
   },
   buttonDanger: {
     backgroundColor: "#d32f2f",
     padding: 14,
     borderRadius: 8,
     alignItems: "center" as const,
-    marginTop: 10,
+    marginTop: 12,
   },
   buttonText: {
     color: "#fff",
@@ -369,12 +375,17 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 12,
   },
   buttonOutlineText: {
     color: "#2196F3",
     fontSize: 16,
     fontWeight: "600",
+  },
+  buttonOutlineSubtext: {
+    color: "#666",
+    fontSize: 12,
+    marginTop: 2,
   },
 });
 
@@ -418,7 +429,8 @@ const darkStyles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 12,
   },
   buttonOutlineText: { color: "#42a5f5", fontSize: 16, fontWeight: "600" },
+  buttonOutlineSubtext: { color: "#888", fontSize: 12, marginTop: 2 },
 });
