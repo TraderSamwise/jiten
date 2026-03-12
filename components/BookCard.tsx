@@ -65,19 +65,23 @@ export const BookCard = React.memo(function BookCard({ book, onPress }: BookCard
             <CardDescription className="text-xs capitalize">{book.source}</CardDescription>
           </View>
         )}
-        {(book.charOffset > 0 || book.scrollPosition > 0 || book.readComplete) && (
+        {(book.charOffset > 0 ||
+          book.scrollPosition > 0 ||
+          book.readComplete ||
+          book.totalChars > 0) && (
           <>
             <View className="flex-1" />
             <View className="rounded-full bg-muted px-2 py-0.5">
               <CardDescription className="text-xs">
-                {progress}%
-                {book.totalChars > 0 &&
-                  (() => {
-                    const charsPerPage = 500;
-                    const totalPages = Math.ceil(book.totalChars / charsPerPage);
-                    const currentPage = Math.round((progress / 100) * totalPages);
-                    return ` ≈ ${currentPage} / ${totalPages} pages`;
-                  })()}
+                {book.totalChars > 0
+                  ? (() => {
+                      const charsPerPage = 500;
+                      const totalPages = Math.ceil(book.totalChars / charsPerPage);
+                      if (progress === 0) return `${totalPages} pages`;
+                      const currentPage = Math.round((progress / 100) * totalPages);
+                      return `${progress}% ≈ ${currentPage} / ${totalPages} pages`;
+                    })()
+                  : `${progress}%`}
               </CardDescription>
             </View>
           </>
