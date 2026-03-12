@@ -1480,7 +1480,7 @@ function StudyScreen() {
           const now = new Date().toISOString();
           for (const row of entryRows) {
             await userDb.runAsync(
-              `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+              `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
               [generateId(), row.entry_id, row.kanji_literal, listId, now, now, now],
             );
@@ -2030,7 +2030,7 @@ function StudyScreen() {
     );
 
     await userDb.runAsync(
-      `INSERT INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
+      `INSERT OR IGNORE INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         logId ?? generateId(),

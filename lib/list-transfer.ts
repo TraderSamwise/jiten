@@ -246,7 +246,7 @@ export async function importListToDb(
   const configured = hasStudyData ? 1 : 0;
 
   await userDb.runAsync(
-    `INSERT INTO lists (id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, created_at, updated_at)
+    `INSERT OR IGNORE INTO lists (id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       listId,
@@ -272,12 +272,12 @@ export async function importListToDb(
       const entry = data.entries[i];
       if (isKanjiEntry(entry)) {
         await userDb.runAsync(
-          "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
+          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
           [generateId(), listId, entry.kanjiLiteral, entry.addedAt, now],
         );
       } else {
         await userDb.runAsync(
-          "INSERT INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
           [generateId(), listId, entry.entryId, entry.addedAt, now],
         );
       }
@@ -293,7 +293,7 @@ export async function importListToDb(
         const kanjiLiteral = "kanjiLiteral" in card ? ((card as any).kanjiLiteral ?? null) : null;
         const entryId = kanjiLiteral != null ? 0 : card.entryId;
         await userDb.runAsync(
-          `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
+          `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             cardId,
@@ -333,7 +333,7 @@ export async function importListToDb(
           const kanjiLiteral = isKanjiEntry(entry) ? entry.kanjiLiteral : null;
           const entryId = isKanjiEntry(entry) ? 0 : entry.entryId;
           await userDb.runAsync(
-            `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
+            `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               generateId(),
@@ -365,7 +365,7 @@ export async function importListToDb(
         const kanjiLiteral = card.kanjiLiteral ?? null;
         const entryId = kanjiLiteral != null ? 0 : card.entryId;
         await userDb.runAsync(
-          `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
+          `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             cardId,
@@ -390,7 +390,7 @@ export async function importListToDb(
 
         for (const log of card.reviewLogs) {
           await userDb.runAsync(
-            `INSERT INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
+            `INSERT OR IGNORE INTO review_logs (id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               generateId(),

@@ -116,7 +116,7 @@ export default function MarkedForReviewScreen() {
       const tempId = `_marked_${Date.now()}`;
 
       await userDb.runAsync(
-        `INSERT INTO lists (id, name, description, created_at, updated_at, flashcard_mode, configured)
+        `INSERT OR IGNORE INTO lists (id, name, description, created_at, updated_at, flashcard_mode, configured)
          VALUES (?, ?, '', ?, ?, 'simple_srs', 1)`,
         [tempId, `Marked — ${label}`, now, now],
       );
@@ -135,7 +135,7 @@ export default function MarkedForReviewScreen() {
       for (const mark of uniqueMarks) {
         const entryRowId = `${tempId}-${mark.entryId}-${mark.kanjiLiteral ?? ""}`;
         await userDb.runAsync(
-          `INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at)
+          `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [entryRowId, tempId, mark.entryId, mark.kanjiLiteral, now, now],
         );

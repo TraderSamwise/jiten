@@ -47,7 +47,7 @@ export async function markForReview(
   const id = `${entryId}-${kanjiLiteral ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
   await userDb.runAsync(
-    `INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)`,
     [id, entryId, kanjiLiteral, listId, now],
   );
   return true;

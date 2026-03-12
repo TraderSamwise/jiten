@@ -24,7 +24,7 @@ export async function importArticle(userDb: WrappedUserDb, article: ArticleData)
   const now = new Date().toISOString();
 
   await userDb.runAsync(
-    `INSERT INTO books (id, title, author, source, source_url, image_url, raw_content, saved, created_at, updated_at)
+    `INSERT OR IGNORE INTO books (id, title, author, source, source_url, image_url, raw_content, saved, created_at, updated_at)
      VALUES (?, ?, ?, 'article', ?, ?, ?, 0, ?, ?)`,
     [
       id,

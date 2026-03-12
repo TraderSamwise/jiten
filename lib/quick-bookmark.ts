@@ -40,13 +40,13 @@ export async function addEntryToList(userDb: WrappedUserDb, entryId: number, lis
   const now = new Date().toISOString();
 
   await userDb.runAsync(
-    "INSERT INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     [generateId(), listId, entryId, now, now],
   );
 
   const card = createNewCard();
   await userDb.runAsync(
-    `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty,
+    `INSERT OR IGNORE INTO srs_cards (id, entry_id, list_id, due, stability, difficulty,
       elapsed_days, scheduled_days, reps, lapses, state, last_review,
       front_mode, back_mode, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -120,13 +120,13 @@ export async function addKanjiToList(userDb: WrappedUserDb, kanjiLiteral: string
   const now = new Date().toISOString();
 
   await userDb.runAsync(
-    "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
+    "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
     [generateId(), listId, kanjiLiteral, now, now],
   );
 
   const card = createNewCard();
   await userDb.runAsync(
-    `INSERT INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty,
+    `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty,
       elapsed_days, scheduled_days, reps, lapses, state, last_review,
       front_mode, back_mode, created_at, updated_at)
      VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

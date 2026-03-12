@@ -99,7 +99,7 @@ export default function NovelSyosetuScreen() {
       const bookTitle = `${title} — ${chapter.title}`;
 
       await userDb.runAsync(
-        `INSERT INTO books (id, title, author, source, source_id, raw_content, saved, created_at, updated_at)
+        `INSERT OR IGNORE INTO books (id, title, author, source, source_id, raw_content, saved, created_at, updated_at)
          VALUES (?, ?, ?, 'syosetu', ?, ?, ?, ?, ?)`,
         [id, bookTitle, writer ?? "", sourceId, rawContent, saved, now, now],
       );
