@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useContainerWidth } from "@/lib/use-container-width";
+import { useWindowDimensions } from "react-native";
 import { viewportPosition } from "@/lib/viewport-position";
 import Animated, {
   useSharedValue,
@@ -24,7 +24,7 @@ interface FloatingLabelProps {
  * Used as a reveal animation (e.g. showing a definition after a match).
  */
 export function FloatingLabel({ text, screenX, screenY, onDone }: FloatingLabelProps) {
-  const screenWidth = useContainerWidth();
+  const { width: screenWidth } = useWindowDimensions();
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(0);
   const [textW, setTextW] = useState<number | null>(null);

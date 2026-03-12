@@ -199,7 +199,11 @@ function WordBlock({
 
   // Measure position and spawn floating coin when word completes
   useEffect(() => {
-    if (completed && !hasFired.current && onCoinSpawn) {
+    if (!completed) {
+      hasFired.current = false;
+      return;
+    }
+    if (!hasFired.current && onCoinSpawn) {
       hasFired.current = true;
       blockRef.current?.measureInWindow((x, y, w) => {
         onCoinSpawn({
