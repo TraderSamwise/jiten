@@ -1,4 +1,5 @@
 import type { DB, QueryResult } from "@op-engineering/op-sqlite";
+import { notifyDbError } from "@/components/GlobalErrorHandler";
 
 /**
  * Wraps op-sqlite's DB to match the expo-sqlite API our screens already use.
@@ -14,21 +15,39 @@ export interface WrappedUserDb {
 export function wrapUserDb(db: DB): WrappedUserDb {
   return {
     getAllAsync: async <T>(sql: string, params?: any[]): Promise<T[]> => {
-      const result: QueryResult = await db.execute(sql, params);
-      return result.rows as T[];
+      try {
+        const result: QueryResult = await db.execute(sql, params);
+        return result.rows as T[];
+      } catch (err) {
+        console.error("[UserDB] getAllAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
+        notifyDbError(err, sql);
+        throw err;
+      }
     },
 
     getFirstAsync: async <T>(sql: string, params?: any[]): Promise<T | null> => {
-      const result: QueryResult = await db.execute(sql, params);
-      return (result.rows[0] as T) ?? null;
+      try {
+        const result: QueryResult = await db.execute(sql, params);
+        return (result.rows[0] as T) ?? null;
+      } catch (err) {
+        console.error("[UserDB] getFirstAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
+        notifyDbError(err, sql);
+        throw err;
+      }
     },
 
     runAsync: async (sql: string, params?: any[]) => {
-      const result: QueryResult = await db.execute(sql, params);
-      return {
-        changes: result.rowsAffected,
-        lastInsertRowId: result.insertId ?? 0,
-      };
+      try {
+        const result: QueryResult = await db.execute(sql, params);
+        return {
+          changes: result.rowsAffected,
+          lastInsertRowId: result.insertId ?? 0,
+        };
+      } catch (err) {
+        console.error("[UserDB] runAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
+        notifyDbError(err, sql);
+        throw err;
+      }
     },
 
     sync: () => db.sync(),

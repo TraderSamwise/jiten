@@ -72,12 +72,19 @@ export default function LibraryScreen() {
 
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
-    await seedDefaultBookIfNeeded(userDb);
-    // Load both saved and unsaved (but not deleted)
-    const rows = await userDb.getAllAsync<any>(
-      "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
-    );
-    setBooks(rows.map(parseBookRow));
+    try {
+      console.log("[Reader] loadBooks: seeding default book...");
+      await seedDefaultBookIfNeeded(userDb);
+      console.log("[Reader] loadBooks: querying books...");
+      // Load both saved and unsaved (but not deleted)
+      const rows = await userDb.getAllAsync<any>(
+        "SELECT * FROM books WHERE deleted_at IS NULL ORDER BY last_read_at DESC NULLS LAST, created_at DESC",
+      );
+      console.log(`[Reader] loadBooks: got ${rows.length} books`);
+      setBooks(rows.map(parseBookRow));
+    } catch (err) {
+      console.error("[Reader] loadBooks FAILED:", err);
+    }
   }, [userDb, lastSyncAt]);
 
   // Auto-cleanup stale unsaved items on focus
