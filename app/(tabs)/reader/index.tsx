@@ -23,6 +23,8 @@ import { seedDefaultBookIfNeeded } from "@/lib/seed-default-lists";
 import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
+import { useAtom } from "jotai";
+import { libraryTabAtom } from "@/stores/reader";
 import type { Book } from "@/db/types";
 
 const isIOS = Platform.OS === "ios";
@@ -66,7 +68,7 @@ export default function LibraryScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showSyncChoice, setShowSyncChoice] = useState(false);
-  const [tab, setTab] = useState<"books" | "articles">("books");
+  const [tab, setTab] = useAtom(libraryTabAtom);
 
   const loadBooks = useCallback(async () => {
     if (!userDb) return;
