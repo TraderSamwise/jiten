@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   TextInput,
@@ -36,6 +36,7 @@ import { FloatingLabel } from "@/components/FloatingLabel";
 import { X, Settings } from "@/lib/icons";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
 import { getEntries } from "@/db/search";
 import {
   romajiToKana,
@@ -342,6 +343,7 @@ export default function TypingGameScreen() {
   const containerWidth = useContainerWidth();
   const { webBgStyle } = useWebBackdrop();
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const { dictDb, audioDb } = useDatabase();
   const { markDirty } = useSync();
   const sessionDirtyRef = useRef(false);
@@ -542,7 +544,7 @@ export default function TypingGameScreen() {
         sessionDirtyRef.current = true;
         markDirty();
       }
-      logPracticeEvent(userDb, {
+      logPracticeEvent(drizzleDb!, {
         entryId: currentEntry.id,
         listId,
         practiceMode: "typing_game",
@@ -564,7 +566,7 @@ export default function TypingGameScreen() {
           .then((confused) => {
             if (confused) {
               recordConfusion(
-                userDb,
+                drizzleDb!,
                 { entryId: currentEntry.id },
                 { entryId: confused.id },
                 "reading",
@@ -582,7 +584,7 @@ export default function TypingGameScreen() {
         const meaningResults = findMeaningConfusion(currentEntry, candidates);
         for (const mr of meaningResults) {
           recordConfusion(
-            userDb,
+            drizzleDb!,
             { entryId: currentEntry.id },
             { entryId: mr.entry.id },
             "meaning",
@@ -622,7 +624,7 @@ export default function TypingGameScreen() {
         setEndTime(Date.now());
         setPhase("done");
         if (userDb && listId) {
-          logSessionSummary(userDb, {
+          logSessionSummary(drizzleDb!, {
             sessionId: sessionIdRef.current,
             listId,
             practiceMode: "typing_game",

@@ -1,4 +1,6 @@
-import type { WrappedUserDb } from "@/db/user-db";
+import { eq, and, sql } from "drizzle-orm";
+import { reviewMarks } from "@/db/schema";
+import type { UserDrizzle } from "@/db/drizzle";
 import { getLogicalToday, sqlDayExpr } from "./day-boundary";
 
 // ─── Types ───
@@ -28,6 +30,19 @@ export interface MarkedMonth {
   marks: MarkEntry[];
 }
 
+// ─── Helpers for db.all() raw array mapping ───
+
+/** Maps raw array rows from db.all() to objects using column names. */
+function mapRows<T extends Record<string, any>>(rows: unknown[][], columns: (keyof T)[]): T[] {
+  return rows.map((row) => {
+    const obj: any = {};
+    for (let i = 0; i < columns.length; i++) {
+      obj[columns[i]] = row[i];
+    }
+    return obj as T;
+  });
+}
+
 // ─── Mark / Query ───
 
 /**
@@ -35,86 +50,121 @@ export interface MarkedMonth {
  * Returns true if a new mark was inserted.
  */
 export async function markForReview(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   entryId: number,
   kanjiLiteral: string | null,
   listId: string | null,
   resetHour: number,
 ): Promise<boolean> {
-  const already = await isMarkedToday(userDb, entryId, kanjiLiteral, resetHour);
+  const already = await isMarkedToday(db, entryId, kanjiLiteral, resetHour);
   if (already) return false;
 
   const id = `${entryId}-${kanjiLiteral ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)`,
-    [id, entryId, kanjiLiteral, listId, now],
-  );
+  await db
+    .insert(reviewMarks)
+    .values({
+      id,
+      entryId,
+      kanjiLiteral,
+      listId,
+      markedAt: now,
+    })
+    .onConflictDoNothing();
   return true;
 }
 
 /** Remove today's mark for an entry. Returns true if a row was deleted. */
 export async function unmarkForReview(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   entryId: number,
   kanjiLiteral: string | null,
   resetHour: number,
 ): Promise<boolean> {
   const today = getLogicalToday(resetHour);
   const dayExpr = sqlDayExpr("marked_at", resetHour);
-  const result = await userDb.runAsync(
-    `DELETE FROM review_marks
-     WHERE entry_id = ? AND ${kanjiLiteral != null ? "kanji_literal = ?" : "kanji_literal IS NULL"}
-     AND ${dayExpr} = ?`,
-    kanjiLiteral != null ? [entryId, kanjiLiteral, today] : [entryId, today],
-  );
-  return result.changes > 0;
+
+  const kanjiFilter =
+    kanjiLiteral != null
+      ? sql`${reviewMarks.kanjiLiteral} = ${kanjiLiteral}`
+      : sql`${reviewMarks.kanjiLiteral} IS NULL`;
+
+  const existing = await db
+    .select({ id: reviewMarks.id })
+    .from(reviewMarks)
+    .where(
+      and(
+        eq(reviewMarks.entryId, entryId),
+        sql`${kanjiFilter}`,
+        sql`${sql.raw(dayExpr)} = ${today}`,
+      ),
+    );
+
+  if (existing.length === 0) return false;
+
+  for (const row of existing) {
+    await db.delete(reviewMarks).where(eq(reviewMarks.id, row.id));
+  }
+  return true;
 }
 
 /** Check if an entry is already marked for the current logical day. */
 export async function isMarkedToday(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   entryId: number,
   kanjiLiteral: string | null,
   resetHour: number,
 ): Promise<boolean> {
   const today = getLogicalToday(resetHour);
   const dayExpr = sqlDayExpr("marked_at", resetHour);
-  const row = await userDb.getFirstAsync<{ cnt: number }>(
-    `SELECT COUNT(*) as cnt FROM review_marks
-     WHERE entry_id = ? AND ${kanjiLiteral != null ? "kanji_literal = ?" : "kanji_literal IS NULL"}
-     AND ${dayExpr} = ?`,
-    kanjiLiteral != null ? [entryId, kanjiLiteral, today] : [entryId, today],
-  );
-  return (row?.cnt ?? 0) > 0;
+
+  const kanjiFilter =
+    kanjiLiteral != null
+      ? sql`${reviewMarks.kanjiLiteral} = ${kanjiLiteral}`
+      : sql`${reviewMarks.kanjiLiteral} IS NULL`;
+
+  const rows = await db
+    .select({ id: reviewMarks.id })
+    .from(reviewMarks)
+    .where(
+      and(
+        eq(reviewMarks.entryId, entryId),
+        sql`${kanjiFilter}`,
+        sql`${sql.raw(dayExpr)} = ${today}`,
+      ),
+    )
+    .limit(1);
+
+  return rows.length > 0;
 }
 
 /** Get marks grouped by logical day. */
 export async function getMarkedByDay(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   resetHour: number,
   listId?: string | null,
   days: number = 7,
 ): Promise<MarkedDay[]> {
   const dayExpr = sqlDayExpr("marked_at", resetHour);
-  const listFilter = listId ? "AND list_id = ?" : "";
-  const params: any[] = listId ? [days, listId] : [days];
+  const listFilter = listId ? sql` AND list_id = ${listId}` : sql``;
 
-  const rows = await userDb.getAllAsync<{
+  const rawRows = (await db.all(
+    sql`SELECT ${sql.raw(dayExpr)} as dayLabel, entry_id, kanji_literal,
+            list_id, marked_at
+     FROM review_marks
+     WHERE ${sql.raw(dayExpr)} >= DATE('now', '-${sql.raw(String(resetHour))} hours', '-' || ${days} || ' days')
+     ${listFilter}
+     ORDER BY marked_at DESC`,
+  )) as unknown[][];
+
+  type Row = {
     dayLabel: string;
     entryId: number;
     kanjiLiteral: string | null;
     listId: string | null;
     markedAt: string;
-  }>(
-    `SELECT ${dayExpr} as dayLabel, entry_id as entryId, kanji_literal as kanjiLiteral,
-            list_id as listId, marked_at as markedAt
-     FROM review_marks
-     WHERE ${dayExpr} >= DATE('now', '-${resetHour} hours', '-' || ? || ' days')
-     ${listFilter}
-     ORDER BY marked_at DESC`,
-    params,
-  );
+  };
+  const rows = mapRows<Row>(rawRows, ["dayLabel", "entryId", "kanjiLiteral", "listId", "markedAt"]);
 
   return groupByKey(rows, "dayLabel", (dayLabel, marks) => ({
     dayLabel,
@@ -125,32 +175,39 @@ export async function getMarkedByDay(
 
 /** Get marks grouped by ISO week. */
 export async function getMarkedByWeek(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   resetHour: number,
   listId?: string | null,
   weeks: number = 4,
 ): Promise<MarkedWeek[]> {
   const dayExpr = sqlDayExpr("marked_at", resetHour);
-  const listFilter = listId ? "AND list_id = ?" : "";
-  const days = weeks * 7;
-  const params: any[] = listId ? [days, listId] : [days];
+  const listFilter = listId ? sql` AND list_id = ${listId}` : sql``;
+  const totalDays = weeks * 7;
 
-  const rows = await userDb.getAllAsync<{
+  const rawRows = (await db.all(
+    sql`SELECT strftime('%Y-W%W', ${sql.raw(dayExpr)}) as weekLabel,
+            entry_id, kanji_literal,
+            list_id, marked_at
+     FROM review_marks
+     WHERE ${sql.raw(dayExpr)} >= DATE('now', '-${sql.raw(String(resetHour))} hours', '-' || ${totalDays} || ' days')
+     ${listFilter}
+     ORDER BY marked_at DESC`,
+  )) as unknown[][];
+
+  type Row = {
     weekLabel: string;
     entryId: number;
     kanjiLiteral: string | null;
     listId: string | null;
     markedAt: string;
-  }>(
-    `SELECT strftime('%Y-W%W', ${dayExpr}) as weekLabel,
-            entry_id as entryId, kanji_literal as kanjiLiteral,
-            list_id as listId, marked_at as markedAt
-     FROM review_marks
-     WHERE ${dayExpr} >= DATE('now', '-${resetHour} hours', '-' || ? || ' days')
-     ${listFilter}
-     ORDER BY marked_at DESC`,
-    params,
-  );
+  };
+  const rows = mapRows<Row>(rawRows, [
+    "weekLabel",
+    "entryId",
+    "kanjiLiteral",
+    "listId",
+    "markedAt",
+  ]);
 
   const today = getLogicalToday(resetHour);
   const thisWeek = getWeekLabel(today);
@@ -164,32 +221,39 @@ export async function getMarkedByWeek(
 
 /** Get marks grouped by month. */
 export async function getMarkedByMonth(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   resetHour: number,
   listId?: string | null,
   months: number = 3,
 ): Promise<MarkedMonth[]> {
   const dayExpr = sqlDayExpr("marked_at", resetHour);
-  const listFilter = listId ? "AND list_id = ?" : "";
-  const days = months * 31;
-  const params: any[] = listId ? [days, listId] : [days];
+  const listFilter = listId ? sql` AND list_id = ${listId}` : sql``;
+  const totalDays = months * 31;
 
-  const rows = await userDb.getAllAsync<{
+  const rawRows = (await db.all(
+    sql`SELECT strftime('%Y-%m', ${sql.raw(dayExpr)}) as monthLabel,
+            entry_id, kanji_literal,
+            list_id, marked_at
+     FROM review_marks
+     WHERE ${sql.raw(dayExpr)} >= DATE('now', '-${sql.raw(String(resetHour))} hours', '-' || ${totalDays} || ' days')
+     ${listFilter}
+     ORDER BY marked_at DESC`,
+  )) as unknown[][];
+
+  type Row = {
     monthLabel: string;
     entryId: number;
     kanjiLiteral: string | null;
     listId: string | null;
     markedAt: string;
-  }>(
-    `SELECT strftime('%Y-%m', ${dayExpr}) as monthLabel,
-            entry_id as entryId, kanji_literal as kanjiLiteral,
-            list_id as listId, marked_at as markedAt
-     FROM review_marks
-     WHERE ${dayExpr} >= DATE('now', '-${resetHour} hours', '-' || ? || ' days')
-     ${listFilter}
-     ORDER BY marked_at DESC`,
-    params,
-  );
+  };
+  const rows = mapRows<Row>(rawRows, [
+    "monthLabel",
+    "entryId",
+    "kanjiLiteral",
+    "listId",
+    "markedAt",
+  ]);
 
   const monthNames = [
     "January",
@@ -215,28 +279,30 @@ export async function getMarkedByMonth(
 
 /** Get marked entry IDs within a date range (for building study queues). */
 export async function getMarkedEntryIds(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   startDate: string,
   endDate: string,
   listId?: string | null,
 ): Promise<{ entryId: number; kanjiLiteral: string | null }[]> {
-  const listFilter = listId ? "AND list_id = ?" : "";
-  const params: any[] = [startDate, endDate, ...(listId ? [listId] : [])];
+  const listFilter = listId ? sql` AND list_id = ${listId}` : sql``;
 
-  return userDb.getAllAsync<{ entryId: number; kanjiLiteral: string | null }>(
-    `SELECT DISTINCT entry_id as entryId, kanji_literal as kanjiLiteral
+  const rawRows = (await db.all(
+    sql`SELECT DISTINCT entry_id, kanji_literal
      FROM review_marks
-     WHERE marked_at >= ? AND marked_at < ?
+     WHERE marked_at >= ${startDate} AND marked_at < ${endDate}
      ${listFilter}`,
-    params,
-  );
+  )) as unknown[][];
+
+  return mapRows<{ entryId: number; kanjiLiteral: string | null }>(rawRows, [
+    "entryId",
+    "kanjiLiteral",
+  ]);
 }
 
 /** Delete marks older than keepDays. Fire-and-forget on app init. */
-export async function cleanupOldMarks(userDb: WrappedUserDb, keepDays: number = 90): Promise<void> {
-  await userDb.runAsync(
-    `DELETE FROM review_marks WHERE marked_at < datetime('now', '-' || ? || ' days')`,
-    [keepDays],
+export async function cleanupOldMarks(db: UserDrizzle, keepDays: number = 90): Promise<void> {
+  await db.run(
+    sql`DELETE FROM review_marks WHERE marked_at < datetime('now', '-' || ${keepDays} || ' days')`,
   );
 }
 

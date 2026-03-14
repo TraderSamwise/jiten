@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, Modal, Pressable, View, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
+import { generateId } from "@/db/helpers";
 import { useListsStore, parseListRow } from "@/stores/lists";
 import { Plus, Check, FolderOpen } from "@/lib/icons";
 import {
-  generateId,
   addEntryToList,
   removeEntryFromList,
   addKanjiToList,
@@ -38,6 +39,7 @@ export function BookmarkPopover({
   if (anchorPosition) lastAnchorRef.current = anchorPosition;
   const pos = anchorPosition ?? lastAnchorRef.current ?? { top: insets.top + 44, right: 8 };
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const addListToStore = useListsStore((s) => s.addList);
   const { markDirty } = useSync();
   const [lists, setLists] = useState<WordList[]>([]);
@@ -76,14 +78,14 @@ export function BookmarkPopover({
   }
 
   async function toggleList(listId: string) {
-    if (!userDb) return;
+    if (!drizzleDb) return;
 
     if (membershipMap.has(listId)) {
       // Remove
       if (isKanji) {
-        await removeKanjiFromList(userDb, kanjiLiteral!, listId);
+        await removeKanjiFromList(drizzleDb, kanjiLiteral!, listId);
       } else if (entryId != null) {
-        await removeEntryFromList(userDb, entryId, listId);
+        await removeEntryFromList(drizzleDb, entryId, listId);
       }
       const newMap = new Set(membershipMap);
       newMap.delete(listId);
@@ -92,9 +94,9 @@ export function BookmarkPopover({
     } else {
       // Add
       if (isKanji) {
-        await addKanjiToList(userDb, kanjiLiteral!, listId);
+        await addKanjiToList(drizzleDb, kanjiLiteral!, listId);
       } else if (entryId != null) {
-        await addEntryToList(userDb, entryId, listId);
+        await addEntryToList(drizzleDb, entryId, listId);
       }
       setMembershipMap((prev) => new Set(prev).add(listId));
       onListToggled?.(listId, true);

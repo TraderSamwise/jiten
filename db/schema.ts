@@ -108,6 +108,21 @@ export const lists = sqliteTable("lists", {
   description: text("description"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  flashcardMode: text("flashcard_mode").notNull().default("add_order"),
+  frontFaces: text("front_faces").notNull().default('["kanji"]'), // JSON array
+  backFaces: text("back_faces").notNull().default('["english"]'), // JSON array
+  studyPosition: integer("study_position").notNull().default(0),
+  configured: integer("configured").notNull().default(0),
+  autoPlayAudio: integer("auto_play_audio").notNull().default(0),
+  confusionDetection: integer("confusion_detection").notNull().default(1),
+  voiceMode: integer("voice_mode").notNull().default(0),
+  typingMode: integer("typing_mode").notNull().default(0),
+  disableFlipAnimation: integer("disable_flip_animation").notNull().default(0),
+  disableSwipeAnimation: integer("disable_swipe_animation").notNull().default(0),
+  isDefault: integer("is_default").notNull().default(0),
+  deletedAt: text("deleted_at"),
+  learningSteps: text("learning_steps"), // JSON array or null
+  relearningSteps: text("relearning_steps"), // JSON array or null
 });
 
 export const listEntries = sqliteTable("list_entries", {
@@ -118,6 +133,8 @@ export const listEntries = sqliteTable("list_entries", {
   entryId: integer("entry_id").notNull(), // FK to dictionary entries.id (0 = kanji sentinel)
   addedAt: text("added_at").notNull(),
   kanjiLiteral: text("kanji_literal"), // set when this is a kanji entry (entry_id = 0)
+  updatedAt: text("updated_at"),
+  deletedAt: text("deleted_at"),
 });
 
 export const srsCards = sqliteTable("srs_cards", {
@@ -138,6 +155,13 @@ export const srsCards = sqliteTable("srs_cards", {
   // What to show on front/back
   frontMode: text("front_mode").notNull().default("kanji"), // kanji, kana, english
   backMode: text("back_mode").notNull().default("english"), // kanji, kana, english
+  // Simple SRS fields (alternative algorithm)
+  simpleStage: integer("simple_stage"),
+  simpleN: real("simple_n"),
+  simpleInterval: real("simple_interval"),
+  lastConfusionCheck: text("last_confusion_check"),
+  deletedAt: text("deleted_at"),
+  learningSteps: integer("learning_steps").notNull().default(0),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -167,6 +191,7 @@ export const practiceEvents = sqliteTable("practice_events", {
   responseMs: integer("response_ms"),
   typedAnswer: text("typed_answer"),
   reviewedAt: text("reviewed_at").notNull(),
+  sessionId: text("session_id"),
   assisted: integer("assisted"),
 });
 
@@ -191,6 +216,8 @@ export const confusionPairs = sqliteTable("confusion_pairs", {
   confusionCount: integer("confusion_count").notNull().default(1),
   lastConfusedAt: text("last_confused_at").notNull(),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at"),
+  deletedAt: text("deleted_at"),
 });
 
 export const confusionEvents = sqliteTable("confusion_events", {
@@ -218,4 +245,55 @@ export const gameScores = sqliteTable("game_scores", {
   accuracy: integer("accuracy").notNull(),
   durationMs: integer("duration_ms").notNull(),
   playedAt: text("played_at").notNull(),
+});
+
+export const books = sqliteTable("books", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  author: text("author").notNull().default(""),
+  aozoraId: integer("aozora_id"),
+  source: text("source").notNull().default("import"),
+  sourceId: text("source_id"),
+  rawContent: text("raw_content"),
+  htmlContent: text("html_content"),
+  scrollPosition: real("scroll_position").notNull().default(0),
+  fontSize: integer("font_size").notNull().default(22),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  lastReadAt: text("last_read_at"),
+  isDefault: integer("is_default").notNull().default(0),
+  charOffset: integer("char_offset").notNull().default(0),
+  totalChars: integer("total_chars").notNull().default(0),
+  deletedAt: text("deleted_at"),
+  saved: integer("saved").notNull().default(1),
+  sourceUrl: text("source_url"),
+  imageUrl: text("image_url"),
+  readComplete: integer("read_complete").notNull().default(0),
+});
+
+export const userKanjiNotes = sqliteTable("user_kanji_notes", {
+  literal: text("literal").primaryKey(),
+  mnemonic: text("mnemonic").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  keyword: text("keyword"),
+  deletedAt: text("deleted_at"),
+});
+
+export const appFlags = sqliteTable("app_flags", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: text("updated_at"),
+});
+
+export const syncMeta = sqliteTable("sync_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+export const reviewMarks = sqliteTable("review_marks", {
+  id: text("id").primaryKey(),
+  entryId: integer("entry_id").notNull(),
+  kanjiLiteral: text("kanji_literal"),
+  listId: text("list_id"),
+  markedAt: text("marked_at").notNull(),
 });

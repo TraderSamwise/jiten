@@ -1,4 +1,7 @@
-import type { WrappedUserDb } from "@/db/user-db";
+import { and, eq, sql } from "drizzle-orm";
+import { practiceEvents, practiceSessions, confusionPairs, confusionEvents } from "@/db/schema";
+import { generateId } from "@/db/helpers";
+import type { UserDrizzle } from "@/db/drizzle";
 
 export type PracticeMode = "flashcard" | "typing_game" | "typing_flashcard" | "voice";
 
@@ -14,32 +17,27 @@ interface PracticeEvent {
   sessionId?: string | null;
 }
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
-
-export async function logPracticeEvent(userDb: WrappedUserDb, event: PracticeEvent): Promise<void> {
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO practice_events (id, entry_id, kanji_literal, list_id, practice_mode, correct, assisted, response_ms, typed_answer, reviewed_at, session_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      generateId(),
-      event.entryId,
-      event.kanjiLiteral ?? null,
-      event.listId ?? null,
-      event.practiceMode,
-      event.correct ? 1 : 0,
-      event.assisted ? 1 : 0,
-      event.responseMs ?? null,
-      event.typedAnswer ?? null,
-      new Date().toISOString(),
-      event.sessionId ?? null,
-    ],
-  );
+export async function logPracticeEvent(db: UserDrizzle, event: PracticeEvent): Promise<void> {
+  await db
+    .insert(practiceEvents)
+    .values({
+      id: generateId(),
+      entryId: event.entryId,
+      kanjiLiteral: event.kanjiLiteral ?? null,
+      listId: event.listId ?? null,
+      practiceMode: event.practiceMode,
+      correct: event.correct ? 1 : 0,
+      assisted: event.assisted ? 1 : 0,
+      responseMs: event.responseMs ?? null,
+      typedAnswer: event.typedAnswer ?? null,
+      reviewedAt: new Date().toISOString(),
+      sessionId: event.sessionId ?? null,
+    })
+    .onConflictDoNothing();
 }
 
 export async function logSessionSummary(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   summary: {
     sessionId: string;
     listId: string;
@@ -50,26 +48,25 @@ export async function logSessionSummary(
     correctCount: number;
   },
 ): Promise<void> {
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO practice_sessions (id, session_id, list_id, practice_mode, started_at, duration_ms, total_items, correct_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      generateId(),
-      summary.sessionId,
-      summary.listId,
-      summary.practiceMode,
-      summary.startedAt,
-      summary.durationMs,
-      summary.totalItems,
-      summary.correctCount,
-    ],
-  );
+  await db
+    .insert(practiceSessions)
+    .values({
+      id: generateId(),
+      sessionId: summary.sessionId,
+      listId: summary.listId,
+      practiceMode: summary.practiceMode,
+      startedAt: summary.startedAt,
+      durationMs: summary.durationMs,
+      totalItems: summary.totalItems,
+      correctCount: summary.correctCount,
+    })
+    .onConflictDoNothing();
 }
 
 export type ConfusionType = "visual_kanji" | "reading" | "meaning";
 
 export async function recordConfusion(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   entryA: { entryId: number; kanjiLiteral?: string | null },
   entryB: { entryId: number; kanjiLiteral?: string | null },
   confusionType: ConfusionType,
@@ -80,36 +77,56 @@ export async function recordConfusion(
   // Order consistently for dedup
   const [a, b] = entryA.entryId <= entryB.entryId ? [entryA, entryB] : [entryB, entryA];
 
-  const result = await userDb.runAsync(
-    `UPDATE confusion_pairs SET confusion_count = confusion_count + 1, last_confused_at = ?
-     WHERE entry_id_a = ? AND entry_id_b = ? AND confusion_type = ?
-       AND kanji_literal_a IS ? AND kanji_literal_b IS ?`,
-    [now, a.entryId, b.entryId, confusionType, a.kanjiLiteral ?? null, b.kanjiLiteral ?? null],
-  );
+  // Check if pair already exists
+  const existing = await db
+    .select({ id: confusionPairs.id })
+    .from(confusionPairs)
+    .where(
+      and(
+        eq(confusionPairs.entryIdA, a.entryId),
+        eq(confusionPairs.entryIdB, b.entryId),
+        eq(confusionPairs.confusionType, confusionType),
+        a.kanjiLiteral
+          ? eq(confusionPairs.kanjiLiteralA, a.kanjiLiteral)
+          : sql`${confusionPairs.kanjiLiteralA} IS NULL`,
+        b.kanjiLiteral
+          ? eq(confusionPairs.kanjiLiteralB, b.kanjiLiteral)
+          : sql`${confusionPairs.kanjiLiteralB} IS NULL`,
+      ),
+    )
+    .limit(1);
 
-  if (result.changes === 0) {
-    await userDb.runAsync(
-      `INSERT OR IGNORE INTO confusion_pairs (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      [
-        generateId(),
-        a.entryId,
-        a.kanjiLiteral ?? null,
-        b.entryId,
-        b.kanjiLiteral ?? null,
+  if (existing.length > 0) {
+    await db
+      .update(confusionPairs)
+      .set({
+        confusionCount: sql`${confusionPairs.confusionCount} + 1`,
+        lastConfusedAt: now,
+      })
+      .where(eq(confusionPairs.id, existing[0].id));
+  } else {
+    await db
+      .insert(confusionPairs)
+      .values({
+        id: generateId(),
+        entryIdA: a.entryId,
+        kanjiLiteralA: a.kanjiLiteral ?? null,
+        entryIdB: b.entryId,
+        kanjiLiteralB: b.kanjiLiteral ?? null,
         confusionType,
-        now,
-        now,
-      ],
-    );
+        confusionCount: 1,
+        lastConfusedAt: now,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
   }
 
   // Also log timestamped event
-  await logConfusionEvent(userDb, a, b, confusionType, now, listId, practiceMode);
+  await logConfusionEvent(db, a, b, confusionType, now, listId, practiceMode);
 }
 
 async function logConfusionEvent(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   entryA: { entryId: number; kanjiLiteral?: string | null },
   entryB: { entryId: number; kanjiLiteral?: string | null },
   confusionType: ConfusionType,
@@ -117,19 +134,18 @@ async function logConfusionEvent(
   listId?: string,
   practiceMode?: PracticeMode,
 ): Promise<void> {
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO confusion_events (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, list_id, practice_mode, confused_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      generateId(),
-      entryA.entryId,
-      entryA.kanjiLiteral ?? null,
-      entryB.entryId,
-      entryB.kanjiLiteral ?? null,
+  await db
+    .insert(confusionEvents)
+    .values({
+      id: generateId(),
+      entryIdA: entryA.entryId,
+      kanjiLiteralA: entryA.kanjiLiteral ?? null,
+      entryIdB: entryB.entryId,
+      kanjiLiteralB: entryB.kanjiLiteral ?? null,
       confusionType,
-      listId ?? null,
-      practiceMode ?? null,
+      listId: listId ?? null,
+      practiceMode: practiceMode ?? null,
       confusedAt,
-    ],
-  );
+    })
+    .onConflictDoNothing();
 }

@@ -23,6 +23,7 @@ import { PlayField } from "@/components/connect-game/PlayField";
 import { GameOverScreen } from "@/components/connect-game/GameOverScreen";
 import { createInitialState, spawnWave, tick, cleanupBubbles } from "@/lib/connect-game/engine";
 import { saveGameScore, getHighScore } from "@/lib/game-scores";
+import { getUserDrizzle } from "@/db/drizzle";
 import { useSync } from "@/db/sync-provider";
 import { confirm } from "@/lib/confirm";
 import { useWordFilter, type WordFilterMode } from "@/hooks/useWordFilter";
@@ -49,6 +50,7 @@ export default function ConnectGameScreen() {
   const { webBgStyle } = useWebBackdrop();
   const { dictDb } = useDatabase();
   const userDb = useUserDb();
+  const drizzleDb = React.useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
 
   const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
@@ -75,11 +77,11 @@ export default function ConnectGameScreen() {
   // ─── Load high score ───
 
   useEffect(() => {
-    if (!userDb || !listId) return;
-    getHighScore(userDb, listId, "connect", gameMode, speedPreset)
+    if (!drizzleDb || !listId) return;
+    getHighScore(drizzleDb, listId, "connect", gameMode, speedPreset)
       .then(setHighScore)
       .catch(() => {});
-  }, [userDb, listId, gameMode, speedPreset, phase]);
+  }, [drizzleDb, listId, gameMode, speedPreset, phase]);
 
   // ─── Game loop ───
 
@@ -136,14 +138,14 @@ export default function ConnectGameScreen() {
 
   const saveScore = useCallback(
     (state: GameState, endTime: number) => {
-      if (!userDb || !listId) return;
+      if (!drizzleDb || !listId) return;
       const durationMs = endTime - state.startedAt;
       const accuracy =
         state.totalSwipes > 0
           ? Math.round(((state.totalSwipes - state.invalidSwipes) / state.totalSwipes) * 100)
           : 100;
       setPrevBest(highScore);
-      saveGameScore(userDb, {
+      saveGameScore(drizzleDb, {
         listId,
         gameType: "connect",
         gameMode: state.mode,
@@ -163,7 +165,7 @@ export default function ConnectGameScreen() {
         })
         .catch(() => {});
     },
-    [userDb, listId, highScore, markDirty],
+    [drizzleDb, listId, highScore, markDirty],
   );
 
   // ─── Pause on app background ───

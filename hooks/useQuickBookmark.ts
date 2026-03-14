@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
 import {
   lastUsedListId,
   lastQuickActionEntryId,
@@ -13,11 +14,12 @@ import {
 
 export function useQuickBookmark(entryId: number, isBookmarked: boolean) {
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const [popoverVisible, setPopoverVisible] = useState(false);
   const didAddDuringSession = useRef(false);
 
   const handlePress = useCallback(async () => {
-    if (!userDb || entryId === 0) return;
+    if (!drizzleDb || entryId === 0) return;
 
     // Double-tap on same entry → show modal
     if (lastQuickActionEntryId === entryId) {
@@ -36,14 +38,14 @@ export function useQuickBookmark(entryId: number, isBookmarked: boolean) {
 
     if (!isBookmarked) {
       // Quick-add to last-used list
-      await addEntryToList(userDb, entryId, lastUsedListId);
+      await addEntryToList(drizzleDb, entryId, lastUsedListId);
       setLastQuickActionEntryId(entryId);
     } else {
       // Already bookmarked → always show modal to unbookmark
       didAddDuringSession.current = false;
       setPopoverVisible(true);
     }
-  }, [userDb, entryId, isBookmarked]);
+  }, [drizzleDb, entryId, isBookmarked]);
 
   const handleLongPress = useCallback(() => {
     didAddDuringSession.current = false;
@@ -75,11 +77,12 @@ export function useQuickBookmark(entryId: number, isBookmarked: boolean) {
 
 export function useQuickBookmarkKanji(kanjiLiteral: string, isBookmarked: boolean) {
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const [popoverVisible, setPopoverVisible] = useState(false);
   const didAddDuringSession = useRef(false);
 
   const handlePress = useCallback(async () => {
-    if (!userDb || !kanjiLiteral) return;
+    if (!drizzleDb || !kanjiLiteral) return;
 
     // Double-tap on same kanji → show modal
     if (lastQuickActionKanjiLiteral === kanjiLiteral) {
@@ -98,14 +101,14 @@ export function useQuickBookmarkKanji(kanjiLiteral: string, isBookmarked: boolea
 
     if (!isBookmarked) {
       // Quick-add to last-used list
-      await addKanjiToList(userDb, kanjiLiteral, lastUsedListId);
+      await addKanjiToList(drizzleDb, kanjiLiteral, lastUsedListId);
       setLastQuickActionKanjiLiteral(kanjiLiteral);
     } else {
       // Already bookmarked → always show modal to unbookmark
       didAddDuringSession.current = false;
       setPopoverVisible(true);
     }
-  }, [userDb, kanjiLiteral, isBookmarked]);
+  }, [drizzleDb, kanjiLiteral, isBookmarked]);
 
   const handleLongPress = useCallback(() => {
     didAddDuringSession.current = false;

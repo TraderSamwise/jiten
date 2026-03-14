@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronDown, ChevronRight } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
 import { useDatabase } from "@/db/provider";
 import { useSync } from "@/db/sync-provider";
 import { getEntries } from "@/db/search";
@@ -32,6 +33,7 @@ export default function MarkedForReviewScreen() {
   const goBack = useSafeGoBack("/lists");
   const { webBgStyle, insets } = useWebBackdrop();
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const { dictDb } = useDatabase();
   const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === listId));
@@ -55,14 +57,14 @@ export default function MarkedForReviewScreen() {
   }, [userDb, dictDb, scope, listId, dayResetHour, lastSyncAt]);
 
   async function loadData() {
-    if (!userDb) return;
+    if (!drizzleDb) return;
     setLoading(true);
 
     const lid = effectiveListId ?? null;
     const [d, w, m] = await Promise.all([
-      getMarkedByDay(userDb, dayResetHour, lid),
-      getMarkedByWeek(userDb, dayResetHour, lid),
-      getMarkedByMonth(userDb, dayResetHour, lid),
+      getMarkedByDay(drizzleDb, dayResetHour, lid),
+      getMarkedByWeek(drizzleDb, dayResetHour, lid),
+      getMarkedByMonth(drizzleDb, dayResetHour, lid),
     ]);
     setDays(d);
     setWeeks(w);

@@ -1,4 +1,7 @@
-import type { WrappedUserDb } from "@/db/user-db";
+import { and, desc, eq, max } from "drizzle-orm";
+import { gameScores } from "@/db/schema";
+import { generateId } from "@/db/helpers";
+import type { UserDrizzle } from "@/db/drizzle";
 
 export interface GameScoreRecord {
   listId: string;
@@ -13,49 +16,69 @@ export interface GameScoreRecord {
   durationMs: number;
 }
 
-export async function saveGameScore(userDb: WrappedUserDb, record: GameScoreRecord): Promise<void> {
-  const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO game_scores (id, list_id, game_type, game_mode, speed_preset, score, matches_made, triples_made, max_combo, accuracy, duration_ms, played_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      record.listId,
-      record.gameType,
-      record.gameMode,
-      record.speedPreset,
-      record.score,
-      record.matchesMade,
-      record.triplesMade,
-      record.maxCombo,
-      record.accuracy,
-      record.durationMs,
-      new Date().toISOString(),
-    ],
-  );
+export async function saveGameScore(db: UserDrizzle, record: GameScoreRecord): Promise<void> {
+  await db
+    .insert(gameScores)
+    .values({
+      id: generateId(),
+      listId: record.listId,
+      gameType: record.gameType,
+      gameMode: record.gameMode,
+      speedPreset: record.speedPreset,
+      score: record.score,
+      matchesMade: record.matchesMade,
+      triplesMade: record.triplesMade,
+      maxCombo: record.maxCombo,
+      accuracy: record.accuracy,
+      durationMs: record.durationMs,
+      playedAt: new Date().toISOString(),
+    })
+    .onConflictDoNothing();
 }
 
 export async function getHighScore(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   listId: string,
   gameType: string,
   gameMode: string,
   speedPreset: string,
 ): Promise<number | null> {
-  const row = await userDb.getFirstAsync<{ max_score: number | null }>(
-    `SELECT MAX(score) as max_score FROM game_scores WHERE list_id = ? AND game_type = ? AND game_mode = ? AND speed_preset = ?`,
-    [listId, gameType, gameMode, speedPreset],
-  );
-  return row?.max_score ?? null;
+  const result = await db
+    .select({ maxScore: max(gameScores.score) })
+    .from(gameScores)
+    .where(
+      and(
+        eq(gameScores.listId, listId),
+        eq(gameScores.gameType, gameType),
+        eq(gameScores.gameMode, gameMode),
+        eq(gameScores.speedPreset, speedPreset),
+      ),
+    );
+  return result[0]?.maxScore ?? null;
 }
 
 export async function getRecentScores(
-  userDb: WrappedUserDb,
+  db: UserDrizzle,
   listId: string,
   gameType: string,
   limit = 10,
 ): Promise<GameScoreRecord[]> {
-  return userDb.getAllAsync<GameScoreRecord>(
-    `SELECT list_id as listId, game_type as gameType, game_mode as gameMode, speed_preset as speedPreset, score, matches_made as matchesMade, triples_made as triplesMade, max_combo as maxCombo, accuracy, duration_ms as durationMs FROM game_scores WHERE list_id = ? AND game_type = ? ORDER BY played_at DESC LIMIT ?`,
-    [listId, gameType, limit],
-  );
+  const rows = await db
+    .select({
+      listId: gameScores.listId,
+      gameType: gameScores.gameType,
+      gameMode: gameScores.gameMode,
+      speedPreset: gameScores.speedPreset,
+      score: gameScores.score,
+      matchesMade: gameScores.matchesMade,
+      triplesMade: gameScores.triplesMade,
+      maxCombo: gameScores.maxCombo,
+      accuracy: gameScores.accuracy,
+      durationMs: gameScores.durationMs,
+    })
+    .from(gameScores)
+    .where(and(eq(gameScores.listId, listId), eq(gameScores.gameType, gameType)))
+    .orderBy(desc(gameScores.playedAt))
+    .limit(limit);
+  return rows;
 }
