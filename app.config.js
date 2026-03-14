@@ -49,6 +49,7 @@ module.exports = {
     plugins: [
       "expo-router",
       "expo-updates",
+      "@sentry/react-native/expo",
       [
         "@jamsch/expo-speech-recognition",
         {

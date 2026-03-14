@@ -2,6 +2,7 @@ import type { Client } from "@libsql/client/web";
 import type { WrappedUserDb } from "./user-db";
 import { MUTABLE_TABLES, APPEND_TABLES } from "./sync-helpers";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { captureException } from "@/lib/sentry";
 
 export interface SyncResult {
   ok: boolean;
@@ -495,6 +496,9 @@ export async function sync(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[Sync] Error:", errorMsg);
+    if (!isNetworkError(err)) {
+      captureException(err, { tags: { type: "sync" } });
+    }
     return { ok: false, error: errorMsg, pulled: 0, pushed: 0 };
   }
 }

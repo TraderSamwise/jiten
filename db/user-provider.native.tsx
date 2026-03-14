@@ -4,6 +4,7 @@ import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
+import { captureException } from "@/lib/sentry";
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
@@ -114,6 +115,7 @@ export function UserDatabaseProvider({
 
     init().catch((err) => {
       console.error("[UserDB Native] Init error:", err);
+      captureException(err, { tags: { type: "database", source: "native_init" } });
       setState({ userDb: null, isReady: true });
     });
 

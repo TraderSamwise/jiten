@@ -14,6 +14,7 @@ export default defineConfig({
         "test/__mocks__/async-storage.ts",
       ),
       "@/lib/env": path.resolve(__dirname, "test/__mocks__/env.ts"),
+      "@sentry/react-native": path.resolve(__dirname, "test/__mocks__/sentry.ts"),
       // user-provider has platform-specific files (.native.tsx / .web.tsx) — use web for tests
       "./user-provider": path.resolve(__dirname, "db/user-provider.web.tsx"),
     },
