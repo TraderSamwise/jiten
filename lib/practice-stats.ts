@@ -1,5 +1,5 @@
 import type { WrappedUserDb } from "@/db/user-db";
-import { getDayStart, getLogicalToday, sqlDayExpr } from "./day-boundary";
+import { getDayLabel, getDayStart, getLogicalToday, sqlDayExpr } from "./day-boundary";
 
 export interface LeechCard {
   entryId: number;
@@ -268,6 +268,16 @@ export interface StreakInfo {
   longest: number;
 }
 
+/** Given a YYYY-MM-DD string, return the previous day as YYYY-MM-DD. */
+function prevDay(dayStr: string): string {
+  const d = new Date(dayStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export async function getCurrentStreak(
   userDb: WrappedUserDb,
   listId?: string | null,
@@ -284,59 +294,32 @@ export async function getCurrentStreak(
 
   if (days.length === 0) return { current: 0, longest: 0 };
 
-  const today = getDayStart(new Date(), resetHour);
-  const todayStr = today.toISOString().slice(0, 10);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
-
-  let current = 0;
-  let longest = 0;
-  let streak = 0;
-  let expectedDate = new Date(today);
+  const todayStr = getDayLabel(new Date(), resetHour);
+  const yesterdayDate = new Date();
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+  const yesterdayStr = getDayLabel(yesterdayDate, resetHour);
 
   // If neither today nor yesterday has activity, current streak is 0
   const firstDay = days[0]?.day;
-  if (firstDay !== todayStr && firstDay !== yesterdayStr) {
-    for (let i = 0; i < days.length; i++) {
-      if (i === 0) {
-        streak = 1;
-        continue;
-      }
-      const prev = new Date(days[i - 1].day);
-      const curr = new Date(days[i].day);
-      const diff = (prev.getTime() - curr.getTime()) / (1000 * 60 * 60 * 24);
-      if (diff === 1) {
-        streak++;
-      } else {
-        longest = Math.max(longest, streak);
-        streak = 1;
-      }
-    }
-    longest = Math.max(longest, streak);
-    return { current: 0, longest };
-  }
+  const hasRecentActivity = firstDay === todayStr || firstDay === yesterdayStr;
 
-  // Walk from most recent day backwards
-  for (let i = 0; i < days.length; i++) {
-    const dayDate = new Date(days[i].day + "T00:00:00");
-    if (i === 0) {
-      expectedDate = dayDate;
-      streak = 1;
-      continue;
-    }
-    expectedDate.setDate(expectedDate.getDate() - 1);
-    if (days[i].day === expectedDate.toISOString().slice(0, 10)) {
+  // Walk all days to find streaks — compare YYYY-MM-DD strings directly
+  let current = 0;
+  let longest = 0;
+  let streak = 1;
+  for (let i = 1; i < days.length; i++) {
+    if (prevDay(days[i - 1].day) === days[i].day) {
       streak++;
     } else {
-      if (current === 0) current = streak;
+      if (current === 0 && hasRecentActivity) current = streak;
       longest = Math.max(longest, streak);
       streak = 1;
-      expectedDate = dayDate;
     }
   }
-  if (current === 0) current = streak;
+  if (current === 0 && hasRecentActivity) current = streak;
   longest = Math.max(longest, streak);
+
+  if (!hasRecentActivity) current = 0;
   return { current, longest };
 }
 

@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import { Text } from "@/components/ui/text";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
 import { importArticle } from "@/lib/article-import";
 import { useSetAtom } from "jotai";
 import { libraryTabAtom } from "@/stores/reader";
@@ -20,11 +21,12 @@ export default function ImportArticleScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const setLibraryTab = useSetAtom(libraryTabAtom);
   const imported = useRef(false);
 
   useEffect(() => {
-    if (!userDb || imported.current) return;
+    if (!drizzleDb || imported.current) return;
     imported.current = true;
 
     const title = params.title || "";
@@ -39,7 +41,7 @@ export default function ImportArticleScreen() {
 
     const imageUrl = params.imageUrl || "";
 
-    importArticle(userDb, { title, content, url: articleUrl, byline, imageUrl })
+    importArticle(drizzleDb, { title, content, url: articleUrl, byline, imageUrl })
       .then((bookId) => {
         // Set library to articles tab so going back lands on the right tab
         setLibraryTab("articles");

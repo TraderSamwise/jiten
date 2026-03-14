@@ -1,5 +1,7 @@
 import { describe, test, expect, beforeEach, afterAll, vi } from "vitest";
 import { createTestDb } from "@/test/test-db";
+import { getUserDrizzle } from "@/db/drizzle";
+import type { UserDrizzle } from "@/db/drizzle";
 import {
   addEntryToList,
   removeEntryFromList,
@@ -7,28 +9,30 @@ import {
   addKanjiToList,
   removeKanjiFromList,
   getKanjiListIds,
-  generateId,
 } from "./quick-bookmark";
+import { generateId } from "@/db/helpers";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { WrappedUserDb } from "@/db/user-db";
 
-let db: WrappedUserDb & { close: () => void };
+let rawDb: WrappedUserDb & { close: () => void };
+let db: UserDrizzle;
 
 beforeEach(() => {
-  if (db) db.close();
-  db = createTestDb();
+  if (rawDb) rawDb.close();
+  rawDb = createTestDb();
+  db = getUserDrizzle(rawDb);
   // Reset bookmark store
   useBookmarkStore.setState({ bookmarkedIds: new Set() });
 });
 
 afterAll(() => {
-  if (db) db.close();
+  if (rawDb) rawDb.close();
 });
 
 // Helper: create a user list
 async function createList(id: string, name: string, isDefault = false) {
   const now = new Date().toISOString();
-  await db.runAsync(
+  await rawDb.runAsync(
     "INSERT INTO lists (id, name, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     [id, name, isDefault ? 1 : 0, now, now],
   );
@@ -37,7 +41,7 @@ async function createList(id: string, name: string, isDefault = false) {
 // Helper: add entry to a default list (bypassing quick-bookmark to simulate seed data)
 async function seedDefaultListEntry(listId: string, entryId: number) {
   const now = new Date().toISOString();
-  await db.runAsync(
+  await rawDb.runAsync(
     "INSERT INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     [generateId(), listId, entryId, now, now],
   );
@@ -135,7 +139,7 @@ describe("removeKanjiFromList", () => {
 
     // Seed into default list
     const now = new Date().toISOString();
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
       [generateId(), "default-kanji", "食", now, now],
     );

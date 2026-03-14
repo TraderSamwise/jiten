@@ -52,6 +52,7 @@ import {
 } from "@/lib/typing-utils";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
+import { getUserDrizzle } from "@/db/drizzle";
 import { getEntries } from "@/db/search";
 import { reviewCard, Rating, getFsrsInstance, previewIntervals } from "@/stores/srs";
 import { formatInterval as formatDueInterval } from "@/lib/format-interval";
@@ -937,6 +938,7 @@ function StudyScreen() {
   const { webBgStyle } = useWebBackdrop();
   const { dictDb, audioDb } = useDatabase();
   const userDb = useUserDb();
+  const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const { markDirty } = useSync();
   const sessionDirtyRef = useRef(false);
   const storeList = useListsStore((s) => s.lists.find((l) => l.id === listId));
@@ -1066,7 +1068,7 @@ function StudyScreen() {
         : list?.voiceMode
           ? "voice"
           : "flashcard";
-      logSessionSummary(userDb, {
+      logSessionSummary(drizzleDb!, {
         sessionId: sessionIdRef.current,
         listId,
         practiceMode,
@@ -1692,7 +1694,7 @@ function StudyScreen() {
           ? "voice"
           : "flashcard";
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
-      logPracticeEvent(userDb, {
+      logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
         listId,
         practiceMode,
@@ -1811,7 +1813,7 @@ function StudyScreen() {
           ? "voice"
           : "flashcard";
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
-      logPracticeEvent(userDb, {
+      logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
         listId,
         practiceMode,
@@ -1890,7 +1892,7 @@ function StudyScreen() {
           ? "voice"
           : "flashcard";
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
-      logPracticeEvent(userDb, {
+      logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
         listId,
         practiceMode,
@@ -1960,7 +1962,7 @@ function StudyScreen() {
           ? "voice"
           : "flashcard";
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
-      logPracticeEvent(userDb, {
+      logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
         listId,
         practiceMode,
@@ -2048,7 +2050,7 @@ function StudyScreen() {
 
     // Hard on review cards → auto-mark for review
     if (rating === Rating.Hard && card.state === 2) {
-      await markForReview(userDb, card.entryId, card.kanjiLiteral, card.listId, dayResetHour);
+      await markForReview(drizzleDb!, card.entryId, card.kanjiLiteral, card.listId, dayResetHour);
       setMarkedSet((prev) => {
         const next = new Set(prev);
         next.add(card.kanjiLiteral ? `k:${card.kanjiLiteral}` : `e:${card.entryId}`);
@@ -2182,7 +2184,7 @@ function StudyScreen() {
       // Persist confusion pairs
       for (const result of results) {
         recordConfusion(
-          userDb,
+          drizzleDb!,
           { entryId: entry.id },
           { entryId: result.entry.id },
           "visual_kanji",
@@ -2197,7 +2199,7 @@ function StudyScreen() {
     const meaningResults = findMeaningConfusion(entry, listEntries);
     for (const mr of meaningResults) {
       recordConfusion(
-        userDb,
+        drizzleDb!,
         { entryId: entry.id },
         { entryId: mr.entry.id },
         "meaning",
@@ -2800,13 +2802,13 @@ function StudyScreen() {
                                 next.delete(key);
                                 return next;
                               });
-                              if (userDb)
-                                unmarkForReview(userDb, entryId, kanjiLiteral, dayResetHour);
+                              if (drizzleDb)
+                                unmarkForReview(drizzleDb, entryId, kanjiLiteral, dayResetHour);
                             } else {
                               setMarkedSet((prev) => new Set(prev).add(key));
-                              if (userDb)
+                              if (drizzleDb)
                                 markForReview(
-                                  userDb,
+                                  drizzleDb,
                                   entryId,
                                   kanjiLiteral,
                                   listId ?? null,

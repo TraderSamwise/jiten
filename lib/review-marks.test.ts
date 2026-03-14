@@ -1,5 +1,7 @@
 import { describe, test, expect, beforeEach, afterAll } from "vitest";
 import { createTestDb } from "@/test/test-db";
+import { getUserDrizzle } from "@/db/drizzle";
+import type { UserDrizzle } from "@/db/drizzle";
 import {
   markForReview,
   unmarkForReview,
@@ -12,15 +14,17 @@ import {
 } from "./review-marks";
 import type { WrappedUserDb } from "@/db/user-db";
 
-let db: WrappedUserDb & { close: () => void };
+let rawDb: WrappedUserDb & { close: () => void };
+let db: UserDrizzle;
 
 beforeEach(() => {
-  if (db) db.close();
-  db = createTestDb();
+  if (rawDb) rawDb.close();
+  rawDb = createTestDb();
+  db = getUserDrizzle(rawDb);
 });
 
 afterAll(() => {
-  if (db) db.close();
+  if (rawDb) rawDb.close();
 });
 
 // ─── markForReview ───
@@ -30,7 +34,7 @@ describe("markForReview", () => {
     const result = await markForReview(db, 1001, null, "list-1", 3);
     expect(result).toBe(true);
 
-    const rows = await db.getAllAsync<{ entry_id: number }>("SELECT entry_id FROM review_marks");
+    const rows = await rawDb.getAllAsync<{ entry_id: number }>("SELECT entry_id FROM review_marks");
     expect(rows).toHaveLength(1);
     expect(rows[0].entry_id).toBe(1001);
   });
@@ -40,7 +44,7 @@ describe("markForReview", () => {
     const second = await markForReview(db, 1001, null, "list-1", 3);
     expect(second).toBe(false);
 
-    const rows = await db.getAllAsync("SELECT * FROM review_marks");
+    const rows = await rawDb.getAllAsync("SELECT * FROM review_marks");
     expect(rows).toHaveLength(1);
   });
 
@@ -49,7 +53,7 @@ describe("markForReview", () => {
     const yesterday = new Date();
     yesterday.setUTCDate(yesterday.getUTCDate() - 2);
     yesterday.setUTCHours(12, 0, 0, 0);
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["old-1", 1001, null, "list-1", yesterday.toISOString()],
     );
@@ -58,7 +62,7 @@ describe("markForReview", () => {
     const result = await markForReview(db, 1001, null, "list-1", 3);
     expect(result).toBe(true);
 
-    const rows = await db.getAllAsync("SELECT * FROM review_marks");
+    const rows = await rawDb.getAllAsync("SELECT * FROM review_marks");
     expect(rows).toHaveLength(2);
   });
 
@@ -66,7 +70,7 @@ describe("markForReview", () => {
     await markForReview(db, 0, "火", "list-1", 3);
     await markForReview(db, 1001, null, "list-1", 3);
 
-    const rows = await db.getAllAsync("SELECT * FROM review_marks");
+    const rows = await rawDb.getAllAsync("SELECT * FROM review_marks");
     expect(rows).toHaveLength(2);
   });
 
@@ -97,7 +101,7 @@ describe("unmarkForReview", () => {
     const old = new Date();
     old.setUTCDate(old.getUTCDate() - 2);
     old.setUTCHours(12, 0, 0, 0);
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["old-1", 1001, null, "list-1", old.toISOString()],
     );
@@ -106,7 +110,7 @@ describe("unmarkForReview", () => {
 
     await unmarkForReview(db, 1001, null, 3);
 
-    const rows = await db.getAllAsync("SELECT * FROM review_marks");
+    const rows = await rawDb.getAllAsync("SELECT * FROM review_marks");
     expect(rows).toHaveLength(1); // old mark remains
   });
 
@@ -158,15 +162,15 @@ describe("getMarkedByDay", () => {
     const twoDaysAgo = new Date(now);
     twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
 
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m2", 1002, null, "list-1", now.toISOString()],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m3", 2001, null, "list-1", twoDaysAgo.toISOString()],
     );
@@ -183,11 +187,11 @@ describe("getMarkedByDay", () => {
 
   test("filters by listId when provided", async () => {
     const now = new Date().toISOString();
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m2", 2001, null, "list-2", now],
     );
@@ -212,7 +216,7 @@ describe("getMarkedByWeek", () => {
   test("groups marks into weeks", async () => {
     const now = new Date();
     now.setUTCHours(12, 0, 0, 0);
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
     );
@@ -235,7 +239,7 @@ describe("getMarkedByMonth", () => {
   test("groups marks into months with readable labels", async () => {
     const now = new Date();
     now.setUTCHours(12, 0, 0, 0);
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
     );
@@ -271,11 +275,11 @@ describe("getMarkedEntryIds", () => {
     const end = new Date(now);
     end.setUTCDate(end.getUTCDate() + 1);
 
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now.toISOString()],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m2", 1002, null, "list-1", now.toISOString()],
     );
@@ -287,11 +291,11 @@ describe("getMarkedEntryIds", () => {
 
   test("filters by listId", async () => {
     const now = new Date().toISOString();
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", now],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m2", 2001, null, "list-2", now],
     );
@@ -315,32 +319,32 @@ describe("cleanupOldMarks", () => {
     old.setUTCDate(old.getUTCDate() - 100);
     const recent = new Date();
 
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["old-1", 1001, null, "list-1", old.toISOString()],
     );
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["new-1", 2001, null, "list-1", recent.toISOString()],
     );
 
     await cleanupOldMarks(db, 90);
 
-    const rows = await db.getAllAsync<{ id: string }>("SELECT id FROM review_marks");
+    const rows = await rawDb.getAllAsync<{ id: string }>("SELECT id FROM review_marks");
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("new-1");
   });
 
   test("keeps marks within retention window", async () => {
     const recent = new Date();
-    await db.runAsync(
+    await rawDb.runAsync(
       "INSERT INTO review_marks (id, entry_id, kanji_literal, list_id, marked_at) VALUES (?, ?, ?, ?, ?)",
       ["m1", 1001, null, "list-1", recent.toISOString()],
     );
 
     await cleanupOldMarks(db, 90);
 
-    const rows = await db.getAllAsync("SELECT * FROM review_marks");
+    const rows = await rawDb.getAllAsync("SELECT * FROM review_marks");
     expect(rows).toHaveLength(1);
   });
 });
