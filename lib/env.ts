@@ -20,4 +20,7 @@ export const env = {
   get TURSO_ORG(): string | undefined {
     return process.env.EXPO_PUBLIC_TURSO_ORG || undefined;
   },
+  get SENTRY_DSN(): string | undefined {
+    return process.env.EXPO_PUBLIC_SENTRY_DSN || undefined;
+  },
 };

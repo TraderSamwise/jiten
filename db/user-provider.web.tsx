@@ -5,6 +5,7 @@ import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { setRecoveryDb, DbRecoveryScreen } from "@/components/DbRecoveryScreen";
 import { notifyDbError } from "@/components/GlobalErrorHandler";
+import { captureException } from "@/lib/sentry";
 
 function isOpfsLockError(err: unknown): boolean {
   const msg = String(err);
@@ -182,6 +183,7 @@ export function UserDatabaseProvider({
       console.log("[UserDB Web] Initialized successfully");
     } catch (err) {
       console.error("[UserDB Web] Init error:", err);
+      captureException(err, { tags: { type: "database", source: "web_init" } });
       setState({
         userDb: null,
         isReady: true,

@@ -18,6 +18,7 @@ import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { setRecoverySignedIn } from "@/components/DbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
 import { confirm } from "@/lib/confirm";
+import { initSentry, setSentryUser, captureException } from "@/lib/sentry";
 
 import "../global.css";
 
@@ -28,6 +29,7 @@ export const unstable_settings = {
 };
 
 SplashScreen.preventAutoHideAsync();
+initSentry();
 
 function ReconciliationCheck() {
   const { needsReconciliation, resolveReconciliation } = useSync();
@@ -72,8 +74,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   // Keep recovery screen aware of auth state (it renders outside AuthProvider)
   useEffect(() => {
-    if (isLoaded) setRecoverySignedIn(!!isSignedIn);
-  }, [isLoaded, isSignedIn]);
+    if (isLoaded) {
+      setRecoverySignedIn(!!isSignedIn);
+      setSentryUser(userId ?? null);
+    }
+  }, [isLoaded, isSignedIn, userId]);
 
   // Redirect signed-in users away from auth screens
   useEffect(() => {
@@ -185,6 +190,7 @@ export default function RootLayout() {
         }
       } catch (e) {
         console.log("OTA update check failed:", e);
+        captureException(e, { tags: { type: "ota_update" } });
       }
     })();
   }, []);

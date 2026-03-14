@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ErrorScreen, checkForUpdates } from "@/components/ErrorScreen";
 import { DbRecoveryScreen } from "@/components/DbRecoveryScreen";
+import { captureException } from "@/lib/sentry";
 
 interface CaughtError {
   message: string;
@@ -31,6 +32,28 @@ let globalErrorSetter: ((error: CaughtError) => void) | null = null;
 
 /** Call this from DB wrappers to surface query errors as recoverable DB errors */
 export function notifyDbError(err: unknown, sql?: string) {
+  // Always report to Sentry, even if we auto-refresh
+  captureException(err, {
+    tags: { type: "database", autoRefresh: "false" },
+    extra: { sql: sql?.slice(0, 500) },
+  });
+
+  // Web: stale background tabs can produce transient WASM SQLite errors.
+  // Auto-refresh once — if the error recurs after refresh, show recovery UI.
+  if (typeof window !== "undefined") {
+    const KEY = "jiten_db_err_refresh";
+    const last = localStorage.getItem(KEY);
+    const now = Date.now();
+    // If no recent auto-refresh (or last one was >30s ago), try refreshing
+    if (!last || now - Number(last) > 30_000) {
+      localStorage.setItem(KEY, String(now));
+      window.location.reload();
+      return;
+    }
+    // Already refreshed recently — clear the flag and fall through to error UI
+    localStorage.removeItem(KEY);
+  }
+
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;
   globalErrorSetter?.({
@@ -43,6 +66,9 @@ export function notifyDbError(err: unknown, sql?: string) {
 function setupGlobalHandlers() {
   // Catch uncaught JS exceptions
   ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+    captureException(error, {
+      tags: { type: "uncaught", fatal: String(!!isFatal) },
+    });
     globalErrorSetter?.({
       message: `${isFatal ? "[Fatal] " : ""}${error.message}`,
       stack: error.stack,
@@ -56,6 +82,9 @@ function setupGlobalHandlers() {
   const originalRejection = (global as any).onunhandledrejection;
   (global as any).onunhandledrejection = (event: any) => {
     const reason = event?.reason;
+    captureException(reason instanceof Error ? reason : new Error(String(reason)), {
+      tags: { type: "unhandled_rejection" },
+    });
     const message =
       reason instanceof Error
         ? reason.message
