@@ -310,6 +310,13 @@ async function pushAll(
   const totalChunks = Math.ceil(allStmts.length / CHUNK_SIZE);
   for (let i = 0; i < allStmts.length; i += CHUNK_SIZE) {
     const chunk = allStmts.slice(i, i + CHUNK_SIZE);
+    // Append push_version increment to the last chunk so data + version are atomic
+    if (i + CHUNK_SIZE >= allStmts.length) {
+      chunk.push({
+        sql: "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('push_version', CAST(COALESCE((SELECT value FROM sync_meta WHERE key = 'push_version'), '0') AS INTEGER) + 1)",
+        args: [],
+      });
+    }
     await turso.batch(chunk, "write");
     const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
     console.log(`[Sync] pushed chunk ${chunkNum}/${totalChunks} (${chunk.length} stmts)`);
@@ -451,6 +458,9 @@ export async function sync(
       onLabel?.("Downloading...");
       pulled = await pullAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.1 + p * 0.4));
       console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
+      // Advance last_sync_at only when pull actually ran — skipped pulls
+      // keep the old timestamp so the next pull covers the full window
+      await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
     }
     onProgress?.(0.5);
 
@@ -468,14 +478,8 @@ export async function sync(
       pulled += blobs;
     }
 
-    // 8. Save last_sync_at immediately after push — prevents full re-push on interruption
-    await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
-
-    // 8. If pushed, increment remote push_version
+    // 8. push_version was incremented atomically in pushAll's last batch
     if (pushed > 0) {
-      await turso.execute(
-        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('push_version', CAST(COALESCE((SELECT value FROM sync_meta WHERE key = 'push_version'), '0') AS INTEGER) + 1)",
-      );
       const newVersionResult = await turso.execute(
         "SELECT value FROM sync_meta WHERE key = 'push_version'",
       );
