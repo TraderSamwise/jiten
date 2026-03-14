@@ -497,6 +497,47 @@ describe("sync engine", () => {
       );
       expect(row?.deleted_at).toBe(t2);
     });
+
+    it("does not lose soft-delete when pull is skipped due to push_version race", async () => {
+      const t1 = "2025-01-01T00:00:00.000Z";
+
+      // Device A creates a list and syncs
+      await insertList(local, "race-list", "Race List", t1);
+      await sync(local, turso, noop, noop);
+
+      // Device B (second local) syncs — gets the list
+      const local2 = createTestDb();
+      try {
+        await sync(local2, turso, noop, noop);
+
+        // Verify Device B has the list
+        const before = await local2.getFirstAsync<{ name: string }>(
+          "SELECT name FROM lists WHERE id = ?",
+          ["race-list"],
+        );
+        expect(before?.name).toBe("Race List");
+
+        // Device A soft-deletes the list and syncs
+        const t2 = new Date(Date.now() + 60_000).toISOString();
+        await local.runAsync("UPDATE lists SET deleted_at = ?, updated_at = ? WHERE id = ?", [
+          t2,
+          t2,
+          "race-list",
+        ]);
+        await sync(local, turso, noop, noop);
+
+        // Device B syncs — should pick up the deletion
+        await sync(local2, turso, noop, noop);
+
+        const after = await local2.getFirstAsync<{ deleted_at: string | null }>(
+          "SELECT deleted_at FROM lists WHERE id = ?",
+          ["race-list"],
+        );
+        expect(after?.deleted_at).toBe(t2);
+      } finally {
+        local2.close();
+      }
+    });
   });
 
   describe("version-based pull optimization", () => {
