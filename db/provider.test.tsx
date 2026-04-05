@@ -67,10 +67,6 @@ vi.mock("./dict-client-migrations", () => ({
 vi.mock("@/lib/native-guard", () => ({
   isNativeModuleAvailable: vi.fn(() => false),
 }));
-vi.mock("./web-lock", () => ({
-  ensureLockAvailable: vi.fn().mockResolvedValue(undefined),
-  onReleaseRequested: vi.fn(() => () => {}),
-}));
 
 import { DatabaseProvider, useDatabase } from "./provider";
 

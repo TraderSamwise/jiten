@@ -77,4 +77,57 @@ describe("data backup", () => {
       targetDb.close();
     }
   });
+
+  it("continues importing later tables after a per-table failure and reports progress", async () => {
+    const sourceDb = createTestDb();
+    const targetDb = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    const progress: Array<{ percent: number; label: string }> = [];
+
+    try {
+      await sourceDb.runAsync(
+        `INSERT INTO lists (id, name, is_default, study_position, created_at, updated_at)
+         VALUES ('list-1', 'List', 0, 0, ?, ?)`,
+        [now, now],
+      );
+      await sourceDb.runAsync(
+        `INSERT INTO confusion_pairs
+          (id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
+         VALUES ('cp-1', 1001, NULL, 1002, NULL, 'meaning', 2, ?, ?)`,
+        [now, now],
+      );
+
+      const backup = await attemptBackup(sourceDb);
+      const json = JSON.stringify({ version: 1, tables: backup.tables });
+
+      const failingDb = {
+        ...targetDb,
+        runAsync: async (sql: string, params?: any[]) => {
+          if (sql.includes("INSERT OR REPLACE INTO lists")) {
+            throw new Error("lists import failed");
+          }
+          return targetDb.runAsync(sql, params);
+        },
+      };
+
+      const result = await importBackup(failingDb, json, (percent, label) => {
+        progress.push({ percent, label });
+      });
+
+      expect(result.failed).toEqual([{ table: "lists", error: "Error: lists import failed" }]);
+      expect(result.succeeded).toContain("confusion_pairs");
+      expect(result.totalRows).toBe(1);
+      expect(progress.at(0)).toEqual({ percent: 0, label: "Importing lists..." });
+      expect(progress.at(-1)).toEqual({ percent: 100, label: "Done" });
+
+      const importedPair = await targetDb.getFirstAsync<{ id: string }>(
+        "SELECT id FROM confusion_pairs WHERE id = ?",
+        ["cp-1"],
+      );
+      expect(importedPair?.id).toBe("cp-1");
+    } finally {
+      sourceDb.close();
+      targetDb.close();
+    }
+  });
 });
