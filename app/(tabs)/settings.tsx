@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useAtom } from "jotai";
@@ -21,6 +21,7 @@ import { getVersionString } from "@/lib/version";
 import { useAuth, useUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { useSync } from "@/db/sync-provider";
+import { useDatabase } from "@/db/provider";
 import { DeleteDataModal } from "@/components/DeleteDataModal";
 import { HardSyncModal } from "@/components/HardSyncModal";
 import { useUserDb } from "@/db/user-provider";
@@ -93,12 +94,64 @@ export default function SettingsScreen() {
   const { isSignedIn } = useAuth();
   const { user } = useUser();
   const { syncStatus, triggerSync } = useSync();
+  const {
+    dictDb,
+    audioDb,
+    strokesDb,
+    extendedDb,
+    optionalDataSource,
+    isDownloaded,
+    backgroundStatus,
+  } = useDatabase();
   const userDb = useUserDb();
   const [exportStatus, setExportStatus] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [importStatus, setImportStatus] = useState<"idle" | "importing" | "done" | "error">("idle");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importProgress, setImportProgress] = useState(0);
   const [importLabel, setImportLabel] = useState("");
+  const [downloadDebug, setDownloadDebug] = useState<{
+    dictVersion: string | null;
+    dictFormat: string | null;
+    fullDict: boolean;
+    audioVersion: string | null;
+    extendedVersion: string | null;
+    strokesVersion: string | null;
+  }>({
+    dictVersion: null,
+    dictFormat: null,
+    fullDict: false,
+    audioVersion: null,
+    extendedVersion: null,
+    strokesVersion: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    AsyncStorage.multiGet([
+      "dict-db-version",
+      "dict-db-format",
+      "dict-db-full",
+      "dict-audio-version",
+      "ext-db-version",
+      "strokes-db-version",
+    ]).then((entries) => {
+      if (cancelled) return;
+      const values = Object.fromEntries(entries);
+      setDownloadDebug({
+        dictVersion: values["dict-db-version"] ?? null,
+        dictFormat: values["dict-db-format"] ?? null,
+        fullDict: values["dict-db-full"] === "true",
+        audioVersion: values["dict-audio-version"] ?? null,
+        extendedVersion: values["ext-db-version"] ?? null,
+        strokesVersion: values["strokes-db-version"] ?? null,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDownloaded, audioDb, extendedDb, strokesDb, backgroundStatus]);
 
   function handleThemeChange(theme: ThemePreference) {
     setActiveTheme(theme);
@@ -495,6 +548,35 @@ export default function SettingsScreen() {
       />
 
       <View className="items-center pt-4 pb-8 border-t border-border mt-auto">
+        <View className="mb-3 w-full items-center">
+          <Text className="text-[10px] font-semibold text-muted-foreground">Downloaded Data</Text>
+          <Text className="mt-1 text-[10px] text-muted-foreground">
+            Dict: {isDownloaded ? "yes" : "no"} / loaded: {dictDb ? "yes" : "no"} / version:{" "}
+            {downloadDebug.dictVersion ?? "-"} / format: {downloadDebug.dictFormat ?? "-"}
+          </Text>
+          <Text className="text-[10px] text-muted-foreground">
+            Full dict: {downloadDebug.fullDict ? "yes" : "no"}
+          </Text>
+          <Text className="text-[10px] text-muted-foreground">
+            Audio: {downloadDebug.audioVersion ? `yes (v${downloadDebug.audioVersion})` : "no"} /
+            loaded: {audioDb ? "yes" : "no"} / source: {optionalDataSource.audio ?? "-"}
+          </Text>
+          <Text className="text-[10px] text-muted-foreground">
+            Extended:{" "}
+            {downloadDebug.extendedVersion ? `yes (v${downloadDebug.extendedVersion})` : "no"} /
+            loaded: {extendedDb ? "yes" : "no"} / source: {optionalDataSource.extended ?? "-"}
+          </Text>
+          <Text className="text-[10px] text-muted-foreground">
+            Strokes:{" "}
+            {downloadDebug.strokesVersion ? `yes (v${downloadDebug.strokesVersion})` : "no"} /
+            loaded: {strokesDb ? "yes" : "no"} / source: {optionalDataSource.strokes ?? "-"}
+          </Text>
+          {backgroundStatus.length > 0 && (
+            <Text className="mt-1 text-[10px] text-muted-foreground text-center">
+              Jobs: {backgroundStatus.map((item) => `${item.key}:${item.state}`).join(" | ")}
+            </Text>
+          )}
+        </View>
         <Text className="text-[10px] font-medium text-muted-foreground">{getVersionString()}</Text>
       </View>
     </ScrollView>

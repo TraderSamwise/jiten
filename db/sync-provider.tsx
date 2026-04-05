@@ -42,6 +42,10 @@ interface SyncContextType {
 const noopResult: SyncResult = { ok: true, pulled: 0, pushed: 0 };
 export const SYNC_INTERVAL_MS = 30_000; // Sync loop cadence (30s)
 export const FORCE_SYNC_EVERY_N = 10; // Every Nth tick, sync unconditionally (10 × 30s = 5 min)
+const LAST_SYNC_COMPLETED_AT_KEY = "last_sync_completed_at";
+const LAST_PULLED_AT_KEY = "last_pulled_at";
+const LAST_PUSHED_AT_KEY = "last_pushed_at";
+const LAST_SEEN_PUSH_VERSION_KEY = "last_seen_push_version";
 
 /** Pure decision: should the sync loop fire on this tick? */
 export function shouldSyncOnTick(tick: number, isDirty: boolean, forceEveryN: number): boolean {
@@ -148,7 +152,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           "sync_dirty",
         ]),
         userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
-          "last_sync_at",
+          LAST_SYNC_COMPLETED_AT_KEY,
         ]),
       ]);
       if (cancelled) return;
@@ -227,8 +231,13 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         await resetLocalUserData(userDb);
         await reloadStores(userDb);
       } else if (choice === "use-local") {
-        // Reset sync state so everything pushes fresh
-        await userDb.runAsync("DELETE FROM sync_meta");
+        // Reset sync cursors so canonical state pushes fresh without keeping stale windows
+        await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?, ?, ?)", [
+          LAST_PULLED_AT_KEY,
+          LAST_PUSHED_AT_KEY,
+          LAST_SEEN_PUSH_VERSION_KEY,
+          LAST_SYNC_COMPLETED_AT_KEY,
+        ]);
       }
       // "merge" — just proceed with normal sync (LWW + append)
       await setLastUser(userId);
@@ -257,10 +266,12 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         await userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]);
         await reloadStores(userDb);
       } else if (choice === "use-local") {
-        // Reset sync timestamps so everything pushes fresh
-        await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?)", [
-          "last_sync_at",
-          "last_seen_push_version",
+        // Reset sync cursors so everything pushes fresh
+        await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?, ?, ?)", [
+          LAST_PULLED_AT_KEY,
+          LAST_PUSHED_AT_KEY,
+          LAST_SEEN_PUSH_VERSION_KEY,
+          LAST_SYNC_COMPLETED_AT_KEY,
         ]);
       }
       // All paths: trigger a visible forced sync

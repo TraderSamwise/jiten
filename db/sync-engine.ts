@@ -11,6 +11,12 @@ export interface SyncResult {
   pushed: number;
 }
 
+const EPOCH = "1970-01-01T00:00:00.000Z";
+const LAST_PULLED_AT_KEY = "last_pulled_at";
+const LAST_PUSHED_AT_KEY = "last_pushed_at";
+const LAST_SYNC_COMPLETED_AT_KEY = "last_sync_completed_at";
+const LAST_SEEN_PUSH_VERSION_KEY = "last_seen_push_version";
+
 // ---------------------------------------------------------------------------
 // Sync meta helpers
 // ---------------------------------------------------------------------------
@@ -433,9 +439,10 @@ export async function sync(
     console.log(`[Sync] columns: ${Date.now() - t0}ms`);
     onProgress?.(0.1);
 
-    // 3. Get last sync timestamp
-    const lastSyncAt = (await getSyncMeta(localDb, "last_sync_at")) ?? "1970-01-01T00:00:00.000Z";
-    console.log(`[Sync] lastSyncAt=${lastSyncAt}`);
+    // 3. Get independent pull/push cursors
+    const lastPulledAt = (await getSyncMeta(localDb, LAST_PULLED_AT_KEY)) ?? EPOCH;
+    const lastPushedAt = (await getSyncMeta(localDb, LAST_PUSHED_AT_KEY)) ?? EPOCH;
+    console.log(`[Sync] lastPulledAt=${lastPulledAt} lastPushedAt=${lastPushedAt}`);
 
     // 4. Check remote push_version — skip pull if nothing changed remotely
     let pulled = 0;
@@ -446,7 +453,7 @@ export async function sync(
       remotePushVersion.rows.length > 0
         ? String(remotePushVersion.rows[0].value ?? remotePushVersion.rows[0][1])
         : null;
-    const localVersion = await getSyncMeta(localDb, "last_seen_push_version");
+    const localVersion = await getSyncMeta(localDb, LAST_SEEN_PUSH_VERSION_KEY);
     const skipPull = !schemaChanged && remoteVersion !== null && remoteVersion === localVersion;
     console.log(
       `[Sync] version check: ${Date.now() - t0}ms (remote=${remoteVersion}, local=${localVersion}, skipPull=${skipPull})`,
@@ -457,17 +464,18 @@ export async function sync(
     } else {
       // 5. Pull — per-table requests with progress 0.1→0.5
       onLabel?.("Downloading...");
-      pulled = await pullAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.1 + p * 0.4));
+      const pullStartedAt = new Date().toISOString();
+      pulled = await pullAll(localDb, turso, lastPulledAt, (p) => onProgress?.(0.1 + p * 0.4));
       console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
-      // Advance last_sync_at only when pull actually ran — skipped pulls
-      // keep the old timestamp so the next pull covers the full window
-      await setSyncMeta(localDb, "last_sync_at", new Date().toISOString());
+      await setSyncMeta(localDb, LAST_PULLED_AT_KEY, pullStartedAt);
     }
     onProgress?.(0.5);
 
     // 6. Push — progress 0.5→1.0 proportional to chunks
     onLabel?.("Uploading...");
-    const pushed = await pushAll(localDb, turso, lastSyncAt, (p) => onProgress?.(0.5 + p * 0.5));
+    const pushStartedAt = new Date().toISOString();
+    const pushed = await pushAll(localDb, turso, lastPushedAt, (p) => onProgress?.(0.5 + p * 0.5));
+    await setSyncMeta(localDb, LAST_PUSHED_AT_KEY, pushStartedAt);
     onProgress?.(1);
     onLabel?.("");
     console.log(`[Sync] push: ${Date.now() - t0}ms (${pushed} stmts)`);
@@ -485,11 +493,13 @@ export async function sync(
         "SELECT value FROM sync_meta WHERE key = 'push_version'",
       );
       const newVersion = String(newVersionResult.rows[0].value ?? newVersionResult.rows[0][1]);
-      await setSyncMeta(localDb, "last_seen_push_version", newVersion);
+      await setSyncMeta(localDb, LAST_SEEN_PUSH_VERSION_KEY, newVersion);
     } else if (remoteVersion !== null) {
       // No push, but save remote version locally so next sync can skip pull
-      await setSyncMeta(localDb, "last_seen_push_version", remoteVersion);
+      await setSyncMeta(localDb, LAST_SEEN_PUSH_VERSION_KEY, remoteVersion);
     }
+
+    await setSyncMeta(localDb, LAST_SYNC_COMPLETED_AT_KEY, new Date().toISOString());
 
     console.log(`[Sync] Complete: ${Date.now() - t0}ms total — pulled ${pulled}, pushed ${pushed}`);
     return { ok: true, pulled, pushed };

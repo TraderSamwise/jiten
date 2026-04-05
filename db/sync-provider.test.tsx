@@ -139,7 +139,7 @@ describe("SyncProvider", () => {
 
   it("skips initial sync when last sync was recent", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -150,7 +150,7 @@ describe("SyncProvider", () => {
   it("triggers sync on mount when dirty flag is persisted", async () => {
     // Set both recent sync AND dirty flag — dirty should win
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", ["sync_dirty", "1"]);
@@ -165,7 +165,7 @@ describe("SyncProvider", () => {
 
   it("markDirty persists sync_dirty to the database", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -190,7 +190,7 @@ describe("SyncProvider", () => {
 
   it("sync loop skips when not dirty", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -206,7 +206,7 @@ describe("SyncProvider", () => {
 
   it("sync loop fires when dirty", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -222,7 +222,7 @@ describe("SyncProvider", () => {
 
   it("sync loop force-fires at the Nth tick even when clean", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -236,7 +236,7 @@ describe("SyncProvider", () => {
 
   it("successful sync clears dirty flag from database", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -274,7 +274,7 @@ describe("SyncProvider", () => {
 
   it("going to background fires silent sync when dirty", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -293,7 +293,7 @@ describe("SyncProvider", () => {
 
   it("going to background skips when not dirty", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -309,7 +309,7 @@ describe("SyncProvider", () => {
 
   it("returning to foreground fires sync when dirty", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -328,7 +328,7 @@ describe("SyncProvider", () => {
 
   it("returning to foreground fires sync when elapsed >= interval", async () => {
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     renderHook(() => useSync(), { wrapper: createWrapper() });
@@ -381,12 +381,12 @@ describe("SyncProvider", () => {
     );
 
     await db.runAsync("INSERT INTO sync_meta (key, value) VALUES (?, ?)", [
-      "last_sync_at",
+      "last_sync_completed_at",
       new Date().toISOString(),
     ]);
     const { result } = renderHook(() => useSync(), { wrapper: createWrapper() });
     await settle();
-    // Initial sync skipped (recent last_sync_at, not dirty)
+    // Initial sync skipped (recent last_sync_completed_at, not dirty)
 
     // Call triggerSync (the public API used by list import, delete, etc.)
     await act(async () => {

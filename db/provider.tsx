@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 import {
   isDictReady,
   isAudioReady,
+  hasInstalledAudioDb,
   isDictFull,
   setDictFull,
   clearDictFull,
@@ -19,6 +20,7 @@ import {
   loadWebAudioDb,
   storeDbBytes,
   isStrokesReady,
+  hasInstalledStrokesDb,
   downloadStrokesDb,
   setStrokesVersion,
   openStrokesDb,
@@ -29,7 +31,12 @@ import {
 import { DICT_VERSION } from "./dict-version";
 import { runClientDictMigrations } from "./dict-client-migrations";
 import { openExtendedDb } from "./extended-db";
-import { isExtendedReady, downloadExtendedDb, setExtendedVersion } from "./extended-download";
+import {
+  isExtendedReady,
+  hasInstalledExtendedDb,
+  downloadExtendedDb,
+  setExtendedVersion,
+} from "./extended-download";
 import { isNativeModuleAvailable } from "@/lib/native-guard";
 
 function isOpfsLockError(err: unknown): boolean {
@@ -47,6 +54,11 @@ interface DatabaseContextType {
   audioDb: SQLite.SQLiteDatabase | null;
   strokesDb: SQLite.SQLiteDatabase | null;
   extendedDb: SQLite.SQLiteDatabase | null;
+  optionalDataSource: {
+    audio: "manifest" | "local" | null;
+    strokes: "manifest" | "local" | null;
+    extended: "manifest" | "local" | null;
+  };
   isReady: boolean;
   isDownloaded: boolean;
   downloadStatus: DownloadStatus;
@@ -61,6 +73,11 @@ const DatabaseContext = createContext<DatabaseContextType>({
   audioDb: null,
   strokesDb: null,
   extendedDb: null,
+  optionalDataSource: {
+    audio: null,
+    strokes: null,
+    extended: null,
+  },
   isReady: false,
   isDownloaded: false,
   downloadStatus: { state: "checking" },
@@ -123,6 +140,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [audioDb, setAudioDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [strokesDb, setStrokesDb] = useState<SQLite.SQLiteDatabase | null>(null);
   const [extendedDb, setExtendedDb] = useState<SQLite.SQLiteDatabase | null>(null);
+  const [optionalDataSource, setOptionalDataSource] = useState<
+    DatabaseContextType["optionalDataSource"]
+  >({
+    audio: null,
+    strokes: null,
+    extended: null,
+  });
   const [isReady, setIsReady] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({
@@ -228,6 +252,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         const db = await openAudioDb();
         audioDbRef.current = db;
         setAudioDb(db);
+        setOptionalDataSource((prev) => ({ ...prev, audio: "manifest" }));
         updateBgItem("audio", { state: "ready", progress: 1 });
         console.log("[DB] Audio DB ready");
       } catch (err) {
@@ -251,6 +276,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           const sDb = await openStrokesDb();
           strokesDbRef.current = sDb;
           setStrokesDb(sDb);
+          setOptionalDataSource((prev) => ({ ...prev, strokes: "manifest" }));
           updateBgItem("strokes", { state: "ready", progress: 1 });
           console.log("[DB] Strokes DB ready");
         } catch (err) {
@@ -275,6 +301,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           const extDb = await openExtendedDb();
           extendedDbRef.current = extDb;
           setExtendedDb(extDb);
+          setOptionalDataSource((prev) => ({ ...prev, extended: "manifest" }));
           updateBgItem("extended", { state: "ready", progress: 1 });
           console.log("[DB] Extended DB ready");
         } catch (err) {
@@ -286,21 +313,83 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     [updateBgItem],
   );
 
+  const initInstalledOptionalData = useCallback(async () => {
+    const items: BackgroundDownloadItem[] = [];
+
+    if (await hasInstalledAudioDb()) {
+      items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
+      try {
+        const db = await openAudioDb();
+        audioDbRef.current = db;
+        setAudioDb(db);
+        setOptionalDataSource((prev) => ({ ...prev, audio: "local" }));
+        items[items.length - 1] = { ...items[items.length - 1], state: "ready", progress: 1 };
+        console.log("[DB] Audio DB ready from local install");
+      } catch (err) {
+        items[items.length - 1] = { ...items[items.length - 1], state: "error", progress: 0 };
+        console.warn("[DB] Audio DB open failed from local install:", err);
+      }
+    }
+
+    if (await hasInstalledStrokesDb()) {
+      items.push({ key: "strokes", label: "Stroke data", state: "pending", progress: 0 });
+      try {
+        const db = await openStrokesDb();
+        strokesDbRef.current = db;
+        setStrokesDb(db);
+        setOptionalDataSource((prev) => ({ ...prev, strokes: "local" }));
+        items[items.length - 1] = { ...items[items.length - 1], state: "ready", progress: 1 };
+        console.log("[DB] Strokes DB ready from local install");
+      } catch (err) {
+        items[items.length - 1] = { ...items[items.length - 1], state: "error", progress: 0 };
+        console.warn("[DB] Strokes DB open failed from local install:", err);
+      }
+    }
+
+    if (await hasInstalledExtendedDb()) {
+      items.push({ key: "extended", label: "Extended data", state: "pending", progress: 0 });
+      try {
+        const db = await openExtendedDb();
+        extendedDbRef.current = db;
+        setExtendedDb(db);
+        setOptionalDataSource((prev) => ({ ...prev, extended: "local" }));
+        items[items.length - 1] = { ...items[items.length - 1], state: "ready", progress: 1 };
+        console.log("[DB] Extended DB ready from local install");
+      } catch (err) {
+        items[items.length - 1] = { ...items[items.length - 1], state: "error", progress: 0 };
+        console.warn("[DB] Extended DB open failed from local install:", err);
+      }
+    }
+
+    if (items.length > 0) {
+      setBackgroundStatus((prev) => {
+        const preserved = prev.filter((item) => !items.some((next) => next.key === item.key));
+        return [...preserved, ...items];
+      });
+    }
+  }, []);
+
   // Background downloads are deferred until sync completes (or is disabled).
   // SyncProvider calls triggerBackgroundDownloads() after initial sync attempt.
   const manifestForBg = useRef<DictManifest | undefined>(undefined);
   const bgInitStarted = useRef(false);
+  const bgInitRequested = useRef(false);
 
-  const triggerBackgroundDownloads = useCallback(() => {
-    // Allow re-trigger on each app launch / visibility reacquire —
-    // background downloads (including full dict) must retry if interrupted.
-    if (bgInitStarted.current) return;
+  const maybeStartBackgroundDownloads = useCallback(() => {
+    if (!bgInitRequested.current || bgInitStarted.current || !manifestForBg.current) return;
     bgInitStarted.current = true;
     initBackgroundData(manifestForBg.current).finally(() => {
       // Reset so next visibility reacquire can re-trigger if needed
       bgInitStarted.current = false;
     });
   }, [initBackgroundData]);
+
+  const triggerBackgroundDownloads = useCallback(() => {
+    // Allow re-trigger on each app launch / visibility reacquire —
+    // background downloads (including full dict) must retry if interrupted.
+    bgInitRequested.current = true;
+    maybeStartBackgroundDownloads();
+  }, [maybeStartBackgroundDownloads]);
 
   // Full init sequence — used on mount and on visibility reacquire
   const runInit = useCallback(async () => {
@@ -335,6 +424,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
         // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
         manifestForBg.current = fetchedManifest;
+        if (!fetchedManifest) {
+          await initInstalledOptionalData();
+        }
+        maybeStartBackgroundDownloads();
       } else {
         // Dict is not at DICT_VERSION — check if we can apply client migrations
         const localVersion = await getStoredDictVersion();
@@ -402,6 +495,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
           // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
           manifestForBg.current = fetchedManifest;
+          if (!fetchedManifest) {
+            await initInstalledOptionalData();
+          }
+          maybeStartBackgroundDownloads();
         } else if (action.type === "full-download") {
           setIsReady(true);
           setDownloadStatus({ state: "needs-download", manifest: action.manifest });
@@ -415,6 +512,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
           manifestForBg.current = fetchedManifest;
+          if (!fetchedManifest) {
+            await initInstalledOptionalData();
+          }
+          maybeStartBackgroundDownloads();
         }
       }
     } catch (err) {
@@ -429,7 +530,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Failed to initialize",
       });
     }
-  }, []);
+  }, [initInstalledOptionalData, maybeStartBackgroundDownloads]);
 
   useEffect(() => {
     runInit();
@@ -527,6 +628,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
       // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
       manifestForBg.current = m;
+      maybeStartBackgroundDownloads();
     } catch (err) {
       console.error("[DB] Download error:", err);
       setDownloadStatus({
@@ -538,7 +640,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             : "Download failed",
       });
     }
-  }, [manifest]);
+  }, [manifest, maybeStartBackgroundDownloads]);
 
   return (
     <DatabaseContext.Provider
@@ -547,6 +649,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         audioDb,
         strokesDb,
         extendedDb,
+        optionalDataSource,
         isReady,
         isDownloaded,
         downloadStatus,

@@ -5,4 +5,9 @@
  * after download — no client-side parsing or importing needed.
  */
 
-export { isExtendedReady, downloadExtendedDb, setExtendedVersion } from "./dict-download";
+export {
+  isExtendedReady,
+  hasInstalledExtendedDb,
+  downloadExtendedDb,
+  setExtendedVersion,
+} from "./dict-download";
