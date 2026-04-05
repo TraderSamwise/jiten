@@ -36,6 +36,12 @@ interface DictionaryPopupProps {
 
 const SLIDE_DURATION = 250;
 
+function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
+  if (kind === "word") return "Word";
+  if (kind === "name") return "Name";
+  return null;
+}
+
 export function DictionaryPopup({
   visible,
   onClose,
@@ -103,6 +109,7 @@ export function DictionaryPopup({
     results.some((r) => r.entries.length > 0 || (r.nameMatches && r.nameMatches.length > 0));
   const isNameResult =
     wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
+  const selectedLookupKindLabel = lookupKindLabel(wordResult?.lookupKind);
 
   function renderContent() {
     // Loading state
@@ -139,7 +146,7 @@ export function DictionaryPopup({
               >
                 {results.map((r, i) => (
                   <Pressable
-                    key={i}
+                    key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
                     onPress={() => {
                       setSelectedWordIdx(i);
                       setEntryIdx(0);
@@ -150,21 +157,35 @@ export function DictionaryPopup({
                         : "border-border"
                     }`}
                   >
-                    <Text
-                      className={`text-sm ${
-                        i === Math.min(selectedWordIdx, results.length - 1)
-                          ? "text-foreground font-medium"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {r.matchedText}
-                    </Text>
+                    <View className="flex-row items-center gap-1.5">
+                      <Text
+                        className={`text-sm ${
+                          i === Math.min(selectedWordIdx, results.length - 1)
+                            ? "text-foreground font-medium"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {r.matchedText}
+                      </Text>
+                      {lookupKindLabel(r.lookupKind) && (
+                        <View className="rounded bg-muted px-1.5 py-0.5">
+                          <Text className="text-[10px] text-muted-foreground">
+                            {lookupKindLabel(r.lookupKind)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </Pressable>
                 ))}
               </ScrollView>
             ) : (
               <View className="flex-row items-center gap-2">
                 <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
+                {selectedLookupKindLabel && (
+                  <View className="bg-muted px-2 py-1 rounded">
+                    <Text className="text-xs text-muted-foreground">{selectedLookupKindLabel}</Text>
+                  </View>
+                )}
                 {wordResult!.deinflectReasons.length > 0 && (
                   <View className="bg-muted px-2 py-1 rounded">
                     <Text className="text-xs text-muted-foreground">
