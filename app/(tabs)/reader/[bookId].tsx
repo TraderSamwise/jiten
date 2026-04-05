@@ -89,6 +89,7 @@ function stripRubyTags(html: string): string {
 
 const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
+const READ_PROGRESS_FLUSH_MS = 15_000;
 
 const EXTERNAL_DICTS = [
   {
@@ -503,10 +504,53 @@ export default function BookReaderScreen() {
 
   // Track scroll position for saving
   const scrollPosRef = useRef(0);
+  const pendingReadCompleteRef = useRef(false);
+  const lastPersistedCharOffsetRef = useRef(0);
+  const lastPersistedReadCompleteRef = useRef(false);
+  const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track ReaderView's Y offset in screen coordinates
   const readerLayoutY = useRef(0);
   // Store tap position while waiting for lookup results
   const pendingTapPos = useRef<{ x: number; y: number } | null>(null);
+
+  const flushReadingProgress = useCallback(async () => {
+    if (!userDb || !bookId) return;
+
+    const charOffset = scrollPosRef.current;
+    const readComplete = pendingReadCompleteRef.current;
+    if (
+      charOffset === lastPersistedCharOffsetRef.current &&
+      readComplete === lastPersistedReadCompleteRef.current
+    ) {
+      return;
+    }
+
+    await userDb.runAsync(
+      "UPDATE books SET char_offset = ?, read_complete = ?, updated_at = ? WHERE id = ?",
+      [charOffset, readComplete ? 1 : 0, new Date().toISOString(), bookId],
+    );
+    lastPersistedCharOffsetRef.current = charOffset;
+    lastPersistedReadCompleteRef.current = readComplete;
+    markDirty();
+  }, [bookId, markDirty, userDb]);
+
+  const scheduleReadingProgressFlush = useCallback(
+    (immediate = false) => {
+      if (progressFlushTimerRef.current) {
+        clearTimeout(progressFlushTimerRef.current);
+        progressFlushTimerRef.current = null;
+      }
+      if (immediate) {
+        void flushReadingProgress();
+        return;
+      }
+      progressFlushTimerRef.current = setTimeout(() => {
+        progressFlushTimerRef.current = null;
+        void flushReadingProgress();
+      }, READ_PROGRESS_FLUSH_MS);
+    },
+    [flushReadingProgress],
+  );
 
   // Load book
   useEffect(() => {
@@ -520,6 +564,9 @@ export default function BookReaderScreen() {
       const b = parseBookRow(row);
       setBook(b);
       setFontSize(b.fontSize);
+      lastPersistedCharOffsetRef.current = b.charOffset;
+      lastPersistedReadCompleteRef.current = !!b.readComplete;
+      pendingReadCompleteRef.current = !!b.readComplete;
 
       if (!b.rawContent) {
         goBack();
@@ -657,15 +704,15 @@ export default function BookReaderScreen() {
   // Save char offset on unmount
   useEffect(() => {
     return () => {
+      if (progressFlushTimerRef.current) {
+        clearTimeout(progressFlushTimerRef.current);
+        progressFlushTimerRef.current = null;
+      }
       if (userDb && bookId && scrollPosRef.current > 0) {
-        userDb.runAsync("UPDATE books SET char_offset = ?, updated_at = ? WHERE id = ?", [
-          scrollPosRef.current,
-          new Date().toISOString(),
-          bookId,
-        ]);
+        void flushReadingProgress();
       }
     };
-  }, [userDb, bookId]);
+  }, [bookId, flushReadingProgress, userDb]);
 
   const handleMessage = useCallback(
     async (data: string) => {
@@ -757,18 +804,13 @@ export default function BookReaderScreen() {
           setShowPopup(true);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.charOffset;
+          pendingReadCompleteRef.current = !!msg.isLastPage;
           if (!initialScrollFiredRef.current) {
             // First scroll event is the position restore on load — skip it
             initialScrollFiredRef.current = true;
           } else {
-            // Every real page change marks dirty
-            markDirty();
-          }
-          if (userDb && bookId) {
-            userDb.runAsync(
-              "UPDATE books SET char_offset = ?, read_complete = ?, updated_at = ? WHERE id = ?",
-              [msg.charOffset, msg.isLastPage ? 1 : 0, new Date().toISOString(), bookId],
-            );
+            const becameComplete = !!msg.isLastPage && !lastPersistedReadCompleteRef.current;
+            scheduleReadingProgressFlush(becameComplete);
           }
         } else if (msg.type === "pageRendered") {
           const model = modelRef.current;
