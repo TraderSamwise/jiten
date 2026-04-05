@@ -384,7 +384,6 @@ export function DictionaryPopup({
         ) : (
           <Pressable
             onPress={() => {
-              onClose();
               router.push(`/reader/word/${currentEntry!.id}`);
             }}
           >
