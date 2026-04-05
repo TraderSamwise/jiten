@@ -42,6 +42,48 @@ function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   return null;
 }
 
+function LookupKindSwitch({
+  variants,
+  selectedIdx,
+  onSelect,
+}: {
+  variants: LookupResult[];
+  selectedIdx: number;
+  onSelect: (idx: number) => void;
+}) {
+  if (variants.length === 0) return null;
+
+  if (variants.length === 1) {
+    const label = lookupKindLabel(variants[0].lookupKind);
+    if (!label) return null;
+    return (
+      <View className="rounded-full border border-border bg-muted px-3 py-1">
+        <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-row rounded-full border border-border bg-muted p-0.5">
+      {variants.map((variant, i) => (
+        <Pressable
+          key={`${variant.lookupKind ?? "lookup"}-${i}`}
+          onPress={() => onSelect(i)}
+          className={`rounded-full px-3 py-1 ${i === selectedIdx ? "bg-background" : ""}`}
+        >
+          <Text
+            className={`text-xs font-medium ${
+              i === selectedIdx ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {lookupKindLabel(variant.lookupKind) ?? "Result"}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export function DictionaryPopup({
   visible,
   onClose,
@@ -52,6 +94,7 @@ export function DictionaryPopup({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [entryIdx, setEntryIdx] = useState(0);
   const [bookmarkAnchor, setBookmarkAnchor] = useState<
     { top: number; right: number } | undefined
@@ -63,8 +106,14 @@ export function DictionaryPopup({
 
   useEffect(() => {
     setSelectedWordIdx(0);
+    setSelectedVariantIdx(0);
     setEntryIdx(0);
   }, [results]);
+
+  useEffect(() => {
+    setSelectedVariantIdx(0);
+    setEntryIdx(0);
+  }, [selectedWordIdx]);
 
   useEffect(() => {
     if (visible) {
@@ -81,8 +130,13 @@ export function DictionaryPopup({
     transform: [{ translateY: translateY.value }],
   }));
 
-  const wordResult =
+  const selectedTopLevelResult =
     results.length > 0 ? results[Math.min(selectedWordIdx, results.length - 1)] : null;
+  const variantResults = selectedTopLevelResult?.alternateResults ?? [];
+  const wordResult =
+    selectedTopLevelResult && variantResults.length > 0
+      ? variantResults[Math.min(selectedVariantIdx, variantResults.length - 1)]
+      : selectedTopLevelResult;
   const currentEntry =
     wordResult && wordResult.entries.length > 0
       ? wordResult.entries[Math.min(entryIdx, wordResult.entries.length - 1)]
@@ -109,7 +163,8 @@ export function DictionaryPopup({
     results.some((r) => r.entries.length > 0 || (r.nameMatches && r.nameMatches.length > 0));
   const isNameResult =
     wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
-  const selectedLookupKindLabel = lookupKindLabel(wordResult?.lookupKind);
+  const lookupKindVariants =
+    variantResults.length > 0 ? variantResults : wordResult ? [wordResult] : [];
 
   function renderContent() {
     // Loading state
@@ -149,6 +204,7 @@ export function DictionaryPopup({
                     key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
                     onPress={() => {
                       setSelectedWordIdx(i);
+                      setSelectedVariantIdx(0);
                       setEntryIdx(0);
                     }}
                     className={`px-3 py-1.5 rounded-full border ${
@@ -157,35 +213,21 @@ export function DictionaryPopup({
                         : "border-border"
                     }`}
                   >
-                    <View className="flex-row items-center gap-1.5">
-                      <Text
-                        className={`text-sm ${
-                          i === Math.min(selectedWordIdx, results.length - 1)
-                            ? "text-foreground font-medium"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {r.matchedText}
-                      </Text>
-                      {lookupKindLabel(r.lookupKind) && (
-                        <View className="rounded bg-muted px-1.5 py-0.5">
-                          <Text className="text-[10px] text-muted-foreground">
-                            {lookupKindLabel(r.lookupKind)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                    <Text
+                      className={`text-sm ${
+                        i === Math.min(selectedWordIdx, results.length - 1)
+                          ? "text-foreground font-medium"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {r.matchedText}
+                    </Text>
                   </Pressable>
                 ))}
               </ScrollView>
             ) : (
               <View className="flex-row items-center gap-2">
                 <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
-                {selectedLookupKindLabel && (
-                  <View className="bg-muted px-2 py-1 rounded">
-                    <Text className="text-xs text-muted-foreground">{selectedLookupKindLabel}</Text>
-                  </View>
-                )}
                 {wordResult!.deinflectReasons.length > 0 && (
                   <View className="bg-muted px-2 py-1 rounded">
                     <Text className="text-xs text-muted-foreground">
@@ -258,7 +300,7 @@ export function DictionaryPopup({
         </View>
 
         {/* Deinflect reasons (shown below pills for multi-word) */}
-        {results.length > 1 && wordResult!.deinflectReasons.length > 0 && (
+        {wordResult!.deinflectReasons.length > 0 && (
           <View className="mb-2">
             <View className="bg-muted px-2 py-1 rounded self-start">
               <Text className="text-xs text-muted-foreground">
@@ -271,6 +313,44 @@ export function DictionaryPopup({
         {/* Content display */}
         {isNameResult ? (
           <ScrollView style={{ maxHeight: 200 }}>
+            <View className="mb-3 flex-row items-start justify-between gap-3">
+              <View className="flex-1">
+                {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
+                  const typeLabel = name.nameType
+                    ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
+                    : null;
+                  return (
+                    <View key={name.id} className="flex-row items-center flex-wrap gap-2">
+                      {name.kanji && (
+                        <Text className="text-2xl font-bold text-foreground">{name.kanji}</Text>
+                      )}
+                      <Text
+                        className={
+                          name.kanji
+                            ? "text-base text-muted-foreground"
+                            : "text-2xl font-bold text-foreground"
+                        }
+                      >
+                        {name.kana}
+                      </Text>
+                      {typeLabel && (
+                        <View className="rounded-md bg-secondary px-2 py-0.5">
+                          <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              <LookupKindSwitch
+                variants={lookupKindVariants}
+                selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
+                onSelect={(idx) => {
+                  setSelectedVariantIdx(idx);
+                  setEntryIdx(0);
+                }}
+              />
+            </View>
             {wordResult!.nameMatches!.map((name: NameEntry) => {
               const typeLabel = name.nameType
                 ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
@@ -309,7 +389,19 @@ export function DictionaryPopup({
             }}
           >
             <ScrollView style={{ maxHeight: 200 }}>
-              <EntrySummary entry={currentEntry!} />
+              <EntrySummary
+                entry={currentEntry!}
+                rightAccessory={
+                  <LookupKindSwitch
+                    variants={lookupKindVariants}
+                    selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
+                    onSelect={(idx) => {
+                      setSelectedVariantIdx(idx);
+                      setEntryIdx(0);
+                    }}
+                  />
+                }
+              />
             </ScrollView>
           </Pressable>
         )}
