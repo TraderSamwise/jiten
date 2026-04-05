@@ -45,9 +45,13 @@ import {
   smartLookup,
   smartLookupWithOffset,
   selectionLookup,
+  autoLookup,
+  autoLookupWithOffset,
+  autoSelectionLookup,
   nameLookup,
   nameLookupWithOffset,
   type LookupResult,
+  type ReaderLookupMode,
 } from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
 import {
@@ -416,8 +420,8 @@ export default function BookReaderScreen() {
     null,
   );
   const [copied, setCopied] = useState(false);
-  const [nameMode, setNameMode] = useState(false);
-  const nameModeRef = useRef(false);
+  const [lookupMode, setLookupMode] = useState<ReaderLookupMode>("auto");
+  const lookupModeRef = useRef<ReaderLookupMode>("auto");
   const [showJumpSlider, setShowJumpSlider] = useState(false);
 
   // Streaming prefetch refs — used by handleMessage for pageRendered
@@ -437,8 +441,16 @@ export default function BookReaderScreen() {
     furiganaLevelsRef.current = furiganaLevels;
   }, [furiganaLevels]);
   useEffect(() => {
-    nameModeRef.current = nameMode;
-  }, [nameMode]);
+    lookupModeRef.current = lookupMode;
+  }, [lookupMode]);
+
+  const cycleLookupMode = useCallback(() => {
+    setLookupMode((prev) => {
+      if (prev === "auto") return "name";
+      if (prev === "name") return "word";
+      return extendedDb ? "auto" : "word";
+    });
+  }, [extendedDb]);
 
   // Send page animations setting to WebView when it changes
   useEffect(() => {
@@ -724,9 +736,12 @@ export default function BookReaderScreen() {
           const text = msg.text as string;
           if (!text || text.length === 0) return;
 
-          const isNameMode = nameModeRef.current;
+          const currentLookupMode = lookupModeRef.current;
+          const isNameMode = currentLookupMode === "name";
+          const isAutoMode = currentLookupMode === "auto";
+
           if (isNameMode && !extendedDb) return;
-          if (!isNameMode && !dictDb) return;
+          if ((currentLookupMode === "word" || isAutoMode) && !dictDb) return;
 
           setLookupResults([]);
           setLookupLoading(true);
@@ -746,6 +761,12 @@ export default function BookReaderScreen() {
               // In name mode, just do a simple name lookup on the full selection
               const names = await nameLookup(text, extendedDb!);
               setLookupResults(names);
+            } else if (isAutoMode) {
+              const results = await autoSelectionLookup(text, dictDb!, extendedDb, {
+                prefix: msg.prefix || "",
+                suffix: msg.suffix || "",
+              });
+              setLookupResults(results);
             } else {
               await selectionLookup(
                 text,
@@ -767,6 +788,11 @@ export default function BookReaderScreen() {
                 tapOffset && tapOffset > 0
                   ? await nameLookupWithOffset(text, tapOffset, extendedDb!)
                   : await nameLookup(text, extendedDb!);
+            } else if (isAutoMode) {
+              results =
+                tapOffset && tapOffset > 0
+                  ? await autoLookupWithOffset(text, tapOffset, dictDb!, extendedDb)
+                  : await autoLookup(text, dictDb!, extendedDb);
             } else {
               results =
                 tapOffset && tapOffset > 0
@@ -984,11 +1010,13 @@ export default function BookReaderScreen() {
           </Pressable>
         )}
         {book && extendedDb && (
-          <Pressable onPress={() => setNameMode(!nameMode)} className="p-2">
-            {nameMode ? (
+          <Pressable onPress={cycleLookupMode} className="min-w-[40px] items-center px-2 py-1">
+            {lookupMode === "name" ? (
               <User size={20} className="text-primary" />
+            ) : lookupMode === "word" ? (
+              <BookText size={20} className="text-primary" />
             ) : (
-              <BookText size={20} className="text-muted-foreground" />
+              <Text className="text-sm font-semibold text-primary">Auto</Text>
             )}
           </Pressable>
         )}
