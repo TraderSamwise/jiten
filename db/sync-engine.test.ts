@@ -385,9 +385,9 @@ describe("sync engine", () => {
         .all("log-1") as any[];
       expect(rows1).toHaveLength(1);
 
-      // Second sync — reset last_sync_at to epoch to force re-push of all data
+      // Second sync — reset last_pushed_at to epoch to force re-push of all data
       await local.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", [
-        "last_sync_at",
+        "last_pushed_at",
         "1970-01-01T00:00:00.000Z",
       ]);
       const result = await sync(local, turso, noop, noop);
@@ -455,7 +455,7 @@ describe("sync engine", () => {
       await insertList(local, "del-list", "To Delete", t1);
       await sync(local, turso, noop, noop);
 
-      // Soft-delete locally — use a timestamp AFTER last_sync_at (current time)
+      // Soft-delete locally — use a timestamp after the current push cursor window
       const t2 = new Date(Date.now() + 60_000).toISOString();
       await local.runAsync("UPDATE lists SET deleted_at = ?, updated_at = ? WHERE id = ?", [
         t2,
@@ -573,7 +573,7 @@ describe("sync engine", () => {
       // First sync to establish baseline
       await sync(local, turso, noop, noop);
 
-      // Add data to remote with a timestamp AFTER last_sync_at and increment push_version
+      // Add data to remote with a timestamp after the initial pull window and increment push_version
       const future = new Date(Date.now() + 60_000).toISOString();
       insertRemoteRow(remoteDb, "lists", {
         id: "new-remote",
@@ -801,17 +801,28 @@ describe("sync engine", () => {
   });
 
   describe("sync meta tracking", () => {
-    it("saves last_sync_at after successful sync", async () => {
+    it("saves independent sync cursors after successful sync", async () => {
       const result = await sync(local, turso, noop, noop);
       expect(result.ok).toBe(true);
 
-      const meta = await local.getFirstAsync<{ value: string }>(
+      const pulledMeta = await local.getFirstAsync<{ value: string }>(
         "SELECT value FROM sync_meta WHERE key = ?",
-        ["last_sync_at"],
+        ["last_pulled_at"],
       );
-      expect(meta?.value).toBeTruthy();
-      // Should be a valid ISO date
-      expect(new Date(meta!.value).getTime()).toBeGreaterThan(0);
+      const pushedMeta = await local.getFirstAsync<{ value: string }>(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        ["last_pushed_at"],
+      );
+      const completedMeta = await local.getFirstAsync<{ value: string }>(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        ["last_sync_completed_at"],
+      );
+      expect(pulledMeta?.value).toBeTruthy();
+      expect(pushedMeta?.value).toBeTruthy();
+      expect(completedMeta?.value).toBeTruthy();
+      expect(new Date(pulledMeta!.value).getTime()).toBeGreaterThan(0);
+      expect(new Date(pushedMeta!.value).getTime()).toBeGreaterThan(0);
+      expect(new Date(completedMeta!.value).getTime()).toBeGreaterThan(0);
     });
 
     it("increments push_version on remote after push", async () => {
@@ -847,7 +858,7 @@ describe("sync engine", () => {
       expect(r1.ok).toBe(true);
       const firstPush = r1.pushed;
 
-      // Add another list after first sync — use future timestamp so it's after last_sync_at
+      // Add another list after first sync — use future timestamp so it's after last_pushed_at
       const t2 = new Date(Date.now() + 60_000).toISOString();
       await insertList(local, "inc-2", "Second", t2);
       const r2 = await sync(local, turso, noop, noop);
@@ -860,6 +871,31 @@ describe("sync engine", () => {
         .prepare("SELECT COUNT(*) as n FROM lists WHERE id IN ('inc-1','inc-2')")
         .get() as any;
       expect(count.n).toBe(2);
+    });
+
+    it("does not repush already-synced rows when pull is skipped", async () => {
+      const t1 = "2025-01-01T00:00:00.000Z";
+
+      await insertList(local, "stable-1", "Stable", t1);
+      const first = await sync(local, turso, noop, noop);
+      expect(first.ok).toBe(true);
+
+      const second = await sync(local, turso, noop, noop);
+      expect(second.ok).toBe(true);
+      expect(second.pushed).toBe(0);
+
+      const t2 = new Date(Date.now() + 60_000).toISOString();
+      await insertList(local, "stable-2", "Fresh", t2);
+      const third = await sync(local, turso, noop, noop);
+      expect(third.ok).toBe(true);
+      expect(third.pushed).toBeGreaterThan(0);
+
+      const rows = remoteDb
+        .prepare("SELECT id, name FROM lists WHERE id IN ('stable-1', 'stable-2') ORDER BY id")
+        .all() as any[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0].id).toBe("stable-1");
+      expect(rows[1].id).toBe("stable-2");
     });
   });
 });

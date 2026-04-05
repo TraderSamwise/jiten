@@ -454,11 +454,40 @@ export async function loadWebDictDb(): Promise<import("expo-sqlite").SQLiteDatab
   return deserializeWebDb(data, "dict");
 }
 
+async function webDbBytesExist(key?: string): Promise<boolean> {
+  const data = await loadDbBytes(key);
+  return !!data && data.byteLength > 0;
+}
+
+async function nativeDbFileExists(filename: string): Promise<boolean> {
+  const FileSystem = require("expo-file-system/legacy");
+  const path = `${FileSystem.documentDirectory}SQLite/${filename}`;
+  const info = await FileSystem.getInfoAsync(path);
+  return !!info.exists;
+}
+
+async function hasStoredDbPayload(
+  storageKey: string | undefined,
+  filename: string,
+): Promise<boolean> {
+  if (Platform.OS === "web") {
+    return webDbBytesExist(storageKey);
+  }
+  return nativeDbFileExists(filename);
+}
+
 // ─── Audio DB support ───
 
 export async function isAudioReady(): Promise<boolean> {
   const v = await AsyncStorage.getItem(AUDIO_VERSION_KEY);
-  return v !== null && parseInt(v, 10) === DICT_VERSION;
+  if (v === null || parseInt(v, 10) !== DICT_VERSION) return false;
+  return hasStoredDbPayload("dictionary-audio", AUDIO_DB_NAME);
+}
+
+export async function hasInstalledAudioDb(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(AUDIO_VERSION_KEY);
+  if (v === null) return false;
+  return hasStoredDbPayload("dictionary-audio", AUDIO_DB_NAME);
 }
 
 const AUDIO_RESUME_KEY = "audio-download-resume";
@@ -600,7 +629,14 @@ const EXT_DB_NAME = "dictionary-extended.db";
 
 export async function isExtendedReady(version: number): Promise<boolean> {
   const v = await AsyncStorage.getItem(EXT_VERSION_KEY);
-  return v !== null && parseInt(v, 10) >= version;
+  if (v === null || parseInt(v, 10) < version) return false;
+  return hasStoredDbPayload("dictionary-extended", EXT_DB_NAME);
+}
+
+export async function hasInstalledExtendedDb(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(EXT_VERSION_KEY);
+  if (v === null) return false;
+  return hasStoredDbPayload("dictionary-extended", EXT_DB_NAME);
 }
 
 export async function downloadExtendedDb(
@@ -674,7 +710,14 @@ const STROKES_DB_NAME = "dictionary-strokes.db";
 
 export async function isStrokesReady(version: number): Promise<boolean> {
   const v = await AsyncStorage.getItem(STROKES_VERSION_KEY);
-  return v !== null && parseInt(v, 10) >= version;
+  if (v === null || parseInt(v, 10) < version) return false;
+  return hasStoredDbPayload("dictionary-strokes", STROKES_DB_NAME);
+}
+
+export async function hasInstalledStrokesDb(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(STROKES_VERSION_KEY);
+  if (v === null) return false;
+  return hasStoredDbPayload("dictionary-strokes", STROKES_DB_NAME);
 }
 
 export async function downloadStrokesDb(
