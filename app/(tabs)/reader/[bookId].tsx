@@ -7,6 +7,7 @@ import {
   Linking,
   Platform,
   GestureResponderEvent,
+  LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeGoBack } from "@/lib/navigation";
@@ -72,6 +73,7 @@ import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
 import { getReaderProgressFlushMode } from "@/lib/reader-progress";
+import { getSelectionToolbarPosition } from "@/lib/reader-selection-toolbar";
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {
@@ -94,6 +96,7 @@ function stripRubyTags(html: string): string {
 
 const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
+const TOOLBAR_SIDE_MARGIN = 8;
 const READ_PROGRESS_FLUSH_MS = 15_000;
 
 const EXTERNAL_DICTS = [
@@ -133,14 +136,31 @@ function HighlightToolbar({
   onCopy: () => void;
 }) {
   const [openInExpanded, setOpenInExpanded] = useState(false);
+  const [toolbarWidth, setToolbarWidth] = useState(0);
   const screen = Dimensions.get("window");
   const layoutY = readerY.current ?? 0;
   const toolbarH = openInExpanded ? 76 : 32;
-  const rawTop = layoutY + tooltip.y - toolbarH - TOOLBAR_GAP;
-  const top = Math.max(layoutY, Math.min(rawTop, screen.height - POPUP_SAFE_ZONE));
+  const estimatedToolbarWidth = openInExpanded ? 260 : 132;
+  const { top, left } = getSelectionToolbarPosition({
+    anchorX: tooltip.x,
+    anchorY: tooltip.y,
+    readerTop: layoutY,
+    screenWidth: screen.width,
+    screenHeight: screen.height,
+    toolbarWidth: toolbarWidth || estimatedToolbarWidth,
+    toolbarHeight: toolbarH,
+    toolbarGap: TOOLBAR_GAP,
+    popupSafeZone: POPUP_SAFE_ZONE,
+    sideMargin: TOOLBAR_SIDE_MARGIN,
+  });
 
   const bg = isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)";
   const fg = isDark ? "#000" : "#fff";
+
+  function handleToolbarLayout(e: LayoutChangeEvent) {
+    const nextWidth = Math.round(e.nativeEvent.layout.width);
+    setToolbarWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+  }
 
   return (
     <View
@@ -148,13 +168,12 @@ function HighlightToolbar({
         position: "absolute",
         zIndex: 101,
         top,
-        left: 0,
-        right: 0,
-        alignItems: "center",
+        left,
       }}
       pointerEvents="box-none"
     >
       <View
+        onLayout={handleToolbarLayout}
         style={{
           backgroundColor: bg,
           borderRadius: 16,
