@@ -67,6 +67,7 @@ import {
 import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
+import { getReaderProgressFlushMode } from "@/lib/reader-progress";
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {
@@ -805,12 +806,16 @@ export default function BookReaderScreen() {
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.charOffset;
           pendingReadCompleteRef.current = !!msg.isLastPage;
-          if (!initialScrollFiredRef.current) {
+          const flushMode = getReaderProgressFlushMode({
+            initialScrollHandled: initialScrollFiredRef.current,
+            isLastPage: !!msg.isLastPage,
+            lastPersistedReadComplete: lastPersistedReadCompleteRef.current,
+          });
+          if (flushMode === "skip") {
             // First scroll event is the position restore on load — skip it
             initialScrollFiredRef.current = true;
           } else {
-            const becameComplete = !!msg.isLastPage && !lastPersistedReadCompleteRef.current;
-            scheduleReadingProgressFlush(becameComplete);
+            scheduleReadingProgressFlush(flushMode === "immediate");
           }
         } else if (msg.type === "pageRendered") {
           const model = modelRef.current;
