@@ -30,6 +30,7 @@ import { saveAndShareFile } from "@/lib/file-transfer";
 import { ProgressBar } from "@/components/ProgressBar";
 import * as SQLite from "expo-sqlite";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { formatDownloadedDataDebugLines } from "@/lib/settings-debug";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -218,6 +219,17 @@ export default function SettingsScreen() {
       pitch: 3,
     },
   ];
+
+  const downloadedDataDebugLines = formatDownloadedDataDebugLines({
+    isDownloaded,
+    dictLoaded: !!dictDb,
+    audioLoaded: !!audioDb,
+    extendedLoaded: !!extendedDb,
+    strokesLoaded: !!strokesDb,
+    optionalDataSource,
+    downloadDebug,
+    backgroundStatus,
+  });
 
   return (
     <ScrollView className="flex-1 bg-background px-4 pt-4">
@@ -550,32 +562,14 @@ export default function SettingsScreen() {
       <View className="items-center pt-4 pb-8 border-t border-border mt-auto">
         <View className="mb-3 w-full items-center">
           <Text className="text-[10px] font-semibold text-muted-foreground">Downloaded Data</Text>
-          <Text className="mt-1 text-[10px] text-muted-foreground">
-            Dict: {isDownloaded ? "yes" : "no"} / loaded: {dictDb ? "yes" : "no"} / version:{" "}
-            {downloadDebug.dictVersion ?? "-"} / format: {downloadDebug.dictFormat ?? "-"}
-          </Text>
-          <Text className="text-[10px] text-muted-foreground">
-            Full dict: {downloadDebug.fullDict ? "yes" : "no"}
-          </Text>
-          <Text className="text-[10px] text-muted-foreground">
-            Audio: {downloadDebug.audioVersion ? `yes (v${downloadDebug.audioVersion})` : "no"} /
-            loaded: {audioDb ? "yes" : "no"} / source: {optionalDataSource.audio ?? "-"}
-          </Text>
-          <Text className="text-[10px] text-muted-foreground">
-            Extended:{" "}
-            {downloadDebug.extendedVersion ? `yes (v${downloadDebug.extendedVersion})` : "no"} /
-            loaded: {extendedDb ? "yes" : "no"} / source: {optionalDataSource.extended ?? "-"}
-          </Text>
-          <Text className="text-[10px] text-muted-foreground">
-            Strokes:{" "}
-            {downloadDebug.strokesVersion ? `yes (v${downloadDebug.strokesVersion})` : "no"} /
-            loaded: {strokesDb ? "yes" : "no"} / source: {optionalDataSource.strokes ?? "-"}
-          </Text>
-          {backgroundStatus.length > 0 && (
-            <Text className="mt-1 text-[10px] text-muted-foreground text-center">
-              Jobs: {backgroundStatus.map((item) => `${item.key}:${item.state}`).join(" | ")}
+          {downloadedDataDebugLines.map((line, index) => (
+            <Text
+              key={line}
+              className={`text-[10px] text-muted-foreground${index === 0 ? " mt-1" : ""}${line.startsWith("Jobs:") ? " text-center" : ""}`}
+            >
+              {line}
             </Text>
-          )}
+          ))}
         </View>
         <Text className="text-[10px] font-medium text-muted-foreground">{getVersionString()}</Text>
       </View>
