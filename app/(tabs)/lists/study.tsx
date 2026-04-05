@@ -2736,105 +2736,190 @@ function StudyScreen() {
         />
       </View>
 
-      {/* Carousel -- sliding window rendered, scroll via translateX */}
-      <GestureDetector gesture={composedGesture}>
-        <View className="pt-4" style={{ overflow: "hidden", paddingHorizontal: 16, height: 400 }}>
-          <Animated.View
-            style={[
-              rowStyle,
-              {
-                marginLeft: CARD_PEEK + CARD_GAP,
-                width: cards.length * cardWidth + Math.max(0, cards.length - 1) * CARD_GAP,
-                flex: 1,
-              },
-            ]}
-          >
-            {windowIndices.map((i) => {
-              const studyCard = cards[i];
-              if (!studyCard) return null;
-              const isCursor = i === cursor;
-              return (
-                <View
-                  key={i}
-                  style={{
-                    position: "absolute",
-                    left: i * (cardWidth + CARD_GAP),
-                    width: cardWidth,
-                    top: 0,
-                    bottom: 0,
-                  }}
-                >
-                  <StudyCardView
-                    ref={isCursor ? cursorCardRef : null}
-                    item={studyCard.item}
-                    status={studyCard.status}
-                    initialFlipped={studyCard.flipped}
-                    disableFlipAnimation={!flipAnimationEnabled}
-                    frontFaces={frontFaces}
-                    backFaces={backFaces}
-                    flashcardMode={list?.flashcardMode ?? "add_order"}
-                    simpleCorrectCount={
-                      studyCard.item.srsCard
-                        ? (simpleCorrectCountRef.current.get(studyCard.item.srsCard.id) ?? 0)
-                        : 0
-                    }
-                    voiceStatus={isCursor ? voiceStatus : "idle"}
-                    voiceHeard={isCursor ? voiceHeard : null}
-                    isListening={isCursor && isListening}
-                    typingMode={isCursor && !!list?.typingMode}
-                    voiceMode={isCursor && !!list?.voiceMode}
-                    {...(listId?.startsWith("_marked_")
-                      ? {}
-                      : {
-                          isMarkedForReview: markedSet.has(
-                            studyCard.item.kind === "entry"
-                              ? `${studyCard.item.entry.id}-`
-                              : `0-${studyCard.item.kanji.literal}`,
-                          ),
-                          onMarkForReview: () => {
-                            const item = studyCard.item;
-                            const entryId = item.kind === "entry" ? item.entry.id : 0;
-                            const kanjiLiteral = item.kind === "kanji" ? item.kanji.literal : null;
-                            const key = `${entryId}-${kanjiLiteral ?? ""}`;
-                            if (markedSet.has(key)) {
-                              setMarkedSet((prev) => {
-                                const next = new Set(prev);
-                                next.delete(key);
-                                return next;
-                              });
-                              if (drizzleDb)
-                                unmarkForReview(drizzleDb, entryId, kanjiLiteral, dayResetHour);
-                            } else {
-                              setMarkedSet((prev) => new Set(prev).add(key));
-                              if (drizzleDb)
-                                markForReview(
-                                  drizzleDb,
-                                  entryId,
-                                  kanjiLiteral,
-                                  listId ?? null,
-                                  dayResetHour,
-                                );
-                            }
-                          },
-                        })}
-                    onFlip={isCursor ? handleCardFlip : () => {}}
-                    onTypingComplete={(wasCorrect) => {
-                      if (isCursor) {
-                        setPreSelectedRating(wasCorrect ? "pass" : "fail");
-                      }
+      {/* Centered study stack: card + rating buttons */}
+      <View className="flex-1 justify-center">
+        <GestureDetector gesture={composedGesture}>
+          <View style={{ overflow: "hidden", paddingHorizontal: 16, height: 400 }}>
+            <Animated.View
+              style={[
+                rowStyle,
+                {
+                  marginLeft: CARD_PEEK + CARD_GAP,
+                  width: cards.length * cardWidth + Math.max(0, cards.length - 1) * CARD_GAP,
+                  flex: 1,
+                },
+              ]}
+            >
+              {windowIndices.map((i) => {
+                const studyCard = cards[i];
+                if (!studyCard) return null;
+                const isCursor = i === cursor;
+                return (
+                  <View
+                    key={i}
+                    style={{
+                      position: "absolute",
+                      left: i * (cardWidth + CARD_GAP),
+                      width: cardWidth,
+                      top: 0,
+                      bottom: 0,
                     }}
-                    onInfoPress={() =>
-                      studyCard.item.kind === "entry"
-                        ? router.push(`/lists/word/${studyCard.item.entry.id}`)
-                        : tabRouter.pushKanji(studyCard.item.kanji.literal)
-                    }
-                  />
-                </View>
-              );
-            })}
-          </Animated.View>
-        </View>
-      </GestureDetector>
+                  >
+                    <StudyCardView
+                      ref={isCursor ? cursorCardRef : null}
+                      item={studyCard.item}
+                      status={studyCard.status}
+                      initialFlipped={studyCard.flipped}
+                      disableFlipAnimation={!flipAnimationEnabled}
+                      frontFaces={frontFaces}
+                      backFaces={backFaces}
+                      flashcardMode={list?.flashcardMode ?? "add_order"}
+                      simpleCorrectCount={
+                        studyCard.item.srsCard
+                          ? (simpleCorrectCountRef.current.get(studyCard.item.srsCard.id) ?? 0)
+                          : 0
+                      }
+                      voiceStatus={isCursor ? voiceStatus : "idle"}
+                      voiceHeard={isCursor ? voiceHeard : null}
+                      isListening={isCursor && isListening}
+                      typingMode={isCursor && !!list?.typingMode}
+                      voiceMode={isCursor && !!list?.voiceMode}
+                      {...(listId?.startsWith("_marked_")
+                        ? {}
+                        : {
+                            isMarkedForReview: markedSet.has(
+                              studyCard.item.kind === "entry"
+                                ? `${studyCard.item.entry.id}-`
+                                : `0-${studyCard.item.kanji.literal}`,
+                            ),
+                            onMarkForReview: () => {
+                              const item = studyCard.item;
+                              const entryId = item.kind === "entry" ? item.entry.id : 0;
+                              const kanjiLiteral =
+                                item.kind === "kanji" ? item.kanji.literal : null;
+                              const key = `${entryId}-${kanjiLiteral ?? ""}`;
+                              if (markedSet.has(key)) {
+                                setMarkedSet((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(key);
+                                  return next;
+                                });
+                                if (drizzleDb)
+                                  unmarkForReview(drizzleDb, entryId, kanjiLiteral, dayResetHour);
+                              } else {
+                                setMarkedSet((prev) => new Set(prev).add(key));
+                                if (drizzleDb)
+                                  markForReview(
+                                    drizzleDb,
+                                    entryId,
+                                    kanjiLiteral,
+                                    listId ?? null,
+                                    dayResetHour,
+                                  );
+                              }
+                            },
+                          })}
+                      onFlip={isCursor ? handleCardFlip : () => {}}
+                      onTypingComplete={(wasCorrect) => {
+                        if (isCursor) {
+                          setPreSelectedRating(wasCorrect ? "pass" : "fail");
+                        }
+                      }}
+                      onInfoPress={() =>
+                        studyCard.item.kind === "entry"
+                          ? router.push(`/lists/word/${studyCard.item.entry.id}`)
+                          : tabRouter.pushKanji(studyCard.item.kanji.literal)
+                      }
+                    />
+                  </View>
+                );
+              })}
+            </Animated.View>
+          </View>
+        </GestureDetector>
+
+        {/* Rating buttons -- kept flush under the card inside the centered stack */}
+        {sessionPhase === "studying" && isFsrsReviewCard && (
+          <View
+            className="flex-row gap-2 mt-3"
+            style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
+          >
+            <Pressable
+              ref={failButtonRef}
+              onPress={() => handleFail()}
+              className="flex-1 items-center justify-center rounded-lg h-14 bg-red-500"
+            >
+              <Text className="font-medium text-white text-xs">Again</Text>
+              {intervalLabels && (
+                <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => handleHard()}
+              className="flex-1 items-center justify-center rounded-lg h-14 bg-amber-500"
+            >
+              <Text className="font-medium text-white text-xs">Hard</Text>
+              {intervalLabels && (
+                <Text className="text-white/70 text-[10px]">{intervalLabels.hard}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              ref={passButtonRef}
+              onPress={() => handlePass(false)}
+              className="flex-1 items-center justify-center rounded-lg h-14 bg-green-500"
+            >
+              <Text className="font-medium text-white text-xs">Good</Text>
+              {intervalLabels && (
+                <Text className="text-white/70 text-[10px]">{intervalLabels.good}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => handleEasy()}
+              className="flex-1 items-center justify-center rounded-lg h-14 bg-blue-500"
+            >
+              <Text className="font-medium text-white text-xs">Easy</Text>
+              {intervalLabels && (
+                <Text className="text-white/70 text-[10px]">{intervalLabels.easy}</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+        {sessionPhase === "studying" && !isFsrsReviewCard && (
+          <View
+            className="flex-row gap-3 mt-3"
+            style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
+          >
+            <Pressable
+              ref={failButtonRef}
+              onPress={() => handleFail()}
+              className={`flex-1 items-center justify-center rounded-lg h-14 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
+            >
+              <Text className="font-medium text-white">
+                {preSelectedRating === "fail" ? "Fail \u21B5" : "Fail"}
+              </Text>
+              {isFsrsMode && intervalLabels && (
+                <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              ref={passButtonRef}
+              onPressIn={handlePassPressIn}
+              onPressOut={handlePassPressOut}
+              onPress={handlePassPress}
+              className={`flex-1 items-center justify-center rounded-lg h-14 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
+            >
+              <Text className="font-medium text-white">
+                {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
+              </Text>
+              {isFsrsMode && intervalLabels && (
+                <Text className="text-white/70 text-[10px]">
+                  {longPressActive ? intervalLabels.easy : intervalLabels.good}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+      </View>
 
       {/* Desktop navigation buttons */}
       {Platform.OS === "web" && (
@@ -2854,88 +2939,6 @@ function StudyScreen() {
             className="p-2"
           >
             <ChevronRight size={24} className="text-foreground" />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Rating buttons -- always visible */}
-      {sessionPhase === "studying" && isFsrsReviewCard && (
-        <View
-          className="flex-row gap-2 mt-3"
-          style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
-        >
-          <Pressable
-            ref={failButtonRef}
-            onPress={() => handleFail()}
-            className="flex-1 items-center justify-center rounded-lg h-14 bg-red-500"
-          >
-            <Text className="font-medium text-white text-xs">Again</Text>
-            {intervalLabels && (
-              <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => handleHard()}
-            className="flex-1 items-center justify-center rounded-lg h-14 bg-amber-500"
-          >
-            <Text className="font-medium text-white text-xs">Hard</Text>
-            {intervalLabels && (
-              <Text className="text-white/70 text-[10px]">{intervalLabels.hard}</Text>
-            )}
-          </Pressable>
-          <Pressable
-            ref={passButtonRef}
-            onPress={() => handlePass(false)}
-            className="flex-1 items-center justify-center rounded-lg h-14 bg-green-500"
-          >
-            <Text className="font-medium text-white text-xs">Good</Text>
-            {intervalLabels && (
-              <Text className="text-white/70 text-[10px]">{intervalLabels.good}</Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => handleEasy()}
-            className="flex-1 items-center justify-center rounded-lg h-14 bg-blue-500"
-          >
-            <Text className="font-medium text-white text-xs">Easy</Text>
-            {intervalLabels && (
-              <Text className="text-white/70 text-[10px]">{intervalLabels.easy}</Text>
-            )}
-          </Pressable>
-        </View>
-      )}
-      {sessionPhase === "studying" && !isFsrsReviewCard && (
-        <View
-          className="flex-row gap-3 mt-3"
-          style={{ paddingHorizontal: 16 + CARD_PEEK + CARD_GAP }}
-        >
-          <Pressable
-            ref={failButtonRef}
-            onPress={() => handleFail()}
-            className={`flex-1 items-center justify-center rounded-lg h-14 bg-red-500 ${preSelectedRating === "fail" ? "border-2 border-red-300" : ""}`}
-          >
-            <Text className="font-medium text-white">
-              {preSelectedRating === "fail" ? "Fail \u21B5" : "Fail"}
-            </Text>
-            {isFsrsMode && intervalLabels && (
-              <Text className="text-white/70 text-[10px]">{intervalLabels.again}</Text>
-            )}
-          </Pressable>
-          <Pressable
-            ref={passButtonRef}
-            onPressIn={handlePassPressIn}
-            onPressOut={handlePassPressOut}
-            onPress={handlePassPress}
-            className={`flex-1 items-center justify-center rounded-lg h-14 ${longPressActive ? "bg-green-400" : "bg-green-500"} ${preSelectedRating === "pass" ? "border-2 border-green-300" : ""}`}
-          >
-            <Text className="font-medium text-white">
-              {longPressActive ? "Easy!" : preSelectedRating === "pass" ? "Pass \u21B5" : "Pass"}
-            </Text>
-            {isFsrsMode && intervalLabels && (
-              <Text className="text-white/70 text-[10px]">
-                {longPressActive ? intervalLabels.easy : intervalLabels.good}
-              </Text>
-            )}
           </Pressable>
         </View>
       )}
