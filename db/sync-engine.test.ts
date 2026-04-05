@@ -179,6 +179,20 @@ async function insertReviewLog(
   );
 }
 
+async function insertPracticeSession(
+  db: WrappedUserDb,
+  id: string,
+  sessionId: string,
+  listId: string,
+  startedAt: string,
+) {
+  await db.runAsync(
+    `INSERT INTO practice_sessions (id, session_id, list_id, practice_mode, started_at, duration_ms, total_items, correct_count)
+     VALUES (?, ?, ?, 'flashcard', ?, 1000, 10, 8)`,
+    [id, sessionId, listId, startedAt],
+  );
+}
+
 function insertRemoteRow(remoteDb: Database.Database, table: string, row: Record<string, any>) {
   const cols = Object.keys(row);
   const placeholders = cols.map(() => "?").join(", ");
@@ -370,81 +384,33 @@ describe("sync engine", () => {
     });
   });
 
-  describe("append-only tables", () => {
-    it("pushes review logs and ignores duplicates on re-push", async () => {
+  describe("append-only cloud sync", () => {
+    it("does not push review logs to remote anymore", async () => {
       const now = "2025-01-01T00:00:00.000Z";
       await insertList(local, "study-list", "Study", now);
       await insertSrsCard(local, "card-1", "study-list", 1, now);
       await insertReviewLog(local, "log-1", "card-1", 3, now);
 
-      // First sync
-      await sync(local, turso, noop, noop);
-
-      const rows1 = remoteDb
-        .prepare("SELECT * FROM review_logs WHERE id = ?")
-        .all("log-1") as any[];
-      expect(rows1).toHaveLength(1);
-
-      // Second sync — reset last_pushed_at to epoch to force re-push of all data
-      await local.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", [
-        "last_pushed_at",
-        "1970-01-01T00:00:00.000Z",
-      ]);
       const result = await sync(local, turso, noop, noop);
       expect(result.ok).toBe(true);
 
-      // Should still be just 1 row (INSERT OR IGNORE)
-      const rows2 = remoteDb
-        .prepare("SELECT * FROM review_logs WHERE id = ?")
-        .all("log-1") as any[];
-      expect(rows2).toHaveLength(1);
+      const rows = remoteDb.prepare("SELECT * FROM review_logs WHERE id = ?").all("log-1") as any[];
+      expect(rows).toHaveLength(0);
     });
 
-    it("pulls review logs from remote", async () => {
-      // Insert directly into remote
-      insertRemoteRow(remoteDb, "lists", {
-        id: "r-list",
-        name: "List",
-        is_default: 0,
-        study_position: 0,
-        created_at: "2025-01-01T00:00:00.000Z",
-        updated_at: "2025-01-01T00:00:00.000Z",
-      });
-      insertRemoteRow(remoteDb, "srs_cards", {
-        id: "r-card",
-        list_id: "r-list",
-        entry_id: 1,
-        due: "2025-01-01T00:00:00.000Z",
-        stability: 0,
-        difficulty: 0,
-        elapsed_days: 0,
-        scheduled_days: 0,
-        reps: 0,
-        lapses: 0,
-        state: 0,
-        created_at: "2025-01-01T00:00:00.000Z",
-        updated_at: "2025-01-01T00:00:00.000Z",
-      });
-      insertRemoteRow(remoteDb, "review_logs", {
-        id: "rlog-1",
-        card_id: "r-card",
-        rating: 4,
-        state: 0,
-        due: "2025-01-01T00:00:00.000Z",
-        reviewed_at: "2025-01-01T00:00:00.000Z",
-        elapsed_days: 0,
-        scheduled_days: 0,
-        stability: 0,
-        difficulty: 0,
-      });
+    it("still pushes practice session summaries", async () => {
+      const now = "2025-01-01T00:00:00.000Z";
+      await insertList(local, "r-list", "List", now);
+      await insertPracticeSession(local, "ps-1", "session-1", "r-list", now);
 
-      await sync(local, turso, noop, noop);
+      const result = await sync(local, turso, noop, noop);
+      expect(result.ok).toBe(true);
 
-      const row = await local.getFirstAsync<{ rating: number }>(
-        "SELECT rating FROM review_logs WHERE id = ?",
-        ["rlog-1"],
-      );
-      expect(row?.rating).toBe(4);
+      const row = remoteDb
+        .prepare("SELECT session_id, list_id FROM practice_sessions WHERE id = ?")
+        .get("ps-1") as any;
+      expect(row?.session_id).toBe("session-1");
+      expect(row?.list_id).toBe("r-list");
     });
   });
 
