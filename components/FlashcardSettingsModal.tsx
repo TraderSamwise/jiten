@@ -17,7 +17,7 @@ import type { CardFace, FlashcardMode } from "@/db/types";
 
 interface FlashcardSettingsModalProps {
   visible: boolean;
-  onClose: (changed?: boolean) => void;
+  onClose: (requiresReload?: boolean) => void;
   listId: string;
   onStartStudy?: () => void;
 }
@@ -180,7 +180,7 @@ export function FlashcardSettingsModal({
     if (onStartStudy) {
       onStartStudy();
     } else {
-      onClose(true);
+      onClose(mode !== list?.flashcardMode);
     }
   }
 
