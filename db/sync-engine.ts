@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client/web";
 import type { WrappedUserDb } from "./user-db";
-import { MUTABLE_TABLES, APPEND_TABLES } from "./sync-helpers";
+import { MUTABLE_TABLES, CLOUD_APPEND_TABLES } from "./sync-helpers";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { captureException } from "@/lib/sentry";
 
@@ -113,7 +113,10 @@ async function ensureColumnCache(turso: Client, localDb: WrappedUserDb): Promise
     }
   }
 
-  const allTables = [...MUTABLE_TABLES.map((t) => t.name), ...APPEND_TABLES.map((t) => t.name)];
+  const allTables = [
+    ...MUTABLE_TABLES.map((t) => t.name),
+    ...CLOUD_APPEND_TABLES.map((t) => t.name),
+  ];
   const uncached = allTables.filter((t) => !columnCache.has(t));
   if (uncached.length === 0) return;
 
@@ -164,7 +167,7 @@ async function pullAll(
     if (cols.length === 0) continue;
     tableMeta.push({ ...table, cols, mutable: true });
   }
-  for (const table of APPEND_TABLES) {
+  for (const table of CLOUD_APPEND_TABLES) {
     const cols = getColumns(table.name);
     if (cols.length === 0) continue;
     tableMeta.push({ ...table, cols, mutable: false });
@@ -291,7 +294,7 @@ async function pushAll(
     }
   }
 
-  for (const table of APPEND_TABLES) {
+  for (const table of CLOUD_APPEND_TABLES) {
     const cols = getColumns(table.name);
     if (cols.length === 0) continue;
     const colList = cols.join(", ");

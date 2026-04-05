@@ -37,6 +37,21 @@ export const BACKUP_TABLES: {
       "SELECT id, card_id, rating, state, due, stability, difficulty, elapsed_days, scheduled_days, reviewed_at FROM review_logs",
   },
   {
+    name: "practice_events",
+    query:
+      "SELECT id, entry_id, kanji_literal, list_id, practice_mode, correct, response_ms, typed_answer, reviewed_at, session_id, assisted FROM practice_events",
+  },
+  {
+    name: "confusion_pairs",
+    query:
+      "SELECT id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at, updated_at, deleted_at FROM confusion_pairs",
+  },
+  {
+    name: "confusion_events",
+    query:
+      "SELECT id, entry_id_a, kanji_literal_a, entry_id_b, kanji_literal_b, confusion_type, list_id, practice_mode, confused_at FROM confusion_events",
+  },
+  {
     name: "books",
     query:
       "SELECT id, title, author, source, scroll_position, char_offset, total_chars, font_size, last_read_at, is_default, saved, read_complete, created_at, updated_at FROM books",
@@ -114,6 +129,43 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "scheduled_days",
     "reviewed_at",
   ],
+  practice_events: [
+    "id",
+    "entry_id",
+    "kanji_literal",
+    "list_id",
+    "practice_mode",
+    "correct",
+    "response_ms",
+    "typed_answer",
+    "reviewed_at",
+    "session_id",
+    "assisted",
+  ],
+  confusion_pairs: [
+    "id",
+    "entry_id_a",
+    "kanji_literal_a",
+    "entry_id_b",
+    "kanji_literal_b",
+    "confusion_type",
+    "confusion_count",
+    "last_confused_at",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+  ],
+  confusion_events: [
+    "id",
+    "entry_id_a",
+    "kanji_literal_a",
+    "entry_id_b",
+    "kanji_literal_b",
+    "confusion_type",
+    "list_id",
+    "practice_mode",
+    "confused_at",
+  ],
   books: [
     "id",
     "title",
@@ -162,6 +214,9 @@ const IMPORT_ORDER = [
   "list_entries",
   "srs_cards",
   "review_logs",
+  "practice_events",
+  "confusion_pairs",
+  "confusion_events",
   "books",
   "user_kanji_notes",
   "practice_sessions",

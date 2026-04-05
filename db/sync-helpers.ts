@@ -34,14 +34,19 @@ export const MUTABLE_TABLES = [
   // app_flags removed — only contains local seeding flags, not user data
 ] as const;
 
-/** Table config for append-only (INSERT OR IGNORE merge) tables */
-export const APPEND_TABLES = [
+/** Append-only tables kept locally and included in backup/export. */
+export const LOCAL_APPEND_TABLES = [
   { name: "review_logs", pk: "id", timestampCol: "reviewed_at" },
   { name: "practice_events", pk: "id", timestampCol: "reviewed_at" },
   { name: "practice_sessions", pk: "id", timestampCol: "started_at" },
   { name: "confusion_events", pk: "id", timestampCol: "confused_at" },
   { name: "game_scores", pk: "id", timestampCol: "played_at" },
 ] as const;
+
+/** Only low-volume session summaries stay in live cloud sync. */
+export const CLOUD_APPEND_TABLES = LOCAL_APPEND_TABLES.filter(
+  (table) => table.name === "practice_sessions",
+);
 
 /** Check if user has any meaningful local data (lists, cards, books, notes). */
 export async function hasLocalData(db: WrappedUserDb): Promise<boolean> {
@@ -57,7 +62,7 @@ export async function hasLocalData(db: WrappedUserDb): Promise<boolean> {
 
 /** Wipe all user data rows. Schema stays intact — sync pull repopulates from remote. */
 export async function resetLocalUserData(db: WrappedUserDb) {
-  const tables = [...MUTABLE_TABLES, ...APPEND_TABLES].map((t) => t.name);
+  const tables = [...MUTABLE_TABLES, ...LOCAL_APPEND_TABLES].map((t) => t.name);
   for (const table of tables) {
     await db.runAsync(`DELETE FROM ${table}`);
   }
