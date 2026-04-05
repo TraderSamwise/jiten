@@ -6,6 +6,8 @@ import { deinflect, generateSubstrings } from "./deinflect";
 
 export type ReaderLookupMode = "word" | "name" | "auto";
 export type LookupKind = "word" | "name";
+const AUTO_DUAL_SCORE_DELTA = 140;
+const AUTO_DUAL_MIN_MATCH_LENGTH = 2;
 
 export interface LookupResult {
   matchedText: string;
@@ -112,6 +114,18 @@ function scoreNameResult(result: LookupResult): number {
   return score;
 }
 
+function shouldShowBothAutoResults(
+  bestWord: LookupResult,
+  bestName: LookupResult,
+  wordScore: number,
+  nameScore: number,
+): boolean {
+  if (bestWord.matchedText !== bestName.matchedText) return false;
+  if (bestWord.matchedText.length < AUTO_DUAL_MIN_MATCH_LENGTH) return false;
+  if (!topWordExactSurfaceMatch(bestWord) || !topNameExactSurfaceMatch(bestName)) return false;
+  return Math.abs(wordScore - nameScore) <= AUTO_DUAL_SCORE_DELTA;
+}
+
 export function chooseAutoLookupResults(
   wordResults: LookupResult[],
   nameResults: LookupResult[],
@@ -131,6 +145,10 @@ export function chooseAutoLookupResults(
     return bestWord.matchedText.length > bestName.matchedText.length
       ? taggedWordResults
       : taggedNameResults;
+  }
+
+  if (shouldShowBothAutoResults(bestWord, bestName, wordScore, nameScore)) {
+    return wordScore >= nameScore ? [bestWord, bestName] : [bestName, bestWord];
   }
 
   return wordScore >= nameScore ? taggedWordResults : taggedNameResults;

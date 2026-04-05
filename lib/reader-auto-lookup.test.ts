@@ -90,4 +90,22 @@ describe("chooseAutoLookupResults", () => {
 
     expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(nameResults);
   });
+
+  it("returns both top candidates when word and name hits are both strong and close", () => {
+    const wordResults = [
+      makeWordResult("花子", [
+        makeWordEntry({ common: true, kanji: [{ text: "花子", common: true, tags: [] }] }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("花子", [
+        makeNameEntry({ kanji: "花子", kana: "はなこ", nameType: "given", translation: "Hanako" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual([
+      { ...nameResults[0], lookupKind: "name" },
+      { ...wordResults[0], lookupKind: "word" },
+    ]);
+  });
 });
