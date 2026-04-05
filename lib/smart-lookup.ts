@@ -4,6 +4,9 @@ import { lookupExactName } from "@/db/name-search";
 import type { DictEntry, NameEntry } from "@/db/types";
 import { deinflect, generateSubstrings } from "./deinflect";
 
+export type ReaderLookupMode = "word" | "name" | "auto";
+export type LookupKind = "word" | "name";
+
 export interface LookupResult {
   matchedText: string;
   entries: DictEntry[];
@@ -12,6 +15,125 @@ export interface LookupResult {
   matchStart?: number;
   /** Name matches (only set in name lookup mode) */
   nameMatches?: NameEntry[];
+  lookupKind?: LookupKind;
+}
+
+function asWordLookupResult(result: LookupResult): LookupResult {
+  return { ...result, lookupKind: "word" };
+}
+
+function asNameLookupResult(result: LookupResult): LookupResult {
+  return { ...result, lookupKind: "name" };
+}
+
+function hasKana(text: string): boolean {
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if ((c >= 0x3040 && c <= 0x309f) || (c >= 0x30a0 && c <= 0x30ff)) return true;
+  }
+  return false;
+}
+
+function hasKanji(text: string): boolean {
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if (
+      (c >= 0x4e00 && c <= 0x9fff) ||
+      (c >= 0x3400 && c <= 0x4dbf) ||
+      (c >= 0xf900 && c <= 0xfaff)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function topWordExactSurfaceMatch(result: LookupResult): boolean {
+  return result.entries.some(
+    (entry) =>
+      entry.kanji.some((k) => k.text === result.matchedText) ||
+      entry.kana.some((k) => k.text === result.matchedText),
+  );
+}
+
+function topNameExactSurfaceMatch(result: LookupResult): boolean {
+  return (
+    result.nameMatches?.some(
+      (name) => name.kanji === result.matchedText || name.kana === result.matchedText,
+    ) ?? false
+  );
+}
+
+function scoreWordResult(result: LookupResult): number {
+  if (result.entries.length === 0) return Number.NEGATIVE_INFINITY;
+
+  const commonCount = result.entries.filter((entry) => entry.common).length;
+  let score = result.matchedText.length * 1000;
+  score += commonCount * 120;
+  score += result.entries.length > 0 ? 20 : 0;
+
+  if (topWordExactSurfaceMatch(result)) score += 260;
+  if (result.deinflectReasons.length > 0) score -= 80;
+
+  const matched = result.matchedText;
+  if (hasKanji(matched) && hasKana(matched)) score += 120;
+  if (hasKana(matched) && !hasKanji(matched)) score += 30;
+
+  return score;
+}
+
+function scoreNameResult(result: LookupResult): number {
+  const names = result.nameMatches ?? [];
+  if (names.length === 0) return Number.NEGATIVE_INFINITY;
+
+  let score = result.matchedText.length * 1000;
+  score += topNameExactSurfaceMatch(result) ? 260 : 0;
+  score += names.filter((name) => !!name.translation).length * 25;
+
+  const strongTypes = new Set([
+    "surname",
+    "given",
+    "fem",
+    "masc",
+    "person",
+    "place",
+    "station",
+    "organization",
+    "company",
+    "product",
+  ]);
+  const topType = names[0]?.nameType;
+  if (topType && strongTypes.has(topType)) score += 90;
+  if (topType === "unclass") score -= 25;
+
+  if (hasKanji(result.matchedText) && !hasKana(result.matchedText)) score += 80;
+  if (names.length > 4) score -= Math.min(names.length - 4, 6) * 10;
+
+  return score;
+}
+
+export function chooseAutoLookupResults(
+  wordResults: LookupResult[],
+  nameResults: LookupResult[],
+): LookupResult[] {
+  const taggedWordResults = wordResults.map(asWordLookupResult);
+  const taggedNameResults = nameResults.map(asNameLookupResult);
+
+  if (taggedWordResults.length === 0) return taggedNameResults;
+  if (taggedNameResults.length === 0) return taggedWordResults;
+
+  const bestWord = taggedWordResults[0];
+  const bestName = taggedNameResults[0];
+  const wordScore = scoreWordResult(bestWord);
+  const nameScore = scoreNameResult(bestName);
+
+  if (bestWord.matchedText.length !== bestName.matchedText.length) {
+    return bestWord.matchedText.length > bestName.matchedText.length
+      ? taggedWordResults
+      : taggedNameResults;
+  }
+
+  return wordScore >= nameScore ? taggedWordResults : taggedNameResults;
 }
 
 /**
@@ -277,11 +399,13 @@ export async function smartLookup(
 
       if (newEntries.length > 0) {
         for (const e of newEntries) seenEntryIds.add(e.id);
-        results.push({
-          matchedText: substr,
-          entries: newEntries,
-          deinflectReasons: candidate.reasons,
-        });
+        results.push(
+          asWordLookupResult({
+            matchedText: substr,
+            entries: newEntries,
+            deinflectReasons: candidate.reasons,
+          }),
+        );
       }
     }
 
@@ -336,11 +460,57 @@ export async function smartLookupWithOffset(
         }
       }
 
-      if (best) return [best];
+      if (best) return [asWordLookupResult(best)];
     }
   }
 
   return [];
+}
+
+export async function autoLookup(
+  text: string,
+  dictDb: SQLite.SQLiteDatabase,
+  extDb?: SQLite.SQLiteDatabase | null,
+): Promise<LookupResult[]> {
+  const [wordResults, nameResults] = await Promise.all([
+    smartLookup(text, dictDb),
+    extDb ? nameLookup(text, extDb) : Promise.resolve([]),
+  ]);
+  return chooseAutoLookupResults(wordResults, nameResults);
+}
+
+export async function autoLookupWithOffset(
+  text: string,
+  tapOffset: number,
+  dictDb: SQLite.SQLiteDatabase,
+  extDb?: SQLite.SQLiteDatabase | null,
+): Promise<LookupResult[]> {
+  const [wordResults, nameResults] = await Promise.all([
+    smartLookupWithOffset(text, tapOffset, dictDb),
+    extDb ? nameLookupWithOffset(text, tapOffset, extDb) : Promise.resolve([]),
+  ]);
+  return chooseAutoLookupResults(wordResults, nameResults);
+}
+
+export async function autoSelectionLookup(
+  text: string,
+  dictDb: SQLite.SQLiteDatabase,
+  extDb: SQLite.SQLiteDatabase | null | undefined,
+  options?: { prefix?: string; suffix?: string },
+): Promise<LookupResult[]> {
+  const wordResults: LookupResult[] = [];
+  const [_, nameResults] = await Promise.all([
+    selectionLookup(
+      text,
+      dictDb,
+      (result) => {
+        wordResults.push(asWordLookupResult(result));
+      },
+      options,
+    ),
+    extDb ? nameLookup(text, extDb) : Promise.resolve([]),
+  ]);
+  return chooseAutoLookupResults(wordResults, nameResults);
 }
 
 // ---------------------------------------------------------------------------
@@ -363,13 +533,13 @@ export async function nameLookupWithOffset(
       const names = await lookupExactName(extDb, substr);
       if (names.length > 0) {
         return [
-          {
+          asNameLookupResult({
             matchedText: substr,
             entries: [],
             deinflectReasons: [],
             matchStart: start,
             nameMatches: names,
-          },
+          }),
         ];
       }
     }
@@ -462,12 +632,12 @@ export async function nameLookup(
     const names = await lookupExactName(extDb, substr);
     if (names.length > 0) {
       return [
-        {
+        asNameLookupResult({
           matchedText: substr,
           entries: [],
           deinflectReasons: [],
           nameMatches: names,
-        },
+        }),
       ];
     }
   }
