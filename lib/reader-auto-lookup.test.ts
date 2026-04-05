@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DictEntry, NameEntry } from "@/db/types";
-import { chooseAutoLookupResults, type LookupResult } from "./smart-lookup";
+import { autoSelectionLookup, chooseAutoLookupResults, type LookupResult } from "./smart-lookup";
+import * as searchDb from "@/db/search";
+import * as nameSearchDb from "@/db/name-search";
+import * as sqlite from "expo-sqlite";
+import { afterEach, vi } from "vitest";
 
 function makeWordEntry(overrides?: Partial<DictEntry>): DictEntry {
   return {
@@ -107,5 +111,63 @@ describe("chooseAutoLookupResults", () => {
       { ...nameResults[0], lookupKind: "name" },
       { ...wordResults[0], lookupKind: "word" },
     ]);
+  });
+});
+
+describe("autoSelectionLookup", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps top-level segmented word results and nests word/name ambiguity per segment", async () => {
+    vi.spyOn(searchDb, "lookupExactJapanese").mockImplementation(async (_db, query) => {
+      if (query === "第一") {
+        return [
+          makeWordEntry({ id: 1, common: true, kanji: [{ text: "第一", common: true, tags: [] }] }),
+        ];
+      }
+      if (query === "夜") {
+        return [
+          makeWordEntry({ id: 2, common: true, kanji: [{ text: "夜", common: true, tags: [] }] }),
+        ];
+      }
+      if (query === "こんな") {
+        return [
+          makeWordEntry({
+            id: 3,
+            common: true,
+            kana: [{ text: "こんな", common: true, tags: [], romaji: "konna" }],
+          }),
+        ];
+      }
+      return [];
+    });
+
+    vi.spyOn(nameSearchDb, "lookupExactName").mockImplementation(async (_db, query) => {
+      if (query === "第一") {
+        return [makeNameEntry({ id: 11, kanji: "第一", kana: "だいいち", nameType: "person" })];
+      }
+      if (query === "夜") {
+        return [makeNameEntry({ id: 12, kanji: "夜", kana: "よる", nameType: "unclass" })];
+      }
+      return [];
+    });
+
+    const results = await autoSelectionLookup(
+      "第一夜こんな",
+      {} as sqlite.SQLiteDatabase,
+      {} as sqlite.SQLiteDatabase,
+    );
+
+    expect(results).toHaveLength(3);
+    expect(results[0].matchedText).toBe("第一");
+    expect(results[0].alternateResults?.map((result) => result.lookupKind)).toEqual([
+      "name",
+      "word",
+    ]);
+    expect(results[1].matchedText).toBe("夜");
+    expect(results[1].alternateResults).toBeUndefined();
+    expect(results[2].matchedText).toBe("こんな");
+    expect(results[2].alternateResults).toBeUndefined();
   });
 });

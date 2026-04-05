@@ -18,6 +18,7 @@ export interface LookupResult {
   /** Name matches (only set in name lookup mode) */
   nameMatches?: NameEntry[];
   lookupKind?: LookupKind;
+  alternateResults?: LookupResult[];
 }
 
 function asWordLookupResult(result: LookupResult): LookupResult {
@@ -126,6 +127,45 @@ function shouldShowBothAutoResults(
   return Math.abs(wordScore - nameScore) <= AUTO_DUAL_SCORE_DELTA;
 }
 
+function chooseAutoLookupVariants(
+  wordResult: LookupResult,
+  nameResults: LookupResult[],
+): LookupResult[] {
+  const taggedWord = asWordLookupResult(wordResult);
+  if (nameResults.length === 0) return [taggedWord];
+
+  const taggedNames = nameResults.map(asNameLookupResult);
+  const bestName = taggedNames[0];
+  const wordScore = scoreWordResult(taggedWord);
+  const nameScore = scoreNameResult(bestName);
+
+  if (bestName.matchedText.length > taggedWord.matchedText.length) return taggedNames;
+  if (bestName.matchedText.length < taggedWord.matchedText.length) return [taggedWord];
+
+  if (shouldShowBothAutoResults(taggedWord, bestName, wordScore, nameScore)) {
+    return wordScore >= nameScore ? [taggedWord, bestName] : [bestName, taggedWord];
+  }
+
+  return wordScore >= nameScore ? [taggedWord] : [bestName];
+}
+
+function attachAutoSelectionAlternates(
+  wordResults: LookupResult[],
+  nameMatchesByText: Map<string, LookupResult[]>,
+): LookupResult[] {
+  return wordResults.map((result) => {
+    const variants = chooseAutoLookupVariants(
+      result,
+      nameMatchesByText.get(result.matchedText) ?? [],
+    );
+    if (variants.length <= 1) return variants[0];
+    return {
+      ...variants[0],
+      alternateResults: variants,
+    };
+  });
+}
+
 export function chooseAutoLookupResults(
   wordResults: LookupResult[],
   nameResults: LookupResult[],
@@ -209,7 +249,7 @@ export async function selectionLookup(
         }
 
         if (best) {
-          onResult(best);
+          onResult(asWordLookupResult(best));
           return;
         }
       }
@@ -219,11 +259,13 @@ export async function selectionLookup(
   // Try the full selected text as a single lookup first
   const fullEntries = await lookupExactJapanese(dictDb, trimmed);
   if (fullEntries.length > 0) {
-    onResult({
-      matchedText: trimmed,
-      entries: fullEntries,
-      deinflectReasons: [],
-    });
+    onResult(
+      asWordLookupResult({
+        matchedText: trimmed,
+        entries: fullEntries,
+        deinflectReasons: [],
+      }),
+    );
     return;
   }
 
@@ -233,11 +275,13 @@ export async function selectionLookup(
     if (candidate.word === trimmed) continue; // already tried exact
     const entries = await lookupExactJapanese(dictDb, candidate.word);
     if (entries.length > 0) {
-      onResult({
-        matchedText: trimmed,
-        entries,
-        deinflectReasons: candidate.reasons,
-      });
+      onResult(
+        asWordLookupResult({
+          matchedText: trimmed,
+          entries,
+          deinflectReasons: candidate.reasons,
+        }),
+      );
       return;
     }
   }
@@ -263,7 +307,7 @@ export async function selectionLookup(
       );
       if (boundaryResult) {
         for (const e of boundaryResult.result.entries) seenEntryIds.add(e.id);
-        onResult(boundaryResult.result);
+        onResult(asWordLookupResult(boundaryResult.result));
         pos += boundaryResult.selectionCharsConsumed;
         continue;
       }
@@ -277,7 +321,7 @@ export async function selectionLookup(
 
     if (wordResult) {
       for (const e of wordResult.result.entries) seenEntryIds.add(e.id);
-      onResult(wordResult.result);
+      onResult(asWordLookupResult(wordResult.result));
       pos += Math.min(wordResult.matchLength, remaining.length);
     } else {
       pos++;
@@ -517,18 +561,33 @@ export async function autoSelectionLookup(
   options?: { prefix?: string; suffix?: string },
 ): Promise<LookupResult[]> {
   const wordResults: LookupResult[] = [];
-  const [_, nameResults] = await Promise.all([
-    selectionLookup(
-      text,
-      dictDb,
-      (result) => {
-        wordResults.push(asWordLookupResult(result));
-      },
-      options,
-    ),
-    extDb ? nameLookup(text, extDb) : Promise.resolve([]),
-  ]);
-  return chooseAutoLookupResults(wordResults, nameResults);
+  await selectionLookup(
+    text,
+    dictDb,
+    (result) => {
+      wordResults.push(result);
+    },
+    options,
+  );
+
+  if (wordResults.length === 0) {
+    return extDb ? nameLookup(text, extDb) : [];
+  }
+
+  if (!extDb) {
+    return wordResults.map(asWordLookupResult);
+  }
+
+  const uniqueTexts = [...new Set(wordResults.map((result) => result.matchedText))];
+  const nameLookups = await Promise.all(
+    uniqueTexts.map((matchedText) => nameLookup(matchedText, extDb)),
+  );
+  const nameMatchesByText = new Map<string, LookupResult[]>();
+  uniqueTexts.forEach((matchedText, index) => {
+    nameMatchesByText.set(matchedText, nameLookups[index]);
+  });
+
+  return attachAutoSelectionAlternates(wordResults, nameMatchesByText);
 }
 
 // ---------------------------------------------------------------------------
