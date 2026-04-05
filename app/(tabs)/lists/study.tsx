@@ -3111,9 +3111,9 @@ function StudyScreen() {
 
       <FlashcardSettingsModal
         visible={settingsVisible}
-        onClose={(changed) => {
+        onClose={(requiresReload) => {
           setSettingsVisible(false);
-          if (changed) loadQueue();
+          if (requiresReload) loadQueue();
         }}
         listId={listId!}
       />
