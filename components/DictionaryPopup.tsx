@@ -1,8 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { EntrySummary } from "@/components/EntrySummary";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
@@ -35,11 +41,21 @@ interface DictionaryPopupProps {
 }
 
 const SLIDE_DURATION = 250;
+const SEGMENT_SWIPE_DISTANCE = 28;
+const SEGMENT_SWIPE_THRESHOLD = 50;
 
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
   if (kind === "name") return "Name";
   return null;
+}
+
+function formatDeinflectReasons(reasons: string[]): string {
+  const compact: string[] = [];
+  for (const reason of reasons) {
+    if (!compact.includes(reason)) compact.push(reason);
+  }
+  return compact.join(" -> ");
 }
 
 function LookupKindSwitch({
@@ -101,8 +117,12 @@ export function DictionaryPopup({
   >();
   const bookmarkRef = useRef<View>(null);
   const [mounted, setMounted] = useState(false);
+  const transitionDirectionRef = useRef<1 | -1>(1);
+  const isSegmentTransitioningRef = useRef(false);
 
   const translateY = useSharedValue(400);
+  const contentTranslateX = useSharedValue(0);
+  const contentOpacity = useSharedValue(1);
 
   useEffect(() => {
     setSelectedWordIdx(0);
@@ -128,6 +148,10 @@ export function DictionaryPopup({
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
+  }));
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateX: contentTranslateX.value }],
   }));
 
   const selectedTopLevelResult =
@@ -156,8 +180,6 @@ export function DictionaryPopup({
     onListToggled,
   } = useQuickBookmark(currentEntry?.id ?? 0, isBookmarked);
 
-  if (!mounted) return null;
-
   const hasResults =
     results.length > 0 &&
     results.some((r) => r.entries.length > 0 || (r.nameMatches && r.nameMatches.length > 0));
@@ -165,6 +187,58 @@ export function DictionaryPopup({
     wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
   const lookupKindVariants =
     variantResults.length > 0 ? variantResults : wordResult ? [wordResult] : [];
+
+  const commitSelectedWordIdx = useCallback((nextIdx: number) => {
+    setSelectedWordIdx(nextIdx);
+    setSelectedVariantIdx(0);
+    setEntryIdx(0);
+    contentTranslateX.value = transitionDirectionRef.current * SEGMENT_SWIPE_DISTANCE;
+    contentOpacity.value = 0.7;
+    contentTranslateX.value = withTiming(0, { duration: 180 });
+    contentOpacity.value = withTiming(1, { duration: 180 }, (finished) => {
+      if (finished) {
+        isSegmentTransitioningRef.current = false;
+      }
+    });
+  }, []);
+
+  const selectWordIndex = useCallback(
+    (nextIdx: number, direction: 1 | -1) => {
+      if (nextIdx < 0 || nextIdx >= results.length) return;
+      if (nextIdx === selectedWordIdx || isSegmentTransitioningRef.current) return;
+      isSegmentTransitioningRef.current = true;
+      transitionDirectionRef.current = direction;
+      contentTranslateX.value = withTiming(
+        -direction * SEGMENT_SWIPE_DISTANCE,
+        { duration: 120 },
+        (finished) => {
+          if (finished) {
+            runOnJS(commitSelectedWordIdx)(nextIdx);
+          } else {
+            isSegmentTransitioningRef.current = false;
+          }
+        },
+      );
+      contentOpacity.value = withTiming(0.7, { duration: 120 });
+    },
+    [results.length, selectedWordIdx, commitSelectedWordIdx],
+  );
+
+  const swipeGesture = Gesture.Pan()
+    .enabled(results.length > 1)
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-12, 12])
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) < SEGMENT_SWIPE_THRESHOLD) return;
+      if (Math.abs(event.translationX) < Math.abs(event.translationY)) return;
+      if (event.translationX < 0) {
+        runOnJS(selectWordIndex)(selectedWordIdx + 1, 1);
+      } else {
+        runOnJS(selectWordIndex)(selectedWordIdx - 1, -1);
+      }
+    });
+
+  if (!mounted) return null;
 
   function renderContent() {
     // Loading state
@@ -203,9 +277,7 @@ export function DictionaryPopup({
                   <Pressable
                     key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
                     onPress={() => {
-                      setSelectedWordIdx(i);
-                      setSelectedVariantIdx(0);
-                      setEntryIdx(0);
+                      selectWordIndex(i, i > selectedWordIdx ? 1 : -1);
                     }}
                     className={`px-3 py-1.5 rounded-full border ${
                       i === Math.min(selectedWordIdx, results.length - 1)
@@ -228,13 +300,6 @@ export function DictionaryPopup({
             ) : (
               <View className="flex-row items-center gap-2">
                 <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
-                {wordResult!.deinflectReasons.length > 0 && (
-                  <View className="bg-muted px-2 py-1 rounded">
-                    <Text className="text-xs text-muted-foreground">
-                      {wordResult!.deinflectReasons.join(" → ")}
-                    </Text>
-                  </View>
-                )}
               </View>
             )}
           </View>
@@ -299,36 +364,74 @@ export function DictionaryPopup({
           </View>
         </View>
 
-        {/* Deinflect reasons (shown below pills for multi-word) */}
-        {wordResult!.deinflectReasons.length > 0 && (
-          <View className="mb-2">
-            <View className="bg-muted px-2 py-1 rounded self-start">
-              <Text className="text-xs text-muted-foreground">
-                {wordResult!.deinflectReasons.join(" → ")}
-              </Text>
-            </View>
-          </View>
-        )}
+        <GestureDetector gesture={swipeGesture}>
+          <Animated.View style={contentAnimatedStyle}>
+            {/* Deinflect reasons (shown below pills for multi-word) */}
+            {wordResult!.deinflectReasons.length > 0 && (
+              <View className="mb-2">
+                <View className="bg-muted px-2 py-1 rounded self-start">
+                  <Text className="text-xs text-muted-foreground">
+                    {formatDeinflectReasons(wordResult!.deinflectReasons)}
+                  </Text>
+                </View>
+              </View>
+            )}
 
-        {/* Content display */}
-        {isNameResult ? (
-          <ScrollView style={{ maxHeight: 200 }}>
-            <View className="mb-3 flex-row items-start justify-between gap-3">
-              <View className="flex-1">
-                {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
+            {/* Content display */}
+            {isNameResult ? (
+              <ScrollView style={{ maxHeight: 200 }}>
+                <View className="mb-3 flex-row items-start justify-between gap-3">
+                  <View className="flex-1">
+                    {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
+                      const typeLabel = name.nameType
+                        ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
+                        : null;
+                      return (
+                        <View key={name.id} className="flex-row items-center flex-wrap gap-2">
+                          {name.kanji && (
+                            <Text className="text-2xl font-bold text-foreground">{name.kanji}</Text>
+                          )}
+                          <Text
+                            className={
+                              name.kanji
+                                ? "text-base text-muted-foreground"
+                                : "text-2xl font-bold text-foreground"
+                            }
+                          >
+                            {name.kana}
+                          </Text>
+                          {typeLabel && (
+                            <View className="rounded-md bg-secondary px-2 py-0.5">
+                              <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <LookupKindSwitch
+                    variants={lookupKindVariants}
+                    selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
+                    onSelect={(idx) => {
+                      setSelectedVariantIdx(idx);
+                      setEntryIdx(0);
+                    }}
+                  />
+                </View>
+                {wordResult!.nameMatches!.map((name: NameEntry) => {
                   const typeLabel = name.nameType
                     ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
                     : null;
                   return (
-                    <View key={name.id} className="flex-row items-center flex-wrap gap-2">
+                    <View key={name.id} className="flex-row items-center flex-wrap gap-2 mb-2">
                       {name.kanji && (
-                        <Text className="text-2xl font-bold text-foreground">{name.kanji}</Text>
+                        <Text className="text-lg font-bold text-foreground">{name.kanji}</Text>
                       )}
                       <Text
                         className={
                           name.kanji
-                            ? "text-base text-muted-foreground"
-                            : "text-2xl font-bold text-foreground"
+                            ? "text-sm text-muted-foreground"
+                            : "text-lg font-bold text-foreground"
                         }
                       >
                         {name.kana}
@@ -338,72 +441,38 @@ export function DictionaryPopup({
                           <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
                         </View>
                       )}
+                      {name.translation && (
+                        <Text className="text-sm text-muted-foreground">{name.translation}</Text>
+                      )}
                     </View>
                   );
                 })}
-              </View>
-              <LookupKindSwitch
-                variants={lookupKindVariants}
-                selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
-                onSelect={(idx) => {
-                  setSelectedVariantIdx(idx);
-                  setEntryIdx(0);
+              </ScrollView>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  router.push(`/reader/word/${currentEntry!.id}`);
                 }}
-              />
-            </View>
-            {wordResult!.nameMatches!.map((name: NameEntry) => {
-              const typeLabel = name.nameType
-                ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
-                : null;
-              return (
-                <View key={name.id} className="flex-row items-center flex-wrap gap-2 mb-2">
-                  {name.kanji && (
-                    <Text className="text-lg font-bold text-foreground">{name.kanji}</Text>
-                  )}
-                  <Text
-                    className={
-                      name.kanji
-                        ? "text-sm text-muted-foreground"
-                        : "text-lg font-bold text-foreground"
+              >
+                <ScrollView style={{ maxHeight: 200 }}>
+                  <EntrySummary
+                    entry={currentEntry!}
+                    rightAccessory={
+                      <LookupKindSwitch
+                        variants={lookupKindVariants}
+                        selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
+                        onSelect={(idx) => {
+                          setSelectedVariantIdx(idx);
+                          setEntryIdx(0);
+                        }}
+                      />
                     }
-                  >
-                    {name.kana}
-                  </Text>
-                  {typeLabel && (
-                    <View className="rounded-md bg-secondary px-2 py-0.5">
-                      <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
-                    </View>
-                  )}
-                  {name.translation && (
-                    <Text className="text-sm text-muted-foreground">{name.translation}</Text>
-                  )}
-                </View>
-              );
-            })}
-          </ScrollView>
-        ) : (
-          <Pressable
-            onPress={() => {
-              router.push(`/reader/word/${currentEntry!.id}`);
-            }}
-          >
-            <ScrollView style={{ maxHeight: 200 }}>
-              <EntrySummary
-                entry={currentEntry!}
-                rightAccessory={
-                  <LookupKindSwitch
-                    variants={lookupKindVariants}
-                    selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
-                    onSelect={(idx) => {
-                      setSelectedVariantIdx(idx);
-                      setEntryIdx(0);
-                    }}
                   />
-                }
-              />
-            </ScrollView>
-          </Pressable>
-        )}
+                </ScrollView>
+              </Pressable>
+            )}
+          </Animated.View>
+        </GestureDetector>
       </>
     );
   }
