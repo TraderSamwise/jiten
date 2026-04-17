@@ -7,6 +7,11 @@ import { focusAtom } from "jotai-optics";
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
 export type FuriganaLevel = "default" | "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
+export type ReaderFuriganaMatchMode =
+  | "matchAnyKanji"
+  | "matchAllKanji"
+  | "matchWordLevel"
+  | "matchIrregularReading";
 export type ConnectGameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
@@ -26,12 +31,23 @@ export const defaultFuriganaLevels: Record<FuriganaLevel, boolean> = {
   all: false,
 };
 
+export const defaultReaderFuriganaMatchModes: Record<ReaderFuriganaMatchMode, boolean> = {
+  matchAnyKanji: true,
+  matchAllKanji: false,
+  matchWordLevel: false,
+  matchIrregularReading: true,
+};
+
 export const defaultSettings = Object.freeze({
   theme: "system" as ThemePreference,
   typingFuriganaMode: "auto" as FuriganaMode,
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
   readerFuriganaLevels: defaultFuriganaLevels as Record<FuriganaLevel, boolean>,
+  readerFuriganaMatchModes: defaultReaderFuriganaMatchModes as Record<
+    ReaderFuriganaMatchMode,
+    boolean
+  >,
   readerPageAnimations: true as boolean,
   connectGameMode: "timed" as ConnectGameMode,
   connectTimedDuration: 90 as TimedDuration,
@@ -100,6 +116,9 @@ export const typingShowPitchAtom = focusAtom(settingsAtom, (o) => o.prop("typing
 export const typingPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("typingPlayAudio"));
 export const readerFuriganaLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaLevels"),
+);
+export const readerFuriganaMatchModesAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerFuriganaMatchModes"),
 );
 export const readerPageAnimationsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerPageAnimations"),

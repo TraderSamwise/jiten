@@ -57,8 +57,10 @@ import {
 import { useAtom } from "jotai";
 import {
   readerFuriganaLevelsAtom,
+  readerFuriganaMatchModesAtom,
   readerPageAnimationsAtom,
   type FuriganaLevel,
+  type ReaderFuriganaMatchMode,
 } from "@/stores/settings";
 import {
   buildFuriganaKanjiSet,
@@ -83,10 +85,22 @@ function bookHasSourceFurigana(rawContent: string): boolean {
 /** Should furigana layout be active? Accounts for source furigana + "default" toggle. */
 function hasFuriganaActive(
   levels: Record<FuriganaLevel, boolean>,
+  matchModes: Record<ReaderFuriganaMatchMode, boolean>,
   bookHasSource: boolean,
 ): boolean {
   if (bookHasSource && levels.default) return true;
-  return Object.entries(levels).some(([k, v]) => k !== "default" && v);
+  const hasSelectedLevels = Object.entries(levels).some(([k, v]) => k !== "default" && v);
+  const hasSelectedMatchers = Object.values(matchModes).some(Boolean);
+  return hasSelectedLevels && hasSelectedMatchers;
+}
+
+function hasInjectedFuriganaActive(
+  levels: Record<FuriganaLevel, boolean>,
+  matchModes: Record<ReaderFuriganaMatchMode, boolean>,
+): boolean {
+  const hasSelectedLevels = Object.entries(levels).some(([k, v]) => k !== "default" && v);
+  const hasSelectedMatchers = Object.values(matchModes).some(Boolean);
+  return hasSelectedLevels && hasSelectedMatchers;
 }
 
 /** Strip <ruby> tags keeping only base text (removes <rt> content) */
@@ -425,6 +439,7 @@ export default function BookReaderScreen() {
   const initialScrollFiredRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
+  const [furiganaMatchModes, setFuriganaMatchModes] = useAtom(readerFuriganaMatchModesAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
 
   const [book, setBook] = useState<Book | null>(null);
@@ -453,12 +468,16 @@ export default function BookReaderScreen() {
   // Furigana refs
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
   const furiganaLevelsRef = useRef(furiganaLevels);
+  const furiganaMatchModesRef = useRef(furiganaMatchModes);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
 
   useEffect(() => {
     furiganaLevelsRef.current = furiganaLevels;
   }, [furiganaLevels]);
+  useEffect(() => {
+    furiganaMatchModesRef.current = furiganaMatchModes;
+  }, [furiganaMatchModes]);
   useEffect(() => {
     lookupModeRef.current = lookupMode;
   }, [lookupMode]);
@@ -486,7 +505,9 @@ export default function BookReaderScreen() {
       const isAozora = isAozoraRef.current;
       const bookHasSource = hasSourceFuriganaRef.current;
       const levels = furiganaLevelsRef.current;
-      const hasFuri = kanjiSetRef.current != null || hasFuriganaActive(levels, bookHasSource);
+      const hasFuri =
+        kanjiSetRef.current != null ||
+        hasFuriganaActive(levels, furiganaMatchModesRef.current, bookHasSource);
 
       const screen = Dimensions.get("window");
       const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
@@ -515,7 +536,10 @@ export default function BookReaderScreen() {
           const fMap = new Map<string, FuriganaEntry>(
             Object.entries(readings) as [string, FuriganaEntry][],
           );
-          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current);
+          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current, {
+            levels,
+            matchModes: furiganaMatchModesRef.current,
+          });
         }
         sliceHtml = injectRubySpacers(sliceHtml);
       }
@@ -615,7 +639,7 @@ export default function BookReaderScreen() {
 
       if (hasRubyTags) {
         // Pre-formatted HTML — send entire content (no slicing)
-        const hasFuri = hasFuriganaActive(furiganaLevels, true);
+        const hasFuri = hasFuriganaActive(furiganaLevels, furiganaMatchModes, true);
         let content = b.rawContent;
         if (!hasFuri) {
           content = stripRubyTags(content);
@@ -636,7 +660,7 @@ export default function BookReaderScreen() {
         const model = parseBookContent(stripped, format);
 
         const screen = Dimensions.get("window");
-        const hasFuri = hasFuriganaActive(furiganaLevels, isAozora);
+        const hasFuri = hasFuriganaActive(furiganaLevels, furiganaMatchModes, isAozora);
         const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
 
         // Legacy conversion: scroll_position → char_offset
@@ -676,7 +700,7 @@ export default function BookReaderScreen() {
         }
 
         // Apply JLPT furigana if any non-default levels are enabled
-        const hasJlptFuri = Object.entries(furiganaLevels).some(([k, v]) => k !== "default" && v);
+        const hasJlptFuri = hasInjectedFuriganaActive(furiganaLevels, furiganaMatchModes);
         if (hasJlptFuri && dictDb) {
           const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
           kanjiSetRef.current = kanjiSet;
@@ -686,7 +710,10 @@ export default function BookReaderScreen() {
             const fMap = new Map<string, FuriganaEntry>(
               Object.entries(readings) as [string, FuriganaEntry][],
             );
-            sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet);
+            sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet, {
+              levels: furiganaLevels,
+              matchModes: furiganaMatchModes,
+            });
           }
           sliceHtml = injectRubySpacers(sliceHtml);
         }
@@ -716,7 +743,7 @@ export default function BookReaderScreen() {
   // Re-apply furigana when levels change
   useEffect(() => {
     if (!book || !dictDb || !modelRef.current || html === null) return;
-    const hasJlptFuri = Object.entries(furiganaLevels).some(([k, v]) => k !== "default" && v);
+    const hasJlptFuri = hasInjectedFuriganaActive(furiganaLevels, furiganaMatchModes);
 
     (async () => {
       // Build kanji set (or clear it) — only for JLPT levels, not "default"
@@ -731,7 +758,7 @@ export default function BookReaderScreen() {
       await reloadAtChar(charOffset);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [furiganaLevels, dictDb]);
+  }, [furiganaLevels, furiganaMatchModes, dictDb]);
 
   // Save char offset on unmount
   useEffect(() => {
@@ -871,7 +898,11 @@ export default function BookReaderScreen() {
             // Forward prefetch — only when content actually needs extending
             const hasFuri =
               kanjiSetRef.current != null ||
-              hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
+              hasFuriganaActive(
+                furiganaLevelsRef.current,
+                furiganaMatchModesRef.current,
+                hasSourceFuriganaRef.current,
+              );
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
@@ -890,7 +921,10 @@ export default function BookReaderScreen() {
                 const fMap = new Map<string, FuriganaEntry>(
                   Object.entries(readings) as [string, FuriganaEntry][],
                 );
-                nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current);
+                nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current, {
+                  levels: furiganaLevelsRef.current,
+                  matchModes: furiganaMatchModesRef.current,
+                });
               }
               nextHtml = injectRubySpacers(nextHtml);
             }
@@ -910,7 +944,11 @@ export default function BookReaderScreen() {
             backPrefetchingRef.current = true;
             const hasFuri =
               kanjiSetRef.current != null ||
-              hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
+              hasFuriganaActive(
+                furiganaLevelsRef.current,
+                furiganaMatchModesRef.current,
+                hasSourceFuriganaRef.current,
+              );
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const backStart = Math.max(0, sliceCharOffsetRef.current - cpp * 10);
@@ -931,7 +969,10 @@ export default function BookReaderScreen() {
                   const fMap = new Map<string, FuriganaEntry>(
                     Object.entries(readings) as [string, FuriganaEntry][],
                   );
-                  backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current);
+                  backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current, {
+                    levels: furiganaLevelsRef.current,
+                    matchModes: furiganaMatchModesRef.current,
+                  });
                 }
                 backHtml = injectRubySpacers(backHtml);
               }
@@ -975,7 +1016,11 @@ export default function BookReaderScreen() {
       setFontSize(rounded);
       const hasFuri =
         kanjiSetRef.current != null ||
-        hasFuriganaActive(furiganaLevelsRef.current, hasSourceFuriganaRef.current);
+        hasFuriganaActive(
+          furiganaLevelsRef.current,
+          furiganaMatchModesRef.current,
+          hasSourceFuriganaRef.current,
+        );
       const lineHeight = hasFuri ? `${rounded * 2}px` : `${Math.round(rounded * 1.5)}px`;
       readerRef.current?.postMessage(
         JSON.stringify({ type: "setFontSize", size: rounded, lineHeight }),
@@ -1119,6 +1164,40 @@ export default function BookReaderScreen() {
                         <Text
                           className={`text-xs font-medium ${
                             furiganaLevels[key] ? "text-background" : "text-muted-foreground"
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                <View>
+                  <Text className="text-xs text-muted-foreground text-center mb-2">Show When</Text>
+                  <View className="flex-row flex-wrap justify-center gap-1.5">
+                    {(
+                      [
+                        ["matchAnyKanji", "Any kanji"],
+                        ["matchAllKanji", "All kanji"],
+                        ["matchWordLevel", "Word level"],
+                        ["matchIrregularReading", "Irregular"],
+                      ] as [ReaderFuriganaMatchMode, string][]
+                    ).map(([key, label]) => (
+                      <Pressable
+                        key={key}
+                        onPress={() =>
+                          setFuriganaMatchModes((prev) => ({ ...prev, [key]: !prev[key] }))
+                        }
+                        className={`px-3 py-1.5 rounded-full border ${
+                          furiganaMatchModes[key]
+                            ? "bg-foreground border-foreground"
+                            : "bg-transparent border-border"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs font-medium ${
+                            furiganaMatchModes[key] ? "text-background" : "text-muted-foreground"
                           }`}
                         >
                           {label}
