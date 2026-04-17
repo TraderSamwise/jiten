@@ -51,6 +51,20 @@ function hasKanji(text: string): boolean {
   return false;
 }
 
+function isKanaChar(ch?: string): boolean {
+  if (!ch) return false;
+  const c = ch.codePointAt(0)!;
+  return (c >= 0x3040 && c <= 0x309f) || (c >= 0x30a0 && c <= 0x30ff);
+}
+
+function isKanjiChar(ch?: string): boolean {
+  if (!ch) return false;
+  const c = ch.codePointAt(0)!;
+  return (
+    (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3400 && c <= 0x4dbf) || (c >= 0xf900 && c <= 0xfaff)
+  );
+}
+
 function topWordExactSurfaceMatch(result: LookupResult): boolean {
   return result.entries.some(
     (entry) =>
@@ -65,6 +79,60 @@ function topNameExactSurfaceMatch(result: LookupResult): boolean {
       (name) => name.kanji === result.matchedText || name.kana === result.matchedText,
     ) ?? false
   );
+}
+
+function hasExactKanjiSurfaceMatch(result: LookupResult, sourceText: string): boolean {
+  return result.entries.some((entry) => entry.kanji.some((k) => k.text === sourceText));
+}
+
+function hasExactKanaSurfaceMatch(result: LookupResult, sourceText: string): boolean {
+  return result.entries.some((entry) => entry.kana.some((k) => k.text === sourceText));
+}
+
+function tapCandidateStartsAtKanaToKanjiBoundary(text: string, start: number): boolean {
+  if (start <= 0 || start >= text.length) return false;
+  return isKanaChar(text[start - 1]) && isKanjiChar(text[start]);
+}
+
+function tapCandidateStartsAtKanaRunStart(text: string, start: number): boolean {
+  if (!isKanaChar(text[start])) return false;
+  return start === 0 || !isKanaChar(text[start - 1]);
+}
+
+function tapCandidateStartsMidKanaRun(text: string, start: number): boolean {
+  if (!isKanaChar(text[start])) return false;
+  return start > 0 && isKanaChar(text[start - 1]);
+}
+
+function scoreTapCandidate(
+  text: string,
+  tapOffset: number,
+  result: LookupResult,
+  start: number,
+  hasCommon: boolean,
+): number {
+  let score = result.matchedText.length * 100;
+  const isKanaOnly = hasKana(result.matchedText) && !hasKanji(result.matchedText);
+  const suffixCharsAfterTap = start + result.matchedText.length - 1 - tapOffset;
+
+  if (hasExactKanjiSurfaceMatch(result, result.matchedText)) score += 160;
+  else if (hasExactKanaSurfaceMatch(result, result.matchedText)) score += 45;
+
+  if (tapCandidateStartsAtKanaToKanjiBoundary(text, start)) score += 120;
+  else if (tapCandidateStartsAtKanaRunStart(text, start)) score += 50;
+  else if (tapCandidateStartsMidKanaRun(text, start)) score -= 65;
+
+  if (hasCommon) score += 120;
+  if (result.deinflectReasons.length > 0) score -= 20;
+  if (isKanaOnly && suffixCharsAfterTap > 0) {
+    score -= suffixCharsAfterTap * 30;
+  }
+
+  // Small fallback toward candidates that extend backward from the tap
+  // rather than starting strictly after it.
+  if (start < tapOffset) score += 8;
+
+  return score;
 }
 
 function scoreWordResult(result: LookupResult): number {
@@ -490,19 +558,24 @@ export async function smartLookupWithOffset(
   tapOffset: number,
   dictDb: SQLite.SQLiteDatabase,
 ): Promise<LookupResult[]> {
+  let bestOverall: { result: LookupResult; score: number; length: number; start: number } | null =
+    null;
+
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     // Valid start positions: substring must contain the tap position
     const minStart = Math.max(0, tapOffset - len + 1);
     const maxStart = Math.min(tapOffset, text.length - len);
+    let bestForLength: {
+      result: LookupResult;
+      score: number;
+      length: number;
+      start: number;
+    } | null = null;
 
     // Iterate starts from tapOffset downward (prefer word starting at/near tap)
     for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
       const substr = text.slice(start, start + len);
       const candidates = deinflect(substr);
-
-      // Try all candidates for this position, prefer common entries
-      let best: LookupResult | null = null;
-      let bestCommon = false;
 
       for (const candidate of candidates) {
         const entries = await lookupExactJapanese(dictDb, candidate.word);
@@ -514,19 +587,33 @@ export async function smartLookupWithOffset(
             deinflectReasons: candidate.reasons,
             matchStart: start,
           };
-
-          if (!best || (hasCommon && !bestCommon)) {
-            best = result;
-            bestCommon = hasCommon;
+          const score = scoreTapCandidate(text, tapOffset, result, start, hasCommon);
+          if (!bestForLength || score > bestForLength.score) {
+            bestForLength = { result, score, length: len, start };
           }
         }
       }
+    }
 
-      if (best) return [asWordLookupResult(best)];
+    if (!bestForLength) continue;
+    if (!bestOverall) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const lengthDiff = bestOverall.length - bestForLength.length;
+    if (lengthDiff >= 2) break;
+    if (lengthDiff <= -2) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    if (bestForLength.score > bestOverall.score) {
+      bestOverall = bestForLength;
     }
   }
 
-  return [];
+  return bestOverall ? [asWordLookupResult(bestOverall.result)] : [];
 }
 
 export async function autoLookup(
