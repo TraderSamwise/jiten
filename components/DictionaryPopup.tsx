@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSpring,
   runOnJS,
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
@@ -40,10 +41,69 @@ interface DictionaryPopupProps {
   errorMessage?: string | null;
 }
 
+interface FlatLookupItem {
+  wordIdx: number;
+  variantIdx: number;
+  entryIdx: number;
+}
+
+interface PanelWindow {
+  left: FlatLookupItem | null;
+  center: FlatLookupItem | null;
+  right: FlatLookupItem | null;
+}
+
 const SLIDE_DURATION = 250;
-const SEGMENT_SWIPE_DISTANCE = 20;
-const SEGMENT_SWIPE_THRESHOLD = 16;
+const SEGMENT_SWIPE_THRESHOLD = 18;
 const SEGMENT_SWIPE_VELOCITY = 380;
+const SEGMENT_SWIPE_SNAP_RATIO = 0.22;
+
+function areSameItem(a: FlatLookupItem | null, b: FlatLookupItem | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.wordIdx === b.wordIdx && a.variantIdx === b.variantIdx && a.entryIdx === b.entryIdx;
+}
+
+function getFlatItemsForSelection(
+  results: LookupResult[],
+  selectedWordIdx: number,
+  selectedVariantIdx: number,
+): FlatLookupItem[] {
+  const items: FlatLookupItem[] = [];
+  results.forEach((result, wordIdx) => {
+    const variantIdx = wordIdx === selectedWordIdx ? selectedVariantIdx : 0;
+    const variants = result.alternateResults ?? [];
+    const panel =
+      variants.length > 0 ? variants[Math.min(variantIdx, variants.length - 1)] : result;
+    if (panel.nameMatches && panel.nameMatches.length > 0 && panel.entries.length === 0) {
+      items.push({ wordIdx, variantIdx, entryIdx: 0 });
+      return;
+    }
+    const entryCount = Math.max(panel.entries.length, 1);
+    for (let i = 0; i < entryCount; i++) {
+      items.push({ wordIdx, variantIdx, entryIdx: i });
+    }
+  });
+  return items;
+}
+
+function getSelectedFlatIdx(flatItems: FlatLookupItem[], item: FlatLookupItem): number {
+  const idx = flatItems.findIndex(
+    (candidate) =>
+      candidate.wordIdx === item.wordIdx &&
+      candidate.variantIdx === item.variantIdx &&
+      candidate.entryIdx === item.entryIdx,
+  );
+  return idx >= 0 ? idx : 0;
+}
+
+function buildPanelWindow(flatItems: FlatLookupItem[], selectedFlatIdx: number): PanelWindow {
+  return {
+    left: selectedFlatIdx > 0 ? flatItems[selectedFlatIdx - 1] : null,
+    center: flatItems[selectedFlatIdx] ?? null,
+    right: selectedFlatIdx < flatItems.length - 1 ? flatItems[selectedFlatIdx + 1] : null,
+  };
+}
 
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
@@ -110,31 +170,28 @@ export function DictionaryPopup({
 }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [selectedWordIdx, setSelectedWordIdx] = useState(0);
-  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
-  const [entryIdx, setEntryIdx] = useState(0);
+  const [selection, setSelection] = useState<FlatLookupItem>({
+    wordIdx: 0,
+    variantIdx: 0,
+    entryIdx: 0,
+  });
+  const [highlightedWordIdx, setHighlightedWordIdx] = useState(0);
   const [bookmarkAnchor, setBookmarkAnchor] = useState<
     { top: number; right: number } | undefined
   >();
   const bookmarkRef = useRef<View>(null);
   const [mounted, setMounted] = useState(false);
-  const transitionDirectionRef = useRef<1 | -1>(1);
   const isSegmentTransitioningRef = useRef(false);
+  const pendingCenterItemRef = useRef<FlatLookupItem | null>(null);
+  const [pagerWidth, setPagerWidth] = useState(0);
 
   const translateY = useSharedValue(400);
-  const contentTranslateX = useSharedValue(0);
-  const contentOpacity = useSharedValue(1);
+  const pagerTranslateX = useSharedValue(0);
 
   useEffect(() => {
-    setSelectedWordIdx(0);
-    setSelectedVariantIdx(0);
-    setEntryIdx(0);
+    setSelection({ wordIdx: 0, variantIdx: 0, entryIdx: 0 });
+    setHighlightedWordIdx(0);
   }, [results]);
-
-  useEffect(() => {
-    setSelectedVariantIdx(0);
-    setEntryIdx(0);
-  }, [selectedWordIdx]);
 
   useEffect(() => {
     if (visible) {
@@ -151,9 +208,12 @@ export function DictionaryPopup({
     transform: [{ translateY: translateY.value }],
   }));
   const contentAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
-    transform: [{ translateX: contentTranslateX.value }],
+    transform: [{ translateX: pagerTranslateX.value - pagerWidth }],
   }));
+
+  const selectedWordIdx = selection.wordIdx;
+  const selectedVariantIdx = selection.variantIdx;
+  const entryIdx = selection.entryIdx;
 
   const selectedTopLevelResult =
     results.length > 0 ? results[Math.min(selectedWordIdx, results.length - 1)] : null;
@@ -188,67 +248,286 @@ export function DictionaryPopup({
     wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
   const lookupKindVariants =
     variantResults.length > 0 ? variantResults : wordResult ? [wordResult] : [];
+  const selectedItem = useMemo<FlatLookupItem>(
+    () => ({ wordIdx: selectedWordIdx, variantIdx: selectedVariantIdx, entryIdx: safeEntryIdx }),
+    [selectedWordIdx, selectedVariantIdx, safeEntryIdx],
+  );
+  const flatItems = useMemo(
+    () => getFlatItemsForSelection(results, selectedWordIdx, selectedVariantIdx),
+    [results, selectedWordIdx, selectedVariantIdx],
+  );
+  const selectedFlatIdx = useMemo(
+    () => getSelectedFlatIdx(flatItems, selectedItem),
+    [flatItems, selectedItem],
+  );
+  const [panelWindow, setPanelWindow] = useState<PanelWindow>({
+    left: null,
+    center: null,
+    right: null,
+  });
+
+  useEffect(() => {
+    if (isSegmentTransitioningRef.current) return;
+    const nextWindow = buildPanelWindow(flatItems, selectedFlatIdx);
+    setPanelWindow((currentWindow) =>
+      areSameItem(currentWindow.left, nextWindow.left) &&
+      areSameItem(currentWindow.center, nextWindow.center) &&
+      areSameItem(currentWindow.right, nextWindow.right)
+        ? currentWindow
+        : nextWindow,
+    );
+  }, [flatItems, selectedFlatIdx]);
 
   const finishSegmentTransition = useCallback(() => {
     isSegmentTransitioningRef.current = false;
   }, []);
 
-  const commitSelectedWordIdx = useCallback(
-    (nextIdx: number) => {
-      setSelectedWordIdx(nextIdx);
-      setSelectedVariantIdx(0);
-      setEntryIdx(0);
-      contentTranslateX.value = transitionDirectionRef.current * SEGMENT_SWIPE_DISTANCE;
-      contentOpacity.value = 0.7;
-      contentTranslateX.value = withTiming(0, { duration: 140 });
-      contentOpacity.value = withTiming(1, { duration: 140 }, (finished) => {
-        if (finished) {
-          runOnJS(finishSegmentTransition)();
-        }
-      });
+  const commitAnimatedFlatItem = useCallback(
+    (nextItem: FlatLookupItem) => {
+      const nextFlatItems = getFlatItemsForSelection(
+        results,
+        nextItem.wordIdx,
+        nextItem.variantIdx,
+      );
+      const nextFlatIdx = getSelectedFlatIdx(nextFlatItems, nextItem);
+      pendingCenterItemRef.current = nextItem;
+      setSelection(nextItem);
+      setHighlightedWordIdx(nextItem.wordIdx);
+      setPanelWindow(buildPanelWindow(nextFlatItems, nextFlatIdx));
     },
-    [finishSegmentTransition],
+    [results],
   );
 
-  const selectWordIndex = useCallback(
-    (nextIdx: number, direction: 1 | -1) => {
-      if (nextIdx < 0 || nextIdx >= results.length) return;
-      if (nextIdx === selectedWordIdx || isSegmentTransitioningRef.current) return;
+  useEffect(() => {
+    const pendingItem = pendingCenterItemRef.current;
+    if (!pendingItem) return;
+    if (!areSameItem(panelWindow.center, pendingItem)) return;
+    pendingCenterItemRef.current = null;
+    pagerTranslateX.value = 0;
+    finishSegmentTransition();
+  }, [finishSegmentTransition, pagerTranslateX, panelWindow]);
+
+  const selectFlatIndex = useCallback(
+    (nextFlatIdx: number, direction: 1 | -1, releaseVelocity: number = 0) => {
+      if (nextFlatIdx < 0 || nextFlatIdx >= flatItems.length || pagerWidth <= 0) return;
+      if (nextFlatIdx === selectedFlatIdx || isSegmentTransitioningRef.current) return;
+      const nextItem = flatItems[nextFlatIdx];
+      if (!nextItem) return;
       isSegmentTransitioningRef.current = true;
-      transitionDirectionRef.current = direction;
-      contentTranslateX.value = withTiming(
-        -direction * SEGMENT_SWIPE_DISTANCE,
-        { duration: 90 },
+      if (direction > 0) {
+        setPanelWindow((currentWindow) => ({
+          left: currentWindow.left,
+          center: currentWindow.center,
+          right: nextItem,
+        }));
+      } else {
+        setPanelWindow((currentWindow) => ({
+          left: nextItem,
+          center: currentWindow.center,
+          right: currentWindow.right,
+        }));
+      }
+      pagerTranslateX.value = withSpring(
+        direction < 0 ? pagerWidth : -pagerWidth,
+        {
+          damping: 24,
+          stiffness: 260,
+          mass: 0.75,
+          velocity: releaseVelocity,
+          overshootClamping: true,
+        },
         (finished) => {
           if (finished) {
-            runOnJS(commitSelectedWordIdx)(nextIdx);
+            runOnJS(commitAnimatedFlatItem)(nextItem);
           } else {
             runOnJS(finishSegmentTransition)();
           }
         },
       );
-      contentOpacity.value = withTiming(0.7, { duration: 120 });
     },
-    [results.length, selectedWordIdx, commitSelectedWordIdx, finishSegmentTransition],
+    [
+      flatItems,
+      selectedFlatIdx,
+      pagerWidth,
+      commitAnimatedFlatItem,
+      finishSegmentTransition,
+      pagerTranslateX,
+    ],
   );
 
   const swipeGesture = Gesture.Pan()
-    .enabled(results.length > 1)
-    .activeOffsetX([-4, 4])
+    .enabled(flatItems.length > 1 && pagerWidth > 0)
+    .activeOffsetX([-2, 2])
     .failOffsetY([-20, 20])
+    .onUpdate((event) => {
+      if (isSegmentTransitioningRef.current) return;
+      let nextTranslate = event.translationX;
+      if (selectedFlatIdx === 0 && nextTranslate > 0) nextTranslate *= 0.35;
+      if (selectedFlatIdx === flatItems.length - 1 && nextTranslate < 0) nextTranslate *= 0.35;
+      pagerTranslateX.value = nextTranslate;
+    })
     .onEnd((event) => {
+      if (isSegmentTransitioningRef.current) return;
       const absX = Math.abs(event.translationX);
       const absVelocityX = Math.abs(event.velocityX);
-      if (absX < SEGMENT_SWIPE_THRESHOLD && absVelocityX < SEGMENT_SWIPE_VELOCITY) return;
-      if (Math.abs(event.translationX) < Math.abs(event.translationY)) return;
-      if (event.translationX < 0) {
-        runOnJS(selectWordIndex)(selectedWordIdx + 1, 1);
+      const distanceThreshold = pagerWidth * SEGMENT_SWIPE_SNAP_RATIO;
+      const wantsNext =
+        event.translationX < -Math.max(SEGMENT_SWIPE_THRESHOLD, distanceThreshold) ||
+        event.velocityX < -SEGMENT_SWIPE_VELOCITY;
+      const wantsPrev =
+        event.translationX > Math.max(SEGMENT_SWIPE_THRESHOLD, distanceThreshold) ||
+        event.velocityX > SEGMENT_SWIPE_VELOCITY;
+      if (Math.abs(event.translationX) < Math.abs(event.translationY)) {
+        pagerTranslateX.value = withSpring(0, { damping: 20, stiffness: 260, mass: 0.8 });
+        return;
+      }
+      if (wantsNext && selectedFlatIdx < flatItems.length - 1) {
+        runOnJS(selectFlatIndex)(selectedFlatIdx + 1, 1, event.velocityX);
+      } else if (wantsPrev && selectedFlatIdx > 0) {
+        runOnJS(selectFlatIndex)(selectedFlatIdx - 1, -1, event.velocityX);
       } else {
-        runOnJS(selectWordIndex)(selectedWordIdx - 1, -1);
+        if (absX > 0 || absVelocityX > 0) {
+          pagerTranslateX.value = withSpring(0, { damping: 20, stiffness: 260, mass: 0.8 });
+        }
       }
     });
 
   if (!mounted) return null;
+
+  function renderLookupPanel(
+    item: FlatLookupItem | null,
+    options?: {
+      allowNavigate?: boolean;
+      isActive?: boolean;
+    },
+  ) {
+    if (!item) return <View />;
+
+    const result = results[item.wordIdx];
+    if (!result) return <View />;
+
+    const variantIndex = item.variantIdx;
+    const entryIndexForPanel = item.entryIdx;
+    const panelVariants = result.alternateResults ?? [];
+    const panelWordResult =
+      panelVariants.length > 0
+        ? panelVariants[Math.min(variantIndex, panelVariants.length - 1)]
+        : result;
+    const panelEntry =
+      panelWordResult.entries.length > 0
+        ? panelWordResult.entries[Math.min(entryIndexForPanel, panelWordResult.entries.length - 1)]
+        : null;
+    const panelIsNameResult =
+      panelWordResult.nameMatches && panelWordResult.nameMatches.length > 0 && !panelEntry;
+    const panelTotal = panelWordResult.entries.length;
+    const panelLookupVariants =
+      panelVariants.length > 0 ? panelVariants : panelWordResult ? [panelWordResult] : [];
+    const lookupSwitch = options?.isActive ? (
+      <View style={{ marginRight: !panelIsNameResult && panelTotal > 1 ? 30 : 0 }}>
+        <LookupKindSwitch
+          variants={panelLookupVariants}
+          selectedIdx={Math.min(variantIndex, panelLookupVariants.length - 1)}
+          onSelect={(idx) => {
+            setSelection((prev) => ({ ...prev, variantIdx: idx, entryIdx: 0 }));
+          }}
+        />
+      </View>
+    ) : null;
+
+    return (
+      <>
+        {panelWordResult.deinflectReasons.length > 0 && (
+          <View className="mb-2">
+            <View className="bg-muted px-2 py-1 rounded self-start">
+              <Text className="text-xs text-muted-foreground">
+                {formatDeinflectReasons(panelWordResult.deinflectReasons)}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {panelIsNameResult ? (
+          <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
+            <View className="mb-3 flex-row items-start gap-3">
+              <View className="flex-1">
+                {panelWordResult.nameMatches!.slice(0, 1).map((name: NameEntry) => {
+                  const typeLabel = name.nameType
+                    ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
+                    : null;
+                  return (
+                    <View key={name.id} className="flex-row items-center flex-wrap gap-2">
+                      {name.kanji && (
+                        <Text className="text-2xl font-bold text-foreground">{name.kanji}</Text>
+                      )}
+                      <Text
+                        className={
+                          name.kanji
+                            ? "text-base text-muted-foreground"
+                            : "text-2xl font-bold text-foreground"
+                        }
+                      >
+                        {name.kana}
+                      </Text>
+                      {typeLabel && (
+                        <View className="rounded-md bg-secondary px-2 py-0.5">
+                          <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              {lookupSwitch}
+            </View>
+            {panelWordResult.nameMatches!.map((name: NameEntry) => {
+              const typeLabel = name.nameType
+                ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
+                : null;
+              return (
+                <View key={name.id} className="flex-row items-center flex-wrap gap-2 mb-2">
+                  {name.kanji && (
+                    <Text className="text-lg font-bold text-foreground">{name.kanji}</Text>
+                  )}
+                  <Text
+                    className={
+                      name.kanji
+                        ? "text-sm text-muted-foreground"
+                        : "text-lg font-bold text-foreground"
+                    }
+                  >
+                    {name.kana}
+                  </Text>
+                  {typeLabel && (
+                    <View className="rounded-md bg-secondary px-2 py-0.5">
+                      <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
+                    </View>
+                  )}
+                  {name.translation && (
+                    <Text className="text-sm text-muted-foreground">{name.translation}</Text>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <Pressable
+            disabled={!options?.allowNavigate}
+            onPress={() => {
+              if (panelEntry && options?.allowNavigate) {
+                router.push(`/reader/word/${panelEntry.id}`);
+              }
+            }}
+          >
+            <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
+              {panelEntry && (
+                <EntrySummary entry={panelEntry} rightAccessory={lookupSwitch ?? undefined} />
+              )}
+            </ScrollView>
+          </Pressable>
+        )}
+      </>
+    );
+  }
 
   function renderContent() {
     // Loading state
@@ -287,17 +566,25 @@ export function DictionaryPopup({
                   <Pressable
                     key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
                     onPress={() => {
-                      selectWordIndex(i, i > selectedWordIdx ? 1 : -1);
+                      setHighlightedWordIdx(i);
+                      const targetFlatIdx = flatItems.findIndex(
+                        (item) => item.wordIdx === i && item.entryIdx === 0,
+                      );
+                      if (targetFlatIdx >= 0) {
+                        selectFlatIndex(targetFlatIdx, i > selectedWordIdx ? 1 : -1);
+                      } else {
+                        setSelection({ wordIdx: i, variantIdx: 0, entryIdx: 0 });
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-full border ${
-                      i === Math.min(selectedWordIdx, results.length - 1)
+                      i === Math.min(highlightedWordIdx, results.length - 1)
                         ? "bg-primary/20 border-primary/40"
                         : "border-border"
                     }`}
                   >
                     <Text
                       className={`text-sm ${
-                        i === Math.min(selectedWordIdx, results.length - 1)
+                        i === Math.min(highlightedWordIdx, results.length - 1)
                           ? "text-foreground font-medium"
                           : "text-muted-foreground"
                       }`}
@@ -316,33 +603,6 @@ export function DictionaryPopup({
 
           {/* Right side: fixed controls */}
           <View className="flex-row items-center gap-2">
-            {!isNameResult && total > 1 && (
-              <View className="flex-row items-center gap-1">
-                <Pressable
-                  onPress={() => setEntryIdx(Math.max(0, safeEntryIdx - 1))}
-                  disabled={safeEntryIdx === 0}
-                  className="p-1"
-                >
-                  <ChevronLeft
-                    size={18}
-                    className={safeEntryIdx === 0 ? "text-muted" : "text-foreground"}
-                  />
-                </Pressable>
-                <Text className="text-sm text-muted-foreground">
-                  {safeEntryIdx + 1}/{total}
-                </Text>
-                <Pressable
-                  onPress={() => setEntryIdx(Math.min(total - 1, safeEntryIdx + 1))}
-                  disabled={safeEntryIdx === total - 1}
-                  className="p-1"
-                >
-                  <ChevronRight
-                    size={18}
-                    className={safeEntryIdx === total - 1 ? "text-muted" : "text-foreground"}
-                  />
-                </Pressable>
-              </View>
-            )}
             {!isNameResult && (
               <Pressable
                 ref={bookmarkRef}
@@ -375,113 +635,84 @@ export function DictionaryPopup({
         </View>
 
         <GestureDetector gesture={swipeGesture}>
-          <Animated.View style={contentAnimatedStyle}>
-            {/* Deinflect reasons (shown below pills for multi-word) */}
-            {wordResult!.deinflectReasons.length > 0 && (
-              <View className="mb-2">
-                <View className="bg-muted px-2 py-1 rounded self-start">
-                  <Text className="text-xs text-muted-foreground">
-                    {formatDeinflectReasons(wordResult!.deinflectReasons)}
-                  </Text>
+          <View
+            onLayout={(event) => {
+              const nextWidth = Math.round(event.nativeEvent.layout.width);
+              if (nextWidth > 0 && nextWidth !== pagerWidth) {
+                setPagerWidth(nextWidth);
+                pagerTranslateX.value = 0;
+              }
+            }}
+            style={{ overflow: "hidden", position: "relative" }}
+          >
+            {!isNameResult && total > 1 && (
+              <View
+                pointerEvents="box-none"
+                style={{
+                  position: "absolute",
+                  top: wordResult?.deinflectReasons.length ? 28 : 0,
+                  right: 0,
+                  zIndex: 2,
+                }}
+              >
+                <View className="flex-row items-center gap-1">
+                  <Pressable
+                    onPress={() =>
+                      setSelection((prev) => ({
+                        ...prev,
+                        entryIdx: Math.max(0, safeEntryIdx - 1),
+                      }))
+                    }
+                    disabled={safeEntryIdx === 0}
+                    className="p-1"
+                  >
+                    <ChevronLeft
+                      size={18}
+                      className={safeEntryIdx === 0 ? "text-muted" : "text-foreground"}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={() =>
+                      setSelection((prev) => ({
+                        ...prev,
+                        entryIdx: Math.min(total - 1, safeEntryIdx + 1),
+                      }))
+                    }
+                    disabled={safeEntryIdx === total - 1}
+                    className="p-1"
+                  >
+                    <ChevronRight
+                      size={18}
+                      className={safeEntryIdx === total - 1 ? "text-muted" : "text-foreground"}
+                    />
+                  </Pressable>
                 </View>
               </View>
             )}
-
-            {/* Content display */}
-            {isNameResult ? (
-              <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
-                <View className="mb-3 flex-row items-start justify-between gap-3">
-                  <View className="flex-1">
-                    {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
-                      const typeLabel = name.nameType
-                        ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
-                        : null;
-                      return (
-                        <View key={name.id} className="flex-row items-center flex-wrap gap-2">
-                          {name.kanji && (
-                            <Text className="text-2xl font-bold text-foreground">{name.kanji}</Text>
-                          )}
-                          <Text
-                            className={
-                              name.kanji
-                                ? "text-base text-muted-foreground"
-                                : "text-2xl font-bold text-foreground"
-                            }
-                          >
-                            {name.kana}
-                          </Text>
-                          {typeLabel && (
-                            <View className="rounded-md bg-secondary px-2 py-0.5">
-                              <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
-                            </View>
-                          )}
-                        </View>
-                      );
+            <Animated.View
+              style={[
+                contentAnimatedStyle,
+                {
+                  flexDirection: "row",
+                  width: pagerWidth > 0 ? pagerWidth * 3 : "100%",
+                },
+              ]}
+            >
+              {[panelWindow.left, panelWindow.center, panelWindow.right].map(
+                (panelItem, panelIdx) => (
+                  <View
+                    key={`panel-${panelIdx}-${panelItem ? `${panelItem.wordIdx}-${panelItem.variantIdx}-${panelItem.entryIdx}` : "empty"}`}
+                    style={{ width: pagerWidth || undefined, flex: pagerWidth > 0 ? 0 : 1 }}
+                  >
+                    {renderLookupPanel(panelItem, {
+                      allowNavigate: panelIdx === 1 && !isNameResult,
+                      isActive: panelIdx === 1,
                     })}
                   </View>
-                  <LookupKindSwitch
-                    variants={lookupKindVariants}
-                    selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
-                    onSelect={(idx) => {
-                      setSelectedVariantIdx(idx);
-                      setEntryIdx(0);
-                    }}
-                  />
-                </View>
-                {wordResult!.nameMatches!.map((name: NameEntry) => {
-                  const typeLabel = name.nameType
-                    ? (NAME_TYPE_LABELS[name.nameType] ?? name.nameType)
-                    : null;
-                  return (
-                    <View key={name.id} className="flex-row items-center flex-wrap gap-2 mb-2">
-                      {name.kanji && (
-                        <Text className="text-lg font-bold text-foreground">{name.kanji}</Text>
-                      )}
-                      <Text
-                        className={
-                          name.kanji
-                            ? "text-sm text-muted-foreground"
-                            : "text-lg font-bold text-foreground"
-                        }
-                      >
-                        {name.kana}
-                      </Text>
-                      {typeLabel && (
-                        <View className="rounded-md bg-secondary px-2 py-0.5">
-                          <Text className="text-xs text-secondary-foreground">{typeLabel}</Text>
-                        </View>
-                      )}
-                      {name.translation && (
-                        <Text className="text-sm text-muted-foreground">{name.translation}</Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <Pressable
-                onPress={() => {
-                  router.push(`/reader/word/${currentEntry!.id}`);
-                }}
-              >
-                <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
-                  <EntrySummary
-                    entry={currentEntry!}
-                    rightAccessory={
-                      <LookupKindSwitch
-                        variants={lookupKindVariants}
-                        selectedIdx={Math.min(selectedVariantIdx, lookupKindVariants.length - 1)}
-                        onSelect={(idx) => {
-                          setSelectedVariantIdx(idx);
-                          setEntryIdx(0);
-                        }}
-                      />
-                    }
-                  />
-                </ScrollView>
-              </Pressable>
-            )}
-          </Animated.View>
+                ),
+              )}
+            </Animated.View>
+          </View>
         </GestureDetector>
       </>
     );
