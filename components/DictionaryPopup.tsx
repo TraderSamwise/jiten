@@ -123,10 +123,12 @@ function LookupKindSwitch({
   variants,
   selectedIdx,
   onSelect,
+  disabled,
 }: {
   variants: LookupResult[];
   selectedIdx: number;
   onSelect: (idx: number) => void;
+  disabled?: boolean;
 }) {
   if (variants.length === 0) return null;
 
@@ -146,6 +148,7 @@ function LookupKindSwitch({
         <Pressable
           key={`${variant.lookupKind ?? "lookup"}-${i}`}
           onPress={() => onSelect(i)}
+          disabled={disabled}
           className={`rounded-full px-3 py-1 ${i === selectedIdx ? "bg-background" : ""}`}
         >
           <Text
@@ -180,13 +183,17 @@ export function DictionaryPopup({
     { top: number; right: number } | undefined
   >();
   const bookmarkRef = useRef<View>(null);
+  const tabScrollRef = useRef<ScrollView>(null);
   const [mounted, setMounted] = useState(false);
   const isSegmentTransitioningRef = useRef(false);
   const pendingCenterItemRef = useRef<FlatLookupItem | null>(null);
   const [pagerWidth, setPagerWidth] = useState(0);
+  const [tabRowWidth, setTabRowWidth] = useState(0);
+  const tabLayoutsRef = useRef<Record<number, { x: number; width: number }>>({});
 
   const translateY = useSharedValue(400);
   const pagerTranslateX = useSharedValue(0);
+  const pagerHeight = useSharedValue(0);
 
   useEffect(() => {
     setSelection({ wordIdx: 0, variantIdx: 0, entryIdx: 0 });
@@ -210,6 +217,13 @@ export function DictionaryPopup({
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pagerTranslateX.value - pagerWidth }],
   }));
+  const pagerContainerAnimatedStyle = useAnimatedStyle(() =>
+    pagerHeight.value > 0
+      ? {
+          height: pagerHeight.value,
+        }
+      : {},
+  );
 
   const selectedWordIdx = selection.wordIdx;
   const selectedVariantIdx = selection.variantIdx;
@@ -265,6 +279,7 @@ export function DictionaryPopup({
     center: null,
     right: null,
   });
+  const [activePanelHeight, setActivePanelHeight] = useState(0);
 
   useEffect(() => {
     if (isSegmentTransitioningRef.current) return;
@@ -277,6 +292,26 @@ export function DictionaryPopup({
         : nextWindow,
     );
   }, [flatItems, selectedFlatIdx]);
+
+  useEffect(() => {
+    if (activePanelHeight <= 0) return;
+    pagerHeight.value = withTiming(activePanelHeight, { duration: 160 });
+  }, [activePanelHeight, pagerHeight]);
+
+  const ensureActiveTabVisible = useCallback(
+    (wordIdx: number) => {
+      const layout = tabLayoutsRef.current[wordIdx];
+      if (!layout || tabRowWidth <= 0) return;
+      const targetX = Math.max(0, layout.x - Math.max(16, (tabRowWidth - layout.width) / 2));
+      tabScrollRef.current?.scrollTo({ x: targetX, animated: true });
+    },
+    [tabRowWidth],
+  );
+
+  useEffect(() => {
+    if (results.length <= 1) return;
+    ensureActiveTabVisible(highlightedWordIdx);
+  }, [ensureActiveTabVisible, highlightedWordIdx, results.length]);
 
   const finishSegmentTransition = useCallback(() => {
     isSegmentTransitioningRef.current = false;
@@ -355,6 +390,22 @@ export function DictionaryPopup({
     ],
   );
 
+  const jumpToWordIndex = useCallback(
+    (nextWordIdx: number) => {
+      if (nextWordIdx < 0 || nextWordIdx >= results.length) return;
+      const nextItem: FlatLookupItem = { wordIdx: nextWordIdx, variantIdx: 0, entryIdx: 0 };
+      const nextFlatItems = getFlatItemsForSelection(results, nextWordIdx, 0);
+      const nextFlatIdx = getSelectedFlatIdx(nextFlatItems, nextItem);
+      isSegmentTransitioningRef.current = false;
+      pendingCenterItemRef.current = null;
+      pagerTranslateX.value = 0;
+      setHighlightedWordIdx(nextWordIdx);
+      setSelection(nextItem);
+      setPanelWindow(buildPanelWindow(nextFlatItems, nextFlatIdx));
+    },
+    [pagerTranslateX, results],
+  );
+
   const swipeGesture = Gesture.Pan()
     .enabled(flatItems.length > 1 && pagerWidth > 0)
     .activeOffsetX([-2, 2])
@@ -422,20 +473,33 @@ export function DictionaryPopup({
     const panelTotal = panelWordResult.entries.length;
     const panelLookupVariants =
       panelVariants.length > 0 ? panelVariants : panelWordResult ? [panelWordResult] : [];
-    const lookupSwitch = options?.isActive ? (
-      <View style={{ marginRight: !panelIsNameResult && panelTotal > 1 ? 30 : 0 }}>
+    const lookupSwitch = (
+      <View style={{ marginRight: !panelIsNameResult && panelTotal > 1 ? 84 : 0 }}>
         <LookupKindSwitch
           variants={panelLookupVariants}
           selectedIdx={Math.min(variantIndex, panelLookupVariants.length - 1)}
+          disabled={!options?.isActive}
           onSelect={(idx) => {
             setSelection((prev) => ({ ...prev, variantIdx: idx, entryIdx: 0 }));
           }}
         />
       </View>
-    ) : null;
+    );
 
     return (
-      <>
+      <View
+        onLayout={
+          options?.isActive
+            ? (event) => {
+                const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+                if (nextHeight > 0)
+                  setActivePanelHeight((current) =>
+                    current === nextHeight ? current : nextHeight,
+                  );
+              }
+            : undefined
+        }
+      >
         {panelWordResult.deinflectReasons.length > 0 && (
           <View className="mb-2">
             <View className="bg-muted px-2 py-1 rounded self-start">
@@ -525,7 +589,7 @@ export function DictionaryPopup({
             </ScrollView>
           </Pressable>
         )}
-      </>
+      </View>
     );
   }
 
@@ -557,24 +621,27 @@ export function DictionaryPopup({
           <View className="flex-1" style={{ minWidth: 0 }}>
             {results.length > 1 ? (
               <ScrollView
+                ref={tabScrollRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ gap: 6 }}
                 style={{ flexGrow: 0 }}
+                onLayout={(event) => {
+                  const nextWidth = Math.round(event.nativeEvent.layout.width);
+                  if (nextWidth > 0 && nextWidth !== tabRowWidth) {
+                    setTabRowWidth(nextWidth);
+                  }
+                }}
               >
                 {results.map((r, i) => (
                   <Pressable
                     key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
+                    onLayout={(event) => {
+                      const { x, width } = event.nativeEvent.layout;
+                      tabLayoutsRef.current[i] = { x, width };
+                    }}
                     onPress={() => {
-                      setHighlightedWordIdx(i);
-                      const targetFlatIdx = flatItems.findIndex(
-                        (item) => item.wordIdx === i && item.entryIdx === 0,
-                      );
-                      if (targetFlatIdx >= 0) {
-                        selectFlatIndex(targetFlatIdx, i > selectedWordIdx ? 1 : -1);
-                      } else {
-                        setSelection({ wordIdx: i, variantIdx: 0, entryIdx: 0 });
-                      }
+                      jumpToWordIndex(i);
                     }}
                     className={`px-3 py-1.5 rounded-full border ${
                       i === Math.min(highlightedWordIdx, results.length - 1)
@@ -635,7 +702,7 @@ export function DictionaryPopup({
         </View>
 
         <GestureDetector gesture={swipeGesture}>
-          <View
+          <Animated.View
             onLayout={(event) => {
               const nextWidth = Math.round(event.nativeEvent.layout.width);
               if (nextWidth > 0 && nextWidth !== pagerWidth) {
@@ -643,7 +710,7 @@ export function DictionaryPopup({
                 pagerTranslateX.value = 0;
               }
             }}
-            style={{ overflow: "hidden", position: "relative" }}
+            style={[pagerContainerAnimatedStyle, { overflow: "hidden", position: "relative" }]}
           >
             {!isNameResult && total > 1 && (
               <View
@@ -671,6 +738,9 @@ export function DictionaryPopup({
                       className={safeEntryIdx === 0 ? "text-muted" : "text-foreground"}
                     />
                   </Pressable>
+                  <Text className="text-xs text-muted-foreground min-w-8 text-center">
+                    {safeEntryIdx + 1}/{total}
+                  </Text>
                   <Pressable
                     onPress={() =>
                       setSelection((prev) => ({
@@ -701,7 +771,7 @@ export function DictionaryPopup({
               {[panelWindow.left, panelWindow.center, panelWindow.right].map(
                 (panelItem, panelIdx) => (
                   <View
-                    key={`panel-${panelIdx}-${panelItem ? `${panelItem.wordIdx}-${panelItem.variantIdx}-${panelItem.entryIdx}` : "empty"}`}
+                    key={`panel-${panelIdx}`}
                     style={{ width: pagerWidth || undefined, flex: pagerWidth > 0 ? 0 : 1 }}
                   >
                     {renderLookupPanel(panelItem, {
@@ -712,7 +782,7 @@ export function DictionaryPopup({
                 ),
               )}
             </Animated.View>
-          </View>
+          </Animated.View>
         </GestureDetector>
       </>
     );
