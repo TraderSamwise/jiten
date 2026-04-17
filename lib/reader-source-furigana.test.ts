@@ -50,6 +50,9 @@ const noMatchers: Record<ReaderFuriganaMatchMode, boolean> = {
   matchAllKanji: false,
   matchWordLevel: false,
   matchIrregularReading: false,
+  matchMostlyKunyomi: false,
+  matchMostlyOnyomi: false,
+  matchMixedOnKun: false,
 };
 const anyKanjiOnly: Record<ReaderFuriganaMatchMode, boolean> = {
   ...noMatchers,

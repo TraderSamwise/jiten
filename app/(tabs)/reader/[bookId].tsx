@@ -1207,6 +1207,41 @@ export default function BookReaderScreen() {
                   </View>
                 </View>
 
+                <View>
+                  <Text className="text-xs text-muted-foreground text-center mb-2">
+                    Reading Pattern
+                  </Text>
+                  <View className="flex-row flex-wrap justify-center gap-1.5">
+                    {(
+                      [
+                        ["matchMostlyKunyomi", "Mostly kunyomi"],
+                        ["matchMostlyOnyomi", "Mostly onyomi"],
+                        ["matchMixedOnKun", "Mixed on/kun"],
+                      ] as [ReaderFuriganaMatchMode, string][]
+                    ).map(([key, label]) => (
+                      <Pressable
+                        key={key}
+                        onPress={() =>
+                          setFuriganaMatchModes((prev) => ({ ...prev, [key]: !prev[key] }))
+                        }
+                        className={`px-3 py-1.5 rounded-full border ${
+                          furiganaMatchModes[key]
+                            ? "bg-foreground border-foreground"
+                            : "bg-transparent border-border"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs font-medium ${
+                            furiganaMatchModes[key] ? "text-background" : "text-muted-foreground"
+                          }`}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
                 {/* Page animations toggle */}
                 <View className="flex-row items-center justify-center gap-2">
                   <Pressable

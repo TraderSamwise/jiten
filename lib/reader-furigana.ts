@@ -1,6 +1,7 @@
 import type * as SQLite from "expo-sqlite";
-import { getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
+import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
 import { deinflect } from "./deinflect";
+import { classifyReaderReadingPattern, type ReaderReadingPattern } from "./reader-reading-pattern";
 import {
   defaultFuriganaLevels,
   defaultReaderFuriganaMatchModes,
@@ -332,6 +333,7 @@ export async function resolveFuriganaBatch(
 
   // Resolve each surface
   const result: Record<string, FuriganaEntry> = {};
+  const resolved = new Map<string, FuriganaEntry>();
 
   for (const surface of surfaces) {
     const deinflected = surfaceToDeinflected.get(surface)!;
@@ -343,14 +345,42 @@ export async function resolveFuriganaBatch(
           match.kanaForm,
         );
         if (reading) {
-          const entry: FuriganaEntry = { kanjiPart, reading, kanjiPartLen };
+          const entry: FuriganaEntry = {
+            kanjiPart,
+            reading,
+            kanjiPartLen,
+            fullKanjiForm: match.kanjiForm,
+            fullKanaForm: match.kanaForm,
+          };
           if (match.jlptLevel != null) entry.wordJlpt = match.jlptLevel;
           if (match.irregularReading) entry.irregularReading = true;
-          result[surface] = entry;
+          resolved.set(surface, entry);
           break;
         }
       }
     }
+  }
+
+  const literals = new Set<string>();
+  for (const entry of resolved.values()) {
+    for (const ch of entry.fullKanjiForm ?? "") {
+      if (isKanji(ch)) literals.add(ch);
+    }
+  }
+  const kanjiByLiteral = new Map(
+    (await getKanjiBatchAsync(dictDb, [...literals])).map((kanji) => [kanji.literal, kanji]),
+  );
+
+  for (const [surface, entry] of resolved) {
+    if (entry.fullKanjiForm && entry.fullKanaForm) {
+      entry.readingPattern = classifyReaderReadingPattern({
+        kanjiForm: entry.fullKanjiForm,
+        kanaForm: entry.fullKanaForm,
+        irregularReading: entry.irregularReading,
+        kanjiByLiteral,
+      });
+    }
+    result[surface] = entry;
   }
 
   return result;
@@ -493,6 +523,9 @@ export interface FuriganaEntry {
   kanjiPartLen: number;
   wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
   irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
+  fullKanjiForm?: string;
+  fullKanaForm?: string;
+  readingPattern?: ReaderReadingPattern;
 }
 
 function matchesSelectedWordLevel(entry: FuriganaEntry, kanjiSet: FuriganaKanjiSet): boolean {
@@ -513,12 +546,18 @@ function shouldShowFuriganaForSurface(
     surfaceKanji.length > 0 && surfaceKanji.every((c) => kanjiSet.chars.has(c));
   const wordLevelMatches = matchesSelectedWordLevel(entry, kanjiSet);
   const irregularMatches = !!entry.irregularReading && wordLevelMatches;
+  const mostlyKunMatches = wordLevelMatches && entry.readingPattern === "mostly_kunyomi";
+  const mostlyOnMatches = wordLevelMatches && entry.readingPattern === "mostly_onyomi";
+  const mixedMatches = wordLevelMatches && entry.readingPattern === "mixed_on_kun";
 
   return (
     (settings.matchModes.matchAnyKanji && hasSelectedKanji) ||
     (settings.matchModes.matchAllKanji && allKanjiSelected) ||
     (settings.matchModes.matchWordLevel && wordLevelMatches) ||
-    (settings.matchModes.matchIrregularReading && irregularMatches)
+    (settings.matchModes.matchIrregularReading && irregularMatches) ||
+    (settings.matchModes.matchMostlyKunyomi && mostlyKunMatches) ||
+    (settings.matchModes.matchMostlyOnyomi && mostlyOnMatches) ||
+    (settings.matchModes.matchMixedOnKun && mixedMatches)
   );
 }
 

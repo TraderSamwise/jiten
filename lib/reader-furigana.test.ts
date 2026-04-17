@@ -312,6 +312,87 @@ describe("reader furigana match modes", () => {
     expect(result).not.toContain("<ruby>");
   });
 
+  it("matchMostlyKunyomi shows kunyomi words when the word level matches", () => {
+    const n4Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["昨"]),
+      enabledLevels: new Set([4]),
+    };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "食べる",
+        {
+          kanjiPart: "食",
+          reading: "た",
+          kanjiPartLen: 1,
+          wordJlpt: 4,
+          readingPattern: "mostly_kunyomi",
+        },
+      ],
+    ]);
+    const result = applyFuriganaToHtml(
+      "<p>食べる</p>",
+      map,
+      n4Only,
+      withMatchModes({ matchMostlyKunyomi: true }),
+    );
+    expect(result).toContain("<ruby>食<rt>た</rt></ruby>べる");
+  });
+
+  it("matchMostlyOnyomi shows onyomi compounds when the word level matches", () => {
+    const n4Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["昨"]),
+      enabledLevels: new Set([4]),
+    };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "学校",
+        {
+          kanjiPart: "学校",
+          reading: "がっこう",
+          kanjiPartLen: 2,
+          wordJlpt: 4,
+          readingPattern: "mostly_onyomi",
+        },
+      ],
+    ]);
+    const result = applyFuriganaToHtml(
+      "<p>学校</p>",
+      map,
+      n4Only,
+      withMatchModes({ matchMostlyOnyomi: true }),
+    );
+    expect(result).toContain("<ruby>学校<rt>がっこう</rt></ruby>");
+  });
+
+  it("matchMixedOnKun shows mixed compounds when the word level matches", () => {
+    const n4Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["昨"]),
+      enabledLevels: new Set([4]),
+    };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "重箱",
+        {
+          kanjiPart: "重箱",
+          reading: "じゅうばこ",
+          kanjiPartLen: 2,
+          wordJlpt: 4,
+          readingPattern: "mixed_on_kun",
+        },
+      ],
+    ]);
+    const result = applyFuriganaToHtml(
+      "<p>重箱</p>",
+      map,
+      n4Only,
+      withMatchModes({ matchMixedOnKun: true }),
+    );
+    expect(result).toContain("<ruby>重箱<rt>じゅうばこ</rt></ruby>");
+  });
+
   it("uses union semantics across enabled match modes", () => {
     const partialSet: FuriganaKanjiSet = {
       all: false,
