@@ -44,8 +44,6 @@ const SLIDE_DURATION = 250;
 const SEGMENT_SWIPE_DISTANCE = 28;
 const SEGMENT_SWIPE_THRESHOLD = 24;
 const SEGMENT_SWIPE_VELOCITY = 500;
-const PANEL_MIN_HEIGHT = 220;
-const PANEL_MAX_HEIGHT = 320;
 
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
@@ -112,7 +110,6 @@ export function DictionaryPopup({
 }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const windowHeight = Dimensions.get("window").height;
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [entryIdx, setEntryIdx] = useState(0);
@@ -157,10 +154,6 @@ export function DictionaryPopup({
     opacity: contentOpacity.value,
     transform: [{ translateX: contentTranslateX.value }],
   }));
-  const panelContentHeight = Math.min(
-    PANEL_MAX_HEIGHT,
-    Math.max(PANEL_MIN_HEIGHT, Math.round(windowHeight * 0.34)),
-  );
 
   const selectedTopLevelResult =
     results.length > 0 ? results[Math.min(selectedWordIdx, results.length - 1)] : null;
@@ -382,7 +375,7 @@ export function DictionaryPopup({
         </View>
 
         <GestureDetector gesture={swipeGesture}>
-          <Animated.View className="flex-1 min-h-0" style={contentAnimatedStyle}>
+          <Animated.View style={contentAnimatedStyle}>
             {/* Deinflect reasons (shown below pills for multi-word) */}
             {wordResult!.deinflectReasons.length > 0 && (
               <View className="mb-2">
@@ -396,7 +389,7 @@ export function DictionaryPopup({
 
             {/* Content display */}
             {isNameResult ? (
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 4 }}>
+              <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
                 <View className="mb-3 flex-row items-start justify-between gap-3">
                   <View className="flex-1">
                     {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
@@ -471,7 +464,7 @@ export function DictionaryPopup({
                   router.push(`/reader/word/${currentEntry!.id}`);
                 }}
               >
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 4 }}>
+                <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
                   <EntrySummary
                     entry={currentEntry!}
                     rightAccessory={
@@ -521,10 +514,7 @@ export function DictionaryPopup({
         >
           <View
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
-            style={{
-              height: panelContentHeight + Math.max(insets.bottom, 16),
-              paddingBottom: Math.max(insets.bottom, 16),
-            }}
+            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
           >
             {renderContent()}
           </View>
