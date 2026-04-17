@@ -11,7 +11,10 @@ export type ReaderFuriganaMatchMode =
   | "matchAnyKanji"
   | "matchAllKanji"
   | "matchWordLevel"
-  | "matchIrregularReading";
+  | "matchIrregularReading"
+  | "matchMostlyKunyomi"
+  | "matchMostlyOnyomi"
+  | "matchMixedOnKun";
 export type ConnectGameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
@@ -36,6 +39,9 @@ export const defaultReaderFuriganaMatchModes: Record<ReaderFuriganaMatchMode, bo
   matchAllKanji: false,
   matchWordLevel: false,
   matchIrregularReading: true,
+  matchMostlyKunyomi: false,
+  matchMostlyOnyomi: false,
+  matchMixedOnKun: false,
 };
 
 export const defaultSettings = Object.freeze({
