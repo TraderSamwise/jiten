@@ -42,7 +42,10 @@ interface DictionaryPopupProps {
 
 const SLIDE_DURATION = 250;
 const SEGMENT_SWIPE_DISTANCE = 28;
-const SEGMENT_SWIPE_THRESHOLD = 50;
+const SEGMENT_SWIPE_THRESHOLD = 24;
+const SEGMENT_SWIPE_VELOCITY = 500;
+const PANEL_MIN_HEIGHT = 220;
+const PANEL_MAX_HEIGHT = 320;
 
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
@@ -109,6 +112,7 @@ export function DictionaryPopup({
 }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const windowHeight = Dimensions.get("window").height;
   const [selectedWordIdx, setSelectedWordIdx] = useState(0);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [entryIdx, setEntryIdx] = useState(0);
@@ -153,6 +157,10 @@ export function DictionaryPopup({
     opacity: contentOpacity.value,
     transform: [{ translateX: contentTranslateX.value }],
   }));
+  const panelContentHeight = Math.min(
+    PANEL_MAX_HEIGHT,
+    Math.max(PANEL_MIN_HEIGHT, Math.round(windowHeight * 0.34)),
+  );
 
   const selectedTopLevelResult =
     results.length > 0 ? results[Math.min(selectedWordIdx, results.length - 1)] : null;
@@ -188,19 +196,26 @@ export function DictionaryPopup({
   const lookupKindVariants =
     variantResults.length > 0 ? variantResults : wordResult ? [wordResult] : [];
 
-  const commitSelectedWordIdx = useCallback((nextIdx: number) => {
-    setSelectedWordIdx(nextIdx);
-    setSelectedVariantIdx(0);
-    setEntryIdx(0);
-    contentTranslateX.value = transitionDirectionRef.current * SEGMENT_SWIPE_DISTANCE;
-    contentOpacity.value = 0.7;
-    contentTranslateX.value = withTiming(0, { duration: 180 });
-    contentOpacity.value = withTiming(1, { duration: 180 }, (finished) => {
-      if (finished) {
-        isSegmentTransitioningRef.current = false;
-      }
-    });
+  const finishSegmentTransition = useCallback(() => {
+    isSegmentTransitioningRef.current = false;
   }, []);
+
+  const commitSelectedWordIdx = useCallback(
+    (nextIdx: number) => {
+      setSelectedWordIdx(nextIdx);
+      setSelectedVariantIdx(0);
+      setEntryIdx(0);
+      contentTranslateX.value = transitionDirectionRef.current * SEGMENT_SWIPE_DISTANCE;
+      contentOpacity.value = 0.7;
+      contentTranslateX.value = withTiming(0, { duration: 180 });
+      contentOpacity.value = withTiming(1, { duration: 180 }, (finished) => {
+        if (finished) {
+          runOnJS(finishSegmentTransition)();
+        }
+      });
+    },
+    [finishSegmentTransition],
+  );
 
   const selectWordIndex = useCallback(
     (nextIdx: number, direction: 1 | -1) => {
@@ -215,21 +230,23 @@ export function DictionaryPopup({
           if (finished) {
             runOnJS(commitSelectedWordIdx)(nextIdx);
           } else {
-            isSegmentTransitioningRef.current = false;
+            runOnJS(finishSegmentTransition)();
           }
         },
       );
       contentOpacity.value = withTiming(0.7, { duration: 120 });
     },
-    [results.length, selectedWordIdx, commitSelectedWordIdx],
+    [results.length, selectedWordIdx, commitSelectedWordIdx, finishSegmentTransition],
   );
 
   const swipeGesture = Gesture.Pan()
     .enabled(results.length > 1)
-    .activeOffsetX([-20, 20])
-    .failOffsetY([-12, 12])
+    .activeOffsetX([-8, 8])
+    .failOffsetY([-16, 16])
     .onEnd((event) => {
-      if (Math.abs(event.translationX) < SEGMENT_SWIPE_THRESHOLD) return;
+      const absX = Math.abs(event.translationX);
+      const absVelocityX = Math.abs(event.velocityX);
+      if (absX < SEGMENT_SWIPE_THRESHOLD && absVelocityX < SEGMENT_SWIPE_VELOCITY) return;
       if (Math.abs(event.translationX) < Math.abs(event.translationY)) return;
       if (event.translationX < 0) {
         runOnJS(selectWordIndex)(selectedWordIdx + 1, 1);
@@ -365,7 +382,7 @@ export function DictionaryPopup({
         </View>
 
         <GestureDetector gesture={swipeGesture}>
-          <Animated.View style={contentAnimatedStyle}>
+          <Animated.View className="flex-1 min-h-0" style={contentAnimatedStyle}>
             {/* Deinflect reasons (shown below pills for multi-word) */}
             {wordResult!.deinflectReasons.length > 0 && (
               <View className="mb-2">
@@ -379,7 +396,7 @@ export function DictionaryPopup({
 
             {/* Content display */}
             {isNameResult ? (
-              <ScrollView style={{ maxHeight: 200 }}>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 4 }}>
                 <View className="mb-3 flex-row items-start justify-between gap-3">
                   <View className="flex-1">
                     {wordResult!.nameMatches!.slice(0, 1).map((name: NameEntry) => {
@@ -454,7 +471,7 @@ export function DictionaryPopup({
                   router.push(`/reader/word/${currentEntry!.id}`);
                 }}
               >
-                <ScrollView style={{ maxHeight: 200 }}>
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 4 }}>
                   <EntrySummary
                     entry={currentEntry!}
                     rightAccessory={
@@ -504,7 +521,10 @@ export function DictionaryPopup({
         >
           <View
             className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
-            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+            style={{
+              height: panelContentHeight + Math.max(insets.bottom, 16),
+              paddingBottom: Math.max(insets.bottom, 16),
+            }}
           >
             {renderContent()}
           </View>
