@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScreen";
 import { Text } from "@/components/ui/text";
+import { Separator } from "@/components/ui/separator";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
 import {
@@ -1132,6 +1133,8 @@ export default function BookReaderScreen() {
                   </Pressable>
                 </View>
 
+                <Separator className="opacity-40" />
+
                 {/* Furigana level toggles */}
                 <View>
                   <Text className="text-xs text-muted-foreground text-center mb-2">Furigana</Text>
@@ -1241,6 +1244,8 @@ export default function BookReaderScreen() {
                     ))}
                   </View>
                 </View>
+
+                <Separator className="opacity-40" />
 
                 {/* Page animations toggle */}
                 <View className="flex-row items-center justify-center gap-2">
