@@ -41,9 +41,9 @@ interface DictionaryPopupProps {
 }
 
 const SLIDE_DURATION = 250;
-const SEGMENT_SWIPE_DISTANCE = 28;
-const SEGMENT_SWIPE_THRESHOLD = 24;
-const SEGMENT_SWIPE_VELOCITY = 500;
+const SEGMENT_SWIPE_DISTANCE = 20;
+const SEGMENT_SWIPE_THRESHOLD = 16;
+const SEGMENT_SWIPE_VELOCITY = 380;
 
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
@@ -200,8 +200,8 @@ export function DictionaryPopup({
       setEntryIdx(0);
       contentTranslateX.value = transitionDirectionRef.current * SEGMENT_SWIPE_DISTANCE;
       contentOpacity.value = 0.7;
-      contentTranslateX.value = withTiming(0, { duration: 180 });
-      contentOpacity.value = withTiming(1, { duration: 180 }, (finished) => {
+      contentTranslateX.value = withTiming(0, { duration: 140 });
+      contentOpacity.value = withTiming(1, { duration: 140 }, (finished) => {
         if (finished) {
           runOnJS(finishSegmentTransition)();
         }
@@ -218,7 +218,7 @@ export function DictionaryPopup({
       transitionDirectionRef.current = direction;
       contentTranslateX.value = withTiming(
         -direction * SEGMENT_SWIPE_DISTANCE,
-        { duration: 120 },
+        { duration: 90 },
         (finished) => {
           if (finished) {
             runOnJS(commitSelectedWordIdx)(nextIdx);
@@ -234,8 +234,8 @@ export function DictionaryPopup({
 
   const swipeGesture = Gesture.Pan()
     .enabled(results.length > 1)
-    .activeOffsetX([-8, 8])
-    .failOffsetY([-16, 16])
+    .activeOffsetX([-4, 4])
+    .failOffsetY([-20, 20])
     .onEnd((event) => {
       const absX = Math.abs(event.translationX);
       const absVelocityX = Math.abs(event.velocityX);
