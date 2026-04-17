@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { hasAozoraMarkup } from "./aozora-parser";
-import type { FuriganaLevel } from "@/stores/settings";
+import type { FuriganaLevel, ReaderFuriganaMatchMode } from "@/stores/settings";
 
 // ── Duplicated helpers (same logic as [bookId].tsx) ──
 
@@ -16,10 +16,13 @@ function bookHasSourceFurigana(rawContent: string): boolean {
 
 function hasFuriganaActive(
   levels: Record<FuriganaLevel, boolean>,
+  matchModes: Record<ReaderFuriganaMatchMode, boolean>,
   bookHasSource: boolean,
 ): boolean {
   if (bookHasSource && levels.default) return true;
-  return Object.entries(levels).some(([k, v]) => k !== "default" && v);
+  const hasSelectedLevels = Object.entries(levels).some(([k, v]) => k !== "default" && v);
+  const hasSelectedMatchers = Object.values(matchModes).some(Boolean);
+  return hasSelectedLevels && hasSelectedMatchers;
 }
 
 function stripRubyTags(html: string): string {
@@ -42,6 +45,16 @@ const allOff: Record<FuriganaLevel, boolean> = {
 const defaultOnly: Record<FuriganaLevel, boolean> = { ...allOff, default: true };
 const n3Only: Record<FuriganaLevel, boolean> = { ...allOff, n3: true };
 const defaultAndN3: Record<FuriganaLevel, boolean> = { ...allOff, default: true, n3: true };
+const noMatchers: Record<ReaderFuriganaMatchMode, boolean> = {
+  matchAnyKanji: false,
+  matchAllKanji: false,
+  matchWordLevel: false,
+  matchIrregularReading: false,
+};
+const anyKanjiOnly: Record<ReaderFuriganaMatchMode, boolean> = {
+  ...noMatchers,
+  matchAnyKanji: true,
+};
 
 // ── Tests ──
 
@@ -72,19 +85,19 @@ describe("hasFuriganaActive", () => {
     const hasSource = true;
 
     it("returns true when only default is on", () => {
-      expect(hasFuriganaActive(defaultOnly, hasSource)).toBe(true);
+      expect(hasFuriganaActive(defaultOnly, noMatchers, hasSource)).toBe(true);
     });
 
     it("returns true when default + JLPT level is on", () => {
-      expect(hasFuriganaActive(defaultAndN3, hasSource)).toBe(true);
+      expect(hasFuriganaActive(defaultAndN3, noMatchers, hasSource)).toBe(true);
     });
 
-    it("returns true when JLPT level is on but default is off", () => {
-      expect(hasFuriganaActive(n3Only, hasSource)).toBe(true);
+    it("returns true when JLPT level and a match mode are on but default is off", () => {
+      expect(hasFuriganaActive(n3Only, anyKanjiOnly, hasSource)).toBe(true);
     });
 
     it("returns false when everything is off", () => {
-      expect(hasFuriganaActive(allOff, hasSource)).toBe(false);
+      expect(hasFuriganaActive(allOff, noMatchers, hasSource)).toBe(false);
     });
   });
 
@@ -92,19 +105,23 @@ describe("hasFuriganaActive", () => {
     const hasSource = false;
 
     it("returns false when only default is on (irrelevant for plain text)", () => {
-      expect(hasFuriganaActive(defaultOnly, hasSource)).toBe(false);
+      expect(hasFuriganaActive(defaultOnly, noMatchers, hasSource)).toBe(false);
     });
 
-    it("returns true when a JLPT level is on", () => {
-      expect(hasFuriganaActive(n3Only, hasSource)).toBe(true);
+    it("returns false when a JLPT level is on without any match mode", () => {
+      expect(hasFuriganaActive(n3Only, noMatchers, hasSource)).toBe(false);
     });
 
-    it("returns true when default + JLPT level is on", () => {
-      expect(hasFuriganaActive(defaultAndN3, hasSource)).toBe(true);
+    it("returns true when a JLPT level and match mode are on", () => {
+      expect(hasFuriganaActive(n3Only, anyKanjiOnly, hasSource)).toBe(true);
+    });
+
+    it("returns true when default + JLPT level + match mode are on", () => {
+      expect(hasFuriganaActive(defaultAndN3, anyKanjiOnly, hasSource)).toBe(true);
     });
 
     it("returns false when everything is off", () => {
-      expect(hasFuriganaActive(allOff, hasSource)).toBe(false);
+      expect(hasFuriganaActive(allOff, noMatchers, hasSource)).toBe(false);
     });
   });
 });

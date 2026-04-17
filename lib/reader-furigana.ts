@@ -1,7 +1,12 @@
 import type * as SQLite from "expo-sqlite";
 import { getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
 import { deinflect } from "./deinflect";
-import type { FuriganaLevel } from "@/stores/settings";
+import {
+  defaultFuriganaLevels,
+  defaultReaderFuriganaMatchModes,
+  type FuriganaLevel,
+  type ReaderFuriganaMatchMode,
+} from "@/stores/settings";
 
 // ─── Build kanji set from enabled levels ───
 
@@ -19,6 +24,16 @@ export interface FuriganaKanjiSet {
   chars: Set<string>;
   enabledLevels?: Set<number>; // Which JLPT levels are turned on (5=easiest, 1=hardest)
 }
+
+export interface ReaderFuriganaSettings {
+  levels: Record<FuriganaLevel, boolean>;
+  matchModes: Record<ReaderFuriganaMatchMode, boolean>;
+}
+
+export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
+  levels: defaultFuriganaLevels,
+  matchModes: defaultReaderFuriganaMatchModes,
+};
 
 export async function buildFuriganaKanjiSet(
   dictDb: SQLite.SQLiteDatabase,
@@ -480,6 +495,33 @@ export interface FuriganaEntry {
   irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
 }
 
+function matchesSelectedWordLevel(entry: FuriganaEntry, kanjiSet: FuriganaKanjiSet): boolean {
+  return entry.wordJlpt != null && !!kanjiSet.enabledLevels?.has(entry.wordJlpt);
+}
+
+function shouldShowFuriganaForSurface(
+  surfaceChars: string[],
+  entry: FuriganaEntry,
+  kanjiSet: FuriganaKanjiSet,
+  settings: ReaderFuriganaSettings,
+): boolean {
+  if (kanjiSet.all) return true;
+
+  const surfaceKanji = surfaceChars.filter(isKanji);
+  const hasSelectedKanji = surfaceKanji.some((c) => kanjiSet.chars.has(c));
+  const allKanjiSelected =
+    surfaceKanji.length > 0 && surfaceKanji.every((c) => kanjiSet.chars.has(c));
+  const wordLevelMatches = matchesSelectedWordLevel(entry, kanjiSet);
+  const irregularMatches = !!entry.irregularReading && wordLevelMatches;
+
+  return (
+    (settings.matchModes.matchAnyKanji && hasSelectedKanji) ||
+    (settings.matchModes.matchAllKanji && allKanjiSelected) ||
+    (settings.matchModes.matchWordLevel && wordLevelMatches) ||
+    (settings.matchModes.matchIrregularReading && irregularMatches)
+  );
+}
+
 /**
  * Apply furigana map to an HTML string.
  *
@@ -498,6 +540,7 @@ export function applyFuriganaToHtml(
   html: string,
   furiganaMap: Map<string, FuriganaEntry>,
   kanjiSet: FuriganaKanjiSet,
+  settings: ReaderFuriganaSettings = defaultReaderFuriganaSettings,
 ): string {
   if (furiganaMap.size === 0) return html;
 
@@ -602,31 +645,8 @@ export function applyFuriganaToHtml(
 
         const entry = furiganaMap.get(surface)!;
 
-        // ── Word-level JLPT filtering ──
-        if (!kanjiSet.all) {
-          const kanjiMatch = surfaceChars.some((c) => kanjiSet.chars.has(c));
-          const levels = kanjiSet.enabledLevels;
-
-          if (kanjiMatch) {
-            // Kanji matches enabled level — but suppress if word is too easy.
-            // "Too easy" = wordJlpt is higher (easier) than all enabled levels.
-            if (entry.wordJlpt != null && levels && levels.size > 0) {
-              let maxEnabled = 0; // highest (easiest) enabled level
-              for (const l of levels) {
-                if (l > maxEnabled) maxEnabled = l;
-              }
-              if (entry.wordJlpt > maxEnabled) continue; // word is easier → suppress
-            }
-          } else {
-            // No kanji match — only show if reading is irregular AND word JLPT
-            // matches an enabled level. This catches jukujikun like 今朝=けさ
-            // without adding noise for standard readings like 世話=せわ.
-            if (entry.irregularReading && entry.wordJlpt != null && levels?.has(entry.wordJlpt)) {
-              // fall through to show furigana
-            } else {
-              continue; // no kanji match, standard reading → skip
-            }
-          }
+        if (!shouldShowFuriganaForSurface(surfaceChars, entry, kanjiSet, settings)) {
+          continue;
         }
 
         out += `<ruby>${entry.kanjiPart}<rt>${entry.reading}</rt></ruby>`;

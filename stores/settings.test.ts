@@ -46,6 +46,12 @@ describe("defaultSettings", () => {
         n5: false,
         nonJouyou: false,
       },
+      readerFuriganaMatchModes: {
+        matchAnyKanji: true,
+        matchAllKanji: false,
+        matchWordLevel: false,
+        matchIrregularReading: true,
+      },
       readerPageAnimations: true,
       connectGameMode: "timed",
       connectTimedDuration: 90,

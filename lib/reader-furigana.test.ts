@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   applyFuriganaToHtml,
+  defaultReaderFuriganaSettings,
   injectRubySpacers,
   extractSurfacesFromHtml,
   type FuriganaEntry,
   type FuriganaKanjiSet,
+  type ReaderFuriganaSettings,
 } from "./reader-furigana";
 
 const allKanji: FuriganaKanjiSet = { all: true, chars: new Set() };
@@ -206,305 +208,136 @@ function makeMapWithJlpt(
   return map;
 }
 
-describe("word-level JLPT filtering", () => {
-  // Scenario: user enables N4 level (meaning "show furigana for N4-level content").
-  // enabledLevels = new Set([4])
-  //
-  // JLPT scale: 5=easiest, 1=hardest.
-  // "Enabled N4" means: show furigana for words at difficulty level 4.
-  // Words easier than the enabled level (jlpt > max enabled) should be suppressed.
+function withMatchModes(
+  matchModes: Partial<ReaderFuriganaSettings["matchModes"]>,
+): ReaderFuriganaSettings {
+  return {
+    levels: defaultReaderFuriganaSettings.levels,
+    matchModes: {
+      ...defaultReaderFuriganaSettings.matchModes,
+      matchAnyKanji: false,
+      matchAllKanji: false,
+      matchWordLevel: false,
+      matchIrregularReading: false,
+      ...matchModes,
+    },
+  };
+}
 
-  // ── Category A: Easy kanji, hard/unusual reading ──
-  // All kanji are N5 (easy) but the word itself is harder (N4 or below).
-  // Current kanji-level filter MISSES these because no kanji matches N4.
-  // Word-level filter should SHOW furigana because word JLPT matches.
-
-  describe("Category A: easy kanji, hard reading (should show furigana)", () => {
-    // User enables N4. These words are word_jlpt=4. Kanji are all N5.
-    // Kanji-level filter alone would miss them. Word-level filter should catch them.
-    const n4Kanji: FuriganaKanjiSet = {
+describe("reader furigana match modes", () => {
+  it("matchAnyKanji shows the whole word when any kanji matches", () => {
+    const n3Only: FuriganaKanjiSet = {
       all: false,
-      chars: new Set(["昨"]), // only N4 kanji in the set — 左右上下 are N5, not in set
+      chars: new Set(["省"]),
+      enabledLevels: new Set([3]),
+    };
+    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
+    const html = "<p>反省会をする</p>";
+    const result = applyFuriganaToHtml(html, map, n3Only, withMatchModes({ matchAnyKanji: true }));
+    expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
+  });
+
+  it("matchAllKanji requires every kanji in the word to match", () => {
+    const partialSet: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["省"]),
+      enabledLevels: new Set([3]),
+    };
+    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
+    const html = "<p>反省会をする</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      partialSet,
+      withMatchModes({ matchAllKanji: true }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
+
+  it("matchAllKanji shows when every kanji in the word matches", () => {
+    const fullSet: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["反", "省", "会"]),
+      enabledLevels: new Set([3]),
+    };
+    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
+    const html = "<p>反省会をする</p>";
+    const result = applyFuriganaToHtml(html, map, fullSet, withMatchModes({ matchAllKanji: true }));
+    expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
+  });
+
+  it("matchWordLevel shows words whose JLPT level is selected even when kanji do not match", () => {
+    const n4Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["昨"]),
       enabledLevels: new Set([4]),
     };
-
-    it("左右 (さゆう) — N5 kanji, N4 word", () => {
-      const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4, true]]);
-      const html = "<p>左右を見る</p>";
-      const result = applyFuriganaToHtml(html, map, n4Kanji);
-      expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
-    });
-
-    it("上手 (じょうず) — N5 kanji, N4 word", () => {
-      const map = makeMapWithJlpt([["上手", "上手", "じょうず", 4, true]]);
-      const html = "<p>上手になる</p>";
-      const result = applyFuriganaToHtml(html, map, n4Kanji);
-      expect(result).toContain("<ruby>上手<rt>じょうず</rt></ruby>");
-    });
-
-    it("下手 (へた) — N5 kanji, N4 word", () => {
-      const map = makeMapWithJlpt([["下手", "下手", "へた", 4, true]]);
-      const html = "<p>下手だ</p>";
-      const result = applyFuriganaToHtml(html, map, n4Kanji);
-      expect(result).toContain("<ruby>下手<rt>へた</rt></ruby>");
-    });
-
-    // Harder words (N3, N2, N1) — should also show when their level is enabled
-    it("今朝 (けさ) — N5 kanji, N3 word", () => {
-      const n3Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([3]),
-      };
-      const map = makeMapWithJlpt([["今朝", "今朝", "けさ", 3, true]]);
-      const html = "<p>今朝は寒い</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).toContain("<ruby>今朝<rt>けさ</rt></ruby>");
-    });
-
-    it("田舎 (いなか) — N5 kanji, N3 word", () => {
-      const n3Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([3]),
-      };
-      const map = makeMapWithJlpt([["田舎", "田舎", "いなか", 3, true]]);
-      const html = "<p>田舎に帰る</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).toContain("<ruby>田舎<rt>いなか</rt></ruby>");
-    });
-
-    it("土産 (みやげ) — N5 kanji, N2 word", () => {
-      const n2Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([2]),
-      };
-      const map = makeMapWithJlpt([["土産", "土産", "みやげ", 2, true]]);
-      const html = "<p>土産を買う</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).toContain("<ruby>土産<rt>みやげ</rt></ruby>");
-    });
-
-    it("大和 (やまと) — N5 kanji, N2 word", () => {
-      const n2Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([2]),
-      };
-      const map = makeMapWithJlpt([["大和", "大和", "やまと", 2, true]]);
-      const html = "<p>大和の国</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).toContain("<ruby>大和<rt>やまと</rt></ruby>");
-    });
-
-    it("海老 (えび) — N5 kanji, N2 word", () => {
-      const n2Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([2]),
-      };
-      const map = makeMapWithJlpt([["海老", "海老", "えび", 2, true]]);
-      const html = "<p>海老を食べる</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).toContain("<ruby>海老<rt>えび</rt></ruby>");
-    });
-
-    it("七夕 (たなばた) — N5 kanji, N1 word", () => {
-      const n1Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([1]),
-      };
-      const map = makeMapWithJlpt([["七夕", "七夕", "たなばた", 1, true]]);
-      const html = "<p>七夕の夜</p>";
-      const result = applyFuriganaToHtml(html, map, n1Kanji);
-      expect(result).toContain("<ruby>七夕<rt>たなばた</rt></ruby>");
-    });
-
-    it("仲人 (なこうど) — N5 kanji, N1 word", () => {
-      const n1Kanji: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set(),
-        enabledLevels: new Set([1]),
-      };
-      const map = makeMapWithJlpt([["仲人", "仲人", "なこうど", 1, true]]);
-      const html = "<p>仲人を頼む</p>";
-      const result = applyFuriganaToHtml(html, map, n1Kanji);
-      expect(result).toContain("<ruby>仲人<rt>なこうど</rt></ruby>");
-    });
+    const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4]]);
+    const html = "<p>左右を見る</p>";
+    const result = applyFuriganaToHtml(html, map, n4Only, withMatchModes({ matchWordLevel: true }));
+    expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
-  // ── Category B: Hard kanji, easy word ──
-  // The kanji are rated at a harder level but the word itself is easy (everyone knows it).
-  // Word-level filter should SUPPRESS furigana because word JLPT is easier than enabled level.
-  // Uses mock data: pretend 綺=N2, 麗=N2 but 綺麗 word=N5.
-
-  describe("Category B: hard kanji, easy word (should suppress furigana)", () => {
-    // User enables N2. These words have N2 kanji but are N5 vocabulary.
-    // Kanji-level filter would show furigana (kanji matches N2).
-    // Word-level filter should suppress it (word is N5, easier than N2).
-    // NOTE: In the current DB, most of these kanji are actually rated N5 (not N2),
-    // so this category doesn't manifest with real data yet. These mock values
-    // (pretending kanji are N2) test the algorithm for when we rederive JLPT data
-    // with more accurate kanji difficulty levels.
-    const n2Kanji: FuriganaKanjiSet = {
+  it("matchIrregularReading shows irregular readings when the word level matches", () => {
+    const n4Only: FuriganaKanjiSet = {
       all: false,
-      chars: new Set(["綺", "麗", "挨", "拶", "頑", "沢", "慢", "昨", "果"]),
-      enabledLevels: new Set([2]),
+      chars: new Set(["昨"]),
+      enabledLevels: new Set([4]),
     };
-
-    it("綺麗 (きれい) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["綺麗", "綺麗", "きれい", 5]]);
-      const html = "<p>綺麗な花</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("挨拶 (あいさつ) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["挨拶", "挨拶", "あいさつ", 5]]);
-      const html = "<p>挨拶する</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("頑張る (がんばる) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["頑張", "頑張", "がんば", 5]]);
-      const html = "<p>頑張る</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("沢山 (たくさん) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["沢山", "沢山", "たくさん", 5]]);
-      const html = "<p>沢山ある</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("我慢 (がまん) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["我慢", "我慢", "がまん", 5]]);
-      const html = "<p>我慢する</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("昨日 (きのう) — N2 kanji, N4 word → no furigana at N2", () => {
-      const map = makeMapWithJlpt([["昨日", "昨日", "きのう", 4]]);
-      const html = "<p>昨日の事</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("果物 (くだもの) — N2 kanji, N5 word → no furigana", () => {
-      const map = makeMapWithJlpt([["果物", "果物", "くだもの", 5]]);
-      const html = "<p>果物を食べる</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    // But if the word JLPT matches or is harder than the enabled level, show it
-    it("hard kanji + hard word → shows furigana", () => {
-      const map = makeMapWithJlpt([["挫折", "挫折", "ざせつ", 2]]);
-      const n2WithExtra: FuriganaKanjiSet = {
-        all: false,
-        chars: new Set([...n2Kanji.chars, "挫", "折"]),
-        enabledLevels: new Set([2]),
-      };
-      const html = "<p>挫折した</p>";
-      const result = applyFuriganaToHtml(html, map, n2WithExtra);
-      expect(result).toContain("<ruby>挫折<rt>ざせつ</rt></ruby>");
-    });
-
-    // Word with no JLPT data falls back to kanji-level filter (existing behavior)
-    it("no word JLPT → falls back to kanji-level filter", () => {
-      const map = makeMapWithJlpt([["綺麗", "綺麗", "きれい", null]]);
-      const html = "<p>綺麗な花</p>";
-      const result = applyFuriganaToHtml(html, map, n2Kanji);
-      expect(result).toContain("<ruby>綺麗<rt>きれい</rt></ruby>");
-    });
+    const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4, true]]);
+    const html = "<p>左右を見る</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n4Only,
+      withMatchModes({ matchIrregularReading: true }),
+    );
+    expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
-  // ── Category C: Easy kanji, standard reading, hard word ──
-  // All kanji are N5, readings are standard on/kun, word is harder.
-  // Current kanji-level filter correctly skips these (no kanji matches the harder level).
-  // Word-level filter should also NOT show furigana — the reading is deducible from kanji.
-  // The word is "hard" vocabulary but you can READ it; furigana wouldn't help.
+  it("does not show irregular readings when the word level is not selected", () => {
+    const n4Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["昨"]),
+      enabledLevels: new Set([4]),
+    };
+    const map = makeMapWithJlpt([["左右", "左右", "さゆう", 5, true]]);
+    const html = "<p>左右を見る</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n4Only,
+      withMatchModes({ matchIrregularReading: true }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
 
-  describe("Category C: easy kanji, standard reading, hard word (no furigana needed)", () => {
-    // User enables N3. These words are word_jlpt=3 but kanji are N5.
-    // Neither kanji-level nor word-level filter should show furigana.
-    // The reading is standard — user can sound it out from the kanji.
-    const n3Kanji: FuriganaKanjiSet = { all: false, chars: new Set(), enabledLevels: new Set([3]) };
+  it("uses union semantics across enabled match modes", () => {
+    const partialSet: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["省"]),
+      enabledLevels: new Set([4]),
+    };
+    const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4]]);
+    const html = "<p>左右を見る</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      partialSet,
+      withMatchModes({ matchAllKanji: true, matchWordLevel: true }),
+    );
+    expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
+  });
 
-    it("世話 (せわ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["世話", "世話", "せわ", 3]]);
-      const html = "<p>世話になる</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("手前 (てまえ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["手前", "手前", "てまえ", 3]]);
-      const html = "<p>手前の方</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("見物 (けんぶつ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["見物", "見物", "けんぶつ", 3]]);
-      const html = "<p>見物する</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("読書 (どくしょ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["読書", "読書", "どくしょ", 3]]);
-      const html = "<p>読書が好き</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("年上 (としうえ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["年上", "年上", "としうえ", 3]]);
-      const html = "<p>年上の人</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("外出 (がいしゅつ) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["外出", "外出", "がいしゅつ", 3]]);
-      const html = "<p>外出する</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("長男 (ちょうなん) — N5 kanji, standard reading, N3 word → no furigana", () => {
-      const map = makeMapWithJlpt([["長男", "長男", "ちょうなん", 3]]);
-      const html = "<p>長男が生まれた</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("人前 (ひとまえ) — N5 kanji, standard reading, N2 word → no furigana", () => {
-      const map = makeMapWithJlpt([["人前", "人前", "ひとまえ", 2]]);
-      const html = "<p>人前で話す</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("名人 (めいじん) — N5 kanji, standard reading, N2 word → no furigana", () => {
-      const map = makeMapWithJlpt([["名人", "名人", "めいじん", 2]]);
-      const html = "<p>将棋の名人</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
-
-    it("大小 (だいしょう) — N5 kanji, standard reading, N2 word → no furigana", () => {
-      const map = makeMapWithJlpt([["大小", "大小", "だいしょう", 2]]);
-      const html = "<p>大小の問題</p>";
-      const result = applyFuriganaToHtml(html, map, n3Kanji);
-      expect(result).not.toContain("<ruby>");
-    });
+  it("shows nothing when no match modes are enabled", () => {
+    const n3Only: FuriganaKanjiSet = {
+      all: false,
+      chars: new Set(["省"]),
+      enabledLevels: new Set([3]),
+    };
+    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
+    const html = "<p>反省会をする</p>";
+    const result = applyFuriganaToHtml(html, map, n3Only, withMatchModes({}));
+    expect(result).not.toContain("<ruby>");
   });
 });
