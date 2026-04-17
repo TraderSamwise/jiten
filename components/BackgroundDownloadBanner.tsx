@@ -14,6 +14,7 @@ const STATE_LABELS: Record<string, string> = {
   downloading: "Downloading",
   importing: "Importing",
   pending: "Preparing",
+  deferred: "Waiting for Wi-Fi",
 };
 
 export function BackgroundDownloadBanner() {

@@ -39,7 +39,7 @@ export interface DictManifest {
 export interface BackgroundDownloadItem {
   key: string;
   label: string;
-  state: "pending" | "downloading" | "importing" | "ready" | "error";
+  state: "pending" | "deferred" | "downloading" | "importing" | "ready" | "error";
   progress: number; // 0-1
 }
 

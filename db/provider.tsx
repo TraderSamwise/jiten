@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import * as SQLite from "expo-sqlite";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import {
   isDictReady,
   isAudioReady,
@@ -169,26 +169,39 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   // Background data init — full dict upgrade + audio + extended DB
   const initBackgroundData = useCallback(
     async (m?: DictManifest) => {
-      const items: BackgroundDownloadItem[] = [];
+      const plannedItems: BackgroundDownloadItem[] = [];
       const strokesManifest = m?.strokes;
       const extManifest = m?.extended;
 
       // Full dict upgrade (highest priority — unlocks all entries)
       const isFull = await isDictFull();
       if (!isFull && m?.url) {
-        items.push({ key: "full-dict", label: "Full dictionary", state: "pending", progress: 0 });
+        plannedItems.push({
+          key: "full-dict",
+          label: "Full dictionary",
+          state: "pending",
+          progress: 0,
+        });
       }
       // Then existing items — audio, strokes, extended
       if (m?.audioUrl) {
-        items.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
+        plannedItems.push({ key: "audio", label: "Audio", state: "pending", progress: 0 });
       }
       if (strokesManifest) {
-        items.push({ key: "strokes", label: "Stroke data", state: "pending", progress: 0 });
+        plannedItems.push({ key: "strokes", label: "Stroke data", state: "pending", progress: 0 });
       }
       if (extManifest) {
-        items.push({ key: "extended", label: "Extended data", state: "pending", progress: 0 });
+        plannedItems.push({
+          key: "extended",
+          label: "Extended data",
+          state: "pending",
+          progress: 0,
+        });
       }
-      setBackgroundStatus(items);
+      if (plannedItems.length === 0) {
+        setBackgroundStatus([]);
+        return;
+      }
 
       // WiFi check — skip large background downloads on cellular
       let onWifi = true;
@@ -199,12 +212,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           onWifi = state.type === Network.NetworkStateType.WIFI;
           if (!onWifi) {
             console.log("[DB] Not on WiFi, skipping background downloads");
+            setBackgroundStatus(plannedItems.map((item) => ({ ...item, state: "deferred" })));
             return;
           }
         } catch {
           // Module check passed but call failed — assume WiFi
         }
       }
+
+      setBackgroundStatus(plannedItems);
 
       // Full dictionary upgrade (replaces mini DB)
       if (!isFull && m?.url) {
@@ -535,7 +551,17 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     runInit();
 
-    if (Platform.OS !== "web") return;
+    if (Platform.OS !== "web") {
+      const sub = AppState.addEventListener("change", (next) => {
+        if (next !== "active") return;
+        if (!dictDbRef.current) {
+          console.log("[DB] App active, reacquiring dict DB...");
+          runInit();
+        }
+        triggerBackgroundDownloads();
+      });
+      return () => sub.remove();
+    }
 
     // Register pre-release callback to null out refs/state.
     // The actual VFS close (OPFS handle release) is handled by web-lock.ts.
