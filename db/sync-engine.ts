@@ -426,6 +426,7 @@ export async function sync(
   turso: Client,
   onProgress?: (progress: number) => void,
   onLabel?: (label: string) => void,
+  onPullApplied?: (pulledRows: number) => void | Promise<void>,
 ): Promise<SyncResult> {
   try {
     onProgress?.(0);
@@ -471,6 +472,9 @@ export async function sync(
       pulled = await pullAll(localDb, turso, lastPulledAt, (p) => onProgress?.(0.1 + p * 0.4));
       console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
       await setSyncMeta(localDb, LAST_PULLED_AT_KEY, pullStartedAt);
+      if (pulled > 0) {
+        await onPullApplied?.(pulled);
+      }
     }
     onProgress?.(0.5);
 

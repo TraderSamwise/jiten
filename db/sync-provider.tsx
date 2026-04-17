@@ -326,7 +326,17 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       setSyncLabel("");
 
       try {
-        const result = await sync(userDb, tursoRef.current, setSyncProgress, setSyncLabel);
+        let pulledRowsAppliedDuringSync = 0;
+        const result = await sync(
+          userDb,
+          tursoRef.current,
+          setSyncProgress,
+          setSyncLabel,
+          async (pulledRows) => {
+            pulledRowsAppliedDuringSync = pulledRows;
+            await reloadStores(userDb);
+          },
+        );
         if (result.ok) {
           // Clear offline flag on success
           isOfflineRef.current = false;
@@ -342,8 +352,9 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           lastSyncCompletedRef.current = Date.now();
           // Reset the periodic interval so 1min countdown starts fresh
           resetInterval();
-          // Reload in-memory stores if data was pulled from remote
-          if (result.pulled > 0) {
+          // Blob pulls happen later in the sync cycle, so do one final reload only if
+          // more rows were pulled after the initial download-phase refresh.
+          if (result.pulled > pulledRowsAppliedDuringSync) {
             await reloadStores(userDb);
           }
         } else {
