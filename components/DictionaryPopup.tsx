@@ -47,21 +47,42 @@ interface FlatLookupItem {
   entryIdx: number;
 }
 
+interface PanelPayload {
+  item: FlatLookupItem | null;
+  result: LookupResult | null;
+  panelWordResult: LookupResult | null;
+  panelEntry: LookupResult["entries"][number] | null;
+  panelIsNameResult: boolean;
+  panelTotal: number;
+  panelSafeEntryIdx: number;
+  panelLookupVariants: LookupResult[];
+}
+
 interface PanelWindow {
-  left: FlatLookupItem | null;
-  center: FlatLookupItem | null;
-  right: FlatLookupItem | null;
+  left: PanelPayload | null;
+  center: PanelPayload | null;
+  right: PanelPayload | null;
 }
 
 const SLIDE_DURATION = 250;
 const SEGMENT_SWIPE_THRESHOLD = 18;
 const SEGMENT_SWIPE_VELOCITY = 380;
 const SEGMENT_SWIPE_SNAP_RATIO = 0.22;
+const MAX_POPUP_BODY_HEIGHT = 220;
 
 function areSameItem(a: FlatLookupItem | null, b: FlatLookupItem | null): boolean {
   if (!a && !b) return true;
   if (!a || !b) return false;
   return a.wordIdx === b.wordIdx && a.variantIdx === b.variantIdx && a.entryIdx === b.entryIdx;
+}
+
+function getItemKey(item: FlatLookupItem | null): string {
+  if (!item) return "empty";
+  return `${item.wordIdx}:${item.variantIdx}:${item.entryIdx}`;
+}
+
+function areSamePayload(a: PanelPayload | null, b: PanelPayload | null): boolean {
+  return areSameItem(a?.item ?? null, b?.item ?? null);
 }
 
 function getFlatItemsForSelection(
@@ -97,15 +118,10 @@ function getSelectedFlatIdx(flatItems: FlatLookupItem[], item: FlatLookupItem): 
   return idx >= 0 ? idx : 0;
 }
 
-function buildPanelWindow(flatItems: FlatLookupItem[], selectedFlatIdx: number): PanelWindow {
-  return {
-    left: selectedFlatIdx > 0 ? flatItems[selectedFlatIdx - 1] : null,
-    center: flatItems[selectedFlatIdx] ?? null,
-    right: selectedFlatIdx < flatItems.length - 1 ? flatItems[selectedFlatIdx + 1] : null,
-  };
-}
-
-function resolvePanelData(results: LookupResult[], item: FlatLookupItem | null) {
+function buildPanelPayload(
+  results: LookupResult[],
+  item: FlatLookupItem | null,
+): PanelPayload | null {
   if (!item) return null;
   const result = results[item.wordIdx];
   if (!result) return null;
@@ -117,16 +133,36 @@ function resolvePanelData(results: LookupResult[], item: FlatLookupItem | null) 
       ? panelWordResult.entries[Math.min(item.entryIdx, panelWordResult.entries.length - 1)]
       : null;
   return {
+    item,
     result,
     panelWordResult,
     panelEntry,
-    panelIsNameResult:
-      panelWordResult.nameMatches && panelWordResult.nameMatches.length > 0 && !panelEntry,
+    panelIsNameResult: !!(
+      panelWordResult.nameMatches &&
+      panelWordResult.nameMatches.length > 0 &&
+      !panelEntry
+    ),
     panelTotal: panelWordResult.entries.length,
     panelSafeEntryIdx:
       panelWordResult.entries.length > 0
         ? Math.min(item.entryIdx, panelWordResult.entries.length - 1)
         : 0,
+    panelLookupVariants: variants.length > 0 ? variants : [panelWordResult],
+  };
+}
+
+function buildPanelWindow(
+  flatItems: FlatLookupItem[],
+  selectedFlatIdx: number,
+  results: LookupResult[],
+): PanelWindow {
+  return {
+    left: buildPanelPayload(results, selectedFlatIdx > 0 ? flatItems[selectedFlatIdx - 1] : null),
+    center: buildPanelPayload(results, flatItems[selectedFlatIdx] ?? null),
+    right: buildPanelPayload(
+      results,
+      selectedFlatIdx < flatItems.length - 1 ? flatItems[selectedFlatIdx + 1] : null,
+    ),
   };
 }
 
@@ -211,19 +247,33 @@ export function DictionaryPopup({
   const tabScrollRef = useRef<ScrollView>(null);
   const [mounted, setMounted] = useState(false);
   const isSegmentTransitioningRef = useRef(false);
-  const pendingCenterItemRef = useRef<FlatLookupItem | null>(null);
+  const pendingResetFrameRef = useRef<number | null>(null);
+  const pendingFinalizeFrameRef = useRef<number | null>(null);
   const [pagerWidth, setPagerWidth] = useState(0);
   const [tabRowWidth, setTabRowWidth] = useState(0);
   const tabLayoutsRef = useRef<Record<number, { x: number; width: number }>>({});
+  const [stagingWindow, setStagingWindow] = useState<PanelWindow | null>(null);
+  const [useStagingLayer, setUseStagingLayer] = useState(false);
 
   const translateY = useSharedValue(400);
   const pagerTranslateX = useSharedValue(0);
-  const pagerHeight = useSharedValue(0);
 
   useEffect(() => {
     setSelection({ wordIdx: 0, variantIdx: 0, entryIdx: 0 });
     setHighlightedWordIdx(0);
   }, [results]);
+
+  useEffect(
+    () => () => {
+      if (pendingResetFrameRef.current !== null) {
+        cancelAnimationFrame(pendingResetFrameRef.current);
+      }
+      if (pendingFinalizeFrameRef.current !== null) {
+        cancelAnimationFrame(pendingFinalizeFrameRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (visible) {
@@ -242,57 +292,17 @@ export function DictionaryPopup({
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pagerTranslateX.value - pagerWidth }],
   }));
-  const pagerContainerAnimatedStyle = useAnimatedStyle(() =>
-    pagerHeight.value > 0
-      ? {
-          height: pagerHeight.value,
-        }
-      : {},
-  );
 
   const selectedWordIdx = selection.wordIdx;
   const selectedVariantIdx = selection.variantIdx;
   const entryIdx = selection.entryIdx;
 
-  const selectedTopLevelResult =
-    results.length > 0 ? results[Math.min(selectedWordIdx, results.length - 1)] : null;
-  const variantResults = selectedTopLevelResult?.alternateResults ?? [];
-  const wordResult =
-    selectedTopLevelResult && variantResults.length > 0
-      ? variantResults[Math.min(selectedVariantIdx, variantResults.length - 1)]
-      : selectedTopLevelResult;
-  const currentEntry =
-    wordResult && wordResult.entries.length > 0
-      ? wordResult.entries[Math.min(entryIdx, wordResult.entries.length - 1)]
-      : null;
-  const safeEntryIdx =
-    wordResult && wordResult.entries.length > 0
-      ? Math.min(entryIdx, wordResult.entries.length - 1)
-      : 0;
-  const total = wordResult ? wordResult.entries.length : 0;
-
-  const isBookmarked = useBookmarkStore((s) =>
-    currentEntry ? s.bookmarkedIds.has(`e:${currentEntry.id}`) : false,
-  );
-
-  const {
-    handlePress: quickBookmarkPress,
-    handleLongPress,
-    popoverVisible,
-    dismissPopover,
-    onListToggled,
-  } = useQuickBookmark(currentEntry?.id ?? 0, isBookmarked);
-
   const hasResults =
     results.length > 0 &&
     results.some((r) => r.entries.length > 0 || (r.nameMatches && r.nameMatches.length > 0));
-  const isNameResult =
-    wordResult?.nameMatches && wordResult.nameMatches.length > 0 && !currentEntry;
-  const lookupKindVariants =
-    variantResults.length > 0 ? variantResults : wordResult ? [wordResult] : [];
   const selectedItem = useMemo<FlatLookupItem>(
-    () => ({ wordIdx: selectedWordIdx, variantIdx: selectedVariantIdx, entryIdx: safeEntryIdx }),
-    [selectedWordIdx, selectedVariantIdx, safeEntryIdx],
+    () => ({ wordIdx: selectedWordIdx, variantIdx: selectedVariantIdx, entryIdx }),
+    [selectedWordIdx, selectedVariantIdx, entryIdx],
   );
   const flatItems = useMemo(
     () => getFlatItemsForSelection(results, selectedWordIdx, selectedVariantIdx),
@@ -307,28 +317,36 @@ export function DictionaryPopup({
     center: null,
     right: null,
   });
-  const [activePanelHeight, setActivePanelHeight] = useState(0);
-  const centerPanelData = useMemo(
-    () => resolvePanelData(results, panelWindow.center),
-    [results, panelWindow.center],
+  const visibleWindow = useStagingLayer && stagingWindow ? stagingWindow : panelWindow;
+  const centerPayload = visibleWindow.center;
+  const currentEntry = centerPayload?.panelEntry ?? null;
+  const isNameResult = centerPayload?.panelIsNameResult ?? false;
+  const total = centerPayload?.panelTotal ?? 0;
+  const safeEntryIdx = centerPayload?.panelSafeEntryIdx ?? 0;
+
+  const isBookmarked = useBookmarkStore((s) =>
+    currentEntry ? s.bookmarkedIds.has(`e:${currentEntry.id}`) : false,
   );
+
+  const {
+    handlePress: quickBookmarkPress,
+    handleLongPress,
+    popoverVisible,
+    dismissPopover,
+    onListToggled,
+  } = useQuickBookmark(currentEntry?.id ?? 0, isBookmarked);
 
   useEffect(() => {
     if (isSegmentTransitioningRef.current) return;
-    const nextWindow = buildPanelWindow(flatItems, selectedFlatIdx);
+    const nextWindow = buildPanelWindow(flatItems, selectedFlatIdx, results);
     setPanelWindow((currentWindow) =>
-      areSameItem(currentWindow.left, nextWindow.left) &&
-      areSameItem(currentWindow.center, nextWindow.center) &&
-      areSameItem(currentWindow.right, nextWindow.right)
+      areSamePayload(currentWindow.left, nextWindow.left) &&
+      areSamePayload(currentWindow.center, nextWindow.center) &&
+      areSamePayload(currentWindow.right, nextWindow.right)
         ? currentWindow
         : nextWindow,
     );
-  }, [flatItems, selectedFlatIdx]);
-
-  useEffect(() => {
-    if (activePanelHeight <= 0) return;
-    pagerHeight.value = withTiming(activePanelHeight, { duration: 160 });
-  }, [activePanelHeight, pagerHeight]);
+  }, [flatItems, results, selectedFlatIdx]);
 
   const ensureActiveTabVisible = useCallback(
     (wordIdx: number) => {
@@ -347,32 +365,48 @@ export function DictionaryPopup({
 
   const finishSegmentTransition = useCallback(() => {
     isSegmentTransitioningRef.current = false;
+    setUseStagingLayer(false);
+    setStagingWindow(null);
   }, []);
 
   const commitAnimatedFlatItem = useCallback(
-    (nextItem: FlatLookupItem) => {
+    (nextItem: FlatLookupItem, direction: 1 | -1) => {
       const nextFlatItems = getFlatItemsForSelection(
         results,
         nextItem.wordIdx,
         nextItem.variantIdx,
       );
       const nextFlatIdx = getSelectedFlatIdx(nextFlatItems, nextItem);
-      pendingCenterItemRef.current = nextItem;
       setSelection(nextItem);
       setHighlightedWordIdx(nextItem.wordIdx);
-      setPanelWindow(buildPanelWindow(nextFlatItems, nextFlatIdx));
+      const nextPayload = buildPanelPayload(results, nextItem);
+      const finalWindow = buildPanelWindow(nextFlatItems, nextFlatIdx, results);
+      if (!nextPayload) {
+        finishSegmentTransition();
+        return;
+      }
+      setStagingWindow(finalWindow);
+      setUseStagingLayer(true);
+      if (pendingResetFrameRef.current !== null) {
+        cancelAnimationFrame(pendingResetFrameRef.current);
+      }
+      if (pendingFinalizeFrameRef.current !== null) {
+        cancelAnimationFrame(pendingFinalizeFrameRef.current);
+      }
+      pendingResetFrameRef.current = requestAnimationFrame(() => {
+        pendingResetFrameRef.current = null;
+        pagerTranslateX.value = 0;
+        pendingFinalizeFrameRef.current = requestAnimationFrame(() => {
+          pendingFinalizeFrameRef.current = null;
+          setPanelWindow(finalWindow);
+          requestAnimationFrame(() => {
+            finishSegmentTransition();
+          });
+        });
+      });
     },
-    [results],
+    [finishSegmentTransition, pagerTranslateX, results],
   );
-
-  useEffect(() => {
-    const pendingItem = pendingCenterItemRef.current;
-    if (!pendingItem) return;
-    if (!areSameItem(panelWindow.center, pendingItem)) return;
-    pendingCenterItemRef.current = null;
-    pagerTranslateX.value = 0;
-    finishSegmentTransition();
-  }, [finishSegmentTransition, pagerTranslateX, panelWindow]);
 
   const selectFlatIndex = useCallback(
     (nextFlatIdx: number, direction: 1 | -1, releaseVelocity: number = 0) => {
@@ -382,14 +416,16 @@ export function DictionaryPopup({
       if (!nextItem) return;
       isSegmentTransitioningRef.current = true;
       if (direction > 0) {
+        const nextPayload = buildPanelPayload(results, nextItem);
         setPanelWindow((currentWindow) => ({
           left: currentWindow.left,
           center: currentWindow.center,
-          right: nextItem,
+          right: nextPayload,
         }));
       } else {
+        const nextPayload = buildPanelPayload(results, nextItem);
         setPanelWindow((currentWindow) => ({
-          left: nextItem,
+          left: nextPayload,
           center: currentWindow.center,
           right: currentWindow.right,
         }));
@@ -405,7 +441,7 @@ export function DictionaryPopup({
         },
         (finished) => {
           if (finished) {
-            runOnJS(commitAnimatedFlatItem)(nextItem);
+            runOnJS(commitAnimatedFlatItem)(nextItem, direction);
           } else {
             runOnJS(finishSegmentTransition)();
           }
@@ -419,6 +455,7 @@ export function DictionaryPopup({
       commitAnimatedFlatItem,
       finishSegmentTransition,
       pagerTranslateX,
+      results,
     ],
   );
 
@@ -429,11 +466,18 @@ export function DictionaryPopup({
       const nextFlatItems = getFlatItemsForSelection(results, nextWordIdx, 0);
       const nextFlatIdx = getSelectedFlatIdx(nextFlatItems, nextItem);
       isSegmentTransitioningRef.current = false;
-      pendingCenterItemRef.current = null;
+      if (pendingResetFrameRef.current !== null) {
+        cancelAnimationFrame(pendingResetFrameRef.current);
+        pendingResetFrameRef.current = null;
+      }
+      if (pendingFinalizeFrameRef.current !== null) {
+        cancelAnimationFrame(pendingFinalizeFrameRef.current);
+        pendingFinalizeFrameRef.current = null;
+      }
       pagerTranslateX.value = 0;
       setHighlightedWordIdx(nextWordIdx);
       setSelection(nextItem);
-      setPanelWindow(buildPanelWindow(nextFlatItems, nextFlatIdx));
+      setPanelWindow(buildPanelWindow(nextFlatItems, nextFlatIdx, results));
     },
     [pagerTranslateX, results],
   );
@@ -478,20 +522,23 @@ export function DictionaryPopup({
   if (!mounted) return null;
 
   function renderLookupPanel(
-    item: FlatLookupItem | null,
+    payload: PanelPayload | null,
     options?: {
       allowNavigate?: boolean;
       isActive?: boolean;
     },
   ) {
-    if (!item) return <View />;
-    const panelData = resolvePanelData(results, item);
-    if (!panelData) return <View />;
-    const { result, panelWordResult, panelEntry, panelIsNameResult, panelTotal } = panelData;
-    const variantIndex = item.variantIdx;
-    const panelVariants = result.alternateResults ?? [];
-    const panelLookupVariants =
-      panelVariants.length > 0 ? panelVariants : panelWordResult ? [panelWordResult] : [];
+    if (!payload || !payload.result || !payload.panelWordResult) return <View />;
+    const {
+      result,
+      panelWordResult,
+      panelEntry,
+      panelIsNameResult,
+      panelTotal,
+      panelLookupVariants,
+      item,
+    } = payload;
+    const variantIndex = item?.variantIdx ?? 0;
     const lookupSwitch = (
       <View style={{ marginRight: !panelIsNameResult && panelTotal > 1 ? 84 : 0 }}>
         <LookupKindSwitch
@@ -506,19 +553,7 @@ export function DictionaryPopup({
     );
 
     return (
-      <View
-        onLayout={
-          options?.isActive
-            ? (event) => {
-                const nextHeight = Math.ceil(event.nativeEvent.layout.height);
-                if (nextHeight > 0)
-                  setActivePanelHeight((current) =>
-                    current === nextHeight ? current : nextHeight,
-                  );
-              }
-            : undefined
-        }
-      >
+      <View>
         {panelWordResult.deinflectReasons.length > 0 && (
           <View className="mb-2">
             <View className="bg-muted px-2 py-1 rounded self-start">
@@ -530,7 +565,10 @@ export function DictionaryPopup({
         )}
 
         {panelIsNameResult ? (
-          <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
+          <ScrollView
+            style={{ maxHeight: MAX_POPUP_BODY_HEIGHT }}
+            contentContainerStyle={{ paddingBottom: 4 }}
+          >
             <View className="mb-3 flex-row items-start gap-3">
               <View className="flex-1">
                 {panelWordResult.nameMatches!.slice(0, 1).map((name: NameEntry) => {
@@ -601,7 +639,10 @@ export function DictionaryPopup({
               }
             }}
           >
-            <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 4 }}>
+            <ScrollView
+              style={{ maxHeight: MAX_POPUP_BODY_HEIGHT }}
+              contentContainerStyle={{ paddingBottom: 4 }}
+            >
               {panelEntry && (
                 <EntrySummary entry={panelEntry} rightAccessory={lookupSwitch ?? undefined} />
               )}
@@ -682,7 +723,9 @@ export function DictionaryPopup({
               </ScrollView>
             ) : (
               <View className="flex-row items-center gap-2">
-                <Text className="text-xs text-muted-foreground">{wordResult!.matchedText}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {centerPayload?.panelWordResult?.matchedText ?? ""}
+                </Text>
               </View>
             )}
           </View>
@@ -729,14 +772,14 @@ export function DictionaryPopup({
                 pagerTranslateX.value = 0;
               }
             }}
-            style={[pagerContainerAnimatedStyle, { overflow: "hidden", position: "relative" }]}
+            style={{ overflow: "hidden", position: "relative" }}
           >
-            {!centerPanelData?.panelIsNameResult && (centerPanelData?.panelTotal ?? 0) > 1 && (
+            {!centerPayload?.panelIsNameResult && (centerPayload?.panelTotal ?? 0) > 1 && (
               <View
                 pointerEvents="box-none"
                 style={{
                   position: "absolute",
-                  top: centerPanelData?.panelWordResult.deinflectReasons.length ? 28 : 0,
+                  top: centerPayload?.panelWordResult?.deinflectReasons.length ? 28 : 0,
                   right: 0,
                   zIndex: 2,
                 }}
@@ -746,46 +789,45 @@ export function DictionaryPopup({
                     onPress={() =>
                       setSelection((prev) => ({
                         ...prev,
-                        entryIdx: Math.max(0, (centerPanelData?.panelSafeEntryIdx ?? 0) - 1),
+                        entryIdx: Math.max(0, (centerPayload?.panelSafeEntryIdx ?? 0) - 1),
                       }))
                     }
-                    disabled={(centerPanelData?.panelSafeEntryIdx ?? 0) === 0}
+                    disabled={(centerPayload?.panelSafeEntryIdx ?? 0) === 0}
                     className="p-1"
                   >
                     <ChevronLeft
                       size={18}
                       className={
-                        (centerPanelData?.panelSafeEntryIdx ?? 0) === 0
+                        (centerPayload?.panelSafeEntryIdx ?? 0) === 0
                           ? "text-muted"
                           : "text-foreground"
                       }
                     />
                   </Pressable>
                   <Text className="text-xs text-muted-foreground min-w-8 text-center">
-                    {(centerPanelData?.panelSafeEntryIdx ?? 0) + 1}/
-                    {centerPanelData?.panelTotal ?? 0}
+                    {(centerPayload?.panelSafeEntryIdx ?? 0) + 1}/{centerPayload?.panelTotal ?? 0}
                   </Text>
                   <Pressable
                     onPress={() =>
                       setSelection((prev) => ({
                         ...prev,
                         entryIdx: Math.min(
-                          (centerPanelData?.panelTotal ?? 1) - 1,
-                          (centerPanelData?.panelSafeEntryIdx ?? 0) + 1,
+                          (centerPayload?.panelTotal ?? 1) - 1,
+                          (centerPayload?.panelSafeEntryIdx ?? 0) + 1,
                         ),
                       }))
                     }
                     disabled={
-                      (centerPanelData?.panelSafeEntryIdx ?? 0) ===
-                      (centerPanelData?.panelTotal ?? 1) - 1
+                      (centerPayload?.panelSafeEntryIdx ?? 0) ===
+                      (centerPayload?.panelTotal ?? 1) - 1
                     }
                     className="p-1"
                   >
                     <ChevronRight
                       size={18}
                       className={
-                        (centerPanelData?.panelSafeEntryIdx ?? 0) ===
-                        (centerPanelData?.panelTotal ?? 1) - 1
+                        (centerPayload?.panelSafeEntryIdx ?? 0) ===
+                        (centerPayload?.panelTotal ?? 1) - 1
                           ? "text-muted"
                           : "text-foreground"
                       }
@@ -795,21 +837,28 @@ export function DictionaryPopup({
               </View>
             )}
             <Animated.View
+              pointerEvents={useStagingLayer ? "none" : "auto"}
               style={[
                 contentAnimatedStyle,
                 {
                   flexDirection: "row",
+                  alignItems: "flex-start",
                   width: pagerWidth > 0 ? pagerWidth * 3 : "100%",
+                  opacity: useStagingLayer ? 0 : 1,
                 },
               ]}
             >
               {[panelWindow.left, panelWindow.center, panelWindow.right].map(
-                (panelItem, panelIdx) => (
+                (panelPayload, panelIdx) => (
                   <View
                     key={`panel-${panelIdx}`}
-                    style={{ width: pagerWidth || undefined, flex: pagerWidth > 0 ? 0 : 1 }}
+                    style={{
+                      width: pagerWidth || undefined,
+                      flex: pagerWidth > 0 ? 0 : 1,
+                      alignSelf: "flex-start",
+                    }}
                   >
-                    {renderLookupPanel(panelItem, {
+                    {renderLookupPanel(panelPayload, {
                       allowNavigate: panelIdx === 1 && !isNameResult,
                       isActive: panelIdx === 1,
                     })}
@@ -817,6 +866,44 @@ export function DictionaryPopup({
                 ),
               )}
             </Animated.View>
+            {useStagingLayer && stagingWindow && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    width: pagerWidth > 0 ? pagerWidth * 3 : "100%",
+                    transform: [{ translateX: -(pagerWidth || 0) }],
+                  }}
+                >
+                  {[stagingWindow.left, stagingWindow.center, stagingWindow.right].map(
+                    (panelPayload, panelIdx) => (
+                      <View
+                        key={`staging-panel-${panelIdx}`}
+                        style={{
+                          width: pagerWidth || undefined,
+                          flex: pagerWidth > 0 ? 0 : 1,
+                          alignSelf: "flex-start",
+                        }}
+                      >
+                        {renderLookupPanel(panelPayload, {
+                          allowNavigate: false,
+                          isActive: false,
+                        })}
+                      </View>
+                    ),
+                  )}
+                </View>
+              </View>
+            )}
           </Animated.View>
         </GestureDetector>
       </>
