@@ -105,6 +105,31 @@ function buildPanelWindow(flatItems: FlatLookupItem[], selectedFlatIdx: number):
   };
 }
 
+function resolvePanelData(results: LookupResult[], item: FlatLookupItem | null) {
+  if (!item) return null;
+  const result = results[item.wordIdx];
+  if (!result) return null;
+  const variants = result.alternateResults ?? [];
+  const panelWordResult =
+    variants.length > 0 ? variants[Math.min(item.variantIdx, variants.length - 1)] : result;
+  const panelEntry =
+    panelWordResult.entries.length > 0
+      ? panelWordResult.entries[Math.min(item.entryIdx, panelWordResult.entries.length - 1)]
+      : null;
+  return {
+    result,
+    panelWordResult,
+    panelEntry,
+    panelIsNameResult:
+      panelWordResult.nameMatches && panelWordResult.nameMatches.length > 0 && !panelEntry,
+    panelTotal: panelWordResult.entries.length,
+    panelSafeEntryIdx:
+      panelWordResult.entries.length > 0
+        ? Math.min(item.entryIdx, panelWordResult.entries.length - 1)
+        : 0,
+  };
+}
+
 function lookupKindLabel(kind?: LookupResult["lookupKind"]): string | null {
   if (kind === "word") return "Word";
   if (kind === "name") return "Name";
@@ -240,7 +265,10 @@ export function DictionaryPopup({
     wordResult && wordResult.entries.length > 0
       ? wordResult.entries[Math.min(entryIdx, wordResult.entries.length - 1)]
       : null;
-  const safeEntryIdx = wordResult ? Math.min(entryIdx, wordResult.entries.length - 1) : 0;
+  const safeEntryIdx =
+    wordResult && wordResult.entries.length > 0
+      ? Math.min(entryIdx, wordResult.entries.length - 1)
+      : 0;
   const total = wordResult ? wordResult.entries.length : 0;
 
   const isBookmarked = useBookmarkStore((s) =>
@@ -280,6 +308,10 @@ export function DictionaryPopup({
     right: null,
   });
   const [activePanelHeight, setActivePanelHeight] = useState(0);
+  const centerPanelData = useMemo(
+    () => resolvePanelData(results, panelWindow.center),
+    [results, panelWindow.center],
+  );
 
   useEffect(() => {
     if (isSegmentTransitioningRef.current) return;
@@ -453,24 +485,11 @@ export function DictionaryPopup({
     },
   ) {
     if (!item) return <View />;
-
-    const result = results[item.wordIdx];
-    if (!result) return <View />;
-
+    const panelData = resolvePanelData(results, item);
+    if (!panelData) return <View />;
+    const { result, panelWordResult, panelEntry, panelIsNameResult, panelTotal } = panelData;
     const variantIndex = item.variantIdx;
-    const entryIndexForPanel = item.entryIdx;
     const panelVariants = result.alternateResults ?? [];
-    const panelWordResult =
-      panelVariants.length > 0
-        ? panelVariants[Math.min(variantIndex, panelVariants.length - 1)]
-        : result;
-    const panelEntry =
-      panelWordResult.entries.length > 0
-        ? panelWordResult.entries[Math.min(entryIndexForPanel, panelWordResult.entries.length - 1)]
-        : null;
-    const panelIsNameResult =
-      panelWordResult.nameMatches && panelWordResult.nameMatches.length > 0 && !panelEntry;
-    const panelTotal = panelWordResult.entries.length;
     const panelLookupVariants =
       panelVariants.length > 0 ? panelVariants : panelWordResult ? [panelWordResult] : [];
     const lookupSwitch = (
@@ -712,12 +731,12 @@ export function DictionaryPopup({
             }}
             style={[pagerContainerAnimatedStyle, { overflow: "hidden", position: "relative" }]}
           >
-            {!isNameResult && total > 1 && (
+            {!centerPanelData?.panelIsNameResult && (centerPanelData?.panelTotal ?? 0) > 1 && (
               <View
                 pointerEvents="box-none"
                 style={{
                   position: "absolute",
-                  top: wordResult?.deinflectReasons.length ? 28 : 0,
+                  top: centerPanelData?.panelWordResult.deinflectReasons.length ? 28 : 0,
                   right: 0,
                   zIndex: 2,
                 }}
@@ -727,33 +746,49 @@ export function DictionaryPopup({
                     onPress={() =>
                       setSelection((prev) => ({
                         ...prev,
-                        entryIdx: Math.max(0, safeEntryIdx - 1),
+                        entryIdx: Math.max(0, (centerPanelData?.panelSafeEntryIdx ?? 0) - 1),
                       }))
                     }
-                    disabled={safeEntryIdx === 0}
+                    disabled={(centerPanelData?.panelSafeEntryIdx ?? 0) === 0}
                     className="p-1"
                   >
                     <ChevronLeft
                       size={18}
-                      className={safeEntryIdx === 0 ? "text-muted" : "text-foreground"}
+                      className={
+                        (centerPanelData?.panelSafeEntryIdx ?? 0) === 0
+                          ? "text-muted"
+                          : "text-foreground"
+                      }
                     />
                   </Pressable>
                   <Text className="text-xs text-muted-foreground min-w-8 text-center">
-                    {safeEntryIdx + 1}/{total}
+                    {(centerPanelData?.panelSafeEntryIdx ?? 0) + 1}/
+                    {centerPanelData?.panelTotal ?? 0}
                   </Text>
                   <Pressable
                     onPress={() =>
                       setSelection((prev) => ({
                         ...prev,
-                        entryIdx: Math.min(total - 1, safeEntryIdx + 1),
+                        entryIdx: Math.min(
+                          (centerPanelData?.panelTotal ?? 1) - 1,
+                          (centerPanelData?.panelSafeEntryIdx ?? 0) + 1,
+                        ),
                       }))
                     }
-                    disabled={safeEntryIdx === total - 1}
+                    disabled={
+                      (centerPanelData?.panelSafeEntryIdx ?? 0) ===
+                      (centerPanelData?.panelTotal ?? 1) - 1
+                    }
                     className="p-1"
                   >
                     <ChevronRight
                       size={18}
-                      className={safeEntryIdx === total - 1 ? "text-muted" : "text-foreground"}
+                      className={
+                        (centerPanelData?.panelSafeEntryIdx ?? 0) ===
+                        (centerPanelData?.panelTotal ?? 1) - 1
+                          ? "text-muted"
+                          : "text-foreground"
+                      }
                     />
                   </Pressable>
                 </View>
