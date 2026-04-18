@@ -327,6 +327,28 @@ Font size is per-book (stored in `books` table). Furigana levels and page animat
 | `word/[id]`       | Word detail    | Dictionary entry from reader lookup      |
 | `kanji/[literal]` | Kanji detail   | Kanji detail from reader lookup          |
 
+### Deterministic swipe/card UI rule
+
+For swipeable card, pager, carousel, or drawer content that is **not virtualized** and has a small, known number of visible items, do **not** implement the interaction as:
+
+- one React subtree
+- one selected index
+- a gesture-driven translate
+- then a state swap
+- then a snap back to center
+
+That model repeatedly causes one-frame flashes of the previous card/state after settle.
+
+For deterministic swipe UI in this codebase, the required model is:
+
+- the visible cards must have stable identity
+- previous/current/next must be frozen payloads, not re-derived live during the swipe
+- swiping must traverse stable nodes/cards, not mutate one card into another
+- card-local UI must render from the frozen card payload, not from global selected state during the gesture
+- if a reset/recenter boundary exists, the incoming card must bridge that boundary so the previous card can never reappear for one frame
+
+If an implementation cannot satisfy those constraints, do not add swipe. Keep explicit tap controls instead.
+
 ### Platform split (`components/ReaderView.{native,web}.tsx`)
 
 - **Native**: Wraps `react-native-webview` WebView
