@@ -482,6 +482,42 @@ export function DictionaryPopup({
     [pagerTranslateX, results],
   );
 
+  const animateToWordIndex = useCallback(
+    (nextWordIdx: number) => {
+      if (nextWordIdx < 0 || nextWordIdx >= results.length) return;
+      setHighlightedWordIdx(nextWordIdx);
+      const targetItem: FlatLookupItem = { wordIdx: nextWordIdx, variantIdx: 0, entryIdx: 0 };
+      const targetFlatIdx = flatItems.findIndex((item) => areSameItem(item, targetItem));
+      if (
+        targetFlatIdx >= 0 &&
+        pagerWidth > 0 &&
+        targetFlatIdx !== selectedFlatIdx &&
+        !isSegmentTransitioningRef.current
+      ) {
+        selectFlatIndex(targetFlatIdx, targetFlatIdx > selectedFlatIdx ? 1 : -1);
+        return;
+      }
+      jumpToWordIndex(nextWordIdx);
+    },
+    [flatItems, jumpToWordIndex, pagerWidth, results.length, selectFlatIndex, selectedFlatIdx],
+  );
+
+  const animateByDelta = useCallback(
+    (delta: -1 | 1) => {
+      const targetFlatIdx = selectedFlatIdx + delta;
+      if (targetFlatIdx < 0 || targetFlatIdx >= flatItems.length) return;
+      if (pagerWidth > 0 && !isSegmentTransitioningRef.current) {
+        selectFlatIndex(targetFlatIdx, delta > 0 ? 1 : -1);
+        return;
+      }
+      const nextItem = flatItems[targetFlatIdx];
+      if (!nextItem) return;
+      setSelection(nextItem);
+      setHighlightedWordIdx(nextItem.wordIdx);
+    },
+    [flatItems, pagerWidth, selectFlatIndex, selectedFlatIdx],
+  );
+
   const swipeGesture = Gesture.Pan()
     .enabled(flatItems.length > 1 && pagerWidth > 0)
     .activeOffsetX([-2, 2])
@@ -701,7 +737,7 @@ export function DictionaryPopup({
                       tabLayoutsRef.current[i] = { x, width };
                     }}
                     onPress={() => {
-                      jumpToWordIndex(i);
+                      animateToWordIndex(i);
                     }}
                     className={`px-3 py-1.5 rounded-full border ${
                       i === Math.min(highlightedWordIdx, results.length - 1)
@@ -786,12 +822,7 @@ export function DictionaryPopup({
               >
                 <View className="flex-row items-center gap-1">
                   <Pressable
-                    onPress={() =>
-                      setSelection((prev) => ({
-                        ...prev,
-                        entryIdx: Math.max(0, (centerPayload?.panelSafeEntryIdx ?? 0) - 1),
-                      }))
-                    }
+                    onPress={() => animateByDelta(-1)}
                     disabled={(centerPayload?.panelSafeEntryIdx ?? 0) === 0}
                     className="p-1"
                   >
@@ -808,15 +839,7 @@ export function DictionaryPopup({
                     {(centerPayload?.panelSafeEntryIdx ?? 0) + 1}/{centerPayload?.panelTotal ?? 0}
                   </Text>
                   <Pressable
-                    onPress={() =>
-                      setSelection((prev) => ({
-                        ...prev,
-                        entryIdx: Math.min(
-                          (centerPayload?.panelTotal ?? 1) - 1,
-                          (centerPayload?.panelSafeEntryIdx ?? 0) + 1,
-                        ),
-                      }))
-                    }
+                    onPress={() => animateByDelta(1)}
                     disabled={
                       (centerPayload?.panelSafeEntryIdx ?? 0) ===
                       (centerPayload?.panelTotal ?? 1) - 1
