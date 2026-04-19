@@ -717,55 +717,47 @@ export function DictionaryPopup({
         <View className="flex-row items-center mb-3 gap-2">
           {/* Left side: pills or matched text — fills available space */}
           <View className="flex-1" style={{ minWidth: 0 }}>
-            {results.length > 1 ? (
-              <ScrollView
-                ref={tabScrollRef}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 6 }}
-                style={{ flexGrow: 0 }}
-                onLayout={(event) => {
-                  const nextWidth = Math.round(event.nativeEvent.layout.width);
-                  if (nextWidth > 0 && nextWidth !== tabRowWidth) {
-                    setTabRowWidth(nextWidth);
-                  }
-                }}
-              >
-                {results.map((r, i) => (
-                  <Pressable
-                    key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
-                    onLayout={(event) => {
-                      const { x, width } = event.nativeEvent.layout;
-                      tabLayoutsRef.current[i] = { x, width };
-                    }}
-                    onPress={() => {
-                      animateToWordIndex(i);
-                    }}
-                    className={`px-3 py-1.5 rounded-full border ${
+            <ScrollView
+              ref={tabScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6 }}
+              style={{ flexGrow: 0 }}
+              onLayout={(event) => {
+                const nextWidth = Math.round(event.nativeEvent.layout.width);
+                if (nextWidth > 0 && nextWidth !== tabRowWidth) {
+                  setTabRowWidth(nextWidth);
+                }
+              }}
+            >
+              {results.map((r, i) => (
+                <Pressable
+                  key={`${r.lookupKind ?? "lookup"}-${r.matchedText}-${i}`}
+                  onLayout={(event) => {
+                    const { x, width } = event.nativeEvent.layout;
+                    tabLayoutsRef.current[i] = { x, width };
+                  }}
+                  onPress={() => {
+                    animateToWordIndex(i);
+                  }}
+                  className={`px-3 py-1.5 rounded-full border ${
+                    i === Math.min(highlightedWordIdx, results.length - 1)
+                      ? "bg-primary/20 border-primary/40"
+                      : "border-border"
+                  }`}
+                >
+                  <Text
+                    className={`text-sm ${
                       i === Math.min(highlightedWordIdx, results.length - 1)
-                        ? "bg-primary/20 border-primary/40"
-                        : "border-border"
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground"
                     }`}
                   >
-                    <Text
-                      className={`text-sm ${
-                        i === Math.min(highlightedWordIdx, results.length - 1)
-                          ? "text-foreground font-medium"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {r.matchedText}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : (
-              <View className="flex-row items-center gap-2">
-                <Text className="text-xs text-muted-foreground">
-                  {centerPayload?.panelWordResult?.matchedText ?? ""}
-                </Text>
-              </View>
-            )}
+                    {r.matchedText}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
 
           {/* Right side: fixed controls */}
