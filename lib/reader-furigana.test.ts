@@ -227,116 +227,128 @@ function makeMapWithJlpt(
   return map;
 }
 
-function withMatchModes(
-  matchModes: Partial<ReaderFuriganaSettings["matchModes"]>,
+function withRuleLevels(
+  ruleLevels: Partial<ReaderFuriganaSettings["ruleLevels"]>,
 ): ReaderFuriganaSettings {
   return {
-    levels: defaultReaderFuriganaSettings.levels,
-    matchModes: {
-      ...defaultReaderFuriganaSettings.matchModes,
-      matchAnyKanji: false,
-      matchAllKanji: false,
-      matchWordLevel: false,
-      matchIrregularReading: false,
-      ...matchModes,
+    sourceDefault: defaultReaderFuriganaSettings.sourceDefault,
+    ruleLevels: {
+      matchAnyKanji: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
+      matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
+      matchIrregularReading: {
+        n5: false,
+        n4: false,
+        n3: false,
+        n2: false,
+        n1: false,
+        nonJouyou: false,
+      },
+      matchMostlyKunyomi: {
+        n5: false,
+        n4: false,
+        n3: false,
+        n2: false,
+        n1: false,
+        nonJouyou: false,
+      },
+      matchMostlyOnyomi: {
+        n5: false,
+        n4: false,
+        n3: false,
+        n2: false,
+        n1: false,
+        nonJouyou: false,
+      },
+      matchMixedOnKun: {
+        n5: false,
+        n4: false,
+        n3: false,
+        n2: false,
+        n1: false,
+        nonJouyou: false,
+      },
+      ...ruleLevels,
     },
   };
 }
 
-describe("reader furigana match modes", () => {
+describe("reader furigana rule levels", () => {
   it("matchAnyKanji shows the whole word when any kanji matches", () => {
-    const n3Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["省"]),
-      enabledLevels: new Set([3]),
-    };
-    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
-    const html = "<p>反省会をする</p>";
-    const result = applyFuriganaToHtml(html, map, n3Only, withMatchModes({ matchAnyKanji: true }));
-    expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
-  });
-
-  it("matchAllKanji requires every kanji in the word to match", () => {
-    const partialSet: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["省"]),
-      enabledLevels: new Set([3]),
-    };
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
     const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
     const html = "<p>反省会をする</p>";
     const result = applyFuriganaToHtml(
       html,
       map,
-      partialSet,
-      withMatchModes({ matchAllKanji: true }),
+      n3Only,
+      withRuleLevels({
+        matchAnyKanji: { n5: false, n4: false, n3: true, n2: false, n1: false, nonJouyou: false },
+      }),
     );
-    expect(result).not.toContain("<ruby>");
-  });
-
-  it("matchAllKanji shows when every kanji in the word matches", () => {
-    const fullSet: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["反", "省", "会"]),
-      enabledLevels: new Set([3]),
-    };
-    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
-    const html = "<p>反省会をする</p>";
-    const result = applyFuriganaToHtml(html, map, fullSet, withMatchModes({ matchAllKanji: true }));
     expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
   });
 
   it("matchWordLevel shows words whose JLPT level is selected even when kanji do not match", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4]]);
     const html = "<p>左右を見る</p>";
-    const result = applyFuriganaToHtml(html, map, n4Only, withMatchModes({ matchWordLevel: true }));
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n4Only,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: true, n3: false, n2: false, n1: false, nonJouyou: false },
+      }),
+    );
     expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
   it("matchIrregularReading shows irregular readings when the word level matches", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4, true]]);
     const html = "<p>左右を見る</p>";
     const result = applyFuriganaToHtml(
       html,
       map,
       n4Only,
-      withMatchModes({ matchIrregularReading: true }),
+      withRuleLevels({
+        matchIrregularReading: {
+          n5: false,
+          n4: true,
+          n3: false,
+          n2: false,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
     );
     expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
   it("does not show irregular readings when the word level is not selected", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = makeMapWithJlpt([["左右", "左右", "さゆう", 5, true]]);
     const html = "<p>左右を見る</p>";
     const result = applyFuriganaToHtml(
       html,
       map,
       n4Only,
-      withMatchModes({ matchIrregularReading: true }),
+      withRuleLevels({
+        matchIrregularReading: {
+          n5: false,
+          n4: true,
+          n3: false,
+          n2: false,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
     );
     expect(result).not.toContain("<ruby>");
   });
 
   it("matchMostlyKunyomi shows kunyomi words when the word level matches", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = new Map<string, FuriganaEntry>([
       [
         "食べる",
@@ -353,17 +365,22 @@ describe("reader furigana match modes", () => {
       "<p>食べる</p>",
       map,
       n4Only,
-      withMatchModes({ matchMostlyKunyomi: true }),
+      withRuleLevels({
+        matchMostlyKunyomi: {
+          n5: false,
+          n4: true,
+          n3: false,
+          n2: false,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
     );
     expect(result).toContain("<ruby>食<rt>た</rt></ruby>べる");
   });
 
   it("matchMostlyOnyomi shows onyomi compounds when the word level matches", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = new Map<string, FuriganaEntry>([
       [
         "学校",
@@ -380,17 +397,22 @@ describe("reader furigana match modes", () => {
       "<p>学校</p>",
       map,
       n4Only,
-      withMatchModes({ matchMostlyOnyomi: true }),
+      withRuleLevels({
+        matchMostlyOnyomi: {
+          n5: false,
+          n4: true,
+          n3: false,
+          n2: false,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
     );
     expect(result).toContain("<ruby>学校<rt>がっこう</rt></ruby>");
   });
 
   it("matchMixedOnKun shows mixed compounds when the word level matches", () => {
-    const n4Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["昨"]),
-      enabledLevels: new Set([4]),
-    };
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = new Map<string, FuriganaEntry>([
       [
         "重箱",
@@ -407,37 +429,57 @@ describe("reader furigana match modes", () => {
       "<p>重箱</p>",
       map,
       n4Only,
-      withMatchModes({ matchMixedOnKun: true }),
+      withRuleLevels({
+        matchMixedOnKun: {
+          n5: false,
+          n4: true,
+          n3: false,
+          n2: false,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
     );
     expect(result).toContain("<ruby>重箱<rt>じゅうばこ</rt></ruby>");
   });
 
-  it("uses union semantics across enabled match modes", () => {
-    const partialSet: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["省"]),
-      enabledLevels: new Set([4]),
-    };
+  it("uses union semantics across rule-specific level filters", () => {
+    const partialSet: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
     const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4]]);
     const html = "<p>左右を見る</p>";
     const result = applyFuriganaToHtml(
       html,
       map,
       partialSet,
-      withMatchModes({ matchAllKanji: true, matchWordLevel: true }),
+      withRuleLevels({
+        matchAnyKanji: { n5: false, n4: false, n3: true, n2: false, n1: false, nonJouyou: false },
+        matchWordLevel: { n5: false, n4: true, n3: false, n2: false, n1: false, nonJouyou: false },
+      }),
     );
     expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
-  it("shows nothing when no match modes are enabled", () => {
-    const n3Only: FuriganaKanjiSet = {
-      all: false,
-      chars: new Set(["省"]),
-      enabledLevels: new Set([3]),
-    };
+  it("shows a word when any-kanji and word-level use different level sets", () => {
+    const partialSet: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
+    const map = makeMapWithJlpt([["左右", "左右", "さゆう", 1]]);
+    const html = "<p>左右を見る</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      partialSet,
+      withRuleLevels({
+        matchAnyKanji: { n5: false, n4: false, n3: true, n2: true, n1: false, nonJouyou: false },
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: true, nonJouyou: false },
+      }),
+    );
+    expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
+  });
+
+  it("shows nothing when no rule levels are enabled", () => {
+    const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
     const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
     const html = "<p>反省会をする</p>";
-    const result = applyFuriganaToHtml(html, map, n3Only, withMatchModes({}));
+    const result = applyFuriganaToHtml(html, map, n3Only, withRuleLevels({}));
     expect(result).not.toContain("<ruby>");
   });
 });
