@@ -533,7 +533,7 @@ export default function BookReaderScreen() {
       if (kanjiSetRef.current) {
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
         if (surfaces.length > 0) {
-          const readings = await resolveFuriganaBatch(surfaces, dictDb);
+          const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
           const fMap = new Map<string, FuriganaEntry>(
             Object.entries(readings) as [string, FuriganaEntry][],
           );
@@ -707,7 +707,7 @@ export default function BookReaderScreen() {
           kanjiSetRef.current = kanjiSet;
           const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
           if (surfaces.length > 0) {
-            const readings = await resolveFuriganaBatch(surfaces, dictDb);
+            const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
             const fMap = new Map<string, FuriganaEntry>(
               Object.entries(readings) as [string, FuriganaEntry][],
             );
@@ -918,7 +918,7 @@ export default function BookReaderScreen() {
             if (kanjiSetRef.current && dictDb) {
               const surfaces = extractSurfacesFromHtml(nextHtml, kanjiSetRef.current);
               if (surfaces.length > 0) {
-                const readings = await resolveFuriganaBatch(surfaces, dictDb);
+                const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
                 const fMap = new Map<string, FuriganaEntry>(
                   Object.entries(readings) as [string, FuriganaEntry][],
                 );
@@ -966,7 +966,7 @@ export default function BookReaderScreen() {
               if (kanjiSetRef.current && dictDb) {
                 const surfaces = extractSurfacesFromHtml(backHtml, kanjiSetRef.current);
                 if (surfaces.length > 0) {
-                  const readings = await resolveFuriganaBatch(surfaces, dictDb);
+                  const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
                   const fMap = new Map<string, FuriganaEntry>(
                     Object.entries(readings) as [string, FuriganaEntry][],
                   );

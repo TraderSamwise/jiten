@@ -148,6 +148,54 @@ interface DictMatch {
   irregularReading: boolean;
 }
 
+interface CounterMatch {
+  kanjiForm: string;
+  kanaForm: string;
+}
+
+async function batchLookupCounters(
+  extDb: SQLite.SQLiteDatabase | null | undefined,
+  surfaces: string[],
+): Promise<Map<string, CounterMatch>> {
+  const result = new Map<string, CounterMatch>();
+  if (!extDb || surfaces.length === 0) return result;
+
+  const normalizedToSurface = new Map<string, string>();
+  const combinedForms = new Set<string>();
+  for (const surface of surfaces) {
+    combinedForms.add(surface);
+    normalizedToSurface.set(surface, surface);
+    const normalized = normalizeDigitsToKanji(surface);
+    if (normalized !== surface) {
+      combinedForms.add(normalized);
+      normalizedToSurface.set(normalized, surface);
+    }
+  }
+
+  const allForms = [...combinedForms];
+  for (let i = 0; i < allForms.length; i += BATCH_SIZE) {
+    const batch = allForms.slice(i, i + BATCH_SIZE);
+    const ph = batch.map(() => "?").join(",");
+    const rows = await extDb.getAllAsync<{ combined_kanji: string; reading: string }>(
+      `SELECT combined_kanji, reading
+       FROM counter_readings
+       WHERE combined_kanji IN (${ph})`,
+      batch,
+    );
+    for (const row of rows) {
+      const surface = normalizedToSurface.get(row.combined_kanji) ?? row.combined_kanji;
+      if (!result.has(surface)) {
+        result.set(surface, {
+          kanjiForm: surface,
+          kanaForm: row.reading,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
 async function batchLookup(
   dictDb: SQLite.SQLiteDatabase,
   searchWords: string[],
@@ -308,6 +356,7 @@ async function batchLookup(
 export async function resolveFuriganaBatch(
   surfaces: string[],
   dictDb: SQLite.SQLiteDatabase,
+  extendedDb?: SQLite.SQLiteDatabase | null,
 ): Promise<Record<string, FuriganaEntry>> {
   // Deinflect all surfaces, collect unique search words
   const surfaceToDeinflected = new Map<string, string[]>();
@@ -330,12 +379,31 @@ export async function resolveFuriganaBatch(
 
   // Batch lookup
   const lookupMap = await batchLookup(dictDb, [...allSearchWords]);
+  const counterLookupMap = await batchLookupCounters(extendedDb, surfaces);
 
   // Resolve each surface
   const result: Record<string, FuriganaEntry> = {};
   const resolved = new Map<string, FuriganaEntry>();
 
   for (const surface of surfaces) {
+    const counterMatch = counterLookupMap.get(surface);
+    if (counterMatch) {
+      const { kanjiPart, reading, kanjiPartLen } = stripOkurigana(
+        counterMatch.kanjiForm,
+        counterMatch.kanaForm,
+      );
+      if (reading) {
+        resolved.set(surface, {
+          kanjiPart,
+          reading,
+          kanjiPartLen,
+          fullKanjiForm: counterMatch.kanjiForm,
+          fullKanaForm: counterMatch.kanaForm,
+        });
+        continue;
+      }
+    }
+
     const deinflected = surfaceToDeinflected.get(surface)!;
     for (const word of deinflected) {
       const match = lookupMap.get(word);

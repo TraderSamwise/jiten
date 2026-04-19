@@ -1,15 +1,34 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import Database from "better-sqlite3";
+import path from "path";
+import type { SQLiteDatabase } from "expo-sqlite";
 import {
   applyFuriganaToHtml,
   defaultReaderFuriganaSettings,
   injectRubySpacers,
   extractSurfacesFromHtml,
+  resolveFuriganaBatch,
   type FuriganaEntry,
   type FuriganaKanjiSet,
   type ReaderFuriganaSettings,
 } from "./reader-furigana";
 
 const allKanji: FuriganaKanjiSet = { all: true, chars: new Set() };
+const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
+const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
+
+function wrapBetterSqlite(db: Database.Database): SQLiteDatabase {
+  return {
+    getAllAsync: async <T>(sql: string, params?: unknown[]) => {
+      const stmt = db.prepare(sql);
+      return (params ? stmt.all(...params) : stmt.all()) as T[];
+    },
+    getFirstAsync: async <T>(sql: string, params?: unknown[]) => {
+      const stmt = db.prepare(sql);
+      return (params ? stmt.get(...params) : stmt.get()) as T | null;
+    },
+  } as unknown as SQLiteDatabase;
+}
 
 function makeMap(entries: [string, string, string][]): Map<string, FuriganaEntry> {
   const map = new Map<string, FuriganaEntry>();
@@ -420,5 +439,94 @@ describe("reader furigana match modes", () => {
     const html = "<p>反省会をする</p>";
     const result = applyFuriganaToHtml(html, map, n3Only, withMatchModes({}));
     expect(result).not.toContain("<ruby>");
+  });
+});
+
+describe("resolveFuriganaBatch compound resolution", () => {
+  let rawDb: Database.Database;
+  let dictDb: SQLiteDatabase;
+  let rawExtDb: Database.Database;
+  let extDb: SQLiteDatabase;
+
+  beforeAll(() => {
+    rawDb = new Database(DB_PATH, { readonly: true });
+    dictDb = wrapBetterSqlite(rawDb);
+    rawExtDb = new Database(EXT_DB_PATH, { readonly: true });
+    extDb = wrapBetterSqlite(rawExtDb);
+  });
+
+  afterAll(() => {
+    rawDb.close();
+    rawExtDb.close();
+  });
+
+  it("resolves 一軒 as いっけん, not 軒=のき", async () => {
+    const result = await resolveFuriganaBatch(["一軒"], dictDb, extDb);
+    expect(result["一軒"]?.reading).toBe("いっけん");
+    expect(result["一軒"]?.fullKanjiForm).toBe("一軒");
+  });
+
+  it("resolves 乾杯 as かんぱい, not 杯=さかずき/はい", async () => {
+    const result = await resolveFuriganaBatch(["乾杯"], dictDb);
+    expect(result["乾杯"]?.reading).toBe("かんぱい");
+    expect(result["乾杯"]?.fullKanjiForm).toBe("乾杯");
+  });
+
+  it("resolves 絶品 as ぜっぴん, not 品=しな", async () => {
+    const result = await resolveFuriganaBatch(["絶品"], dictDb);
+    expect(result["絶品"]?.reading).toBe("ぜっぴん");
+    expect(result["絶品"]?.fullKanjiForm).toBe("絶品");
+  });
+
+  it("resolves 持ち主 as もちぬし as a whole word", async () => {
+    const result = await resolveFuriganaBatch(["持ち主"], dictDb);
+    expect(result["持ち主"]?.reading).toBe("もちぬし");
+    expect(result["持ち主"]?.fullKanjiForm).toBe("持ち主");
+  });
+
+  it("resolves 大勢 as おおぜい, not 勢=いきおい", async () => {
+    const result = await resolveFuriganaBatch(["大勢"], dictDb);
+    expect(result["大勢"]?.reading).toBe("おおぜい");
+    expect(result["大勢"]?.fullKanjiForm).toBe("大勢");
+  });
+
+  it("full pipeline keeps 一軒 as one ruby match, not 軒", async () => {
+    const html = "<p>三軒横に並んだ海の家を見やる。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    expect(result).toContain("<ruby>三軒<rt>さんけん</rt></ruby>");
+    expect(result).not.toContain("<ruby>軒<rt>のき</rt></ruby>");
+  });
+
+  it("full pipeline keeps 絶品 as one ruby match, not 品", async () => {
+    const html = "<p>絶品の干物も宿泊無料。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    expect(result).toContain("<ruby>絶品<rt>ぜっぴん</rt></ruby>");
+    expect(result).not.toContain("<ruby>品<rt>しな</rt></ruby>");
+  });
+
+  it("full pipeline keeps 持ち主 as one ruby match, not 主", async () => {
+    const html = "<p>別荘の持ち主も誘う。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    expect(result).toContain("<ruby>持ち主<rt>もちぬし</rt></ruby>");
+    expect(result).not.toContain("<ruby>主<rt>");
+  });
+
+  it("full pipeline keeps 大勢 as おおぜい, not 勢=いきおい", async () => {
+    const html = "<p>そしたら大勢でたいへん。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    expect(result).toContain("<ruby>大勢<rt>おおぜい</rt></ruby>");
+    expect(result).not.toContain("<ruby>勢<rt>いきおい</rt></ruby>");
   });
 });
