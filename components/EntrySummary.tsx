@@ -47,7 +47,12 @@ export const EntrySummary = React.memo(function EntrySummary({
   }
 
   // default variant
-  const accents = primaryKana ? entry.pitchAccents.filter((pa) => pa.reading === primaryKana) : [];
+  const readingRows = entry.kana.map((kana) => ({
+    kana,
+    accents: entry.pitchAccents.filter((pa) => pa.reading === kana.text),
+  }));
+  const leadReading = readingRows[0] ?? null;
+  const stackedReadings = primaryKanji ? readingRows : readingRows.slice(1);
   const MAX_SENSES = 3;
   const sensesToShow = entry.senses.slice(0, MAX_SENSES);
   const hasMore = entry.senses.length > MAX_SENSES;
@@ -55,27 +60,31 @@ export const EntrySummary = React.memo(function EntrySummary({
   return (
     <View className={bookmarkClass}>
       <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1 flex-row flex-wrap items-center gap-3">
-          {primaryKanji ? (
-            <>
+        <View className="flex-1 gap-1">
+          <View className="flex-row flex-wrap items-center gap-3">
+            {primaryKanji ? (
               <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
-              {accents.length > 0 ? (
-                <View className="flex-row flex-wrap items-baseline gap-2">
-                  {accents.map((pa, i) => (
-                    <PitchAccent key={i} accent={pa} />
-                  ))}
+            ) : leadReading?.accents.length ? (
+              leadReading.accents.map((pa, i) => <PitchAccent key={i} accent={pa} fontSize={20} />)
+            ) : (
+              <Text className="text-2xl font-bold text-foreground">{primaryKana}</Text>
+            )}
+            {entry.common && <Badge variant="common" label="common" />}
+            {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
+          </View>
+          {stackedReadings.length > 0 && (
+            <View className="gap-1">
+              {stackedReadings.map(({ kana, accents: rowAccents }, i) => (
+                <View key={`${kana.text}-${i}`} className="flex-row flex-wrap items-center gap-2">
+                  {rowAccents.length > 0 ? (
+                    rowAccents.map((pa, j) => <PitchAccent key={j} accent={pa} />)
+                  ) : (
+                    <Text className="text-base text-muted-foreground">{kana.text}</Text>
+                  )}
                 </View>
-              ) : (
-                <Text className="text-base text-muted-foreground">{primaryKana}</Text>
-              )}
-            </>
-          ) : accents.length > 0 ? (
-            accents.map((pa, i) => <PitchAccent key={i} accent={pa} fontSize={20} />)
-          ) : (
-            <Text className="text-2xl font-bold text-foreground">{primaryKana}</Text>
+              ))}
+            </View>
           )}
-          {entry.common && <Badge variant="common" label="common" />}
-          {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
         </View>
         {rightAccessory ? <View className="shrink-0">{rightAccessory}</View> : null}
       </View>
