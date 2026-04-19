@@ -186,6 +186,49 @@ function startsMidKanaRun(text: string, start: number): boolean {
   return start > 0 && isKanaChar(text[start - 1]);
 }
 
+function startsMidKanjiRun(text: string, start: number): boolean {
+  if (!isKanjiChar(text[start])) return false;
+  return start > 0 && isKanjiChar(text[start - 1]);
+}
+
+function endsMidKanjiRun(text: string, start: number, matchedText: string): boolean {
+  const end = start + matchedText.length - 1;
+  if (end < 0 || end >= text.length) return false;
+  if (!isKanjiChar(text[end])) return false;
+  return end < text.length - 1 && isKanjiChar(text[end + 1]);
+}
+
+function hasExactSurfaceMatch(hit: LookupHit): boolean {
+  return hasExactKanjiSurfaceMatch(hit) || hasExactKanaSurfaceMatch(hit);
+}
+
+function strictlyContainsCandidate(
+  outerStart: number,
+  outerMatchedText: string,
+  innerStart: number,
+  innerMatchedText: string,
+): boolean {
+  const outerEnd = outerStart + outerMatchedText.length;
+  const innerEnd = innerStart + innerMatchedText.length;
+  return outerStart <= innerStart && outerEnd >= innerEnd && outerMatchedText !== innerMatchedText;
+}
+
+function shouldPreferContainingExactCandidate(
+  outerHit: LookupHit,
+  outerStart: number,
+  innerHit: LookupHit,
+  innerStart: number,
+): boolean {
+  if (!hasExactSurfaceMatch(outerHit) || !hasExactSurfaceMatch(innerHit)) return false;
+  if (
+    !strictlyContainsCandidate(outerStart, outerHit.matchedText, innerStart, innerHit.matchedText)
+  ) {
+    return false;
+  }
+
+  return [...outerHit.matchedText].some(isKanjiChar);
+}
+
 function scoreTapHit(
   text: string,
   tapOffset: number,
@@ -205,6 +248,9 @@ function scoreTapHit(
   else if (startsAtKanaRunStart(text, start)) score += 50;
   else if (startsMidKanaRun(text, start)) score -= 65;
 
+  if (startsMidKanjiRun(text, start)) score -= 140;
+  if (endsMidKanjiRun(text, start, hit.matchedText)) score -= 140;
+
   if (hasCommon) score += 120;
   if (hit.reasons.length > 0) score -= 20;
   if (isKanaOnly && suffixCharsAfterTap > 0) score -= suffixCharsAfterTap * 30;
@@ -223,12 +269,13 @@ function simulateSmartLookupWithOffset(
   tapOffset: number,
   maxLen: number = 15,
 ): LookupHit[] {
-  let bestOverall: { hit: LookupHit; score: number; length: number } | null = null;
+  let bestOverall: { hit: LookupHit; score: number; length: number; start: number } | null = null;
 
   for (let len = Math.min(text.length, maxLen); len >= 1; len--) {
     const minStart = Math.max(0, tapOffset - len + 1);
     const maxStart = Math.min(tapOffset, text.length - len);
-    let bestForLength: { hit: LookupHit; score: number; length: number } | null = null;
+    let bestForLength: { hit: LookupHit; score: number; length: number; start: number } | null =
+      null;
 
     for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
       const substr = text.slice(start, start + len);
@@ -251,7 +298,7 @@ function simulateSmartLookupWithOffset(
           };
           const score = scoreTapHit(text, tapOffset, hit, start, hasCommon);
           if (!bestForLength || score > bestForLength.score) {
-            bestForLength = { hit, score, length: len };
+            bestForLength = { hit, score, length: len, start };
           }
         }
       }
@@ -262,6 +309,25 @@ function simulateSmartLookupWithOffset(
       bestOverall = bestForLength;
       continue;
     }
+
+    const currentContainsBest = shouldPreferContainingExactCandidate(
+      bestForLength.hit,
+      bestForLength.start,
+      bestOverall.hit,
+      bestOverall.start,
+    );
+    if (currentContainsBest) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const bestContainsCurrent = shouldPreferContainingExactCandidate(
+      bestOverall.hit,
+      bestOverall.start,
+      bestForLength.hit,
+      bestForLength.start,
+    );
+    if (bestContainsCurrent) continue;
 
     const lengthDiff = bestOverall.length - bestForLength.length;
     if (lengthDiff >= 2) break;
@@ -620,6 +686,46 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
     const hits = simulateSmartLookupWithOffset(text, tapOffset);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0].matchedText).toBe("くい");
+  });
+
+  test("tapping ち in 珍妙な → prefers 珍妙 over 珍", () => {
+    const text = "珍妙なのか";
+    const tapOffset = 1; // index of ち in ちんみょう
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "珍妙")).toBe(true);
+    expect(hitsContainWord(hits, "珍")).toBe(false);
+    expect(hits[0].matchedText).toBe("珍妙");
+  });
+
+  test("tapping 家 in 家臣に対して → prefers 家臣 over 家", () => {
+    const text = "家臣に対して";
+    const tapOffset = 0; // index of 家
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "家臣")).toBe(true);
+    expect(hitsContainWord(hits, "家")).toBe(false);
+    expect(hits[0].matchedText).toBe("家臣");
+  });
+
+  test("tapping き in 浮き輪を → prefers 浮き輪 over 浮き", () => {
+    const text = "浮き輪を";
+    const tapOffset = 1; // index of き in うきわ
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "浮き輪")).toBe(true);
+    expect(hitsContainWord(hits, "浮き")).toBe(false);
+    expect(hits[0].matchedText).toBe("浮き輪");
+  });
+
+  test("tapping 大 in 大皿に → prefers 大皿 over 大", () => {
+    const text = "大皿に";
+    const tapOffset = 0; // index of 大
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "大皿")).toBe(true);
+    expect(hitsContainWord(hits, "大")).toBe(false);
+    expect(hits[0].matchedText).toBe("大皿");
   });
 });
 
