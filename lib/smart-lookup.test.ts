@@ -727,6 +727,26 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
     expect(hitsContainWord(hits, "大")).toBe(false);
     expect(hits[0].matchedText).toBe("大皿");
   });
+
+  test("tapping 軒 in 一軒に → prefers 一軒 over 軒", () => {
+    const text = "一軒に";
+    const tapOffset = 1; // index of 軒
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "一軒")).toBe(true);
+    expect(hitsContainWord(hits, "軒")).toBe(false);
+    expect(hits[0].matchedText).toBe("一軒");
+  });
+
+  test("tapping 杯 in 乾杯して → prefers 乾杯 over 杯", () => {
+    const text = "乾杯して";
+    const tapOffset = 1; // index of 杯
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "乾杯")).toBe(true);
+    expect(hitsContainWord(hits, "杯")).toBe(false);
+    expect(hits[0].matchedText).toBe("乾杯");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
