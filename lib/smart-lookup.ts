@@ -266,7 +266,7 @@ function chooseAutoLookupVariants(
   if (bestName.matchedText.length < taggedWord.matchedText.length) return [taggedWord];
 
   if (shouldShowBothAutoResults(taggedWord, bestName, wordScore, nameScore)) {
-    return wordScore >= nameScore ? [taggedWord, bestName] : [bestName, taggedWord];
+    return [taggedWord, bestName];
   }
 
   return wordScore >= nameScore ? [taggedWord] : [bestName];
@@ -299,22 +299,16 @@ export function chooseAutoLookupResults(
   if (taggedWordResults.length === 0) return taggedNameResults;
   if (taggedNameResults.length === 0) return taggedWordResults;
 
-  const bestWord = taggedWordResults[0];
-  const bestName = taggedNameResults[0];
-  const wordScore = scoreWordResult(bestWord);
-  const nameScore = scoreNameResult(bestName);
-
-  if (bestWord.matchedText.length !== bestName.matchedText.length) {
-    return bestWord.matchedText.length > bestName.matchedText.length
-      ? taggedWordResults
-      : taggedNameResults;
+  const variants = chooseAutoLookupVariants(taggedWordResults[0], taggedNameResults);
+  if (variants.length <= 1) {
+    return variants[0]?.lookupKind === "name" ? taggedNameResults : taggedWordResults;
   }
-
-  if (shouldShowBothAutoResults(bestWord, bestName, wordScore, nameScore)) {
-    return wordScore >= nameScore ? [bestWord, bestName] : [bestName, bestWord];
-  }
-
-  return wordScore >= nameScore ? taggedWordResults : taggedNameResults;
+  return [
+    {
+      ...variants[0],
+      alternateResults: variants,
+    },
+  ];
 }
 
 /**

@@ -675,6 +675,7 @@ export function applyFuriganaToHtml(
   let i = 0;
   let rubyDepth = 0;
   let rtDepth = 0;
+  let blockedVisibleChars = 0;
 
   while (i < html.length) {
     const ch = html[i];
@@ -743,6 +744,13 @@ export function applyFuriganaToHtml(
       }
     }
 
+    if (blockedVisibleChars > 0) {
+      out += ch;
+      i++;
+      blockedVisibleChars--;
+      continue;
+    }
+
     // Try longest-first match if this char is a kanji, OR if it's kana
     // followed by kanji within 4 chars (mixed kana-kanji words like しょう油).
     // We match at any position, but only emit ruby if the matched word
@@ -752,6 +760,7 @@ export function applyFuriganaToHtml(
     if (tryMatch) {
       let matched = false;
       const remaining = getVisibleCharsFrom(html, i);
+      let longestRejectedSurfaceChars: string[] | null = null;
 
       for (const surface of sortedSurfaces) {
         const surfaceChars = [...surface];
@@ -769,7 +778,25 @@ export function applyFuriganaToHtml(
 
         const entry = furiganaMap.get(surface)!;
 
+        if (
+          longestRejectedSurfaceChars &&
+          (isKanji(longestRejectedSurfaceChars[0]) || isDigit(longestRejectedSurfaceChars[0])) &&
+          surfaceChars.length < longestRejectedSurfaceChars.length
+        ) {
+          const rejectedPrefix = longestRejectedSurfaceChars.slice(0, surfaceChars.length);
+          const removedSuffix = longestRejectedSurfaceChars.slice(surfaceChars.length);
+          if (
+            rejectedPrefix.join("") === surfaceChars.join("") &&
+            removedSuffix.some((char) => isKanji(char) || isDigit(char))
+          ) {
+            continue;
+          }
+        }
+
         if (!shouldShowFuriganaForSurface(surfaceChars, entry, kanjiSet, settings)) {
+          if (!longestRejectedSurfaceChars) {
+            longestRejectedSurfaceChars = surfaceChars;
+          }
           continue;
         }
 
@@ -789,6 +816,13 @@ export function applyFuriganaToHtml(
       }
 
       if (!matched) {
+        if (
+          longestRejectedSurfaceChars &&
+          longestRejectedSurfaceChars.length > 1 &&
+          (isKanji(longestRejectedSurfaceChars[0]) || isDigit(longestRejectedSurfaceChars[0]))
+        ) {
+          blockedVisibleChars = longestRejectedSurfaceChars.length - 1;
+        }
         out += ch;
         i++;
       }

@@ -108,8 +108,14 @@ describe("chooseAutoLookupResults", () => {
     ];
 
     expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual([
-      { ...nameResults[0], lookupKind: "name" },
-      { ...wordResults[0], lookupKind: "word" },
+      {
+        ...wordResults[0],
+        lookupKind: "word",
+        alternateResults: [
+          { ...wordResults[0], lookupKind: "word" },
+          { ...nameResults[0], lookupKind: "name" },
+        ],
+      },
     ]);
   });
 });
@@ -162,8 +168,8 @@ describe("autoSelectionLookup", () => {
     expect(results).toHaveLength(3);
     expect(results[0].matchedText).toBe("第一");
     expect(results[0].alternateResults?.map((result) => result.lookupKind)).toEqual([
-      "name",
       "word",
+      "name",
     ]);
     expect(results[1].matchedText).toBe("夜");
     expect(results[1].alternateResults).toBeUndefined();
