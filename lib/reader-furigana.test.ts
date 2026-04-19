@@ -482,6 +482,74 @@ describe("reader furigana rule levels", () => {
     const result = applyFuriganaToHtml(html, map, n3Only, withRuleLevels({}));
     expect(result).not.toContain("<ruby>");
   });
+
+  it("does not show an embedded subword when the whole containing word fails the filter", () => {
+    const noKanjiMatches: FuriganaKanjiSet = { all: false, chars: new Set() };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "居心地",
+        {
+          kanjiPart: "居心地",
+          reading: "いごこち",
+          kanjiPartLen: 3,
+          wordJlpt: 3,
+        },
+      ],
+      [
+        "心地",
+        {
+          kanjiPart: "心地",
+          reading: "ここち",
+          kanjiPartLen: 2,
+          wordJlpt: 1,
+        },
+      ],
+    ]);
+    const html = "<p>居心地の悪さ</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      noKanjiMatches,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: true, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
+
+  it("does not show a leading kanji subword when the full compound fails the filter", () => {
+    const noKanjiMatches: FuriganaKanjiSet = { all: false, chars: new Set() };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "場所",
+        {
+          kanjiPart: "場所",
+          reading: "ばしょ",
+          kanjiPartLen: 2,
+          wordJlpt: 4,
+        },
+      ],
+      [
+        "場",
+        {
+          kanjiPart: "場",
+          reading: "ば",
+          kanjiPartLen: 1,
+          wordJlpt: 3,
+        },
+      ],
+    ]);
+    const html = "<p>場所のない</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      noKanjiMatches,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: true, n2: false, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
 });
 
 describe("resolveFuriganaBatch compound resolution", () => {
@@ -570,5 +638,37 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const result = applyFuriganaToHtml(html, fMap, allKanji);
     expect(result).toContain("<ruby>大勢<rt>おおぜい</rt></ruby>");
     expect(result).not.toContain("<ruby>勢<rt>いきおい</rt></ruby>");
+  });
+
+  it("full pipeline does not leak 心地 furigana into 居心地 when only N1 word-level is enabled", async () => {
+    const html = "<p>居心地の悪さ</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: true, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
+
+  it("full pipeline does not leak 場 furigana into 場所 when only N3 word-level is enabled", async () => {
+    const html = "<p>場所のない</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: true, n2: false, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
   });
 });
