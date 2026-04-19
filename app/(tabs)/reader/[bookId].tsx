@@ -1056,7 +1056,7 @@ export default function BookReaderScreen() {
     {
       title: "Show When",
       rules: [
-        ["matchAnyKanji", "Any kanji"],
+        ["matchAnyKanji", "Kanji"],
         ["matchWordLevel", "Word level"],
         ["matchIrregularReading", "Irregular"],
       ],
