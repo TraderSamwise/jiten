@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Animated,
@@ -113,6 +113,7 @@ const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
 const TOOLBAR_SIDE_MARGIN = 8;
 const READ_PROGRESS_FLUSH_MS = 15_000;
+const FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS = 180;
 
 const EXTERNAL_DICTS = [
   {
@@ -136,6 +137,20 @@ const EXTERNAL_DICTS = [
     store: "https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125",
   },
 ];
+
+function ruleLevelsEqual(
+  a: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
+  b: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
+): boolean {
+  const rules = Object.keys(a) as ReaderFuriganaRule[];
+  for (const rule of rules) {
+    const levels = Object.keys(a[rule]) as FuriganaMatchLevel[];
+    for (const level of levels) {
+      if (a[rule][level] !== b[rule][level]) return false;
+    }
+  }
+  return true;
+}
 
 function HighlightToolbar({
   tooltip,
@@ -442,6 +457,9 @@ export default function BookReaderScreen() {
   const [sourceFuriganaEnabled, setSourceFuriganaEnabled] = useAtom(readerSourceFuriganaAtom);
   const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
+  const [draftSourceFuriganaEnabled, setDraftSourceFuriganaEnabled] =
+    useState(sourceFuriganaEnabled);
+  const [draftFuriganaRuleLevels, setDraftFuriganaRuleLevels] = useState(furiganaRuleLevels);
 
   const [book, setBook] = useState<Book | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -461,6 +479,7 @@ export default function BookReaderScreen() {
   const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
   const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
+  const furiganaApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     Animated.timing(advancedReadingPatternsAnim, {
@@ -470,6 +489,89 @@ export default function BookReaderScreen() {
       useNativeDriver: false,
     }).start();
   }, [advancedReadingPatternsAnim, showAdvancedReadingPatterns]);
+
+  useEffect(() => {
+    if (showSettings) {
+      setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
+      setDraftFuriganaRuleLevels(furiganaRuleLevels);
+      return;
+    }
+    setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
+    setDraftFuriganaRuleLevels(furiganaRuleLevels);
+  }, [showSettings, sourceFuriganaEnabled, furiganaRuleLevels]);
+
+  const flushDraftFuriganaSettings = useCallback(() => {
+    if (furiganaApplyTimerRef.current) {
+      clearTimeout(furiganaApplyTimerRef.current);
+      furiganaApplyTimerRef.current = null;
+    }
+    if (draftSourceFuriganaEnabled !== sourceFuriganaEnabled) {
+      startTransition(() => {
+        setSourceFuriganaEnabled(draftSourceFuriganaEnabled);
+      });
+    }
+    if (!ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)) {
+      startTransition(() => {
+        setFuriganaRuleLevels(draftFuriganaRuleLevels);
+      });
+    }
+  }, [
+    draftFuriganaRuleLevels,
+    draftSourceFuriganaEnabled,
+    furiganaRuleLevels,
+    setFuriganaRuleLevels,
+    setSourceFuriganaEnabled,
+    sourceFuriganaEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    if (
+      draftSourceFuriganaEnabled === sourceFuriganaEnabled &&
+      ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)
+    ) {
+      if (furiganaApplyTimerRef.current) {
+        clearTimeout(furiganaApplyTimerRef.current);
+        furiganaApplyTimerRef.current = null;
+      }
+      return;
+    }
+    if (furiganaApplyTimerRef.current) clearTimeout(furiganaApplyTimerRef.current);
+    furiganaApplyTimerRef.current = setTimeout(() => {
+      furiganaApplyTimerRef.current = null;
+      flushDraftFuriganaSettings();
+    }, FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS);
+    return () => {
+      if (furiganaApplyTimerRef.current) {
+        clearTimeout(furiganaApplyTimerRef.current);
+        furiganaApplyTimerRef.current = null;
+      }
+    };
+  }, [
+    draftFuriganaRuleLevels,
+    draftSourceFuriganaEnabled,
+    flushDraftFuriganaSettings,
+    furiganaRuleLevels,
+    showSettings,
+    sourceFuriganaEnabled,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (furiganaApplyTimerRef.current) {
+        clearTimeout(furiganaApplyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const toggleSettings = useCallback(() => {
+    setShowSettings((prev) => {
+      if (prev) {
+        flushDraftFuriganaSettings();
+      }
+      return !prev;
+    });
+  }, [flushDraftFuriganaSettings]);
 
   // Streaming prefetch refs — used by handleMessage for pageRendered
   const modelRef = useRef<TextModel | null>(null);
@@ -1081,11 +1183,11 @@ export default function BookReaderScreen() {
   const formatSelectedLevels = useCallback(
     (rule: ReaderFuriganaRule) => {
       const labels = matchLevelOptions
-        .filter(([level]) => furiganaRuleLevels[rule][level])
+        .filter(([level]) => draftFuriganaRuleLevels[rule][level])
         .map(([, label]) => label);
       return labels.length > 0 ? labels.join(" ") : "Off";
     },
-    [furiganaRuleLevels],
+    [draftFuriganaRuleLevels],
   );
 
   const handleToggleSaved = useCallback(async () => {
@@ -1137,7 +1239,7 @@ export default function BookReaderScreen() {
           </Pressable>
         )}
         {book && (
-          <Pressable onPress={() => setShowSettings(!showSettings)} className="p-2">
+          <Pressable onPress={toggleSettings} className="p-2">
             <SlidersHorizontal size={20} className="text-foreground" />
           </Pressable>
         )}
@@ -1198,16 +1300,16 @@ export default function BookReaderScreen() {
                         </Text>
                       </View>
                       <Pressable
-                        onPress={() => setSourceFuriganaEnabled(!sourceFuriganaEnabled)}
+                        onPress={() => setDraftSourceFuriganaEnabled((prev) => !prev)}
                         className={`px-3 py-1.5 rounded-full border ${
-                          sourceFuriganaEnabled
+                          draftSourceFuriganaEnabled
                             ? "bg-foreground border-foreground"
                             : "bg-transparent border-border"
                         }`}
                       >
                         <Text
                           className={`text-xs font-medium ${
-                            sourceFuriganaEnabled ? "text-background" : "text-muted-foreground"
+                            draftSourceFuriganaEnabled ? "text-background" : "text-muted-foreground"
                           }`}
                         >
                           Default
@@ -1238,7 +1340,7 @@ export default function BookReaderScreen() {
                             <Pressable
                               key={`${rule}-${level}`}
                               onPress={() =>
-                                setFuriganaRuleLevels((prev) => ({
+                                setDraftFuriganaRuleLevels((prev) => ({
                                   ...prev,
                                   [rule]: {
                                     ...prev[rule],
@@ -1247,14 +1349,14 @@ export default function BookReaderScreen() {
                                 }))
                               }
                               className={`px-3 py-1.5 rounded-full border ${
-                                furiganaRuleLevels[rule][level]
+                                draftFuriganaRuleLevels[rule][level]
                                   ? "bg-foreground border-foreground"
                                   : "bg-background/40 border-border"
                               }`}
                             >
                               <Text
                                 className={`text-xs font-medium ${
-                                  furiganaRuleLevels[rule][level]
+                                  draftFuriganaRuleLevels[rule][level]
                                     ? "text-background"
                                     : "text-muted-foreground"
                                 }`}
@@ -1310,7 +1412,7 @@ export default function BookReaderScreen() {
                               <Pressable
                                 key={`${rule}-${level}`}
                                 onPress={() =>
-                                  setFuriganaRuleLevels((prev) => ({
+                                  setDraftFuriganaRuleLevels((prev) => ({
                                     ...prev,
                                     [rule]: {
                                       ...prev[rule],
@@ -1319,14 +1421,14 @@ export default function BookReaderScreen() {
                                   }))
                                 }
                                 className={`px-3 py-1.5 rounded-full border ${
-                                  furiganaRuleLevels[rule][level]
+                                  draftFuriganaRuleLevels[rule][level]
                                     ? "bg-foreground border-foreground"
                                     : "bg-background/40 border-border"
                                 }`}
                               >
                                 <Text
                                   className={`text-xs font-medium ${
-                                    furiganaRuleLevels[rule][level]
+                                    draftFuriganaRuleLevels[rule][level]
                                       ? "text-background"
                                       : "text-muted-foreground"
                                   }`}
@@ -1372,7 +1474,7 @@ export default function BookReaderScreen() {
                                 <Pressable
                                   key={`${rule}-${level}`}
                                   onPress={() =>
-                                    setFuriganaRuleLevels((prev) => ({
+                                    setDraftFuriganaRuleLevels((prev) => ({
                                       ...prev,
                                       [rule]: {
                                         ...prev[rule],
@@ -1381,14 +1483,14 @@ export default function BookReaderScreen() {
                                     }))
                                   }
                                   className={`px-3 py-1.5 rounded-full border ${
-                                    furiganaRuleLevels[rule][level]
+                                    draftFuriganaRuleLevels[rule][level]
                                       ? "bg-foreground border-foreground"
                                       : "bg-background/40 border-border"
                                   }`}
                                 >
                                   <Text
                                     className={`text-xs font-medium ${
-                                      furiganaRuleLevels[rule][level]
+                                      draftFuriganaRuleLevels[rule][level]
                                         ? "text-background"
                                         : "text-muted-foreground"
                                     }`}

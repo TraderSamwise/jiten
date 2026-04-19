@@ -550,6 +550,82 @@ describe("reader furigana rule levels", () => {
     );
     expect(result).not.toContain("<ruby>");
   });
+
+  it("does not leak a stem word into 覚えない when only N2 word-level is enabled", () => {
+    const noKanjiMatches: FuriganaKanjiSet = { all: false, chars: new Set() };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "覚えない",
+        {
+          kanjiPart: "覚",
+          reading: "おぼ",
+          kanjiPartLen: 1,
+          wordJlpt: 5,
+          fullKanjiForm: "覚える",
+          fullKanaForm: "おぼえる",
+        },
+      ],
+      [
+        "覚え",
+        {
+          kanjiPart: "覚",
+          reading: "おぼ",
+          kanjiPartLen: 1,
+          wordJlpt: 2,
+          fullKanjiForm: "覚え",
+          fullKanaForm: "おぼえ",
+        },
+      ],
+    ]);
+    const html = "<p>覚えない</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      noKanjiMatches,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: true, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
+
+  it("shows 悪さ when it directly matches the selected N2 word level", () => {
+    const noKanjiMatches: FuriganaKanjiSet = { all: false, chars: new Set() };
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "悪さ",
+        {
+          kanjiPart: "悪",
+          reading: "わる",
+          kanjiPartLen: 1,
+          wordJlpt: 2,
+          fullKanjiForm: "悪い",
+          fullKanaForm: "わるい",
+        },
+      ],
+      [
+        "悪",
+        {
+          kanjiPart: "悪",
+          reading: "あく",
+          kanjiPartLen: 1,
+          wordJlpt: 2,
+          fullKanjiForm: "悪",
+          fullKanaForm: "あく",
+        },
+      ],
+    ]);
+    const html = "<p>悪さ</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      noKanjiMatches,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: true, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).toContain("<ruby>悪<rt>わる</rt></ruby>さ");
+  });
 });
 
 describe("resolveFuriganaBatch compound resolution", () => {
@@ -670,5 +746,37 @@ describe("resolveFuriganaBatch compound resolution", () => {
       }),
     );
     expect(result).not.toContain("<ruby>");
+  });
+
+  it("full pipeline does not leak 覚え into 覚えない when only N2 word-level is enabled", async () => {
+    const html = "<p>覚えない</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: true, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).not.toContain("<ruby>");
+  });
+
+  it("full pipeline keeps 悪さ when it directly matches the selected N2 word level", async () => {
+    const html = "<p>悪さ</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: true, n1: false, nonJouyou: false },
+      }),
+    );
+    expect(result).toContain("<ruby>悪<rt>わる</rt></ruby>さ");
   });
 });

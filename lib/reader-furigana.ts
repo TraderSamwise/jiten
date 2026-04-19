@@ -785,10 +785,7 @@ export function applyFuriganaToHtml(
         ) {
           const rejectedPrefix = longestRejectedSurfaceChars.slice(0, surfaceChars.length);
           const removedSuffix = longestRejectedSurfaceChars.slice(surfaceChars.length);
-          if (
-            rejectedPrefix.join("") === surfaceChars.join("") &&
-            removedSuffix.some((char) => isKanji(char) || isDigit(char))
-          ) {
+          if (rejectedPrefix.join("") === surfaceChars.join("") && removedSuffix.length > 0) {
             continue;
           }
         }
