@@ -120,6 +120,46 @@ describe("DatabaseProvider", () => {
     expect(extendedDownloadMocks.hasInstalledExtendedDb).toHaveBeenCalledOnce();
   });
 
+  it("opens locally installed optional DBs even when manifest fetch succeeds", async () => {
+    dictDownloadMocks.fetchManifest.mockResolvedValue({
+      version: 23,
+      url: "https://example.com/dict.db",
+      sizeBytes: 1,
+      compressedSizeBytes: 1,
+      miniUrl: "https://example.com/dict-mini.db",
+      miniSizeBytes: 1,
+      audioUrl: "https://example.com/audio.db",
+      audioSizeBytes: 1,
+      extended: {
+        version: 3,
+        sizeBytes: 1,
+        url: "https://example.com/extended.db",
+      },
+      strokes: {
+        version: 1,
+        sizeBytes: 1,
+        url: "https://example.com/strokes.db",
+      },
+    });
+
+    const { result } = renderHook(() => useDatabase(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isReady).toBe(true);
+      expect(result.current.isDownloaded).toBe(true);
+      expect(result.current.dictDb).toBe(mockOpenDictDb);
+      expect(result.current.audioDb).toBe(mockAudioDb);
+      expect(result.current.strokesDb).toBe(mockStrokesDb);
+      expect(result.current.extendedDb).toBe(mockExtendedDb);
+    });
+
+    expect(result.current.optionalDataSource).toEqual({
+      audio: "local",
+      strokes: "local",
+      extended: "local",
+    });
+  });
+
   it("reports optional DB open failures without blocking base dictionary startup", async () => {
     dictDownloadMocks.loadWebAudioDb.mockRejectedValue(new Error("audio failed"));
     dictDownloadMocks.openStrokesDb.mockRejectedValue(new Error("strokes failed"));
