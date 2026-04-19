@@ -104,6 +104,59 @@ function tapCandidateStartsMidKanaRun(text: string, start: number): boolean {
   return start > 0 && isKanaChar(text[start - 1]);
 }
 
+function tapCandidateStartsMidKanjiRun(text: string, start: number): boolean {
+  if (!isKanjiChar(text[start])) return false;
+  return start > 0 && isKanjiChar(text[start - 1]);
+}
+
+function tapCandidateEndsMidKanjiRun(text: string, start: number, matchedText: string): boolean {
+  const end = start + matchedText.length - 1;
+  if (end < 0 || end >= text.length) return false;
+  if (!isKanjiChar(text[end])) return false;
+  return end < text.length - 1 && isKanjiChar(text[end + 1]);
+}
+
+function hasExactSurfaceMatch(result: LookupResult): boolean {
+  return (
+    hasExactKanjiSurfaceMatch(result, result.matchedText) ||
+    hasExactKanaSurfaceMatch(result, result.matchedText)
+  );
+}
+
+function strictlyContainsCandidate(
+  outerStart: number,
+  outerMatchedText: string,
+  innerStart: number,
+  innerMatchedText: string,
+): boolean {
+  const outerEnd = outerStart + outerMatchedText.length;
+  const innerEnd = innerStart + innerMatchedText.length;
+  return outerStart <= innerStart && outerEnd >= innerEnd && outerMatchedText !== innerMatchedText;
+}
+
+function shouldPreferContainingExactCandidate(
+  outerResult: LookupResult,
+  outerStart: number,
+  innerResult: LookupResult,
+  innerStart: number,
+): boolean {
+  if (!hasExactSurfaceMatch(outerResult) || !hasExactSurfaceMatch(innerResult)) return false;
+  if (
+    !strictlyContainsCandidate(
+      outerStart,
+      outerResult.matchedText,
+      innerStart,
+      innerResult.matchedText,
+    )
+  ) {
+    return false;
+  }
+
+  // Kana-only run extensions remain ambiguous overlap cases and should
+  // still be handled by the structural scorer rather than auto-winning.
+  return hasKanji(outerResult.matchedText);
+}
+
 function scoreTapCandidate(
   text: string,
   tapOffset: number,
@@ -122,6 +175,8 @@ function scoreTapCandidate(
   else if (tapCandidateStartsAtKanaRunStart(text, start)) score += 50;
   else if (tapCandidateStartsMidKanaRun(text, start)) score -= 65;
 
+  if (tapCandidateStartsMidKanjiRun(text, start)) score -= 140;
+  if (tapCandidateEndsMidKanjiRun(text, start, result.matchedText)) score -= 140;
   if (hasCommon) score += 120;
   if (result.deinflectReasons.length > 0) score -= 20;
   if (isKanaOnly && suffixCharsAfterTap > 0) {
@@ -600,6 +655,25 @@ export async function smartLookupWithOffset(
       bestOverall = bestForLength;
       continue;
     }
+
+    const currentContainsBest = shouldPreferContainingExactCandidate(
+      bestForLength.result,
+      bestForLength.start,
+      bestOverall.result,
+      bestOverall.start,
+    );
+    if (currentContainsBest) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const bestContainsCurrent = shouldPreferContainingExactCandidate(
+      bestOverall.result,
+      bestOverall.start,
+      bestForLength.result,
+      bestForLength.start,
+    );
+    if (bestContainsCurrent) continue;
 
     const lengthDiff = bestOverall.length - bestForLength.length;
     if (lengthDiff >= 2) break;
