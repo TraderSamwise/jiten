@@ -66,4 +66,21 @@ describe("EntrySummary", () => {
     expect(screen.getByText("PA:ちんみょう:2")).toBeTruthy();
     expect(screen.getByText("くじける")).toBeTruthy();
   });
+
+  it("keeps the primary reading present while only stacking alternate readings", () => {
+    const entry = makeEntry({
+      kana: [
+        { text: "あた", romaji: null, common: true, tags: [] },
+        { text: "た", romaji: null, common: false, tags: [] },
+      ],
+      pitchAccents: [],
+      kanji: [{ text: "咫", common: false, tags: [] }],
+    });
+
+    render(<EntrySummary entry={entry} />);
+
+    expect(screen.getByText("咫")).toBeTruthy();
+    expect(screen.getByText("あた")).toBeTruthy();
+    expect(screen.getByText("た")).toBeTruthy();
+  });
 });

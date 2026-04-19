@@ -9,12 +9,14 @@ import type { DictEntry } from "@/db/types";
 interface EntrySummaryProps {
   entry: DictEntry;
   variant?: "default" | "compact";
+  inlineMeta?: React.ReactNode;
   rightAccessory?: React.ReactNode;
 }
 
 export const EntrySummary = React.memo(function EntrySummary({
   entry,
   variant = "default",
+  inlineMeta,
   rightAccessory,
 }: EntrySummaryProps) {
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entry.id}`));
@@ -52,7 +54,7 @@ export const EntrySummary = React.memo(function EntrySummary({
     accents: entry.pitchAccents.filter((pa) => pa.reading === kana.text),
   }));
   const leadReading = readingRows[0] ?? null;
-  const stackedReadings = primaryKanji ? readingRows : readingRows.slice(1);
+  const stackedReadings = readingRows.slice(1);
   const MAX_SENSES = 3;
   const sensesToShow = entry.senses.slice(0, MAX_SENSES);
   const hasMore = entry.senses.length > MAX_SENSES;
@@ -63,7 +65,18 @@ export const EntrySummary = React.memo(function EntrySummary({
         <View className="flex-1 gap-1">
           <View className="flex-row flex-wrap items-center gap-3">
             {primaryKanji ? (
-              <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
+              <>
+                <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
+                {leadReading?.accents.length ? (
+                  <View className="flex-row flex-wrap items-center gap-2">
+                    {leadReading.accents.map((pa, i) => (
+                      <PitchAccent key={i} accent={pa} fontSize={18} />
+                    ))}
+                  </View>
+                ) : primaryKana ? (
+                  <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+                ) : null}
+              </>
             ) : leadReading?.accents.length ? (
               leadReading.accents.map((pa, i) => <PitchAccent key={i} accent={pa} fontSize={20} />)
             ) : (
@@ -71,9 +84,10 @@ export const EntrySummary = React.memo(function EntrySummary({
             )}
             {entry.common && <Badge variant="common" label="common" />}
             {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
+            {inlineMeta}
           </View>
           {stackedReadings.length > 0 && (
-            <View className="gap-1">
+            <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
               {stackedReadings.map(({ kana, accents: rowAccents }, i) => (
                 <View key={`${kana.text}-${i}`} className="flex-row flex-wrap items-center gap-2">
                   {rowAccents.length > 0 ? (

@@ -590,16 +590,6 @@ export function DictionaryPopup({
 
     return (
       <View>
-        {panelWordResult.deinflectReasons.length > 0 && (
-          <View className="mb-2">
-            <View className="bg-muted px-2 py-1 rounded self-start">
-              <Text className="text-xs text-muted-foreground">
-                {formatDeinflectReasons(panelWordResult.deinflectReasons)}
-              </Text>
-            </View>
-          </View>
-        )}
-
         {panelIsNameResult ? (
           <ScrollView
             style={{ maxHeight: MAX_POPUP_BODY_HEIGHT }}
@@ -680,7 +670,19 @@ export function DictionaryPopup({
               contentContainerStyle={{ paddingBottom: 4 }}
             >
               {panelEntry && (
-                <EntrySummary entry={panelEntry} rightAccessory={lookupSwitch ?? undefined} />
+                <EntrySummary
+                  entry={panelEntry}
+                  inlineMeta={
+                    panelWordResult.deinflectReasons.length > 0 ? (
+                      <View className="rounded-md bg-muted px-2 py-1">
+                        <Text className="text-xs text-muted-foreground">
+                          {formatDeinflectReasons(panelWordResult.deinflectReasons)}
+                        </Text>
+                      </View>
+                    ) : null
+                  }
+                  rightAccessory={lookupSwitch ?? undefined}
+                />
               )}
             </ScrollView>
           </Pressable>
