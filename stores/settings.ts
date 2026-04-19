@@ -6,10 +6,9 @@ import { focusAtom } from "jotai-optics";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
-export type FuriganaLevel = "default" | "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou" | "all";
-export type ReaderFuriganaMatchMode =
+export type FuriganaMatchLevel = "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou";
+export type ReaderFuriganaRule =
   | "matchAnyKanji"
-  | "matchAllKanji"
   | "matchWordLevel"
   | "matchIrregularReading"
   | "matchMostlyKunyomi"
@@ -23,25 +22,25 @@ export type ConnectBubbleKinds = { kanji: boolean; reading: boolean; meaning: bo
 
 // ─── Defaults ───
 
-export const defaultFuriganaLevels: Record<FuriganaLevel, boolean> = {
-  default: true,
+export const defaultFuriganaMatchLevels: Record<FuriganaMatchLevel, boolean> = {
   n5: false,
   n4: false,
   n3: false,
   n2: false,
   n1: false,
   nonJouyou: false,
-  all: false,
 };
 
-export const defaultReaderFuriganaMatchModes: Record<ReaderFuriganaMatchMode, boolean> = {
-  matchAnyKanji: true,
-  matchAllKanji: false,
-  matchWordLevel: false,
-  matchIrregularReading: true,
-  matchMostlyKunyomi: false,
-  matchMostlyOnyomi: false,
-  matchMixedOnKun: false,
+export const defaultReaderFuriganaRuleLevels: Record<
+  ReaderFuriganaRule,
+  Record<FuriganaMatchLevel, boolean>
+> = {
+  matchAnyKanji: { n5: false, n4: false, n3: true, n2: true, n1: true, nonJouyou: true },
+  matchWordLevel: { ...defaultFuriganaMatchLevels },
+  matchIrregularReading: { n5: false, n4: false, n3: true, n2: true, n1: true, nonJouyou: true },
+  matchMostlyKunyomi: { ...defaultFuriganaMatchLevels },
+  matchMostlyOnyomi: { ...defaultFuriganaMatchLevels },
+  matchMixedOnKun: { ...defaultFuriganaMatchLevels },
 };
 
 export const defaultSettings = Object.freeze({
@@ -49,10 +48,10 @@ export const defaultSettings = Object.freeze({
   typingFuriganaMode: "auto" as FuriganaMode,
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
-  readerFuriganaLevels: defaultFuriganaLevels as Record<FuriganaLevel, boolean>,
-  readerFuriganaMatchModes: defaultReaderFuriganaMatchModes as Record<
-    ReaderFuriganaMatchMode,
-    boolean
+  readerSourceFurigana: true as boolean,
+  readerFuriganaRuleLevels: defaultReaderFuriganaRuleLevels as Record<
+    ReaderFuriganaRule,
+    Record<FuriganaMatchLevel, boolean>
   >,
   readerPageAnimations: true as boolean,
   connectGameMode: "timed" as ConnectGameMode,
@@ -120,11 +119,11 @@ export const themeAtom = focusAtom(settingsAtom, (o) => o.prop("theme"));
 export const typingFuriganaModeAtom = focusAtom(settingsAtom, (o) => o.prop("typingFuriganaMode"));
 export const typingShowPitchAtom = focusAtom(settingsAtom, (o) => o.prop("typingShowPitch"));
 export const typingPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("typingPlayAudio"));
-export const readerFuriganaLevelsAtom = focusAtom(settingsAtom, (o) =>
-  o.prop("readerFuriganaLevels"),
+export const readerSourceFuriganaAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerSourceFurigana"),
 );
-export const readerFuriganaMatchModesAtom = focusAtom(settingsAtom, (o) =>
-  o.prop("readerFuriganaMatchModes"),
+export const readerFuriganaRuleLevelsAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerFuriganaRuleLevels"),
 );
 export const readerPageAnimationsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerPageAnimations"),

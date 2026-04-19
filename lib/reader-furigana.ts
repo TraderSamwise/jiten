@@ -3,15 +3,29 @@ import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "@/db/kanji-sear
 import { deinflect } from "./deinflect";
 import { classifyReaderReadingPattern, type ReaderReadingPattern } from "./reader-reading-pattern";
 import {
-  defaultFuriganaLevels,
-  defaultReaderFuriganaMatchModes,
-  type FuriganaLevel,
-  type ReaderFuriganaMatchMode,
+  defaultReaderFuriganaRuleLevels,
+  type FuriganaMatchLevel,
+  type ReaderFuriganaRule,
 } from "@/stores/settings";
 
 // ─── Build kanji set from enabled levels ───
 
-const LEVEL_MAP: Record<string, number | null> = {
+export interface FuriganaKanjiSet {
+  all: boolean;
+  chars: Set<string>;
+}
+
+export interface ReaderFuriganaSettings {
+  sourceDefault: boolean;
+  ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+}
+
+export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
+  sourceDefault: true,
+  ruleLevels: defaultReaderFuriganaRuleLevels,
+};
+
+const LEVEL_MAP: Record<FuriganaMatchLevel, number | null> = {
   n5: 5,
   n4: 4,
   n3: 3,
@@ -20,34 +34,14 @@ const LEVEL_MAP: Record<string, number | null> = {
   nonJouyou: null,
 };
 
-export interface FuriganaKanjiSet {
-  all: boolean;
-  chars: Set<string>;
-  enabledLevels?: Set<number>; // Which JLPT levels are turned on (5=easiest, 1=hardest)
-}
-
-export interface ReaderFuriganaSettings {
-  levels: Record<FuriganaLevel, boolean>;
-  matchModes: Record<ReaderFuriganaMatchMode, boolean>;
-}
-
-export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
-  levels: defaultFuriganaLevels,
-  matchModes: defaultReaderFuriganaMatchModes,
-};
-
 export async function buildFuriganaKanjiSet(
   dictDb: SQLite.SQLiteDatabase,
-  levels: Record<FuriganaLevel, boolean>,
+  levels: Record<FuriganaMatchLevel, boolean>,
 ): Promise<FuriganaKanjiSet> {
-  if (levels.all) return { all: true, chars: new Set() };
-
   const chars = new Set<string>();
-  const enabledLevels = new Set<number>();
   const queries: Promise<string[]>[] = [];
   for (const [key, dbLevel] of Object.entries(LEVEL_MAP)) {
-    if (levels[key as FuriganaLevel]) {
-      if (dbLevel != null) enabledLevels.add(dbLevel);
+    if (levels[key as FuriganaMatchLevel]) {
       queries.push(getKanjiLiteralsByJlptAsync(dictDb, dbLevel));
     }
   }
@@ -57,7 +51,7 @@ export async function buildFuriganaKanjiSet(
       if (isKanji(lit)) chars.add(lit);
     }
   }
-  return { all: false, chars, enabledLevels };
+  return { all: false, chars };
 }
 
 /** Serialize a FuriganaKanjiSet for sending to the WebView. */
@@ -596,8 +590,24 @@ export interface FuriganaEntry {
   readingPattern?: ReaderReadingPattern;
 }
 
-function matchesSelectedWordLevel(entry: FuriganaEntry, kanjiSet: FuriganaKanjiSet): boolean {
-  return entry.wordJlpt != null && !!kanjiSet.enabledLevels?.has(entry.wordJlpt);
+function buildEnabledWordLevels(levels: Record<FuriganaMatchLevel, boolean>): Set<number | null> {
+  const enabled = new Set<number | null>();
+  for (const [key, isEnabled] of Object.entries(levels) as [FuriganaMatchLevel, boolean][]) {
+    if (!isEnabled) continue;
+    enabled.add(LEVEL_MAP[key]);
+  }
+  return enabled;
+}
+
+function ruleHasEnabledLevels(levels: Record<FuriganaMatchLevel, boolean>): boolean {
+  return Object.values(levels).some(Boolean);
+}
+
+function matchesSelectedWordLevel(
+  entry: FuriganaEntry,
+  enabledLevels: Set<number | null>,
+): boolean {
+  return entry.wordJlpt != null && enabledLevels.has(entry.wordJlpt);
 }
 
 function shouldShowFuriganaForSurface(
@@ -610,22 +620,29 @@ function shouldShowFuriganaForSurface(
 
   const surfaceKanji = surfaceChars.filter(isKanji);
   const hasSelectedKanji = surfaceKanji.some((c) => kanjiSet.chars.has(c));
-  const allKanjiSelected =
-    surfaceKanji.length > 0 && surfaceKanji.every((c) => kanjiSet.chars.has(c));
-  const wordLevelMatches = matchesSelectedWordLevel(entry, kanjiSet);
-  const irregularMatches = !!entry.irregularReading && wordLevelMatches;
-  const mostlyKunMatches = wordLevelMatches && entry.readingPattern === "mostly_kunyomi";
-  const mostlyOnMatches = wordLevelMatches && entry.readingPattern === "mostly_onyomi";
-  const mixedMatches = wordLevelMatches && entry.readingPattern === "mixed_on_kun";
+  const anyKanjiLevels = settings.ruleLevels.matchAnyKanji;
+  const wordLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchWordLevel);
+  const irregularLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchIrregularReading);
+  const mostlyKunLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchMostlyKunyomi);
+  const mostlyOnLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchMostlyOnyomi);
+  const mixedLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchMixedOnKun);
+  const wordLevelMatches = matchesSelectedWordLevel(entry, wordLevelSet);
+  const irregularMatches =
+    !!entry.irregularReading && matchesSelectedWordLevel(entry, irregularLevelSet);
+  const mostlyKunMatches =
+    matchesSelectedWordLevel(entry, mostlyKunLevelSet) && entry.readingPattern === "mostly_kunyomi";
+  const mostlyOnMatches =
+    matchesSelectedWordLevel(entry, mostlyOnLevelSet) && entry.readingPattern === "mostly_onyomi";
+  const mixedMatches =
+    matchesSelectedWordLevel(entry, mixedLevelSet) && entry.readingPattern === "mixed_on_kun";
 
   return (
-    (settings.matchModes.matchAnyKanji && hasSelectedKanji) ||
-    (settings.matchModes.matchAllKanji && allKanjiSelected) ||
-    (settings.matchModes.matchWordLevel && wordLevelMatches) ||
-    (settings.matchModes.matchIrregularReading && irregularMatches) ||
-    (settings.matchModes.matchMostlyKunyomi && mostlyKunMatches) ||
-    (settings.matchModes.matchMostlyOnyomi && mostlyOnMatches) ||
-    (settings.matchModes.matchMixedOnKun && mixedMatches)
+    (ruleHasEnabledLevels(anyKanjiLevels) && hasSelectedKanji) ||
+    wordLevelMatches ||
+    irregularMatches ||
+    mostlyKunMatches ||
+    mostlyOnMatches ||
+    mixedMatches
   );
 }
 

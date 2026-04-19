@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
+  Animated,
   Pressable,
   ActivityIndicator,
   Dimensions,
+  Easing,
   Linking,
   Platform,
+  ScrollView,
+  Switch,
   GestureResponderEvent,
   LayoutChangeEvent,
 } from "react-native";
@@ -21,6 +25,7 @@ import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
 import {
   ChevronLeft,
   ChevronDown,
+  ChevronRight,
   SlidersHorizontal,
   BookText,
   User,
@@ -57,11 +62,11 @@ import {
 } from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
 import {
-  readerFuriganaLevelsAtom,
-  readerFuriganaMatchModesAtom,
+  readerFuriganaRuleLevelsAtom,
+  readerSourceFuriganaAtom,
   readerPageAnimationsAtom,
-  type FuriganaLevel,
-  type ReaderFuriganaMatchMode,
+  type FuriganaMatchLevel,
+  type ReaderFuriganaRule,
 } from "@/stores/settings";
 import {
   buildFuriganaKanjiSet,
@@ -85,23 +90,18 @@ function bookHasSourceFurigana(rawContent: string): boolean {
 
 /** Should furigana layout be active? Accounts for source furigana + "default" toggle. */
 function hasFuriganaActive(
-  levels: Record<FuriganaLevel, boolean>,
-  matchModes: Record<ReaderFuriganaMatchMode, boolean>,
+  sourceDefault: boolean,
+  ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
   bookHasSource: boolean,
 ): boolean {
-  if (bookHasSource && levels.default) return true;
-  const hasSelectedLevels = Object.entries(levels).some(([k, v]) => k !== "default" && v);
-  const hasSelectedMatchers = Object.values(matchModes).some(Boolean);
-  return hasSelectedLevels && hasSelectedMatchers;
+  if (bookHasSource && sourceDefault) return true;
+  return Object.values(ruleLevels).some((levels) => Object.values(levels).some(Boolean));
 }
 
 function hasInjectedFuriganaActive(
-  levels: Record<FuriganaLevel, boolean>,
-  matchModes: Record<ReaderFuriganaMatchMode, boolean>,
+  ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
 ): boolean {
-  const hasSelectedLevels = Object.entries(levels).some(([k, v]) => k !== "default" && v);
-  const hasSelectedMatchers = Object.values(matchModes).some(Boolean);
-  return hasSelectedLevels && hasSelectedMatchers;
+  return Object.values(ruleLevels).some((levels) => Object.values(levels).some(Boolean));
 }
 
 /** Strip <ruby> tags keeping only base text (removes <rt> content) */
@@ -439,8 +439,8 @@ export default function BookReaderScreen() {
   // Track whether the initial scroll-restore has fired (don't mark dirty for it)
   const initialScrollFiredRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
-  const [furiganaLevels, setFuriganaLevels] = useAtom(readerFuriganaLevelsAtom);
-  const [furiganaMatchModes, setFuriganaMatchModes] = useAtom(readerFuriganaMatchModesAtom);
+  const [sourceFuriganaEnabled, setSourceFuriganaEnabled] = useAtom(readerSourceFuriganaAtom);
+  const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
 
   const [book, setBook] = useState<Book | null>(null);
@@ -458,6 +458,18 @@ export default function BookReaderScreen() {
   const [lookupMode, setLookupMode] = useState<ReaderLookupMode>("auto");
   const lookupModeRef = useRef<ReaderLookupMode>("auto");
   const [showJumpSlider, setShowJumpSlider] = useState(false);
+  const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
+  const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
+  const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(advancedReadingPatternsAnim, {
+      toValue: showAdvancedReadingPatterns ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [advancedReadingPatternsAnim, showAdvancedReadingPatterns]);
 
   // Streaming prefetch refs — used by handleMessage for pageRendered
   const modelRef = useRef<TextModel | null>(null);
@@ -468,17 +480,17 @@ export default function BookReaderScreen() {
 
   // Furigana refs
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
-  const furiganaLevelsRef = useRef(furiganaLevels);
-  const furiganaMatchModesRef = useRef(furiganaMatchModes);
+  const sourceFuriganaEnabledRef = useRef(sourceFuriganaEnabled);
+  const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
 
   useEffect(() => {
-    furiganaLevelsRef.current = furiganaLevels;
-  }, [furiganaLevels]);
+    sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
+  }, [sourceFuriganaEnabled]);
   useEffect(() => {
-    furiganaMatchModesRef.current = furiganaMatchModes;
-  }, [furiganaMatchModes]);
+    furiganaRuleLevelsRef.current = furiganaRuleLevels;
+  }, [furiganaRuleLevels]);
   useEffect(() => {
     lookupModeRef.current = lookupMode;
   }, [lookupMode]);
@@ -505,10 +517,10 @@ export default function BookReaderScreen() {
       if (!model || !dictDb) return;
       const isAozora = isAozoraRef.current;
       const bookHasSource = hasSourceFuriganaRef.current;
-      const levels = furiganaLevelsRef.current;
+      const sourceDefault = sourceFuriganaEnabledRef.current;
+      const ruleLevels = furiganaRuleLevelsRef.current;
       const hasFuri =
-        kanjiSetRef.current != null ||
-        hasFuriganaActive(levels, furiganaMatchModesRef.current, bookHasSource);
+        kanjiSetRef.current != null || hasFuriganaActive(sourceDefault, ruleLevels, bookHasSource);
 
       const screen = Dimensions.get("window");
       const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
@@ -538,8 +550,8 @@ export default function BookReaderScreen() {
             Object.entries(readings) as [string, FuriganaEntry][],
           );
           sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current, {
-            levels,
-            matchModes: furiganaMatchModesRef.current,
+            sourceDefault,
+            ruleLevels,
           });
         }
         sliceHtml = injectRubySpacers(sliceHtml);
@@ -640,7 +652,7 @@ export default function BookReaderScreen() {
 
       if (hasRubyTags) {
         // Pre-formatted HTML — send entire content (no slicing)
-        const hasFuri = hasFuriganaActive(furiganaLevels, furiganaMatchModes, true);
+        const hasFuri = hasFuriganaActive(sourceFuriganaEnabled, furiganaRuleLevels, true);
         let content = b.rawContent;
         if (!hasFuri) {
           content = stripRubyTags(content);
@@ -661,7 +673,7 @@ export default function BookReaderScreen() {
         const model = parseBookContent(stripped, format);
 
         const screen = Dimensions.get("window");
-        const hasFuri = hasFuriganaActive(furiganaLevels, furiganaMatchModes, isAozora);
+        const hasFuri = hasFuriganaActive(sourceFuriganaEnabled, furiganaRuleLevels, isAozora);
         const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
 
         // Legacy conversion: scroll_position → char_offset
@@ -700,10 +712,10 @@ export default function BookReaderScreen() {
           sliceHtml = stripRubyTags(sliceHtml);
         }
 
-        // Apply JLPT furigana if any non-default levels are enabled
-        const hasJlptFuri = hasInjectedFuriganaActive(furiganaLevels, furiganaMatchModes);
+        // Apply injected furigana if any rule has selected levels
+        const hasJlptFuri = hasInjectedFuriganaActive(furiganaRuleLevels);
         if (hasJlptFuri && dictDb) {
-          const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
+          const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
           kanjiSetRef.current = kanjiSet;
           const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
           if (surfaces.length > 0) {
@@ -712,8 +724,8 @@ export default function BookReaderScreen() {
               Object.entries(readings) as [string, FuriganaEntry][],
             );
             sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet, {
-              levels: furiganaLevels,
-              matchModes: furiganaMatchModes,
+              sourceDefault: sourceFuriganaEnabled,
+              ruleLevels: furiganaRuleLevels,
             });
           }
           sliceHtml = injectRubySpacers(sliceHtml);
@@ -744,12 +756,12 @@ export default function BookReaderScreen() {
   // Re-apply furigana when levels change
   useEffect(() => {
     if (!book || !dictDb || !modelRef.current || html === null) return;
-    const hasJlptFuri = hasInjectedFuriganaActive(furiganaLevels, furiganaMatchModes);
+    const hasJlptFuri = hasInjectedFuriganaActive(furiganaRuleLevels);
 
     (async () => {
-      // Build kanji set (or clear it) — only for JLPT levels, not "default"
+      // Build kanji set (or clear it) for the Any kanji rule only
       if (hasJlptFuri) {
-        const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaLevels);
+        const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
         kanjiSetRef.current = kanjiSet;
       } else {
         kanjiSetRef.current = null;
@@ -759,7 +771,7 @@ export default function BookReaderScreen() {
       await reloadAtChar(charOffset);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [furiganaLevels, furiganaMatchModes, dictDb]);
+  }, [sourceFuriganaEnabled, furiganaRuleLevels, dictDb]);
 
   // Save char offset on unmount
   useEffect(() => {
@@ -900,8 +912,8 @@ export default function BookReaderScreen() {
             const hasFuri =
               kanjiSetRef.current != null ||
               hasFuriganaActive(
-                furiganaLevelsRef.current,
-                furiganaMatchModesRef.current,
+                sourceFuriganaEnabledRef.current,
+                furiganaRuleLevelsRef.current,
                 hasSourceFuriganaRef.current,
               );
             const screen = Dimensions.get("window");
@@ -923,8 +935,8 @@ export default function BookReaderScreen() {
                   Object.entries(readings) as [string, FuriganaEntry][],
                 );
                 nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current, {
-                  levels: furiganaLevelsRef.current,
-                  matchModes: furiganaMatchModesRef.current,
+                  sourceDefault: sourceFuriganaEnabledRef.current,
+                  ruleLevels: furiganaRuleLevelsRef.current,
                 });
               }
               nextHtml = injectRubySpacers(nextHtml);
@@ -946,8 +958,8 @@ export default function BookReaderScreen() {
             const hasFuri =
               kanjiSetRef.current != null ||
               hasFuriganaActive(
-                furiganaLevelsRef.current,
-                furiganaMatchModesRef.current,
+                sourceFuriganaEnabledRef.current,
+                furiganaRuleLevelsRef.current,
                 hasSourceFuriganaRef.current,
               );
             const screen = Dimensions.get("window");
@@ -971,8 +983,8 @@ export default function BookReaderScreen() {
                     Object.entries(readings) as [string, FuriganaEntry][],
                   );
                   backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current, {
-                    levels: furiganaLevelsRef.current,
-                    matchModes: furiganaMatchModesRef.current,
+                    sourceDefault: sourceFuriganaEnabledRef.current,
+                    ruleLevels: furiganaRuleLevelsRef.current,
                   });
                 }
                 backHtml = injectRubySpacers(backHtml);
@@ -1018,8 +1030,8 @@ export default function BookReaderScreen() {
       const hasFuri =
         kanjiSetRef.current != null ||
         hasFuriganaActive(
-          furiganaLevelsRef.current,
-          furiganaMatchModesRef.current,
+          sourceFuriganaEnabledRef.current,
+          furiganaRuleLevelsRef.current,
           hasSourceFuriganaRef.current,
         );
       const lineHeight = hasFuri ? `${rounded * 2}px` : `${Math.round(rounded * 1.5)}px`;
@@ -1035,6 +1047,45 @@ export default function BookReaderScreen() {
       }
     },
     [userDb, bookId],
+  );
+
+  const furiganaRuleSections: {
+    title: string;
+    rules: [ReaderFuriganaRule, string][];
+  }[] = [
+    {
+      title: "Show When",
+      rules: [
+        ["matchAnyKanji", "Any kanji"],
+        ["matchWordLevel", "Word level"],
+        ["matchIrregularReading", "Irregular"],
+      ],
+    },
+  ];
+
+  const readingPatternRules: [ReaderFuriganaRule, string][] = [
+    ["matchMostlyKunyomi", "Mostly kunyomi"],
+    ["matchMostlyOnyomi", "Mostly onyomi"],
+    ["matchMixedOnKun", "Mixed on/kun"],
+  ];
+
+  const matchLevelOptions: [FuriganaMatchLevel, string][] = [
+    ["n5", "N5"],
+    ["n4", "N4"],
+    ["n3", "N3"],
+    ["n2", "N2"],
+    ["n1", "N1"],
+    ["nonJouyou", "Other"],
+  ];
+
+  const formatSelectedLevels = useCallback(
+    (rule: ReaderFuriganaRule) => {
+      const labels = matchLevelOptions
+        .filter(([level]) => furiganaRuleLevels[rule][level])
+        .map(([, label]) => label);
+      return labels.length > 0 ? labels.join(" ") : "Off";
+    },
+    [furiganaRuleLevels],
   );
 
   const handleToggleSaved = useCallback(async () => {
@@ -1111,9 +1162,11 @@ export default function BookReaderScreen() {
             <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
             {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
             {showSettings && (
-              <View
+              <ScrollView
                 className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
-                style={{ zIndex: 10 }}
+                style={{ zIndex: 10, maxHeight: "100%" }}
+                contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
+                showsVerticalScrollIndicator={false}
               >
                 <View className="flex-row items-center justify-center gap-4">
                   <Pressable
@@ -1135,138 +1188,238 @@ export default function BookReaderScreen() {
 
                 <Separator className="opacity-40" />
 
-                {/* Furigana level toggles */}
-                <View>
-                  <Text className="text-xs text-muted-foreground text-center mb-2">Furigana</Text>
-                  <View className="flex-row flex-wrap justify-center gap-1.5">
-                    {(
-                      [
-                        ...(hasSourceFurigana
-                          ? ([["default", "Default"]] as [FuriganaLevel, string][])
-                          : []),
-                        ["n5", "N5"],
-                        ["n4", "N4"],
-                        ["n3", "N3"],
-                        ["n2", "N2"],
-                        ["n1", "N1"],
-                        ["nonJouyou", "Other"],
-                        ["all", "All"],
-                      ] as [FuriganaLevel, string][]
-                    ).map(([key, label]) => (
+                {hasSourceFurigana && (
+                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-sm font-medium text-foreground">Source furigana</Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Use furigana already embedded in the book.
+                        </Text>
+                      </View>
                       <Pressable
-                        key={key}
-                        onPress={() =>
-                          setFuriganaLevels((prev) => ({ ...prev, [key]: !prev[key] }))
-                        }
+                        onPress={() => setSourceFuriganaEnabled(!sourceFuriganaEnabled)}
                         className={`px-3 py-1.5 rounded-full border ${
-                          furiganaLevels[key]
+                          sourceFuriganaEnabled
                             ? "bg-foreground border-foreground"
                             : "bg-transparent border-border"
                         }`}
                       >
                         <Text
                           className={`text-xs font-medium ${
-                            furiganaLevels[key] ? "text-background" : "text-muted-foreground"
+                            sourceFuriganaEnabled ? "text-background" : "text-muted-foreground"
                           }`}
                         >
-                          {label}
+                          Default
                         </Text>
                       </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {furiganaRuleSections.map(({ title, rules }) => (
+                  <View key={title} className="gap-2">
+                    <Text className="text-xs text-muted-foreground text-center uppercase tracking-wide">
+                      {title === "Show When" ? "Show Furigana" : title}
+                    </Text>
+                    {rules.map(([rule, label]) => (
+                      <View
+                        key={rule}
+                        className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
+                      >
+                        <View className="flex-row items-center justify-between gap-3">
+                          <Text className="text-sm font-medium text-foreground">{label}</Text>
+                          <Text className="text-[11px] text-muted-foreground">
+                            {formatSelectedLevels(rule)}
+                          </Text>
+                        </View>
+                        <View className="flex-row flex-wrap gap-1.5">
+                          {matchLevelOptions.map(([level, levelLabel]) => (
+                            <Pressable
+                              key={`${rule}-${level}`}
+                              onPress={() =>
+                                setFuriganaRuleLevels((prev) => ({
+                                  ...prev,
+                                  [rule]: {
+                                    ...prev[rule],
+                                    [level]: !prev[rule][level],
+                                  },
+                                }))
+                              }
+                              className={`px-3 py-1.5 rounded-full border ${
+                                furiganaRuleLevels[rule][level]
+                                  ? "bg-foreground border-foreground"
+                                  : "bg-background/40 border-border"
+                              }`}
+                            >
+                              <Text
+                                className={`text-xs font-medium ${
+                                  furiganaRuleLevels[rule][level]
+                                    ? "text-background"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                {levelLabel}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
                     ))}
                   </View>
-                </View>
+                ))}
 
-                <View>
-                  <Text className="text-xs text-muted-foreground text-center mb-2">Show When</Text>
-                  <View className="flex-row flex-wrap justify-center gap-1.5">
-                    {(
-                      [
-                        ["matchAnyKanji", "Any kanji"],
-                        ["matchAllKanji", "All kanji"],
-                        ["matchWordLevel", "Word level"],
-                        ["matchIrregularReading", "Irregular"],
-                      ] as [ReaderFuriganaMatchMode, string][]
-                    ).map(([key, label]) => (
-                      <Pressable
-                        key={key}
-                        onPress={() =>
-                          setFuriganaMatchModes((prev) => ({ ...prev, [key]: !prev[key] }))
+                <View className="gap-2">
+                  <Pressable
+                    onPress={() => setShowAdvancedReadingPatterns((prev) => !prev)}
+                    className="px-1 py-1 flex-row items-center gap-1.5"
+                  >
+                    {showAdvancedReadingPatterns ? (
+                      <ChevronDown size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronRight size={16} className="text-muted-foreground" />
+                    )}
+                    <Text className="text-sm font-medium text-muted-foreground">
+                      Advanced reading patterns
+                    </Text>
+                  </Pressable>
+                  <View className="relative">
+                    <View
+                      pointerEvents="none"
+                      className="absolute inset-x-0 top-0 opacity-0 pb-1"
+                      onLayout={(event) => {
+                        const nextHeight = event.nativeEvent.layout.height;
+                        if (nextHeight > 0 && nextHeight !== advancedReadingPatternsHeight) {
+                          setAdvancedReadingPatternsHeight(nextHeight);
                         }
-                        className={`px-3 py-1.5 rounded-full border ${
-                          furiganaMatchModes[key]
-                            ? "bg-foreground border-foreground"
-                            : "bg-transparent border-border"
-                        }`}
-                      >
-                        <Text
-                          className={`text-xs font-medium ${
-                            furiganaMatchModes[key] ? "text-background" : "text-muted-foreground"
-                          }`}
+                      }}
+                    >
+                      {readingPatternRules.map(([rule, label]) => (
+                        <View
+                          key={`${rule}-measure`}
+                          className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
                         >
-                          {label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
-                <View>
-                  <Text className="text-xs text-muted-foreground text-center mb-2">
-                    Reading Pattern
-                  </Text>
-                  <View className="flex-row flex-wrap justify-center gap-1.5">
-                    {(
-                      [
-                        ["matchMostlyKunyomi", "Mostly kunyomi"],
-                        ["matchMostlyOnyomi", "Mostly onyomi"],
-                        ["matchMixedOnKun", "Mixed on/kun"],
-                      ] as [ReaderFuriganaMatchMode, string][]
-                    ).map(([key, label]) => (
-                      <Pressable
-                        key={key}
-                        onPress={() =>
-                          setFuriganaMatchModes((prev) => ({ ...prev, [key]: !prev[key] }))
-                        }
-                        className={`px-3 py-1.5 rounded-full border ${
-                          furiganaMatchModes[key]
-                            ? "bg-foreground border-foreground"
-                            : "bg-transparent border-border"
-                        }`}
+                          <View className="flex-row items-center justify-between gap-3">
+                            <Text className="text-sm font-medium text-foreground">{label}</Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              {formatSelectedLevels(rule)}
+                            </Text>
+                          </View>
+                          <View className="flex-row flex-wrap gap-1.5">
+                            {matchLevelOptions.map(([level, levelLabel]) => (
+                              <Pressable
+                                key={`${rule}-${level}`}
+                                onPress={() =>
+                                  setFuriganaRuleLevels((prev) => ({
+                                    ...prev,
+                                    [rule]: {
+                                      ...prev[rule],
+                                      [level]: !prev[rule][level],
+                                    },
+                                  }))
+                                }
+                                className={`px-3 py-1.5 rounded-full border ${
+                                  furiganaRuleLevels[rule][level]
+                                    ? "bg-foreground border-foreground"
+                                    : "bg-background/40 border-border"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-xs font-medium ${
+                                    furiganaRuleLevels[rule][level]
+                                      ? "text-background"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {levelLabel}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                    <Animated.View
+                      style={{
+                        height: advancedReadingPatternsAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, advancedReadingPatternsHeight + 16],
+                        }),
+                        opacity: advancedReadingPatternsAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 1],
+                        }),
+                        overflow: "hidden",
+                      }}
+                    >
+                      <View
+                        className="gap-2 pb-3"
+                        pointerEvents={showAdvancedReadingPatterns ? "auto" : "none"}
                       >
-                        <Text
-                          className={`text-xs font-medium ${
-                            furiganaMatchModes[key] ? "text-background" : "text-muted-foreground"
-                          }`}
-                        >
-                          {label}
-                        </Text>
-                      </Pressable>
-                    ))}
+                        {readingPatternRules.map(([rule, label]) => (
+                          <View
+                            key={rule}
+                            className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
+                          >
+                            <View className="flex-row items-center justify-between gap-3">
+                              <Text className="text-sm font-medium text-foreground">{label}</Text>
+                              <Text className="text-[11px] text-muted-foreground">
+                                {formatSelectedLevels(rule)}
+                              </Text>
+                            </View>
+                            <View className="flex-row flex-wrap gap-1.5">
+                              {matchLevelOptions.map(([level, levelLabel]) => (
+                                <Pressable
+                                  key={`${rule}-${level}`}
+                                  onPress={() =>
+                                    setFuriganaRuleLevels((prev) => ({
+                                      ...prev,
+                                      [rule]: {
+                                        ...prev[rule],
+                                        [level]: !prev[rule][level],
+                                      },
+                                    }))
+                                  }
+                                  className={`px-3 py-1.5 rounded-full border ${
+                                    furiganaRuleLevels[rule][level]
+                                      ? "bg-foreground border-foreground"
+                                      : "bg-background/40 border-border"
+                                  }`}
+                                >
+                                  <Text
+                                    className={`text-xs font-medium ${
+                                      furiganaRuleLevels[rule][level]
+                                        ? "text-background"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {levelLabel}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    </Animated.View>
                   </View>
                 </View>
 
                 <Separator className="opacity-40" />
 
                 {/* Page animations toggle */}
-                <View className="flex-row items-center justify-center gap-2">
-                  <Pressable
-                    onPress={() => setPageAnimations(!pageAnimations)}
-                    className={`px-3 py-1.5 rounded-full border ${
-                      pageAnimations
-                        ? "bg-foreground border-foreground"
-                        : "bg-transparent border-border"
-                    }`}
-                  >
-                    <Text
-                      className={`text-xs font-medium ${
-                        pageAnimations ? "text-background" : "text-muted-foreground"
-                      }`}
-                    >
-                      Page animations
-                    </Text>
-                  </Pressable>
+                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-foreground">Page animations</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Animate page turns in the reader.
+                      </Text>
+                    </View>
+                    <Switch value={pageAnimations} onValueChange={setPageAnimations} />
+                  </View>
                 </View>
-              </View>
+              </ScrollView>
             )}
           </View>
 
