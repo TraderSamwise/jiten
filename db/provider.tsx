@@ -438,11 +438,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setDownloadStatus({ state: "ready" });
         setIsReady(true);
 
+        await initInstalledOptionalData();
+
         // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
         manifestForBg.current = fetchedManifest;
-        if (!fetchedManifest) {
-          await initInstalledOptionalData();
-        }
         maybeStartBackgroundDownloads();
       } else {
         // Dict is not at DICT_VERSION — check if we can apply client migrations
@@ -509,11 +508,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
 
+          await initInstalledOptionalData();
+
           // Deferred — SyncProvider calls triggerBackgroundDownloads() after sync
           manifestForBg.current = fetchedManifest;
-          if (!fetchedManifest) {
-            await initInstalledOptionalData();
-          }
           maybeStartBackgroundDownloads();
         } else if (action.type === "full-download") {
           setIsReady(true);
@@ -527,10 +525,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           setIsDownloaded(true);
           setDownloadStatus({ state: "ready" });
           setIsReady(true);
+          await initInstalledOptionalData();
           manifestForBg.current = fetchedManifest;
-          if (!fetchedManifest) {
-            await initInstalledOptionalData();
-          }
           maybeStartBackgroundDownloads();
         }
       }
