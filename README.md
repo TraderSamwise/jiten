@@ -315,6 +315,12 @@ Font size is per-book (stored in `books` table). Furigana levels and page animat
 - Auto-detects UTF-8, falls back to Shift_JIS if garbled
 - Saved as `raw_content` with `source: 'import'`
 
+#### Personal ebook OCR import
+
+Jiten imports plain text files. For users who lawfully access ebooks through browser-based readers, the separate [Personal Ebook OCR Exporter](https://github.com/TraderSamwise/personal-ebook-ocr-exporter) project can OCR visible pages into a local `.txt` file for personal reading workflows.
+
+The OCR helper does not include books, extracted text, screenshots, credentials, or DRM-circumvention tools. It is not affiliated with any ebook retailer. Users are responsible for complying with copyright law, platform terms, and local law.
+
 ### Reader routing (`app/(tabs)/reader/`)
 
 | Route             | Screen         | Purpose                                  |
