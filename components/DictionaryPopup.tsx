@@ -323,6 +323,7 @@ export function DictionaryPopup({
   const isNameResult = centerPayload?.panelIsNameResult ?? false;
   const total = centerPayload?.panelTotal ?? 0;
   const safeEntryIdx = centerPayload?.panelSafeEntryIdx ?? 0;
+  const pagerReady = pagerWidth > 0;
 
   const isBookmarked = useBookmarkStore((s) =>
     currentEntry ? s.bookmarkedIds.has(`e:${currentEntry.id}`) : false,
@@ -853,37 +854,43 @@ export function DictionaryPopup({
                 </View>
               </View>
             )}
-            <Animated.View
-              pointerEvents={useStagingLayer ? "none" : "auto"}
-              style={[
-                contentAnimatedStyle,
-                {
-                  flexDirection: "row",
-                  alignItems: "flex-start",
-                  width: pagerWidth > 0 ? pagerWidth * 3 : "100%",
-                  opacity: useStagingLayer ? 0 : 1,
-                },
-              ]}
-            >
-              {[panelWindow.left, panelWindow.center, panelWindow.right].map(
-                (panelPayload, panelIdx) => (
-                  <View
-                    key={`panel-${panelIdx}`}
-                    style={{
-                      width: pagerWidth || undefined,
-                      flex: pagerWidth > 0 ? 0 : 1,
-                      alignSelf: "flex-start",
-                    }}
-                  >
-                    {renderLookupPanel(panelPayload, {
-                      allowNavigate: panelIdx === 1 && !isNameResult,
-                      isActive: panelIdx === 1,
-                    })}
-                  </View>
-                ),
-              )}
-            </Animated.View>
-            {useStagingLayer && stagingWindow && (
+            {pagerReady ? (
+              <Animated.View
+                pointerEvents={useStagingLayer ? "none" : "auto"}
+                style={[
+                  contentAnimatedStyle,
+                  {
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    width: pagerWidth * 3,
+                    opacity: useStagingLayer ? 0 : 1,
+                  },
+                ]}
+              >
+                {[panelWindow.left, panelWindow.center, panelWindow.right].map(
+                  (panelPayload, panelIdx) => (
+                    <View
+                      key={`panel-${panelIdx}`}
+                      style={{
+                        width: pagerWidth,
+                        flex: 0,
+                        alignSelf: "flex-start",
+                      }}
+                    >
+                      {renderLookupPanel(panelPayload, {
+                        allowNavigate: panelIdx === 1 && !isNameResult,
+                        isActive: panelIdx === 1,
+                      })}
+                    </View>
+                  ),
+                )}
+              </Animated.View>
+            ) : (
+              <View>
+                {renderLookupPanel(centerPayload, { allowNavigate: !isNameResult, isActive: true })}
+              </View>
+            )}
+            {pagerReady && useStagingLayer && stagingWindow && (
               <View
                 pointerEvents="none"
                 style={{
