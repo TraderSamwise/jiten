@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dimensions, Pressable, View, ScrollView, ActivityIndicator } from "react-native";
+import { ActivityIndicator, Dimensions, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -323,7 +323,7 @@ export function DictionaryPopup({
   const isNameResult = centerPayload?.panelIsNameResult ?? false;
   const total = centerPayload?.panelTotal ?? 0;
   const safeEntryIdx = centerPayload?.panelSafeEntryIdx ?? 0;
-  const pagerReady = pagerWidth > 0;
+  const useSwipePager = Platform.OS !== "web" && pagerWidth > 0;
 
   const isBookmarked = useBookmarkStore((s) =>
     currentEntry ? s.bookmarkedIds.has(`e:${currentEntry.id}`) : false,
@@ -854,7 +854,7 @@ export function DictionaryPopup({
                 </View>
               </View>
             )}
-            {pagerReady ? (
+            {useSwipePager ? (
               <Animated.View
                 pointerEvents={useStagingLayer ? "none" : "auto"}
                 style={[
@@ -890,7 +890,7 @@ export function DictionaryPopup({
                 {renderLookupPanel(centerPayload, { allowNavigate: !isNameResult, isActive: true })}
               </View>
             )}
-            {pagerReady && useStagingLayer && stagingWindow && (
+            {useSwipePager && useStagingLayer && stagingWindow && (
               <View
                 pointerEvents="none"
                 style={{
