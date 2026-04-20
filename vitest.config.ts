@@ -19,6 +19,7 @@ export default defineConfig({
         "components/**/*.{ts,tsx}",
         "db/**/*.{ts,tsx}",
         "lib/**/*.{ts,tsx}",
+        "packages/**/*.{ts,tsx}",
       ],
       exclude: [
         "**/*.test.{ts,tsx}",
@@ -26,8 +27,8 @@ export default defineConfig({
         "coverage/**",
         "scripts/**",
         "test/**",
-        "lib/reader/build.ts",
-        "lib/reader/bundle.ts",
+        "packages/reader-webview/build.ts",
+        "packages/reader-webview/bundle.ts",
         "lib/share-extension/**",
       ],
     },
@@ -35,6 +36,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@/": path.resolve(__dirname, "") + "/",
+      "@jiten/japanese-reader-core": path.resolve(
+        __dirname,
+        "packages/japanese-reader-core/src/index.ts",
+      ),
+      "@jiten/japanese-reader-core/":
+        path.resolve(__dirname, "packages/japanese-reader-core/src") + "/",
+      "@jiten/reader-webview/": path.resolve(__dirname, "packages/reader-webview") + "/",
       "react-native": path.resolve(__dirname, "test/__mocks__/react-native.ts"),
       "@react-native-async-storage/async-storage": path.resolve(
         __dirname,

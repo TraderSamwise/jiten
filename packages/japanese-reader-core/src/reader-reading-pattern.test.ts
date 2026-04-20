@@ -1,35 +1,21 @@
 import { describe, it, expect } from "vitest";
-import type { KanjiCharacter } from "@/db/types";
-import { classifyReaderReadingPattern } from "./reader-reading-pattern";
+import { classifyReaderReadingPattern, type ReaderKanjiCharacter } from "./reader-reading-pattern";
 
 function makeKanji(
   literal: string,
   readingsOn: string[],
   readingsKun: string[],
   nanori: string[] = [],
-): KanjiCharacter {
+): ReaderKanjiCharacter {
   return {
     literal,
-    grade: null,
-    strokeCount: 1,
-    frequencyRank: null,
-    jlptOld: null,
-    jlptLevel: null,
     readingsOn,
     readingsKun,
-    meanings: [],
     nanori,
-    radicalClassical: null,
-    radicalNelson: null,
-    heisigIndex: null,
-    unicodeCodepoint: "",
-    strokePaths: [],
-    heisigKeyword: null,
-    heisigLesson: null,
   };
 }
 
-function makeMap(...kanji: KanjiCharacter[]): Map<string, KanjiCharacter> {
+function makeMap(...kanji: ReaderKanjiCharacter[]): Map<string, ReaderKanjiCharacter> {
   return new Map(kanji.map((entry) => [entry.literal, entry]));
 }
 

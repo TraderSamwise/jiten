@@ -1,4 +1,4 @@
-import { readerBundle, readerCss } from "./reader/bundle";
+import { readerBundle, readerCss } from "@jiten/reader-webview/bundle";
 
 export interface ReaderOptions {
   fontSize: number;

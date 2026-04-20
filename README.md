@@ -15,6 +15,17 @@ yarn lint:fix   # auto-fix lint errors
 yarn format     # format all files with prettier
 ```
 
+## Monorepo Packages
+
+The Expo app remains at the repository root. Reusable reader code lives in Yarn workspace packages:
+
+| Package                       | Path                            | Purpose                                                                 |
+| ----------------------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| `@jiten/reader-webview`       | `packages/reader-webview`       | Vanilla TypeScript WebView pagination, selection, highlight, and bridge |
+| `@jiten/japanese-reader-core` | `packages/japanese-reader-core` | Pure reader HTML, text slicing, progress, toolbar, and reading helpers  |
+
+Packages must not import app stores, Expo Router screens, or concrete database modules. Define adapter interfaces in packages and let the app provide SQLite/dictionary implementations.
+
 ## Testing
 
 Tests use [vitest](https://vitest.dev/). Run with `yarn test` or `yarn test:watch`.
@@ -136,10 +147,10 @@ Book content (raw text / Aozora markup / HTML)
   → reader-model.ts (slice into streamable chunks by visible char count)
   → reader-html.ts (wrap in full HTML document with CSS + JS)
   → ReaderView.{native,web}.tsx (render in WebView/iframe)
-  → reader/src/*.ts (pagination, gestures, highlight, dictionary lookup bridge)
+  → packages/reader-webview/src/*.ts (pagination, gestures, highlight, dictionary lookup bridge)
 ```
 
-### Pagination engine (`lib/reader/src/`)
+### Pagination engine (`packages/reader-webview/src/`)
 
 The reader uses **column-based vertical pagination** in a WebView:
 
@@ -153,17 +164,17 @@ No virtual DOM or framework — vanilla TypeScript compiled to a single JS bundl
 
 #### Key modules
 
-| File                           | Purpose                                                                            |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| `lib/reader/src/pagination.ts` | Page measurement, navigation, scroll alignment, streaming content swap             |
-| `lib/reader/src/state.ts`      | Global state: current page, column width, char offsets, DOM refs                   |
-| `lib/reader/src/highlight.ts`  | CSS Highlight API (with Safari `.highlight` class fallback) for word selection     |
-| `lib/reader/src/text.ts`       | Tree walker for visible text (skips `<rt>`), caret resolution from tap position    |
-| `lib/reader/src/touch.ts`      | Swipe detection (page turns), tap (dictionary lookup), long-press drag select      |
-| `lib/reader/src/mouse.ts`      | Click select, drag select, alt-click for context menu                              |
-| `lib/reader/src/bridge.ts`     | `postMessage` listener: font size changes, scroll-to, highlight, content streaming |
-| `lib/reader/src/index.ts`      | Initialization: setup content, attach handlers, apply initial scroll               |
-| `lib/reader/src/reader.css`    | Vertical writing mode, ruby styling, highlight pseudo-element, page controls       |
+| File                                        | Purpose                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `packages/reader-webview/src/pagination.ts` | Page measurement, navigation, scroll alignment, streaming content swap             |
+| `packages/reader-webview/src/state.ts`      | Global state: current page, column width, char offsets, DOM refs                   |
+| `packages/reader-webview/src/highlight.ts`  | CSS Highlight API (with Safari `.highlight` class fallback) for word selection     |
+| `packages/reader-webview/src/text.ts`       | Tree walker for visible text (skips `<rt>`), caret resolution from tap position    |
+| `packages/reader-webview/src/touch.ts`      | Swipe detection (page turns), tap (dictionary lookup), long-press drag select      |
+| `packages/reader-webview/src/mouse.ts`      | Click select, drag select, alt-click for context menu                              |
+| `packages/reader-webview/src/bridge.ts`     | `postMessage` listener: font size changes, scroll-to, highlight, content streaming |
+| `packages/reader-webview/src/index.ts`      | Initialization: setup content, attach handlers, apply initial scroll               |
+| `packages/reader-webview/reader.css`        | Vertical writing mode, ruby styling, highlight pseudo-element, page controls       |
 
 ### Content pipeline
 

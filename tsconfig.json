@@ -3,16 +3,11 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@jiten/reader-webview/*": ["./packages/reader-webview/*"],
+      "@jiten/japanese-reader-core": ["./packages/japanese-reader-core/src/index.ts"],
+      "@jiten/japanese-reader-core/*": ["./packages/japanese-reader-core/src/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "nativewind-env.d.ts"]
 }
