@@ -34,7 +34,6 @@ import {
 } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
-import { generateReaderHtml } from "@/lib/reader-html";
 import {
   parseAozoraToHtml,
   hasAozoraMarkup,
@@ -44,10 +43,13 @@ import {
 import {
   type BookFormat,
   type TextModel,
+  generateReaderHtml,
+  getReaderProgressFlushMode,
+  getSelectionToolbarPosition,
   parseBookContent,
   sliceContent,
   calcCharsPerPage,
-} from "@/lib/reader-model";
+} from "@jiten/japanese-reader-core";
 import {
   smartLookup,
   smartLookupWithOffset,
@@ -80,8 +82,6 @@ import {
 import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
-import { getReaderProgressFlushMode } from "@/lib/reader-progress";
-import { getSelectionToolbarPosition } from "@/lib/reader-selection-toolbar";
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {

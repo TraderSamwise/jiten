@@ -1,5 +1,11 @@
 import { toHiragana } from "wanakana";
-import type { KanjiCharacter } from "@/db/types";
+
+export interface ReaderKanjiCharacter {
+  literal: string;
+  readingsOn: string[];
+  readingsKun: string[];
+  nanori: string[];
+}
 
 export type ReaderReadingPattern =
   | "mostly_onyomi"
@@ -49,11 +55,6 @@ function normalizeKana(text: string): string {
     .replace(/[-ー]/g, "");
 }
 
-function isKana(ch: string): boolean {
-  const code = ch.charCodeAt(0);
-  return (code >= 0x3040 && code <= 0x309f) || (code >= 0x30a0 && code <= 0x30ff);
-}
-
 function isKanji(ch: string): boolean {
   const code = ch.charCodeAt(0);
   return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf);
@@ -96,7 +97,7 @@ function expandOnReading(reading: string): string[] {
   return [...variants];
 }
 
-function buildReadingSegments(kanji: KanjiCharacter): ReadingSegment[] {
+function buildReadingSegments(kanji: ReaderKanjiCharacter): ReadingSegment[] {
   const segments: ReadingSegment[] = [];
   for (const reading of kanji.readingsOn) {
     for (const expanded of expandOnReading(reading)) {
@@ -152,7 +153,7 @@ function matchWord(
   index: number,
   reading: string,
   pos: number,
-  kanjiByLiteral: Map<string, KanjiCharacter>,
+  kanjiByLiteral: Map<string, ReaderKanjiCharacter>,
   cache: Map<string, MatchResult | null>,
 ): MatchResult | null {
   const key = `${index}:${pos}`;
@@ -214,7 +215,7 @@ export function classifyReaderReadingPattern(params: {
   kanjiForm: string;
   kanaForm: string;
   irregularReading?: boolean;
-  kanjiByLiteral: Map<string, KanjiCharacter>;
+  kanjiByLiteral: Map<string, ReaderKanjiCharacter>;
 }): ReaderReadingPattern {
   const { kanjiForm, kanaForm, irregularReading = false, kanjiByLiteral } = params;
   if (irregularReading) return "irregular";

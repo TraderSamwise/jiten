@@ -1,7 +1,10 @@
 import type * as SQLite from "expo-sqlite";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
 import { deinflect } from "./deinflect";
-import { classifyReaderReadingPattern, type ReaderReadingPattern } from "./reader-reading-pattern";
+import {
+  classifyReaderReadingPattern,
+  type ReaderReadingPattern,
+} from "@jiten/japanese-reader-core";
 import {
   defaultReaderFuriganaRuleLevels,
   type FuriganaMatchLevel,

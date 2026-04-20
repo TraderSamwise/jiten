@@ -1,0 +1,18 @@
+{
+  "name": "@jiten/reader-webview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    "./bundle": "./bundle.ts"
+  },
+  "scripts": {
+    "build": "tsx build.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.2"
+  }
+}
