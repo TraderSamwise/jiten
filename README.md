@@ -953,13 +953,13 @@ Setting: `stores/settings.ts` → `dayResetHourAtom`. UI: Settings → "Day Rese
 
 ### Key functions
 
-| Function                               | File                   | Purpose                                               |
-| -------------------------------------- | ---------------------- | ----------------------------------------------------- |
-| `endOfLogicalDayEpochDays(resetHour)` | `stores/simple-srs.ts` | Due cutoff for Simple SRS queries (epoch days)       |
-| `endOfLogicalDayISO(resetHour)`        | `stores/simple-srs.ts` | Due cutoff for FSRS queries (ISO string)              |
-| `getDayStart(date, resetHour)`         | `lib/day-boundary.ts`  | Start of logical day                                  |
-| `sqlDayExpr(column, resetHour)`        | `lib/day-boundary.ts`  | SQL fragment for binning timestamps into logical days |
-| `getLogicalToday(resetHour)`           | `lib/day-boundary.ts`  | Today's YYYY-MM-DD label                              |
+| Function                              | File                   | Purpose                                               |
+| ------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| `endOfLogicalDayEpochDays(resetHour)` | `stores/simple-srs.ts` | Due cutoff for Simple SRS queries (epoch days)        |
+| `endOfLogicalDayISO(resetHour)`       | `stores/simple-srs.ts` | Due cutoff for FSRS queries (ISO string)              |
+| `getDayStart(date, resetHour)`        | `lib/day-boundary.ts`  | Start of logical day                                  |
+| `sqlDayExpr(column, resetHour)`       | `lib/day-boundary.ts`  | SQL fragment for binning timestamps into logical days |
+| `getLogicalToday(resetHour)`          | `lib/day-boundary.ts`  | Today's YYYY-MM-DD label                              |
 
 ### Simple SRS (`stores/simple-srs.ts`)
 
@@ -994,17 +994,6 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
   - Counter: `completedDueCards / totalDueAtStart (totalInList)`
   - `simpleDueIdsRef` tracks which cards were due at start; `completedSrsIdsRef` tracks graduated due cards
 - Session length is dynamic — failing cards extends the session, new cards trickle in continuously
-
-**Midori internals** (documented implementation details):
-
-- DB format — Graduated: `{s:1, n:<due_midori_days>, l:<interval_days>}`
-- DB format — Learning: `{o:<order>, g:<grade>, l:<prev_interval>, m:<mature>, n:0, s:0, f:<failed>}`
-  - `o`: position in 10-card batch, `g`: correct count in session, `m`: 1 if previously graduated, `f`: 1 if failed
-- Session engine: C++ `SpacedRepetition` class with review deque, new cards queue, timed heap
-  - `step()`: move due cards from timed heap → deque, if deque < 10 pull new cards, pop front
-  - Fail: card to back of deque, reps=0, interval=0
-  - Correct (learning): card to back of deque, reps++
-  - Graduate (reps reaches 3): card to timed heap (removed from session)
 
 ### FSRS (`ts-fsrs` library)
 
@@ -1206,4 +1195,3 @@ cp /path/to/file.jiten "$LOCAL_STORAGE/"
 ```
 
 You may need to kill and reopen the Files app on the simulator for the file to appear.
-

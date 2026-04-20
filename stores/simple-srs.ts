@@ -54,7 +54,7 @@ export function isSimpleDue(card: SrsCardRow, now?: Date): boolean {
 /**
  * Get the end of the current logical day in day-based epoch units.
  * Cards due before this cutoff are shown as "due today".
- *  */
+ */
 export function endOfLogicalDayEpochDays(resetHour: number, now?: Date): number {
   return dateToSrsEpochDays(getEndOfLogicalDay(resetHour, now));
 }

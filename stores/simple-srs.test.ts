@@ -155,8 +155,8 @@ describe("endOfLogicalDayISO", () => {
   test("ISO cutoff matches epoch-day cutoff", () => {
     const now = new Date(2025, 2, 8, 14, 0, 0);
     const isoCutoff = new Date(endOfLogicalDayISO(3, now));
-    const midoriCutoff = srsEpochDaysToDate(endOfLogicalDayEpochDays(3, now));
-    expect(Math.abs(isoCutoff.getTime() - midoriCutoff.getTime())).toBeLessThan(1);
+    const epochCutoff = srsEpochDaysToDate(endOfLogicalDayEpochDays(3, now));
+    expect(Math.abs(isoCutoff.getTime() - epochCutoff.getTime())).toBeLessThan(1);
   });
 });
 
