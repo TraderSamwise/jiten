@@ -1173,23 +1173,6 @@ yarn build:db
 
 Both `yarn build:db` and `yarn migrate:dict` automatically rebuild `dictionary-mini.db` and update `dict-manifest.json` with current file sizes (full + mini + compressed).
 
-### Midori Import
-
-Migrate bookmarks and SRS progress from [Midori](https://apps.apple.com/app/midori-japanese-dictionary/id385231773) into jiten. Midori must be installed on the same Mac — the script reads its local SQLite database directly.
-
-```bash
-# Export all Midori folders
-npx tsx scripts/midori-import.ts --output /tmp/midori-export
-
-# Export a specific folder (1-4)
-npx tsx scripts/midori-import.ts --folder 1 --output /tmp/midori-export
-
-# With dictionary ID verification
-npx tsx scripts/midori-import.ts --output /tmp/midori-export --verify
-```
-
-This produces `.jiten` files that can be imported via the "Import" button on the Lists screen. SRS progress is preserved — set the list to "Simple SRS" mode to continue studying with the same algorithm.
-
 #### Importing .jiten files on iOS Simulator
 
 The simulator can't open `file://` URLs from the Mac filesystem. To make a `.jiten` file appear in the Files app under "On My iPhone":
