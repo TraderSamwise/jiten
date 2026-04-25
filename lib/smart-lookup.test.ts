@@ -11,10 +11,13 @@
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import Database from "better-sqlite3";
 import * as path from "path";
+import type { SQLiteDatabase } from "expo-sqlite";
 import { toHiragana } from "wanakana";
 import { deinflect, generateSubstrings, generateLookupCandidates } from "./deinflect";
+import { smartLookup, smartLookupWithOffset } from "./smart-lookup";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
+const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
 
 // ─── Minimal types mirroring production ───
 
@@ -35,14 +38,34 @@ interface LookupHit {
 // ─── Test harness: simplified search that mirrors production logic ───
 
 let db: Database.Database;
+let extDb: Database.Database;
+let dictDbAsync: SQLiteDatabase;
+let extendedDbAsync: SQLiteDatabase;
 
 beforeAll(() => {
   db = new Database(DB_PATH, { readonly: true });
+  extDb = new Database(EXT_DB_PATH, { readonly: true });
+  dictDbAsync = wrapBetterSqlite(db);
+  extendedDbAsync = wrapBetterSqlite(extDb);
 });
 
 afterAll(() => {
   db.close();
+  extDb.close();
 });
+
+function wrapBetterSqlite(db: Database.Database): SQLiteDatabase {
+  return {
+    getAllAsync: async <T>(sql: string, params?: unknown[]) => {
+      const stmt = db.prepare(sql);
+      return (params ? stmt.all(...params) : stmt.all()) as T[];
+    },
+    getFirstAsync: async <T>(sql: string, params?: unknown[]) => {
+      const stmt = db.prepare(sql);
+      return (params ? stmt.get(...params) : stmt.get()) as T | null;
+    },
+  } as unknown as SQLiteDatabase;
+}
 
 function searchJapaneseSimple(query: string, limit: number = 5): DictResult[] {
   const hiragana = toHiragana(query);
@@ -765,6 +788,44 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
     expect(hitsContainWord(hits, "三日")).toBe(true);
     expect(hits[0].matchedText).toBe("三日");
     expect(hits[0].results.some((result) => result.kanaTexts.includes("みっか"))).toBe(true);
+  });
+});
+
+describe("Production counter-aware lookup", () => {
+  test("tap lookup prefers 一軒 over 軒 using counter hints", async () => {
+    const hits = await smartLookupWithOffset("一軒に", 1, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("一軒");
+    expect(
+      hits[0].entries.some((entry) => entry.kanji.some((kanji) => kanji.text === "一軒")),
+    ).toBe(true);
+  });
+
+  test("tap lookup prefers 三日 with みっか using counter hints", async () => {
+    const hits = await smartLookupWithOffset("三日に", 1, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("三日");
+    expect(hits[0].entries.some((entry) => entry.kana.some((kana) => kana.text === "みっか"))).toBe(
+      true,
+    );
+  });
+
+  test("lookup handles digit counters like ３日に", async () => {
+    const hits = await smartLookupWithOffset("３日に", 1, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("３日");
+    expect(hits[0].entries.some((entry) => entry.kana.some((kana) => kana.text === "みっか"))).toBe(
+      true,
+    );
+  });
+
+  test("full lookup returns 二人 with ふたり", async () => {
+    const hits = await smartLookup("二人で", dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("二人");
+    expect(hits[0].entries.some((entry) => entry.kana.some((kana) => kana.text === "ふたり"))).toBe(
+      true,
+    );
   });
 });
 
