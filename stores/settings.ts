@@ -35,9 +35,9 @@ export const defaultReaderFuriganaRuleLevels: Record<
   ReaderFuriganaRule,
   Record<FuriganaMatchLevel, boolean>
 > = {
-  matchAnyKanji: { n5: false, n4: false, n3: true, n2: true, n1: true, nonJouyou: true },
+  matchAnyKanji: { ...defaultFuriganaMatchLevels },
   matchWordLevel: { ...defaultFuriganaMatchLevels },
-  matchIrregularReading: { n5: false, n4: false, n3: true, n2: true, n1: true, nonJouyou: true },
+  matchIrregularReading: { ...defaultFuriganaMatchLevels },
   matchMostlyKunyomi: { ...defaultFuriganaMatchLevels },
   matchMostlyOnyomi: { ...defaultFuriganaMatchLevels },
   matchMixedOnKun: { ...defaultFuriganaMatchLevels },
@@ -49,7 +49,8 @@ export const defaultSettings = Object.freeze({
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
   readerSourceFurigana: true as boolean,
-  readerNameFurigana: true as boolean,
+  readerNameFurigana: false as boolean,
+  readerCounterFurigana: false as boolean,
   readerFuriganaRuleLevels: defaultReaderFuriganaRuleLevels as Record<
     ReaderFuriganaRule,
     Record<FuriganaMatchLevel, boolean>
@@ -124,6 +125,9 @@ export const readerSourceFuriganaAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerSourceFurigana"),
 );
 export const readerNameFuriganaAtom = focusAtom(settingsAtom, (o) => o.prop("readerNameFurigana"));
+export const readerCounterFuriganaAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerCounterFurigana"),
+);
 export const readerFuriganaRuleLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaRuleLevels"),
 );

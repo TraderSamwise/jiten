@@ -16,10 +16,13 @@ function bookHasSourceFurigana(rawContent: string): boolean {
 
 function hasFuriganaActive(
   sourceDefault: boolean,
+  showNames: boolean,
+  showCounters: boolean,
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
   bookHasSource: boolean,
 ): boolean {
   if (bookHasSource && sourceDefault) return true;
+  if (showNames || showCounters) return true;
   return Object.values(ruleLevels).some((levels) => Object.values(levels).some(Boolean));
 }
 
@@ -80,15 +83,23 @@ describe("hasFuriganaActive", () => {
     const hasSource = true;
 
     it("returns true when only default is on", () => {
-      expect(hasFuriganaActive(true, noRuleLevels, hasSource)).toBe(true);
+      expect(hasFuriganaActive(true, false, false, noRuleLevels, hasSource)).toBe(true);
     });
 
     it("returns true when JLPT level and a match mode are on but default is off", () => {
-      expect(hasFuriganaActive(false, anyKanjiN3Only, hasSource)).toBe(true);
+      expect(hasFuriganaActive(false, false, false, anyKanjiN3Only, hasSource)).toBe(true);
+    });
+
+    it("returns true when names are on", () => {
+      expect(hasFuriganaActive(false, true, false, noRuleLevels, hasSource)).toBe(true);
+    });
+
+    it("returns true when counters are on", () => {
+      expect(hasFuriganaActive(false, false, true, noRuleLevels, hasSource)).toBe(true);
     });
 
     it("returns false when everything is off", () => {
-      expect(hasFuriganaActive(false, noRuleLevels, hasSource)).toBe(false);
+      expect(hasFuriganaActive(false, false, false, noRuleLevels, hasSource)).toBe(false);
     });
   });
 
@@ -96,19 +107,27 @@ describe("hasFuriganaActive", () => {
     const hasSource = false;
 
     it("returns false when only default is on (irrelevant for plain text)", () => {
-      expect(hasFuriganaActive(true, noRuleLevels, hasSource)).toBe(false);
+      expect(hasFuriganaActive(true, false, false, noRuleLevels, hasSource)).toBe(false);
     });
 
     it("returns true when a JLPT level and match mode are on", () => {
-      expect(hasFuriganaActive(false, anyKanjiN3Only, hasSource)).toBe(true);
+      expect(hasFuriganaActive(false, false, false, anyKanjiN3Only, hasSource)).toBe(true);
     });
 
     it("returns true when default + JLPT level + match mode are on", () => {
-      expect(hasFuriganaActive(true, anyKanjiN3Only, hasSource)).toBe(true);
+      expect(hasFuriganaActive(true, false, false, anyKanjiN3Only, hasSource)).toBe(true);
+    });
+
+    it("returns true when only names are on", () => {
+      expect(hasFuriganaActive(false, true, false, noRuleLevels, hasSource)).toBe(true);
+    });
+
+    it("returns true when only counters are on", () => {
+      expect(hasFuriganaActive(false, false, true, noRuleLevels, hasSource)).toBe(true);
     });
 
     it("returns false when everything is off", () => {
-      expect(hasFuriganaActive(false, noRuleLevels, hasSource)).toBe(false);
+      expect(hasFuriganaActive(false, false, false, noRuleLevels, hasSource)).toBe(false);
     });
   });
 });

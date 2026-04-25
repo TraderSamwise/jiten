@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
+import type { FuriganaMatchLevel } from "@/stores/settings";
 import {
   applyFuriganaToHtml,
   defaultReaderFuriganaSettings,
@@ -14,6 +15,14 @@ import {
 } from "./reader-furigana";
 
 const allKanji: FuriganaKanjiSet = { all: true, chars: new Set() };
+const allLevelsDisabled: Record<FuriganaMatchLevel, boolean> = {
+  n5: false,
+  n4: false,
+  n3: false,
+  n2: false,
+  n1: false,
+  nonJouyou: false,
+};
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
 
@@ -48,7 +57,7 @@ describe("applyFuriganaToHtml", () => {
     // and "が" at start of the next. Should NOT match across the boundary.
     const map = makeMap([["男が傘", "男が傘", "おとこがかさ"]]);
     const html = "<p>花</p><p>男が傘に</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     // The match should still work within the same <p>
     expect(result).toContain("<ruby>男が傘<rt>おとこがかさ</rt></ruby>");
     expect(result).toContain("<p>花</p>");
@@ -60,7 +69,7 @@ describe("applyFuriganaToHtml", () => {
       ["男", "男", "おとこ"],
     ]);
     const html = "<p>花</p><p>や</p><p>男が傘に</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     // "花" should NOT match "花屋" across the </p><p> boundary
     expect(result).toContain("<p>花</p>");
     expect(result).toContain("<p>や</p>");
@@ -74,7 +83,7 @@ describe("applyFuriganaToHtml", () => {
       ["男が傘", "男が傘", "おとこがかさ"],
     ]);
     const html = "<p>おめでとう。花」</p><p>はな</p><p>や</p><p>男が傘にわたしを入れて</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     // All paragraphs must be preserved intact
     expect(result).toContain("<p>はな</p>");
     expect(result).toContain("<p>や</p>");
@@ -90,7 +99,7 @@ describe("applyFuriganaToHtml", () => {
     ]);
     const rawHtml = "<p>おめでとう。花」</p><p>はな</p><p>や</p><p>男が傘にわたしを入れて</p>";
     const withSpacers = injectRubySpacers(rawHtml);
-    const result = applyFuriganaToHtml(withSpacers, map, allKanji);
+    const result = applyFuriganaToHtml(withSpacers, map, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("はな</p>");
     expect(result).toContain("や</p>");
     expect(result).toContain("男が傘");
@@ -109,7 +118,7 @@ describe("applyFuriganaToHtml", () => {
     ]);
     const html =
       "<p>「けっこん、おめでとう。花」</p><p>はな</p><p>や</p><p>男が傘にわたしを入れて、肩を引きよせながら言った。</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     console.log("REAL BOOK:", result);
     expect(result).toContain("はな</p>");
     expect(result).toContain("<p>や</p>");
@@ -125,7 +134,12 @@ describe("applyFuriganaToHtml", () => {
       ["省", "省", "しょう"],
     ]);
     const html = "<p>反省会をする</p>";
-    const result = applyFuriganaToHtml(html, map, n3Only);
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n3Only,
+      withRuleLevels({ matchAnyKanji: { ...allLevelsDisabled, n3: true } }),
+    );
     expect(result).toContain("<ruby>反省会<rt>はんせいかい</rt></ruby>");
     expect(result).not.toContain("<ruby>省<rt>しょう</rt></ruby>");
   });
@@ -145,7 +159,12 @@ describe("applyFuriganaToHtml", () => {
     const n3Only: FuriganaKanjiSet = { all: false, chars: new Set(["省"]) };
     const map = makeMap([["省", "省", "しょう"]]);
     const html = "<p>省の</p>";
-    const result = applyFuriganaToHtml(html, map, n3Only);
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n3Only,
+      withRuleLevels({ matchAnyKanji: { ...allLevelsDisabled, n3: true } }),
+    );
     expect(result).toContain("<ruby>省<rt>しょう</rt></ruby>");
   });
 
@@ -164,7 +183,7 @@ describe("applyFuriganaToHtml", () => {
       ["油", "油", "あぶら"],
     ]);
     const html = "<p>しょう油をかける</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     // Should match しょう油 (longest match), not just 油=あぶら
     expect(result).toContain("しょうゆ");
     expect(result).not.toContain("あぶら");
@@ -176,7 +195,7 @@ describe("applyFuriganaToHtml", () => {
       ["寺", "寺", "てら"],
     ]);
     const html = "<p>お寺に行く</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("おてら");
     expect(result).not.toContain("<ruby>寺<rt>てら</rt></ruby>");
   });
@@ -185,7 +204,7 @@ describe("applyFuriganaToHtml", () => {
     // Random kana before kanji should NOT cause issues if no dictionary match
     const map = makeMap([["油", "油", "あぶら"]]);
     const html = "<p>ます油がある</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
     // 油 should still get its own furigana (ます油 not in map)
     expect(result).toContain("<ruby>油<rt>あぶら</rt></ruby>");
   });
@@ -196,7 +215,7 @@ describe("applyFuriganaToHtml", () => {
     // It matches "花屋", then advanceHtmlPastChars consumes past the boundary.
     const map = makeMap([["花屋", "花屋", "はなや"]]);
     const html = "<p>花</p><p>屋根が</p>";
-    const result = applyFuriganaToHtml(html, map, allKanji);
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
 
     // Should NOT match across boundary — "花" stays in its <p>, "屋根が" stays intact
     expect(result).toContain("<p>花</p>");
@@ -229,10 +248,12 @@ function makeMapWithJlpt(
 
 function withRuleLevels(
   ruleLevels: Partial<ReaderFuriganaSettings["ruleLevels"]>,
+  overrides: Partial<ReaderFuriganaSettings> = {},
 ): ReaderFuriganaSettings {
   return {
     sourceDefault: defaultReaderFuriganaSettings.sourceDefault,
     showNames: defaultReaderFuriganaSettings.showNames,
+    showCounters: defaultReaderFuriganaSettings.showCounters,
     ruleLevels: {
       matchAnyKanji: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
       matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
@@ -270,8 +291,28 @@ function withRuleLevels(
       },
       ...ruleLevels,
     },
+    ...overrides,
   };
 }
+
+const allVisibleLevels = {
+  n5: true,
+  n4: true,
+  n3: true,
+  n2: true,
+  n1: true,
+  nonJouyou: true,
+} satisfies Record<FuriganaMatchLevel, boolean>;
+
+const alwaysShowInjectedFurigana = withRuleLevels(
+  {
+    matchAnyKanji: { ...allVisibleLevels },
+  },
+  {
+    showNames: true,
+    showCounters: true,
+  },
+);
 
 describe("reader furigana rule levels", () => {
   it("matchAnyKanji shows the whole word when any kanji matches", () => {
@@ -653,6 +694,12 @@ describe("resolveFuriganaBatch compound resolution", () => {
     expect(result["一軒"]?.fullKanjiForm).toBe("一軒");
   });
 
+  it("resolves 三日 as みっか, not さんにち", async () => {
+    const result = await resolveFuriganaBatch(["三日"], dictDb, extDb);
+    expect(result["三日"]?.reading).toBe("みっか");
+    expect(result["三日"]?.fullKanjiForm).toBe("三日");
+  });
+
   it("resolves 乾杯 as かんぱい, not 杯=さかずき/はい", async () => {
     const result = await resolveFuriganaBatch(["乾杯"], dictDb);
     expect(result["乾杯"]?.reading).toBe("かんぱい");
@@ -715,9 +762,18 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const surfaces = extractSurfacesFromHtml(html, allKanji);
     const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb);
     const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
-    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("<ruby>三軒<rt>さんけん</rt></ruby>");
     expect(result).not.toContain("<ruby>軒<rt>のき</rt></ruby>");
+  });
+
+  it("full pipeline keeps 三日 as one ruby match with みっか", async () => {
+    const html = "<p>三日目の朝だった。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
+    expect(result).toContain("<ruby>三日<rt>みっか</rt></ruby>");
   });
 
   it("full pipeline keeps 絶品 as one ruby match, not 品", async () => {
@@ -725,7 +781,7 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const surfaces = extractSurfacesFromHtml(html, allKanji);
     const readings = await resolveFuriganaBatch(surfaces, dictDb);
     const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
-    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("<ruby>絶品<rt>ぜっぴん</rt></ruby>");
     expect(result).not.toContain("<ruby>品<rt>しな</rt></ruby>");
   });
@@ -735,7 +791,7 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const surfaces = extractSurfacesFromHtml(html, allKanji);
     const readings = await resolveFuriganaBatch(surfaces, dictDb);
     const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
-    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("<ruby>持ち主<rt>もちぬし</rt></ruby>");
     expect(result).not.toContain("<ruby>主<rt>");
   });
@@ -745,7 +801,7 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const surfaces = extractSurfacesFromHtml(html, allKanji);
     const readings = await resolveFuriganaBatch(surfaces, dictDb);
     const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
-    const result = applyFuriganaToHtml(html, fMap, allKanji);
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
     expect(result).toContain("<ruby>大勢<rt>おおぜい</rt></ruby>");
     expect(result).not.toContain("<ruby>勢<rt>いきおい</rt></ruby>");
   });
