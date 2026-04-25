@@ -1,5 +1,6 @@
 import type * as SQLite from "expo-sqlite";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
+import { toHiragana } from "wanakana";
 import { deinflect } from "./deinflect";
 import {
   classifyReaderReadingPattern,
@@ -20,11 +21,13 @@ export interface FuriganaKanjiSet {
 
 export interface ReaderFuriganaSettings {
   sourceDefault: boolean;
+  showNames: boolean;
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
 }
 
 export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
   sourceDefault: true,
+  showNames: true,
   ruleLevels: defaultReaderFuriganaRuleLevels,
 };
 
@@ -137,10 +140,13 @@ function stripOkurigana(
 
 const BATCH_SIZE = 500;
 let hasJlptCol: boolean | null = null;
+type KanjiInfo = Awaited<ReturnType<typeof getKanjiBatchAsync>>[number];
+const kanjiInfoCache = new Map<string, KanjiInfo>();
 
 interface DictMatch {
   kanjiForm: string;
   kanaForm: string;
+  common: boolean;
   jlptLevel: number | null;
   irregularReading: boolean;
 }
@@ -148,6 +154,17 @@ interface DictMatch {
 interface CounterMatch {
   kanjiForm: string;
   kanaForm: string;
+}
+
+interface NameMatch {
+  kanjiForm: string;
+  kanaForm: string;
+  nameType: string | null;
+  translation: string | null;
+}
+
+export interface ResolveFuriganaBatchOptions {
+  includeNames?: boolean;
 }
 
 async function batchLookupCounters(
@@ -330,6 +347,7 @@ async function batchLookup(
         bestMatch = {
           kanjiForm,
           kanaForm: kana,
+          common,
           jlptLevel: entryJlpt.get(id) ?? null,
           irregularReading: entryIrregular.get(id) ?? false,
         };
@@ -344,6 +362,132 @@ async function batchLookup(
   return result;
 }
 
+async function batchLookupNames(
+  extDb: SQLite.SQLiteDatabase | null | undefined,
+  surfaces: string[],
+): Promise<Map<string, NameMatch[]>> {
+  const result = new Map<string, NameMatch[]>();
+  if (!extDb || surfaces.length === 0) return result;
+
+  const formsBySurface = new Map<string, Set<string>>();
+  const surfacesByForm = new Map<string, Set<string>>();
+  const allForms = new Set<string>();
+  for (const surface of surfaces) {
+    const forms = new Set<string>([surface]);
+    const hiragana = toHiragana(surface);
+    if (hiragana !== surface) forms.add(hiragana);
+    formsBySurface.set(surface, forms);
+    for (const form of forms) {
+      allForms.add(form);
+      if (!surfacesByForm.has(form)) surfacesByForm.set(form, new Set());
+      surfacesByForm.get(form)!.add(surface);
+    }
+  }
+
+  const formList = [...allForms];
+  for (let i = 0; i < formList.length; i += BATCH_SIZE) {
+    const batch = formList.slice(i, i + BATCH_SIZE);
+    const ph = batch.map(() => "?").join(",");
+    const rows = await extDb.getAllAsync<{
+      kanji: string | null;
+      kana: string;
+      name_type: string | null;
+      translation: string | null;
+    }>(
+      `SELECT kanji, kana, name_type, translation
+       FROM names
+       WHERE kanji IN (${ph}) OR kana IN (${ph})`,
+      [...batch, ...batch],
+    );
+
+    for (const row of rows) {
+      const matchedSurfaces = new Set<string>();
+      for (const surface of surfacesByForm.get(row.kana) ?? []) matchedSurfaces.add(surface);
+      if (row.kanji) {
+        for (const surface of surfacesByForm.get(row.kanji) ?? []) matchedSurfaces.add(surface);
+      }
+
+      for (const surface of matchedSurfaces) {
+        if (!result.has(surface)) result.set(surface, []);
+        result.get(surface)!.push({
+          kanjiForm: row.kanji ?? surface,
+          kanaForm: row.kana,
+          nameType: row.name_type,
+          translation: row.translation,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+function hasKana(text: string): boolean {
+  for (const ch of text) {
+    if (isKana(ch)) return true;
+  }
+  return false;
+}
+
+function hasKanjiText(text: string): boolean {
+  for (const ch of text) {
+    if (isKanji(ch)) return true;
+  }
+  return false;
+}
+
+function scoreFuriganaWordMatch(
+  surface: string,
+  match: DictMatch,
+  deinflectedWord: string,
+): number {
+  let score = [...surface].length * 1000;
+  if (match.kanjiForm === surface || match.kanaForm === surface) score += 260;
+  if (match.common) score += 120;
+  if (deinflectedWord !== surface) score -= 80;
+  if (hasKanjiText(surface) && hasKana(surface)) score += 120;
+  if (hasKana(surface) && !hasKanjiText(surface)) score += 30;
+  return score;
+}
+
+function scoreFuriganaNameMatch(surface: string, match: NameMatch): number {
+  let score = [...surface].length * 1000;
+  if (match.kanjiForm === surface || match.kanaForm === surface) score += 260;
+  if (match.translation) score += 25;
+
+  const strongTypes = new Set([
+    "surname",
+    "given",
+    "fem",
+    "masc",
+    "person",
+    "place",
+    "station",
+    "organization",
+    "company",
+    "product",
+    "work",
+  ]);
+  const types = (match.nameType ?? "").split(",");
+  if (types.some((type) => strongTypes.has(type))) score += 90;
+  if (types.length === 1 && types[0] === "unclass") score -= 25;
+  if (hasKanjiText(surface) && !hasKana(surface)) score += 80;
+  return score;
+}
+
+function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | null {
+  let best: NameMatch | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const match of matches) {
+    const score = scoreFuriganaNameMatch(surface, match);
+    if (!best || score > bestScore) {
+      best = match;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 // ─── Public API ───
 
 /**
@@ -354,7 +498,9 @@ export async function resolveFuriganaBatch(
   surfaces: string[],
   dictDb: SQLite.SQLiteDatabase,
   extendedDb?: SQLite.SQLiteDatabase | null,
+  options: ResolveFuriganaBatchOptions = {},
 ): Promise<Record<string, FuriganaEntry>> {
+  const { includeNames = true } = options;
   // Deinflect all surfaces, collect unique search words
   const surfaceToDeinflected = new Map<string, string[]>();
   const allSearchWords = new Set<string>();
@@ -375,8 +521,13 @@ export async function resolveFuriganaBatch(
   }
 
   // Batch lookup
-  const lookupMap = await batchLookup(dictDb, [...allSearchWords]);
-  const counterLookupMap = await batchLookupCounters(extendedDb, surfaces);
+  const [lookupMap, counterLookupMap, nameLookupMap] = await Promise.all([
+    batchLookup(dictDb, [...allSearchWords]),
+    batchLookupCounters(extendedDb, surfaces),
+    includeNames
+      ? batchLookupNames(extendedDb, surfaces)
+      : Promise.resolve(new Map<string, NameMatch[]>()),
+  ]);
 
   // Resolve each surface
   const result: Record<string, FuriganaEntry> = {};
@@ -402,39 +553,67 @@ export async function resolveFuriganaBatch(
     }
 
     const deinflected = surfaceToDeinflected.get(surface)!;
+    let bestWordMatch: {
+      match: DictMatch;
+      score: number;
+    } | null = null;
+
     for (const word of deinflected) {
       const match = lookupMap.get(word);
-      if (match && match.kanaForm) {
-        const { kanjiPart, reading, kanjiPartLen } = stripOkurigana(
-          match.kanjiForm,
-          match.kanaForm,
-        );
-        if (reading) {
-          const entry: FuriganaEntry = {
-            kanjiPart,
-            reading,
-            kanjiPartLen,
-            fullKanjiForm: match.kanjiForm,
-            fullKanaForm: match.kanaForm,
-          };
-          if (match.jlptLevel != null) entry.wordJlpt = match.jlptLevel;
-          if (match.irregularReading) entry.irregularReading = true;
-          resolved.set(surface, entry);
-          break;
-        }
+      if (!match || !match.kanaForm) continue;
+      const score = scoreFuriganaWordMatch(surface, match, word);
+      if (!bestWordMatch || score > bestWordMatch.score) {
+        bestWordMatch = { match, score };
       }
+    }
+
+    const bestNameMatch = pickBestNameMatch(surface, nameLookupMap.get(surface) ?? []);
+    const bestNameScore = bestNameMatch ? scoreFuriganaNameMatch(surface, bestNameMatch) : null;
+    const useName =
+      !!bestNameMatch &&
+      (!bestWordMatch || (bestNameScore ?? Number.NEGATIVE_INFINITY) > bestWordMatch.score);
+    const chosen = useName ? bestNameMatch : bestWordMatch?.match;
+    if (!chosen) continue;
+
+    const { kanjiPart, reading, kanjiPartLen } = stripOkurigana(chosen.kanjiForm, chosen.kanaForm);
+    if (!reading) continue;
+
+    const entry: FuriganaEntry = {
+      kanjiPart,
+      reading,
+      kanjiPartLen,
+      fullKanjiForm: chosen.kanjiForm,
+      fullKanaForm: chosen.kanaForm,
+    };
+    if (useName) {
+      entry.isName = true;
+    } else if (bestWordMatch) {
+      if (bestWordMatch.match.jlptLevel != null) entry.wordJlpt = bestWordMatch.match.jlptLevel;
+      if (bestWordMatch.match.irregularReading) entry.irregularReading = true;
+    }
+    resolved.set(surface, entry);
+  }
+
+  const missingLiterals = new Set<string>();
+  for (const entry of resolved.values()) {
+    for (const ch of entry.fullKanjiForm ?? "") {
+      if (isKanji(ch) && !kanjiInfoCache.has(ch)) missingLiterals.add(ch);
+    }
+  }
+  if (missingLiterals.size > 0) {
+    const fetchedKanji = await getKanjiBatchAsync(dictDb, [...missingLiterals]);
+    for (const kanji of fetchedKanji) {
+      kanjiInfoCache.set(kanji.literal, kanji);
     }
   }
 
-  const literals = new Set<string>();
+  const kanjiByLiteral = new Map<string, KanjiInfo>();
   for (const entry of resolved.values()) {
     for (const ch of entry.fullKanjiForm ?? "") {
-      if (isKanji(ch)) literals.add(ch);
+      const kanji = kanjiInfoCache.get(ch);
+      if (kanji) kanjiByLiteral.set(ch, kanji);
     }
   }
-  const kanjiByLiteral = new Map(
-    (await getKanjiBatchAsync(dictDb, [...literals])).map((kanji) => [kanji.literal, kanji]),
-  );
 
   for (const [surface, entry] of resolved) {
     if (entry.fullKanjiForm && entry.fullKanaForm) {
@@ -588,6 +767,7 @@ export interface FuriganaEntry {
   kanjiPartLen: number;
   wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
   irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
+  isName?: boolean;
   fullKanjiForm?: string;
   fullKanaForm?: string;
   readingPattern?: ReaderReadingPattern;
@@ -619,6 +799,7 @@ function shouldShowFuriganaForSurface(
   kanjiSet: FuriganaKanjiSet,
   settings: ReaderFuriganaSettings,
 ): boolean {
+  if (entry.isName && !settings.showNames) return false;
   if (kanjiSet.all) return true;
 
   const surfaceKanji = surfaceChars.filter(isKanji);
