@@ -115,6 +115,7 @@ const POPUP_SAFE_ZONE = 380;
 const TOOLBAR_SIDE_MARGIN = 8;
 const READ_PROGRESS_FLUSH_MS = 15_000;
 const FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS = 180;
+const SLICE_RENDER_CACHE_LIMIT = 48;
 
 const EXTERNAL_DICTS = [
   {
@@ -604,6 +605,7 @@ export default function BookReaderScreen() {
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
   const furiganaEntryCacheRef = useRef<Map<string, FuriganaEntry | null>>(new Map());
+  const sliceRenderCacheRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
@@ -617,6 +619,104 @@ export default function BookReaderScreen() {
   useEffect(() => {
     lookupModeRef.current = lookupMode;
   }, [lookupMode]);
+
+  const getRuleLevelsCacheKey = useCallback(
+    (ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>) =>
+      JSON.stringify(ruleLevels),
+    [],
+  );
+
+  const setCachedSliceHtml = useCallback((key: string, html: string) => {
+    const cache = sliceRenderCacheRef.current;
+    cache.delete(key);
+    cache.set(key, html);
+    while (cache.size > SLICE_RENDER_CACHE_LIMIT) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey == null) break;
+      cache.delete(oldestKey);
+    }
+  }, []);
+
+  const renderSliceHtml = useCallback(
+    async ({
+      sliceText,
+      startChar,
+      charCount,
+      isAozora,
+      hasFuri,
+      sourceDefault,
+      ruleLevels,
+      includeNames,
+    }: {
+      sliceText: string;
+      startChar: number;
+      charCount: number;
+      isAozora: boolean;
+      hasFuri: boolean;
+      sourceDefault: boolean;
+      ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+      includeNames: boolean;
+    }) => {
+      const cacheKey = [
+        isAozora ? "a" : "p",
+        startChar,
+        charCount,
+        hasFuri ? 1 : 0,
+        sourceDefault ? 1 : 0,
+        includeNames ? 1 : 0,
+        getRuleLevelsCacheKey(ruleLevels),
+      ].join(":");
+      const cachedHtml = sliceRenderCacheRef.current.get(cacheKey);
+      if (cachedHtml != null) {
+        setCachedSliceHtml(cacheKey, cachedHtml);
+        return cachedHtml;
+      }
+
+      let sliceHtml = isAozora
+        ? parseAozoraToHtml(sliceText, { strip: false })
+        : plainTextToHtml(sliceText);
+
+      if (isAozora && !hasFuri) {
+        sliceHtml = stripRubyTags(sliceHtml);
+      }
+
+      if (kanjiSetRef.current && dictDb) {
+        const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
+        if (surfaces.length > 0) {
+          const cache = furiganaEntryCacheRef.current;
+          const missing = surfaces.filter(
+            (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
+          );
+          if (missing.length > 0) {
+            const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
+              includeNames,
+            });
+            for (const surface of missing) {
+              cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
+            }
+          }
+          const readings: Record<string, FuriganaEntry> = {};
+          for (const surface of surfaces) {
+            const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
+            if (cached) readings[surface] = cached;
+          }
+          const fMap = new Map<string, FuriganaEntry>(
+            Object.entries(readings) as [string, FuriganaEntry][],
+          );
+          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current, {
+            sourceDefault,
+            showNames: includeNames,
+            ruleLevels,
+          });
+        }
+        sliceHtml = injectRubySpacers(sliceHtml);
+      }
+
+      setCachedSliceHtml(cacheKey, sliceHtml);
+      return sliceHtml;
+    },
+    [dictDb, extendedDb, getRuleLevelsCacheKey, setCachedSliceHtml],
+  );
 
   const cycleLookupMode = useCallback(() => {
     setLookupMode((prev) => {
@@ -656,47 +756,16 @@ export default function BookReaderScreen() {
       fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
       backPrefetchingRef.current = false;
 
-      let sliceHtml = isAozora
-        ? parseAozoraToHtml(slice.text, { strip: false })
-        : plainTextToHtml(slice.text);
-
-      // Strip source ruby if ALL furigana is disabled
-      if (isAozora && !hasFuri) {
-        sliceHtml = stripRubyTags(sliceHtml);
-      }
-
-      if (kanjiSetRef.current) {
-        const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
-        if (surfaces.length > 0) {
-          const includeNames = readerNameFuriganaRef.current;
-          const cache = furiganaEntryCacheRef.current;
-          const missing = surfaces.filter(
-            (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
-          );
-          if (missing.length > 0) {
-            const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
-              includeNames,
-            });
-            for (const surface of missing) {
-              cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
-            }
-          }
-          const readings: Record<string, FuriganaEntry> = {};
-          for (const surface of surfaces) {
-            const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
-            if (cached) readings[surface] = cached;
-          }
-          const fMap = new Map<string, FuriganaEntry>(
-            Object.entries(readings) as [string, FuriganaEntry][],
-          );
-          sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current, {
-            sourceDefault,
-            showNames: readerNameFuriganaRef.current,
-            ruleLevels,
-          });
-        }
-        sliceHtml = injectRubySpacers(sliceHtml);
-      }
+      const sliceHtml = await renderSliceHtml({
+        sliceText: slice.text,
+        startChar,
+        charCount: slice.text.length,
+        isAozora,
+        hasFuri,
+        sourceDefault,
+        ruleLevels,
+        includeNames: readerNameFuriganaRef.current,
+      });
 
       readerRef.current?.postMessage(
         JSON.stringify({
@@ -709,7 +778,7 @@ export default function BookReaderScreen() {
         }),
       );
     },
-    [dictDb, fontSize],
+    [fontSize, renderSliceHtml],
   );
 
   // Track scroll position for saving
@@ -787,6 +856,8 @@ export default function BookReaderScreen() {
       const hasSource = bookHasSourceFurigana(b.rawContent);
       hasSourceFuriganaRef.current = hasSource;
       setHasSourceFurigana(hasSource);
+      sliceRenderCacheRef.current.clear();
+      furiganaEntryCacheRef.current.clear();
 
       // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
       const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
@@ -844,40 +915,23 @@ export default function BookReaderScreen() {
           ]);
         }
 
-        let sliceHtml = isAozora
-          ? parseAozoraToHtml(slice.text, { strip: false })
-          : plainTextToHtml(slice.text);
-
-        // Strip source ruby if ALL furigana is disabled
-        if (isAozora && !hasFuri) {
-          sliceHtml = stripRubyTags(sliceHtml);
-        }
-
         // Apply injected furigana if any rule has selected levels
         const hasJlptFuri = hasInjectedFuriganaActive(furiganaRuleLevels);
         if (hasJlptFuri && dictDb) {
           const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
           kanjiSetRef.current = kanjiSet;
           furiganaEntryCacheRef.current.clear();
-          const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
-          if (surfaces.length > 0) {
-            const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb, {
-              includeNames: readerNameFurigana,
-            });
-            for (const [surface, entry] of Object.entries(readings)) {
-              furiganaEntryCacheRef.current.set(`${readerNameFurigana ? 1 : 0}:${surface}`, entry);
-            }
-            const fMap = new Map<string, FuriganaEntry>(
-              Object.entries(readings) as [string, FuriganaEntry][],
-            );
-            sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet, {
-              sourceDefault: sourceFuriganaEnabled,
-              showNames: readerNameFurigana,
-              ruleLevels: furiganaRuleLevels,
-            });
-          }
-          sliceHtml = injectRubySpacers(sliceHtml);
         }
+        const sliceHtml = await renderSliceHtml({
+          sliceText: slice.text,
+          startChar,
+          charCount: slice.text.length,
+          isAozora,
+          hasFuri,
+          sourceDefault: sourceFuriganaEnabled,
+          ruleLevels: furiganaRuleLevels,
+          includeNames: readerNameFurigana,
+        });
 
         const readerHtml = generateReaderHtml(sliceHtml, {
           fontSize: b.fontSize,
@@ -899,7 +953,7 @@ export default function BookReaderScreen() {
         bookId,
       ]);
     })();
-  }, [userDb, bookId, isDark, goBack]);
+  }, [userDb, bookId, isDark, goBack, renderSliceHtml]);
 
   // Re-apply furigana when levels change
   useEffect(() => {
@@ -912,9 +966,11 @@ export default function BookReaderScreen() {
         const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
         kanjiSetRef.current = kanjiSet;
         furiganaEntryCacheRef.current.clear();
+        sliceRenderCacheRef.current.clear();
       } else {
         kanjiSetRef.current = null;
         furiganaEntryCacheRef.current.clear();
+        sliceRenderCacheRef.current.clear();
       }
 
       const charOffset = scrollPosRef.current || 0;
@@ -1070,45 +1126,16 @@ export default function BookReaderScreen() {
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
             const newEnd = Math.min(nextStart + cpp * 3, model.totalChars);
-            let nextHtml = isAozoraRef.current
-              ? parseAozoraToHtml(nextSlice.text, { strip: false })
-              : plainTextToHtml(nextSlice.text);
-            // Strip source ruby if ALL furigana is disabled
-            if (isAozoraRef.current && !hasFuri) {
-              nextHtml = stripRubyTags(nextHtml);
-            }
-            if (kanjiSetRef.current && dictDb) {
-              const surfaces = extractSurfacesFromHtml(nextHtml, kanjiSetRef.current);
-              if (surfaces.length > 0) {
-                const includeNames = readerNameFuriganaRef.current;
-                const cache = furiganaEntryCacheRef.current;
-                const missing = surfaces.filter(
-                  (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
-                );
-                if (missing.length > 0) {
-                  const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
-                    includeNames,
-                  });
-                  for (const surface of missing) {
-                    cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
-                  }
-                }
-                const readings: Record<string, FuriganaEntry> = {};
-                for (const surface of surfaces) {
-                  const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
-                  if (cached) readings[surface] = cached;
-                }
-                const fMap = new Map<string, FuriganaEntry>(
-                  Object.entries(readings) as [string, FuriganaEntry][],
-                );
-                nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current, {
-                  sourceDefault: sourceFuriganaEnabledRef.current,
-                  showNames: readerNameFuriganaRef.current,
-                  ruleLevels: furiganaRuleLevelsRef.current,
-                });
-              }
-              nextHtml = injectRubySpacers(nextHtml);
-            }
+            const nextHtml = await renderSliceHtml({
+              sliceText: nextSlice.text,
+              startChar: nextStart,
+              charCount: nextSlice.text.length,
+              isAozora: isAozoraRef.current,
+              hasFuri,
+              sourceDefault: sourceFuriganaEnabledRef.current,
+              ruleLevels: furiganaRuleLevelsRef.current,
+              includeNames: readerNameFuriganaRef.current,
+            });
             fwdLoadedEndRef.current = newEnd;
             readerRef.current?.postMessage(
               JSON.stringify({
@@ -1136,45 +1163,16 @@ export default function BookReaderScreen() {
             const backChars = sliceCharOffsetRef.current - backStart;
             if (backChars > 0) {
               const backSlice = sliceContent(model, backStart, backChars);
-              let backHtml = isAozoraRef.current
-                ? parseAozoraToHtml(backSlice.text, { strip: false })
-                : plainTextToHtml(backSlice.text);
-              // Strip source ruby if ALL furigana is disabled
-              if (isAozoraRef.current && !hasFuri) {
-                backHtml = stripRubyTags(backHtml);
-              }
-              if (kanjiSetRef.current && dictDb) {
-                const surfaces = extractSurfacesFromHtml(backHtml, kanjiSetRef.current);
-                if (surfaces.length > 0) {
-                  const includeNames = readerNameFuriganaRef.current;
-                  const cache = furiganaEntryCacheRef.current;
-                  const missing = surfaces.filter(
-                    (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
-                  );
-                  if (missing.length > 0) {
-                    const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
-                      includeNames,
-                    });
-                    for (const surface of missing) {
-                      cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
-                    }
-                  }
-                  const readings: Record<string, FuriganaEntry> = {};
-                  for (const surface of surfaces) {
-                    const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
-                    if (cached) readings[surface] = cached;
-                  }
-                  const fMap = new Map<string, FuriganaEntry>(
-                    Object.entries(readings) as [string, FuriganaEntry][],
-                  );
-                  backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current, {
-                    sourceDefault: sourceFuriganaEnabledRef.current,
-                    showNames: readerNameFuriganaRef.current,
-                    ruleLevels: furiganaRuleLevelsRef.current,
-                  });
-                }
-                backHtml = injectRubySpacers(backHtml);
-              }
+              const backHtml = await renderSliceHtml({
+                sliceText: backSlice.text,
+                startChar: backStart,
+                charCount: backSlice.text.length,
+                isAozora: isAozoraRef.current,
+                hasFuri,
+                sourceDefault: sourceFuriganaEnabledRef.current,
+                ruleLevels: furiganaRuleLevelsRef.current,
+                includeNames: readerNameFuriganaRef.current,
+              });
               readerRef.current?.postMessage(
                 JSON.stringify({
                   type: "setPrevContent",
@@ -1431,7 +1429,7 @@ export default function BookReaderScreen() {
                     <View className="flex-1">
                       <Text className="text-sm font-medium text-foreground">Names</Text>
                       <Text className="text-xs text-muted-foreground">
-                        Allow furigana from exact name matches.
+                        Show furigana for names.
                       </Text>
                     </View>
                     <Switch
