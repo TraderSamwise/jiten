@@ -49,6 +49,7 @@ export const defaultSettings = Object.freeze({
   typingShowPitch: true as boolean,
   typingPlayAudio: false as boolean,
   readerSourceFurigana: true as boolean,
+  readerNameFurigana: true as boolean,
   readerFuriganaRuleLevels: defaultReaderFuriganaRuleLevels as Record<
     ReaderFuriganaRule,
     Record<FuriganaMatchLevel, boolean>
@@ -122,6 +123,7 @@ export const typingPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("typing
 export const readerSourceFuriganaAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerSourceFurigana"),
 );
+export const readerNameFuriganaAtom = focusAtom(settingsAtom, (o) => o.prop("readerNameFurigana"));
 export const readerFuriganaRuleLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaRuleLevels"),
 );

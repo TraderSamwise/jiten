@@ -37,6 +37,7 @@ describe("defaultSettings", () => {
       typingShowPitch: true,
       typingPlayAudio: false,
       readerSourceFurigana: true,
+      readerNameFurigana: true,
       readerFuriganaRuleLevels: {
         matchAnyKanji: {
           n1: true,

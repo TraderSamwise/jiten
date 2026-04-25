@@ -65,6 +65,7 @@ import {
 import { useAtom } from "jotai";
 import {
   readerFuriganaRuleLevelsAtom,
+  readerNameFuriganaAtom,
   readerSourceFuriganaAtom,
   readerPageAnimationsAtom,
   type FuriganaMatchLevel,
@@ -455,10 +456,12 @@ export default function BookReaderScreen() {
   const initialScrollFiredRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [sourceFuriganaEnabled, setSourceFuriganaEnabled] = useAtom(readerSourceFuriganaAtom);
+  const [readerNameFurigana, setReaderNameFurigana] = useAtom(readerNameFuriganaAtom);
   const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
   const [draftSourceFuriganaEnabled, setDraftSourceFuriganaEnabled] =
     useState(sourceFuriganaEnabled);
+  const [draftReaderNameFurigana, setDraftReaderNameFurigana] = useState(readerNameFurigana);
   const [draftFuriganaRuleLevels, setDraftFuriganaRuleLevels] = useState(furiganaRuleLevels);
 
   const [book, setBook] = useState<Book | null>(null);
@@ -493,12 +496,14 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (showSettings) {
       setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
+      setDraftReaderNameFurigana(readerNameFurigana);
       setDraftFuriganaRuleLevels(furiganaRuleLevels);
       return;
     }
     setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
+    setDraftReaderNameFurigana(readerNameFurigana);
     setDraftFuriganaRuleLevels(furiganaRuleLevels);
-  }, [showSettings, sourceFuriganaEnabled, furiganaRuleLevels]);
+  }, [showSettings, sourceFuriganaEnabled, readerNameFurigana, furiganaRuleLevels]);
 
   const flushDraftFuriganaSettings = useCallback(() => {
     if (furiganaApplyTimerRef.current) {
@@ -510,6 +515,11 @@ export default function BookReaderScreen() {
         setSourceFuriganaEnabled(draftSourceFuriganaEnabled);
       });
     }
+    if (draftReaderNameFurigana !== readerNameFurigana) {
+      startTransition(() => {
+        setReaderNameFurigana(draftReaderNameFurigana);
+      });
+    }
     if (!ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)) {
       startTransition(() => {
         setFuriganaRuleLevels(draftFuriganaRuleLevels);
@@ -517,9 +527,12 @@ export default function BookReaderScreen() {
     }
   }, [
     draftFuriganaRuleLevels,
+    draftReaderNameFurigana,
     draftSourceFuriganaEnabled,
     furiganaRuleLevels,
+    readerNameFurigana,
     setFuriganaRuleLevels,
+    setReaderNameFurigana,
     setSourceFuriganaEnabled,
     sourceFuriganaEnabled,
   ]);
@@ -527,6 +540,7 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!showSettings) return;
     if (
+      draftReaderNameFurigana === readerNameFurigana &&
       draftSourceFuriganaEnabled === sourceFuriganaEnabled &&
       ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)
     ) {
@@ -549,9 +563,11 @@ export default function BookReaderScreen() {
     };
   }, [
     draftFuriganaRuleLevels,
+    draftReaderNameFurigana,
     draftSourceFuriganaEnabled,
     flushDraftFuriganaSettings,
     furiganaRuleLevels,
+    readerNameFurigana,
     showSettings,
     sourceFuriganaEnabled,
   ]);
@@ -583,13 +599,18 @@ export default function BookReaderScreen() {
   // Furigana refs
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
   const sourceFuriganaEnabledRef = useRef(sourceFuriganaEnabled);
+  const readerNameFuriganaRef = useRef(readerNameFurigana);
   const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
+  const furiganaEntryCacheRef = useRef<Map<string, FuriganaEntry | null>>(new Map());
 
   useEffect(() => {
     sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
   }, [sourceFuriganaEnabled]);
+  useEffect(() => {
+    readerNameFuriganaRef.current = readerNameFurigana;
+  }, [readerNameFurigana]);
   useEffect(() => {
     furiganaRuleLevelsRef.current = furiganaRuleLevels;
   }, [furiganaRuleLevels]);
@@ -647,12 +668,30 @@ export default function BookReaderScreen() {
       if (kanjiSetRef.current) {
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
         if (surfaces.length > 0) {
-          const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
+          const includeNames = readerNameFuriganaRef.current;
+          const cache = furiganaEntryCacheRef.current;
+          const missing = surfaces.filter(
+            (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
+          );
+          if (missing.length > 0) {
+            const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
+              includeNames,
+            });
+            for (const surface of missing) {
+              cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
+            }
+          }
+          const readings: Record<string, FuriganaEntry> = {};
+          for (const surface of surfaces) {
+            const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
+            if (cached) readings[surface] = cached;
+          }
           const fMap = new Map<string, FuriganaEntry>(
             Object.entries(readings) as [string, FuriganaEntry][],
           );
           sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSetRef.current, {
             sourceDefault,
+            showNames: readerNameFuriganaRef.current,
             ruleLevels,
           });
         }
@@ -819,14 +858,21 @@ export default function BookReaderScreen() {
         if (hasJlptFuri && dictDb) {
           const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
           kanjiSetRef.current = kanjiSet;
+          furiganaEntryCacheRef.current.clear();
           const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSet);
           if (surfaces.length > 0) {
-            const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
+            const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb, {
+              includeNames: readerNameFurigana,
+            });
+            for (const [surface, entry] of Object.entries(readings)) {
+              furiganaEntryCacheRef.current.set(`${readerNameFurigana ? 1 : 0}:${surface}`, entry);
+            }
             const fMap = new Map<string, FuriganaEntry>(
               Object.entries(readings) as [string, FuriganaEntry][],
             );
             sliceHtml = applyFuriganaToHtml(sliceHtml, fMap, kanjiSet, {
               sourceDefault: sourceFuriganaEnabled,
+              showNames: readerNameFurigana,
               ruleLevels: furiganaRuleLevels,
             });
           }
@@ -853,7 +899,7 @@ export default function BookReaderScreen() {
         bookId,
       ]);
     })();
-  }, [userDb, bookId, isDark]);
+  }, [userDb, bookId, isDark, goBack]);
 
   // Re-apply furigana when levels change
   useEffect(() => {
@@ -865,15 +911,17 @@ export default function BookReaderScreen() {
       if (hasJlptFuri) {
         const kanjiSet = await buildFuriganaKanjiSet(dictDb, furiganaRuleLevels.matchAnyKanji);
         kanjiSetRef.current = kanjiSet;
+        furiganaEntryCacheRef.current.clear();
       } else {
         kanjiSetRef.current = null;
+        furiganaEntryCacheRef.current.clear();
       }
 
       const charOffset = scrollPosRef.current || 0;
       await reloadAtChar(charOffset);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFuriganaEnabled, furiganaRuleLevels, dictDb]);
+  }, [sourceFuriganaEnabled, readerNameFurigana, furiganaRuleLevels, dictDb]);
 
   // Save char offset on unmount
   useEffect(() => {
@@ -1032,12 +1080,30 @@ export default function BookReaderScreen() {
             if (kanjiSetRef.current && dictDb) {
               const surfaces = extractSurfacesFromHtml(nextHtml, kanjiSetRef.current);
               if (surfaces.length > 0) {
-                const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
+                const includeNames = readerNameFuriganaRef.current;
+                const cache = furiganaEntryCacheRef.current;
+                const missing = surfaces.filter(
+                  (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
+                );
+                if (missing.length > 0) {
+                  const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
+                    includeNames,
+                  });
+                  for (const surface of missing) {
+                    cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
+                  }
+                }
+                const readings: Record<string, FuriganaEntry> = {};
+                for (const surface of surfaces) {
+                  const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
+                  if (cached) readings[surface] = cached;
+                }
                 const fMap = new Map<string, FuriganaEntry>(
                   Object.entries(readings) as [string, FuriganaEntry][],
                 );
                 nextHtml = applyFuriganaToHtml(nextHtml, fMap, kanjiSetRef.current, {
                   sourceDefault: sourceFuriganaEnabledRef.current,
+                  showNames: readerNameFuriganaRef.current,
                   ruleLevels: furiganaRuleLevelsRef.current,
                 });
               }
@@ -1080,12 +1146,30 @@ export default function BookReaderScreen() {
               if (kanjiSetRef.current && dictDb) {
                 const surfaces = extractSurfacesFromHtml(backHtml, kanjiSetRef.current);
                 if (surfaces.length > 0) {
-                  const readings = await resolveFuriganaBatch(surfaces, dictDb, extendedDb);
+                  const includeNames = readerNameFuriganaRef.current;
+                  const cache = furiganaEntryCacheRef.current;
+                  const missing = surfaces.filter(
+                    (surface) => !cache.has(`${includeNames ? 1 : 0}:${surface}`),
+                  );
+                  if (missing.length > 0) {
+                    const fetched = await resolveFuriganaBatch(missing, dictDb, extendedDb, {
+                      includeNames,
+                    });
+                    for (const surface of missing) {
+                      cache.set(`${includeNames ? 1 : 0}:${surface}`, fetched[surface] ?? null);
+                    }
+                  }
+                  const readings: Record<string, FuriganaEntry> = {};
+                  for (const surface of surfaces) {
+                    const cached = cache.get(`${includeNames ? 1 : 0}:${surface}`);
+                    if (cached) readings[surface] = cached;
+                  }
                   const fMap = new Map<string, FuriganaEntry>(
                     Object.entries(readings) as [string, FuriganaEntry][],
                   );
                   backHtml = applyFuriganaToHtml(backHtml, fMap, kanjiSetRef.current, {
                     sourceDefault: sourceFuriganaEnabledRef.current,
+                    showNames: readerNameFuriganaRef.current,
                     ruleLevels: furiganaRuleLevelsRef.current,
                   });
                 }
@@ -1290,35 +1374,6 @@ export default function BookReaderScreen() {
 
                 <Separator className="opacity-40" />
 
-                {hasSourceFurigana && (
-                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2">
-                    <View className="flex-row items-center justify-between gap-3">
-                      <View className="flex-1">
-                        <Text className="text-sm font-medium text-foreground">Source furigana</Text>
-                        <Text className="text-xs text-muted-foreground">
-                          Use furigana already embedded in the book.
-                        </Text>
-                      </View>
-                      <Pressable
-                        onPress={() => setDraftSourceFuriganaEnabled((prev) => !prev)}
-                        className={`px-3 py-1.5 rounded-full border ${
-                          draftSourceFuriganaEnabled
-                            ? "bg-foreground border-foreground"
-                            : "bg-transparent border-border"
-                        }`}
-                      >
-                        <Text
-                          className={`text-xs font-medium ${
-                            draftSourceFuriganaEnabled ? "text-background" : "text-muted-foreground"
-                          }`}
-                        >
-                          Default
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
-
                 {furiganaRuleSections.map(({ title, rules }) => (
                   <View key={title} className="gap-2">
                     <Text className="text-xs text-muted-foreground text-center uppercase tracking-wide">
@@ -1371,6 +1426,21 @@ export default function BookReaderScreen() {
                   </View>
                 ))}
 
+                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-foreground">Names</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Allow furigana from exact name matches.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={draftReaderNameFurigana}
+                      onValueChange={setDraftReaderNameFurigana}
+                    />
+                  </View>
+                </View>
+
                 <View className="gap-2">
                   <Pressable
                     onPress={() => setShowAdvancedReadingPatterns((prev) => !prev)}
@@ -1382,7 +1452,7 @@ export default function BookReaderScreen() {
                       <ChevronRight size={16} className="text-muted-foreground" />
                     )}
                     <Text className="text-sm font-medium text-muted-foreground">
-                      Advanced reading patterns
+                      Advanced furigana
                     </Text>
                   </Pressable>
                   <View className="relative">
@@ -1396,6 +1466,24 @@ export default function BookReaderScreen() {
                         }
                       }}
                     >
+                      {hasSourceFurigana && (
+                        <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 mb-2">
+                          <View className="flex-row items-center justify-between gap-3">
+                            <View className="flex-1">
+                              <Text className="text-sm font-medium text-foreground">
+                                Source furigana
+                              </Text>
+                              <Text className="text-xs text-muted-foreground">
+                                Use furigana already embedded in the book.
+                              </Text>
+                            </View>
+                            <Switch
+                              value={draftSourceFuriganaEnabled}
+                              onValueChange={setDraftSourceFuriganaEnabled}
+                            />
+                          </View>
+                        </View>
+                      )}
                       {readingPatternRules.map(([rule, label]) => (
                         <View
                           key={`${rule}-measure`}
@@ -1458,6 +1546,24 @@ export default function BookReaderScreen() {
                         className="gap-2 pb-3"
                         pointerEvents={showAdvancedReadingPatterns ? "auto" : "none"}
                       >
+                        {hasSourceFurigana && (
+                          <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                            <View className="flex-row items-center justify-between gap-3">
+                              <View className="flex-1">
+                                <Text className="text-sm font-medium text-foreground">
+                                  Source furigana
+                                </Text>
+                                <Text className="text-xs text-muted-foreground">
+                                  Use furigana already embedded in the book.
+                                </Text>
+                              </View>
+                              <Switch
+                                value={draftSourceFuriganaEnabled}
+                                onValueChange={setDraftSourceFuriganaEnabled}
+                              />
+                            </View>
+                          </View>
+                        )}
                         {readingPatternRules.map(([rule, label]) => (
                           <View
                             key={rule}

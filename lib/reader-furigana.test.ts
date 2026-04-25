@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
@@ -232,6 +232,7 @@ function withRuleLevels(
 ): ReaderFuriganaSettings {
   return {
     sourceDefault: defaultReaderFuriganaSettings.sourceDefault,
+    showNames: defaultReaderFuriganaSettings.showNames,
     ruleLevels: {
       matchAnyKanji: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
       matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false },
@@ -676,6 +677,39 @@ describe("resolveFuriganaBatch compound resolution", () => {
     expect(result["大勢"]?.fullKanjiForm).toBe("大勢");
   });
 
+  it("prefers the word reading for 第一 over competing name readings", async () => {
+    const result = await resolveFuriganaBatch(["第一"], dictDb, extDb);
+    expect(result["第一"]?.reading).toBe("だいいち");
+    expect(result["第一"]?.fullKanjiForm).toBe("第一");
+  });
+
+  it("resolves name-only surfaces like 一の上 when names are available", async () => {
+    const result = await resolveFuriganaBatch(["一の上"], dictDb, extDb);
+    expect(result["一の上"]?.reading).toBe("いちのうえ");
+    expect(result["一の上"]?.fullKanjiForm).toBe("一の上");
+    expect(result["一の上"]?.isName).toBe(true);
+  });
+
+  it("skips name table lookups entirely when names are disabled", async () => {
+    const fakeExtDb = {
+      getAllAsync: vi.fn(async (sql: string) => {
+        if (sql.includes("FROM counter_readings")) return [];
+        if (sql.includes("FROM names")) throw new Error("name lookup should be skipped");
+        return [];
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(
+      resolveFuriganaBatch(["第一"], dictDb, fakeExtDb, { includeNames: false }),
+    ).resolves.toBeTruthy();
+
+    expect(
+      vi
+        .mocked(fakeExtDb.getAllAsync)
+        .mock.calls.some(([sql]) => String(sql).includes("FROM names")),
+    ).toBe(false);
+  });
+
   it("full pipeline keeps 一軒 as one ruby match, not 軒", async () => {
     const html = "<p>三軒横に並んだ海の家を見やる。</p>";
     const surfaces = extractSurfacesFromHtml(html, allKanji);
@@ -714,6 +748,18 @@ describe("resolveFuriganaBatch compound resolution", () => {
     const result = applyFuriganaToHtml(html, fMap, allKanji);
     expect(result).toContain("<ruby>大勢<rt>おおぜい</rt></ruby>");
     expect(result).not.toContain("<ruby>勢<rt>いきおい</rt></ruby>");
+  });
+
+  it("full pipeline can suppress name furigana when name display is off", async () => {
+    const html = "<p>一の上が来た</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji, {
+      ...defaultReaderFuriganaSettings,
+      showNames: false,
+    });
+    expect(result).not.toContain("<ruby>一の上<rt>いちのうえ</rt></ruby>");
   });
 
   it("full pipeline does not leak 心地 furigana into 居心地 when only N1 word-level is enabled", async () => {
