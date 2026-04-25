@@ -5,6 +5,7 @@ import { ChevronRight } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { useListsStore } from "@/stores/lists";
+import { getCardStateDistribution, type CardDistribution } from "@/lib/practice-stats";
 import { srsEpochDaysToDate, endOfLogicalDayEpochDays } from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
 import { dayResetHourAtom } from "@/stores/settings";
@@ -14,6 +15,7 @@ interface DueCardsSectionProps {
   listId: string;
   flashcardMode: FlashcardMode;
   showHeader?: boolean;
+  showDeckBreakdown?: boolean;
 }
 
 interface DayBucket {
@@ -67,11 +69,13 @@ export function DueCardsSection({
   listId,
   flashcardMode,
   showHeader = true,
+  showDeckBreakdown = false,
 }: DueCardsSectionProps) {
   const userDb = useUserDb();
   const { lastSyncAt } = useSync();
   const dayResetHour = useAtomValue(dayResetHourAtom);
   const [buckets, setBuckets] = useState<DayBucket[]>([]);
+  const [cardDistribution, setCardDistribution] = useState<CardDistribution | null>(null);
   const [addOrderStats, setAddOrderStats] = useState<{
     total: number;
     studied: number;
@@ -86,6 +90,13 @@ export function DueCardsSection({
   async function loadStats() {
     if (!userDb) return;
     setLoading(true);
+
+    if (showDeckBreakdown) {
+      const distribution = await getCardStateDistribution(userDb, listId, flashcardMode);
+      setCardDistribution(distribution);
+    } else {
+      setCardDistribution(null);
+    }
 
     if (flashcardMode === "add_order") {
       const totalRow = await userDb.getFirstAsync<{ c: number }>(
@@ -162,6 +173,16 @@ export function DueCardsSection({
 
   if (loading) return <ActivityIndicator className="py-4" />;
 
+  const deckBreakdown =
+    showDeckBreakdown && cardDistribution
+      ? {
+          total: cardDistribution.total,
+          learned: cardDistribution.review,
+          inReview: cardDistribution.learning + cardDistribution.relearning,
+          unlearned: cardDistribution.newCount,
+        }
+      : null;
+
   if (addOrderStats) {
     return (
       <View>
@@ -187,6 +208,18 @@ export function DueCardsSection({
       {buckets.map((b) => (
         <StatRow key={b.label} label={b.label} count={b.count} />
       ))}
+
+      {deckBreakdown && (
+        <View className="mt-5">
+          <Text className="text-xs font-semibold text-muted-foreground tracking-wider mb-2">
+            TOTAL DECK
+          </Text>
+          <StatRow label="Total" count={deckBreakdown.total} />
+          <StatRow label="Learned" count={deckBreakdown.learned} />
+          <StatRow label="In Review" count={deckBreakdown.inReview} />
+          <StatRow label="Unlearned" count={deckBreakdown.unlearned} />
+        </View>
+      )}
     </View>
   );
 }

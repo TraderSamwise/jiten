@@ -1,4 +1,5 @@
 import type { WrappedUserDb } from "@/db/user-db";
+import type { FlashcardMode } from "@/db/types";
 import { getDayLabel, getDayStart, getLogicalToday, sqlDayExpr } from "./day-boundary";
 
 export interface LeechCard {
@@ -193,19 +194,55 @@ export interface CardDistribution {
 export async function getCardStateDistribution(
   userDb: WrappedUserDb,
   listId: string,
+  flashcardMode: FlashcardMode = "srs",
 ): Promise<CardDistribution> {
-  // srs_cards.state: 0=new, 1=learning, 2=review, 3=relearning
-  const rows = await userDb.getAllAsync<{ state: number; cnt: number }>(
-    `SELECT state, COUNT(*) as cnt FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL GROUP BY state`,
-    [listId],
-  );
   const totalEntries = await userDb.getFirstAsync<{ cnt: number }>(
     `SELECT COUNT(*) as cnt FROM list_entries WHERE list_id = ? AND deleted_at IS NULL`,
     [listId],
   );
+  const total = totalEntries?.cnt ?? 0;
+
+  if (flashcardMode === "add_order") {
+    const listRow = await userDb.getFirstAsync<{ studyPosition: number }>(
+      `SELECT study_position as studyPosition FROM lists WHERE id = ? AND deleted_at IS NULL`,
+      [listId],
+    );
+    const learned = Math.min(Math.max(listRow?.studyPosition ?? 0, 0), total);
+    return {
+      newCount: Math.max(0, total - learned),
+      learning: 0,
+      review: learned,
+      relearning: 0,
+      total,
+    };
+  }
+
+  if (flashcardMode === "simple_srs") {
+    const rows = await userDb.getAllAsync<{ simpleStage: number | null; cnt: number }>(
+      `SELECT simple_stage as simpleStage, COUNT(*) as cnt
+       FROM srs_cards
+       WHERE list_id = ? AND deleted_at IS NULL AND simple_stage IS NOT NULL
+       GROUP BY simple_stage`,
+      [listId],
+    );
+    const stageMap = new Map(rows.map((r) => [r.simpleStage ?? -1, r.cnt]));
+    const stagedTotal = rows.reduce((sum, r) => sum + r.cnt, 0);
+    return {
+      newCount: Math.max(0, total - stagedTotal),
+      learning: stageMap.get(0) ?? 0,
+      review: stageMap.get(1) ?? 0,
+      relearning: 0,
+      total,
+    };
+  }
+
+  // FSRS srs_cards.state: 0=new, 1=learning, 2=review, 3=relearning
+  const rows = await userDb.getAllAsync<{ state: number; cnt: number }>(
+    `SELECT state, COUNT(*) as cnt FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL GROUP BY state`,
+    [listId],
+  );
   const stateMap = new Map(rows.map((r) => [r.state, r.cnt]));
   const srsTotal = rows.reduce((sum, r) => sum + r.cnt, 0);
-  const total = totalEntries?.cnt ?? 0;
   return {
     newCount: Math.max(0, total - srsTotal),
     learning: stateMap.get(1) ?? 0,

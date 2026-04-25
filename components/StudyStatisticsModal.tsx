@@ -85,11 +85,16 @@ export function StudyStatisticsModal({
                 : undefined
             }
           >
-            <Text className="text-lg font-semibold text-foreground mb-4">Due Cards</Text>
+            <Text className="text-lg font-semibold text-foreground mb-4">Study Statistics</Text>
 
             <View className="mb-4">
               {visible && (
-                <DueCardsSection listId={listId} flashcardMode={flashcardMode} showHeader={false} />
+                <DueCardsSection
+                  listId={listId}
+                  flashcardMode={flashcardMode}
+                  showHeader={false}
+                  showDeckBreakdown
+                />
               )}
             </View>
 
