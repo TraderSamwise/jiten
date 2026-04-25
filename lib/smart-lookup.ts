@@ -3,6 +3,7 @@ import { lookupExactJapanese } from "@/db/search";
 import { lookupExactName } from "@/db/name-search";
 import type { DictEntry, NameEntry } from "@/db/types";
 import { deinflect, generateSubstrings } from "./deinflect";
+import { toHiragana } from "wanakana";
 
 export type ReaderLookupMode = "word" | "name" | "auto";
 export type LookupKind = "word" | "name";
@@ -21,12 +22,94 @@ export interface LookupResult {
   alternateResults?: LookupResult[];
 }
 
+interface CounterHint {
+  combinedKanji: string;
+  reading: string;
+}
+
+const DIGIT_TO_KANJI: Record<string, string> = {
+  "0": "〇",
+  "\uff10": "〇",
+  "1": "一",
+  "\uff11": "一",
+  "2": "二",
+  "\uff12": "二",
+  "3": "三",
+  "\uff13": "三",
+  "4": "四",
+  "\uff14": "四",
+  "5": "五",
+  "\uff15": "五",
+  "6": "六",
+  "\uff16": "六",
+  "7": "七",
+  "\uff17": "七",
+  "8": "八",
+  "\uff18": "八",
+  "9": "九",
+  "\uff19": "九",
+};
+
 function asWordLookupResult(result: LookupResult): LookupResult {
   return { ...result, lookupKind: "word" };
 }
 
 function asNameLookupResult(result: LookupResult): LookupResult {
   return { ...result, lookupKind: "name" };
+}
+
+function normalizeDigitsToKanji(text: string): string {
+  return text.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
+}
+
+function isCounterSurfaceMatch(entry: DictEntry, hint: CounterHint): boolean {
+  return (
+    entry.kanji.some((kanji) => kanji.text === hint.combinedKanji) ||
+    entry.kana.some((kana) => kana.text === hint.reading)
+  );
+}
+
+function scoreCounterHint(result: LookupResult, hint: CounterHint | null | undefined): number {
+  if (!hint) return 0;
+  return result.entries.some((entry) => isCounterSurfaceMatch(entry, hint)) ? 420 : 0;
+}
+
+async function buildCounterHintMap(
+  surfaces: string[],
+  extDb?: SQLite.SQLiteDatabase | null,
+): Promise<Map<string, CounterHint>> {
+  const hints = new Map<string, CounterHint>();
+  if (!extDb || surfaces.length === 0) return hints;
+
+  const normalizedSurfaces = [...new Set(surfaces.map(normalizeDigitsToKanji))];
+  const hiraganaSurfaces = [...new Set(surfaces.map((surface) => toHiragana(surface)))];
+  if (normalizedSurfaces.length === 0 || hiraganaSurfaces.length === 0) return hints;
+
+  const placeholdersKanji = normalizedSurfaces.map(() => "?").join(",");
+  const placeholdersReading = hiraganaSurfaces.map(() => "?").join(",");
+  type CounterHintRow = { combined_kanji: string; reading: string };
+  const rows = await extDb.getAllAsync<CounterHintRow>(
+    `SELECT DISTINCT combined_kanji, reading
+       FROM counter_readings
+      WHERE combined_kanji IN (${placeholdersKanji})
+         OR reading IN (${placeholdersReading})`,
+    [...normalizedSurfaces, ...hiraganaSurfaces],
+  );
+
+  for (const surface of surfaces) {
+    const normalized = normalizeDigitsToKanji(surface);
+    const hiragana = toHiragana(surface);
+    const row =
+      rows.find((candidate) => candidate.combined_kanji === normalized) ??
+      rows.find((candidate) => candidate.reading === hiragana);
+    if (!row) continue;
+    hints.set(surface, {
+      combinedKanji: row.combined_kanji,
+      reading: row.reading,
+    });
+  }
+
+  return hints;
 }
 
 function hasKana(text: string): boolean {
@@ -324,14 +407,19 @@ export async function selectionLookup(
   text: string,
   dictDb: SQLite.SQLiteDatabase,
   onResult: (result: LookupResult) => void,
-  options?: { prefix?: string; suffix?: string },
+  options?: { prefix?: string; suffix?: string; extendedDb?: SQLite.SQLiteDatabase | null },
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
-
-  // Expansion step: try substrings of expanded text that fully contain the selection
   const prefix = options?.prefix || "";
   const suffix = options?.suffix || "";
+  const expandedForHints = prefix + trimmed + suffix;
+  const counterHints = await buildCounterHintMap(
+    generateSubstrings(expandedForHints, Math.min(expandedForHints.length, 20)),
+    options?.extendedDb,
+  );
+
+  // Expansion step: try substrings of expanded text that fully contain the selection
   if (prefix.length > 0 || suffix.length > 0) {
     const expanded = prefix + trimmed + suffix;
     const selStart = prefix.length;
@@ -347,7 +435,7 @@ export async function selectionLookup(
         const candidates = deinflect(substr);
 
         let best: LookupResult | null = null;
-        let bestCommon = false;
+        let bestScore = Number.NEGATIVE_INFINITY;
 
         for (const candidate of candidates) {
           const entries = await lookupExactJapanese(dictDb, candidate.word);
@@ -358,9 +446,13 @@ export async function selectionLookup(
               entries,
               deinflectReasons: candidate.reasons,
             };
-            if (!best || (hasCommon && !bestCommon)) {
+            const score =
+              (hasCommon ? 100 : 0) +
+              scoreCounterHint(result, counterHints.get(substr)) -
+              candidate.reasons.length * 5;
+            if (!best || score > bestScore) {
               best = result;
-              bestCommon = hasCommon;
+              bestScore = score;
             }
           }
         }
@@ -421,6 +513,7 @@ export async function selectionLookup(
         trimmed.slice(0, 15),
         dictDb,
         seenEntryIds,
+        counterHints,
       );
       if (boundaryResult) {
         for (const e of boundaryResult.result.entries) seenEntryIds.add(e.id);
@@ -434,7 +527,7 @@ export async function selectionLookup(
     // Extend with suffix so words at the end of the selection can be
     // found even when the selection cuts them short (e.g. 姿 → 姿勢)
     const textToSearch = suffix.length > 0 ? remaining + suffix.slice(0, 10) : remaining;
-    const wordResult = await findFirstWord(textToSearch, dictDb, seenEntryIds);
+    const wordResult = await findFirstWord(textToSearch, dictDb, seenEntryIds, counterHints);
 
     if (wordResult) {
       for (const e of wordResult.result.entries) seenEntryIds.add(e.id);
@@ -451,6 +544,7 @@ async function findFirstWord(
   text: string,
   dictDb: SQLite.SQLiteDatabase,
   seenEntryIds: Set<number>,
+  counterHints: Map<string, CounterHint>,
 ): Promise<{ result: LookupResult; matchLength: number } | null> {
   const maxLen = Math.min(text.length, 15);
   const substrings = generateSubstrings(text, maxLen);
@@ -460,7 +554,7 @@ async function findFirstWord(
 
     // Try all candidates for this substring length, prefer common entries
     let best: { result: LookupResult; matchLength: number } | null = null;
-    let bestCommon = false;
+    let bestScore = Number.NEGATIVE_INFINITY;
 
     for (const candidate of candidates) {
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
@@ -476,10 +570,14 @@ async function findFirstWord(
           },
           matchLength: substr.length,
         };
+        const score =
+          (hasCommon ? 100 : 0) +
+          scoreCounterHint(match.result, counterHints.get(substr)) -
+          candidate.reasons.length * 5;
 
-        if (!best || (hasCommon && !bestCommon)) {
+        if (!best || score > bestScore) {
           best = match;
-          bestCommon = hasCommon;
+          bestScore = score;
         }
       }
     }
@@ -500,6 +598,7 @@ async function findBoundaryWord(
   selectionStart: string,
   dictDb: SQLite.SQLiteDatabase,
   seenEntryIds: Set<number>,
+  counterHints: Map<string, CounterHint>,
 ): Promise<{ result: LookupResult; selectionCharsConsumed: number } | null> {
   const before = prefix.slice(-10);
   const after = selectionStart.slice(0, 15);
@@ -507,7 +606,7 @@ async function findBoundaryWord(
   const boundary = before.length;
 
   // Also run the normal findFirstWord on just the selection to compare
-  const normalResult = await findFirstWord(selectionStart, dictDb, seenEntryIds);
+  const normalResult = await findFirstWord(selectionStart, dictDb, seenEntryIds, counterHints);
 
   for (let len = Math.min(combined.length, 15); len >= 2; len--) {
     const minStart = Math.max(0, boundary - len + 1);
@@ -521,7 +620,7 @@ async function findBoundaryWord(
       const candidates = deinflect(substr);
 
       let best: LookupResult | null = null;
-      let bestCommon = false;
+      let bestScore = Number.NEGATIVE_INFINITY;
 
       for (const candidate of candidates) {
         const allEntries = await lookupExactJapanese(dictDb, candidate.word);
@@ -529,13 +628,18 @@ async function findBoundaryWord(
 
         if (newEntries.length > 0) {
           const hasCommon = newEntries.some((e) => e.common);
-          if (!best || (hasCommon && !bestCommon)) {
-            best = {
-              matchedText: substr,
-              entries: newEntries,
-              deinflectReasons: candidate.reasons,
-            };
-            bestCommon = hasCommon;
+          const next: LookupResult = {
+            matchedText: substr,
+            entries: newEntries,
+            deinflectReasons: candidate.reasons,
+          };
+          const score =
+            (hasCommon ? 100 : 0) +
+            scoreCounterHint(next, counterHints.get(substr)) -
+            candidate.reasons.length * 5;
+          if (!best || score > bestScore) {
+            best = next;
+            bestScore = score;
           }
         }
       }
@@ -562,9 +666,11 @@ async function findBoundaryWord(
 export async function smartLookup(
   text: string,
   dictDb: SQLite.SQLiteDatabase,
+  extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<LookupResult[]> {
   const maxLen = Math.min(text.length, 15);
   const substrings = generateSubstrings(text, maxLen);
+  const counterHints = await buildCounterHintMap(substrings, extDb);
   const results: LookupResult[] = [];
   const seenEntryIds = new Set<number>();
 
@@ -606,7 +712,17 @@ export async function smartLookupWithOffset(
   text: string,
   tapOffset: number,
   dictDb: SQLite.SQLiteDatabase,
+  extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<LookupResult[]> {
+  const tapSurfaces = new Set<string>();
+  for (let len = Math.min(text.length, 15); len >= 1; len--) {
+    const minStart = Math.max(0, tapOffset - len + 1);
+    const maxStart = Math.min(tapOffset, text.length - len);
+    for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
+      tapSurfaces.add(text.slice(start, start + len));
+    }
+  }
+  const counterHints = await buildCounterHintMap([...tapSurfaces], extDb);
   let bestOverall: { result: LookupResult; score: number; length: number; start: number } | null =
     null;
 
@@ -636,7 +752,9 @@ export async function smartLookupWithOffset(
             deinflectReasons: candidate.reasons,
             matchStart: start,
           };
-          const score = scoreTapCandidate(text, tapOffset, result, start, hasCommon);
+          const score =
+            scoreTapCandidate(text, tapOffset, result, start, hasCommon) +
+            scoreCounterHint(result, counterHints.get(substr));
           if (!bestForLength || score > bestForLength.score) {
             bestForLength = { result, score, length: len, start };
           }
@@ -690,7 +808,7 @@ export async function autoLookup(
   extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<LookupResult[]> {
   const [wordResults, nameResults] = await Promise.all([
-    smartLookup(text, dictDb),
+    smartLookup(text, dictDb, extDb),
     extDb ? nameLookup(text, extDb) : Promise.resolve([]),
   ]);
   return chooseAutoLookupResults(wordResults, nameResults);
@@ -703,7 +821,7 @@ export async function autoLookupWithOffset(
   extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<LookupResult[]> {
   const [wordResults, nameResults] = await Promise.all([
-    smartLookupWithOffset(text, tapOffset, dictDb),
+    smartLookupWithOffset(text, tapOffset, dictDb, extDb),
     extDb ? nameLookupWithOffset(text, tapOffset, extDb) : Promise.resolve([]),
   ]);
   return chooseAutoLookupResults(wordResults, nameResults);
@@ -722,7 +840,7 @@ export async function autoSelectionLookup(
     (result) => {
       wordResults.push(result);
     },
-    options,
+    { ...options, extendedDb: extDb },
   );
 
   if (wordResults.length === 0) {

@@ -1118,7 +1118,7 @@ export default function BookReaderScreen() {
                 (result) => {
                   setLookupResults((prev) => [...prev, result]);
                 },
-                { prefix: msg.prefix || "", suffix: msg.suffix || "" },
+                { prefix: msg.prefix || "", suffix: msg.suffix || "", extendedDb },
               );
             }
           } else {
@@ -1140,8 +1140,8 @@ export default function BookReaderScreen() {
             } else {
               results =
                 tapOffset && tapOffset > 0
-                  ? await smartLookupWithOffset(text, tapOffset, dictDb!)
-                  : await smartLookup(text, dictDb!);
+                  ? await smartLookupWithOffset(text, tapOffset, dictDb!, extendedDb)
+                  : await smartLookup(text, dictDb!, extendedDb);
             }
             setLookupResults(results);
 
