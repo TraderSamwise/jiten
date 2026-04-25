@@ -357,6 +357,42 @@ describe("getCardStateDistribution", () => {
     expect(dist.review).toBe(2);
     expect(dist.relearning).toBe(0);
   });
+
+  test("uses simple stage counts for simple srs lists", async () => {
+    await createList("list-1", "Test List");
+    for (let i = 1; i <= 5; i++) {
+      await addListEntry("list-1", i);
+    }
+
+    const now = new Date().toISOString();
+    const srsInsert =
+      "INSERT INTO srs_cards (id, list_id, entry_id, state, simple_stage, simple_n, simple_interval, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, front_mode, back_mode, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)";
+    await db.runAsync(srsInsert, [generateId(), "list-1", 1, 0, 0, 1, now, now, now]);
+    await db.runAsync(srsInsert, [generateId(), "list-1", 2, 0, 0, 1, now, now, now]);
+    await db.runAsync(srsInsert, [generateId(), "list-1", 3, 1, 4, 6, now, now, now]);
+
+    const dist = await getCardStateDistribution(db, "list-1", "simple_srs");
+    expect(dist.total).toBe(5);
+    expect(dist.newCount).toBe(2);
+    expect(dist.learning).toBe(2);
+    expect(dist.review).toBe(1);
+    expect(dist.relearning).toBe(0);
+  });
+
+  test("uses study position for add-order lists", async () => {
+    await createList("list-1", "Test List");
+    for (let i = 1; i <= 5; i++) {
+      await addListEntry("list-1", i);
+    }
+    await db.runAsync("UPDATE lists SET study_position = 3 WHERE id = ?", ["list-1"]);
+
+    const dist = await getCardStateDistribution(db, "list-1", "add_order");
+    expect(dist.total).toBe(5);
+    expect(dist.newCount).toBe(2);
+    expect(dist.learning).toBe(0);
+    expect(dist.review).toBe(3);
+    expect(dist.relearning).toBe(0);
+  });
 });
 
 // ─── getTodaySummary ───

@@ -152,7 +152,7 @@ export default function StatsScreen() {
 
     // Card distribution + leeches only for per-list scope
     if (lid) {
-      const dist = await getCardStateDistribution(userDb, lid);
+      const dist = await getCardStateDistribution(userDb, lid, list?.flashcardMode ?? "srs");
       setCardDist(dist);
       const leechData = await getLeechCards(userDb, lid, 8, 0.6);
       setLeeches(leechData.slice(0, 10));
