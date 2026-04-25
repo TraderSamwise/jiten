@@ -150,6 +150,7 @@ async function pullAll(
   localDb: WrappedUserDb,
   turso: Client,
   lastSyncAt: string,
+  pulledKeysByTable: Map<string, Set<string>>,
   onProgress?: (progress: number) => void,
 ): Promise<number> {
   // Build per-table pull metadata
@@ -229,11 +230,18 @@ async function pullAll(
             `INSERT INTO ${meta.name} (${colList}) VALUES (${placeholders}) ON CONFLICT(${meta.pk}) DO UPDATE SET ${updateSet}`,
             values,
           );
+          let pulledKeys = pulledKeysByTable.get(meta.name);
+          if (!pulledKeys) {
+            pulledKeys = new Set<string>();
+            pulledKeysByTable.set(meta.name, pulledKeys);
+          }
+          pulledKeys.add(pkVal);
           pulled++;
         }
       } else {
         // Append-only: INSERT OR IGNORE
         for (const row of rows) {
+          const pkVal = String(row[meta.pk] ?? row[meta.cols.indexOf(meta.pk)]);
           const values = meta.cols.map((c) => {
             const v = row[c] ?? row[meta.cols.indexOf(c)];
             return v === undefined ? null : v;
@@ -246,6 +254,12 @@ async function pullAll(
           } catch {
             // ignore
           }
+          let pulledKeys = pulledKeysByTable.get(meta.name);
+          if (!pulledKeys) {
+            pulledKeys = new Set<string>();
+            pulledKeysByTable.set(meta.name, pulledKeys);
+          }
+          pulledKeys.add(pkVal);
           pulled++;
         }
       }
@@ -266,6 +280,7 @@ async function pushAll(
   localDb: WrappedUserDb,
   turso: Client,
   lastSyncAt: string,
+  pulledKeysByTable: Map<string, Set<string>>,
   onProgress?: (progress: number) => void,
 ): Promise<number> {
   const allStmts: { sql: string; args: any[] }[] = [];
@@ -281,12 +296,16 @@ async function pushAll(
       `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?${filter}`,
       [lastSyncAt],
     );
-    console.log(`[Sync] push ${table.name}: ${rows.length} rows`);
+    const pulledKeys = pulledKeysByTable.get(table.name);
+    const pushRows = pulledKeys
+      ? rows.filter((row) => !pulledKeys.has(String(row[table.pk])))
+      : rows;
+    console.log(`[Sync] push ${table.name}: ${pushRows.length} rows`);
     // Use ON CONFLICT DO UPDATE instead of INSERT OR REPLACE to avoid
     // DELETE+INSERT cycle which triggers FK cascade violations.
     const updateCols = cols.filter((c) => c !== table.pk);
     const updateSet = updateCols.map((c) => `${c}=excluded.${c}`).join(", ");
-    for (const row of rows) {
+    for (const row of pushRows) {
       allStmts.push({
         sql: `INSERT INTO ${table.name} (${colList}) VALUES (${placeholders}) ON CONFLICT(${table.pk}) DO UPDATE SET ${updateSet}`,
         args: cols.map((c) => row[c] ?? null),
@@ -303,8 +322,12 @@ async function pushAll(
       `SELECT ${colList} FROM ${table.name} WHERE ${table.timestampCol} > ?`,
       [lastSyncAt],
     );
-    console.log(`[Sync] push ${table.name}: ${rows.length} rows`);
-    for (const row of rows) {
+    const pulledKeys = pulledKeysByTable.get(table.name);
+    const pushRows = pulledKeys
+      ? rows.filter((row) => !pulledKeys.has(String(row[table.pk])))
+      : rows;
+    console.log(`[Sync] push ${table.name}: ${pushRows.length} rows`);
+    for (const row of pushRows) {
       allStmts.push({
         sql: `INSERT OR IGNORE INTO ${table.name} (${colList}) VALUES (${placeholders})`,
         args: cols.map((c) => row[c] ?? null),
@@ -446,6 +469,7 @@ export async function sync(
     // 3. Get independent pull/push cursors
     const lastPulledAt = (await getSyncMeta(localDb, LAST_PULLED_AT_KEY)) ?? EPOCH;
     const lastPushedAt = (await getSyncMeta(localDb, LAST_PUSHED_AT_KEY)) ?? EPOCH;
+    const pulledKeysByTable = new Map<string, Set<string>>();
     console.log(`[Sync] lastPulledAt=${lastPulledAt} lastPushedAt=${lastPushedAt}`);
 
     // 4. Check remote push_version — skip pull if nothing changed remotely
@@ -469,7 +493,9 @@ export async function sync(
       // 5. Pull — per-table requests with progress 0.1→0.5
       onLabel?.("Downloading...");
       const pullStartedAt = new Date().toISOString();
-      pulled = await pullAll(localDb, turso, lastPulledAt, (p) => onProgress?.(0.1 + p * 0.4));
+      pulled = await pullAll(localDb, turso, lastPulledAt, pulledKeysByTable, (p) =>
+        onProgress?.(0.1 + p * 0.4),
+      );
       console.log(`[Sync] pull: ${Date.now() - t0}ms (${pulled} rows)`);
       await setSyncMeta(localDb, LAST_PULLED_AT_KEY, pullStartedAt);
       if (pulled > 0) {
@@ -481,7 +507,9 @@ export async function sync(
     // 6. Push — progress 0.5→1.0 proportional to chunks
     onLabel?.("Uploading...");
     const pushStartedAt = new Date().toISOString();
-    const pushed = await pushAll(localDb, turso, lastPushedAt, (p) => onProgress?.(0.5 + p * 0.5));
+    const pushed = await pushAll(localDb, turso, lastPushedAt, pulledKeysByTable, (p) =>
+      onProgress?.(0.5 + p * 0.5),
+    );
     await setSyncMeta(localDb, LAST_PUSHED_AT_KEY, pushStartedAt);
     onProgress?.(1);
     onLabel?.("");

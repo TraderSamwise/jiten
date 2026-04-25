@@ -290,6 +290,32 @@ describe("sync engine", () => {
         local2.close();
       }
     });
+
+    it("does not echo freshly pulled rows back to remote during the same sync", async () => {
+      const now = "2025-01-01T00:00:00.000Z";
+      insertRemoteRow(remoteDb, "lists", {
+        id: "remote-only-list",
+        name: "Remote Only",
+        is_default: 0,
+        study_position: 0,
+        created_at: now,
+        updated_at: now,
+      });
+      remoteDb
+        .prepare("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('push_version', '7')")
+        .run();
+
+      const result = await sync(local, turso, noop, noop);
+
+      expect(result.ok).toBe(true);
+      expect(result.pulled).toBeGreaterThan(0);
+      expect(result.pushed).toBe(0);
+
+      const remotePushVersion = remoteDb
+        .prepare("SELECT value FROM sync_meta WHERE key = 'push_version'")
+        .get() as any;
+      expect(remotePushVersion?.value).toBe("7");
+    });
   });
 
   describe("LWW conflict resolution", () => {
