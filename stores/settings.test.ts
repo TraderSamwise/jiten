@@ -37,15 +37,16 @@ describe("defaultSettings", () => {
       typingShowPitch: true,
       typingPlayAudio: false,
       readerSourceFurigana: true,
-      readerNameFurigana: true,
+      readerNameFurigana: false,
+      readerCounterFurigana: false,
       readerFuriganaRuleLevels: {
         matchAnyKanji: {
-          n1: true,
-          n2: true,
-          n3: true,
+          n1: false,
+          n2: false,
+          n3: false,
           n4: false,
           n5: false,
-          nonJouyou: true,
+          nonJouyou: false,
         },
         matchWordLevel: {
           n1: false,
@@ -56,12 +57,12 @@ describe("defaultSettings", () => {
           nonJouyou: false,
         },
         matchIrregularReading: {
-          n1: true,
-          n2: true,
-          n3: true,
+          n1: false,
+          n2: false,
+          n3: false,
           n4: false,
           n5: false,
-          nonJouyou: true,
+          nonJouyou: false,
         },
         matchMostlyKunyomi: {
           n1: false,

@@ -555,6 +555,15 @@ describe("Real reading scenarios", () => {
         hitsContainGloss(hits, "morning"),
     ).toBe(true);
   });
+
+  test("三日目 → finds 三日 with みっか", () => {
+    const hits = simulateSmartLookup("三日目");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "三日")).toBe(true);
+    expect(hits[0].matchedText).toBe("三日");
+    expect(hits[0].searchWord).toBe("三日");
+    expect(hits[0].results.some((result) => result.kanaTexts.includes("みっか"))).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -746,6 +755,16 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
     expect(hitsContainWord(hits, "乾杯")).toBe(true);
     expect(hitsContainWord(hits, "杯")).toBe(false);
     expect(hits[0].matchedText).toBe("乾杯");
+  });
+
+  test("tapping 日 in 三日に → prefers 三日 with みっか", () => {
+    const text = "三日に";
+    const tapOffset = 1; // index of 日
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "三日")).toBe(true);
+    expect(hits[0].matchedText).toBe("三日");
+    expect(hits[0].results.some((result) => result.kanaTexts.includes("みっか"))).toBe(true);
   });
 });
 

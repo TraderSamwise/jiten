@@ -22,12 +22,14 @@ export interface FuriganaKanjiSet {
 export interface ReaderFuriganaSettings {
   sourceDefault: boolean;
   showNames: boolean;
+  showCounters: boolean;
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
 }
 
 export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
   sourceDefault: true,
-  showNames: true,
+  showNames: false,
+  showCounters: false,
   ruleLevels: defaultReaderFuriganaRuleLevels,
 };
 
@@ -165,6 +167,7 @@ interface NameMatch {
 
 export interface ResolveFuriganaBatchOptions {
   includeNames?: boolean;
+  includeCounters?: boolean;
 }
 
 async function batchLookupCounters(
@@ -500,7 +503,7 @@ export async function resolveFuriganaBatch(
   extendedDb?: SQLite.SQLiteDatabase | null,
   options: ResolveFuriganaBatchOptions = {},
 ): Promise<Record<string, FuriganaEntry>> {
-  const { includeNames = true } = options;
+  const { includeNames = true, includeCounters = true } = options;
   // Deinflect all surfaces, collect unique search words
   const surfaceToDeinflected = new Map<string, string[]>();
   const allSearchWords = new Set<string>();
@@ -523,7 +526,7 @@ export async function resolveFuriganaBatch(
   // Batch lookup
   const [lookupMap, counterLookupMap, nameLookupMap] = await Promise.all([
     batchLookup(dictDb, [...allSearchWords]),
-    batchLookupCounters(extendedDb, surfaces),
+    includeCounters ? batchLookupCounters(extendedDb, surfaces) : Promise.resolve(new Map()),
     includeNames
       ? batchLookupNames(extendedDb, surfaces)
       : Promise.resolve(new Map<string, NameMatch[]>()),
@@ -545,6 +548,7 @@ export async function resolveFuriganaBatch(
           kanjiPart,
           reading,
           kanjiPartLen,
+          isCounter: true,
           fullKanjiForm: counterMatch.kanjiForm,
           fullKanaForm: counterMatch.kanaForm,
         });
@@ -768,6 +772,7 @@ export interface FuriganaEntry {
   wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
   irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
   isName?: boolean;
+  isCounter?: boolean;
   fullKanjiForm?: string;
   fullKanaForm?: string;
   readingPattern?: ReaderReadingPattern;
@@ -800,10 +805,12 @@ function shouldShowFuriganaForSurface(
   settings: ReaderFuriganaSettings,
 ): boolean {
   if (entry.isName && !settings.showNames) return false;
-  if (kanjiSet.all) return true;
+  if (entry.isCounter && !settings.showCounters) return false;
 
   const surfaceKanji = surfaceChars.filter(isKanji);
-  const hasSelectedKanji = surfaceKanji.some((c) => kanjiSet.chars.has(c));
+  const hasSelectedKanji = kanjiSet.all
+    ? surfaceKanji.length > 0
+    : surfaceKanji.some((c) => kanjiSet.chars.has(c));
   const anyKanjiLevels = settings.ruleLevels.matchAnyKanji;
   const wordLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchWordLevel);
   const irregularLevelSet = buildEnabledWordLevels(settings.ruleLevels.matchIrregularReading);
@@ -821,6 +828,8 @@ function shouldShowFuriganaForSurface(
     matchesSelectedWordLevel(entry, mixedLevelSet) && entry.readingPattern === "mixed_on_kun";
 
   return (
+    entry.isName ||
+    entry.isCounter ||
     (ruleHasEnabledLevels(anyKanjiLevels) && hasSelectedKanji) ||
     wordLevelMatches ||
     irregularMatches ||
