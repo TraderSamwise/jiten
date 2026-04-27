@@ -5,6 +5,7 @@ import {
   ActionSheetIOS,
   Platform,
   Modal,
+  ScrollView,
   TextInput,
   ActivityIndicator,
   AppState,
@@ -760,7 +761,9 @@ const StudyCardView = React.memo(
                 <View style={{ padding: 8, marginVertical: -8, marginLeft: 2, marginRight: -8 }}>
                   <Flag
                     size={16}
-                    className={isMarkedForReview ? "text-amber-500" : "text-muted-foreground"}
+                    className={
+                      isMarkedForReview ? "text-amber-500 fill-amber-500" : "text-muted-foreground"
+                    }
                   />
                 </View>
               </GestureDetector>
@@ -3000,11 +3003,12 @@ function StudyScreen() {
           <View className="flex-1 justify-center px-6">
             <View
               className="rounded-2xl border border-border bg-background p-5"
-              style={
-                Platform.OS === "web"
+              style={{
+                maxHeight: "80%",
+                ...(Platform.OS === "web"
                   ? { maxWidth: 500, width: "100%", alignSelf: "center" }
-                  : undefined
-              }
+                  : undefined),
+              }}
             >
               <Text className="text-lg font-semibold text-foreground mb-1">
                 Similar words in your list
@@ -3013,90 +3017,98 @@ function StudyScreen() {
                 You might be confusing these words
               </Text>
 
-              {confusedFailedEntry &&
-                confusedResults.map((result, ri) => {
-                  const failedKanji = confusedFailedEntry.kanji[0]?.text ?? "";
-                  const confusedKanji = result.entry.kanji[0]?.text ?? "";
-                  const matchPositions = new Set(result.matches.map((m) => m.position));
+              <ScrollView
+                className="flex-shrink"
+                contentContainerStyle={{ paddingBottom: 4 }}
+                showsVerticalScrollIndicator
+              >
+                {confusedFailedEntry &&
+                  confusedResults.map((result, ri) => {
+                    const failedKanji = confusedFailedEntry.kanji[0]?.text ?? "";
+                    const confusedKanji = result.entry.kanji[0]?.text ?? "";
+                    const matchPositions = new Set(result.matches.map((m) => m.position));
 
-                  return (
-                    <View key={ri} className="mb-4">
-                      {/* Side-by-side comparison */}
-                      <View className="flex-row items-center justify-center gap-4 mb-2">
-                        {/* Failed word */}
-                        <View className="items-center flex-1">
-                          <View className="flex-row">
-                            {[...failedKanji].map((ch, ci) => (
-                              <Text
-                                key={ci}
-                                className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-red-500" : "text-foreground"}`}
-                              >
-                                {ch}
-                              </Text>
-                            ))}
-                          </View>
-                          <Text className="text-xs text-muted-foreground mt-1">
-                            {confusedFailedEntry.kana[0]?.text ?? ""}
-                          </Text>
-                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                            {getFaceText(confusedFailedEntry, "english")}
-                          </Text>
-                        </View>
-
-                        <Text className="text-muted-foreground">vs</Text>
-
-                        {/* Confused word */}
-                        <View className="items-center flex-1">
-                          <View className="flex-row">
-                            {[...confusedKanji].map((ch, ci) => (
-                              <Text
-                                key={ci}
-                                className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-orange-500" : "text-foreground"}`}
-                              >
-                                {ch}
-                              </Text>
-                            ))}
-                          </View>
-                          <Text className="text-xs text-muted-foreground mt-1">
-                            {(result.entry as DictEntry).kana?.[0]?.text ?? ""}
-                          </Text>
-                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                            {getFaceText(result.entry as DictEntry, "english")}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Match details */}
-                      <View className="flex-row flex-wrap justify-center gap-2 mb-2">
-                        {result.matches.map((m, mi) => (
-                          <View
-                            key={mi}
-                            className="flex-row items-center bg-muted rounded px-2 py-1"
-                          >
-                            <Text className="text-sm text-red-500 font-bold">{m.failedKanji}</Text>
-                            <Text className="text-xs text-muted-foreground mx-1">{"\u2248"}</Text>
-                            <Text className="text-sm text-orange-500 font-bold">
-                              {m.candidateKanji}
+                    return (
+                      <View key={ri} className="mb-4">
+                        {/* Side-by-side comparison */}
+                        <View className="flex-row items-center justify-center gap-4 mb-2">
+                          {/* Failed word */}
+                          <View className="items-center flex-1">
+                            <View className="flex-row">
+                              {[...failedKanji].map((ch, ci) => (
+                                <Text
+                                  key={ci}
+                                  className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-red-500" : "text-foreground"}`}
+                                >
+                                  {ch}
+                                </Text>
+                              ))}
+                            </View>
+                            <Text className="text-xs text-muted-foreground mt-1">
+                              {confusedFailedEntry.kana[0]?.text ?? ""}
                             </Text>
-                            <Text className="text-xs text-muted-foreground ml-1">
-                              {Math.round(m.similarity * 100)}%
+                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                              {getFaceText(confusedFailedEntry, "english")}
                             </Text>
                           </View>
-                        ))}
-                      </View>
 
-                      <Button
-                        variant="outline"
-                        label="Add to review"
-                        onPress={() => {
-                          handleAddConfusedToReview(result);
-                          setConfusedResults((prev) => prev.filter((_, i) => i !== ri));
-                          if (confusedResults.length <= 1) setConfusedWordsVisible(false);
-                        }}
-                      />
-                    </View>
-                  );
-                })}
+                          <Text className="text-muted-foreground">vs</Text>
+
+                          {/* Confused word */}
+                          <View className="items-center flex-1">
+                            <View className="flex-row">
+                              {[...confusedKanji].map((ch, ci) => (
+                                <Text
+                                  key={ci}
+                                  className={`text-2xl font-bold ${matchPositions.has(ci) ? "text-orange-500" : "text-foreground"}`}
+                                >
+                                  {ch}
+                                </Text>
+                              ))}
+                            </View>
+                            <Text className="text-xs text-muted-foreground mt-1">
+                              {(result.entry as DictEntry).kana?.[0]?.text ?? ""}
+                            </Text>
+                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                              {getFaceText(result.entry as DictEntry, "english")}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Match details */}
+                        <View className="flex-row flex-wrap justify-center gap-2 mb-2">
+                          {result.matches.map((m, mi) => (
+                            <View
+                              key={mi}
+                              className="flex-row items-center bg-muted rounded px-2 py-1"
+                            >
+                              <Text className="text-sm text-red-500 font-bold">
+                                {m.failedKanji}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground mx-1">{"\u2248"}</Text>
+                              <Text className="text-sm text-orange-500 font-bold">
+                                {m.candidateKanji}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground ml-1">
+                                {Math.round(m.similarity * 100)}%
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+
+                        <Button
+                          variant="outline"
+                          label="Add to review"
+                          onPress={() => {
+                            handleAddConfusedToReview(result);
+                            setConfusedResults((prev) => prev.filter((_, i) => i !== ri));
+                            if (confusedResults.length <= 1) setConfusedWordsVisible(false);
+                          }}
+                        />
+                      </View>
+                    );
+                  })}
+              </ScrollView>
 
               <Button
                 className="mt-1"

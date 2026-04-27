@@ -5,8 +5,9 @@ import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { PitchAccent } from "@/components/PitchAccent";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
-import { ChevronRight } from "@/lib/icons";
+import { Bookmark, ChevronRight } from "@/lib/icons";
 import { useSearchStore } from "@/stores/search";
+import { useBookmarkStore } from "@/stores/bookmarks";
 import type { GlossGroup } from "@/db/types";
 
 interface GlossGroupCardProps {
@@ -17,6 +18,10 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
   const router = useRouter();
   const setSelectedGlossGroup = useSearchStore((s) => s.setSelectedGlossGroup);
   const isMulti = group.entries.length > 1;
+  const singleEntryId = !isMulti ? group.entries[0]?.id : null;
+  const isSingleEntryBookmarked = useBookmarkStore((s) =>
+    singleEntryId != null ? s.bookmarkedIds.has(`e:${singleEntryId}`) : false,
+  );
 
   const handlePress = () => {
     if (isMulti) {
@@ -34,27 +39,37 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
     const accents = kana ? entry.pitchAccents.filter((pa) => pa.reading === kana.text) : [];
 
     return (
-      <PressableCard className="mb-2" onPress={handlePress}>
+      <PressableCard
+        className={`mb-2 ${isSingleEntryBookmarked ? "bg-primary/5" : ""}`}
+        onPress={handlePress}
+      >
         <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
-        <View className="flex-row items-center gap-2 mt-1">
-          {kanjiText && (
-            <Text
-              className={`text-lg text-foreground ${entry.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
-            >
-              {kanjiText}
-            </Text>
-          )}
-          {kana &&
-            (accents.length > 0 ? (
-              <View className="flex-row items-center gap-1">
-                {accents.map((pa, i) => (
-                  <PitchAccent key={i} accent={pa} />
-                ))}
-              </View>
-            ) : (
-              <Text className="text-sm text-muted-foreground">{kana.text}</Text>
-            ))}
-          <PlayAudioButton entryId={entry.id} size={18} />
+        <View className="flex-row items-start justify-between gap-3 mt-1">
+          <View className="flex-row items-center gap-2 flex-1">
+            {kanjiText && (
+              <Text
+                className={`text-lg text-foreground ${entry.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
+              >
+                {kanjiText}
+              </Text>
+            )}
+            {kana &&
+              (accents.length > 0 ? (
+                <View className="flex-row items-center gap-1">
+                  {accents.map((pa, i) => (
+                    <PitchAccent key={i} accent={pa} />
+                  ))}
+                </View>
+              ) : (
+                <Text className="text-sm text-muted-foreground">{kana.text}</Text>
+              ))}
+          </View>
+          <View className="flex-row items-center gap-2">
+            {isSingleEntryBookmarked ? (
+              <Bookmark size={16} className="text-primary fill-primary" />
+            ) : null}
+            <PlayAudioButton entryId={entry.id} size={18} />
+          </View>
         </View>
       </PressableCard>
     );
