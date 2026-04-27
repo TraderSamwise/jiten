@@ -116,6 +116,7 @@ function RadicalSearchView() {
         data={kanjiResults}
         keyExtractor={(item) => item.literal}
         renderItem={({ item }) => <KanjiCard kanji={item} />}
+        keyboardShouldPersistTaps="always"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
         ListEmptyComponent={
           selectedRadicals.length > 0 && !isSearching ? (
@@ -447,6 +448,7 @@ export default function SearchScreen() {
           data={nameResults}
           keyExtractor={(item) => `${item.id}`}
           renderItem={({ item }) => <NameCard name={item} />}
+          keyboardShouldPersistTaps="always"
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (
@@ -490,6 +492,7 @@ export default function SearchScreen() {
           data={counterResults}
           keyExtractor={(item) => `${item.counterId}`}
           renderItem={({ item }) => <CounterCard counter={item} />}
+          keyboardShouldPersistTaps="always"
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 8 }}
           ListEmptyComponent={
             query.trim() && !isSearching ? (
@@ -523,6 +526,7 @@ export default function SearchScreen() {
         sections={sections}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
+        keyboardShouldPersistTaps="always"
         keyExtractor={(item, index) => {
           if ("gloss" in item) return `gloss-${item.gloss}-${index}`;
           return `${(item as DictEntry).id}-${index}`;
