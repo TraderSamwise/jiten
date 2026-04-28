@@ -26,7 +26,7 @@ import { useAtomValue } from "jotai";
 import { showRomajiAtom } from "@/stores/settings";
 import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
 import { japaneseFontStyle } from "@/lib/japanese-font";
-import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
+import { BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import { decomposeWord, type LookupResult } from "@/lib/smart-lookup";
@@ -158,7 +158,7 @@ export function WordDetail({ entryId }: WordDetailProps) {
           </Text>
         )}
         <View
-          className={isBookmarked ? BOOKMARK_HIGHLIGHT_CLASS : undefined}
+          className={isBookmarked ? "w-full rounded px-1 py-0.5" : undefined}
           style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
         >
           {entry.kanji
