@@ -20,6 +20,8 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
   const tokenBoxClass = "h-7 items-center justify-center overflow-hidden rounded px-1.5";
   const commonTokenClass = `${tokenBoxClass} bg-green-100 dark:bg-green-900`;
   const bookmarkedTokenClass = tokenBoxClass;
+  const plainTokenClass = "h-7 items-center justify-center px-0.5";
+  const commaTokenClass = "h-7 items-center justify-center";
   const tokenTextClass = "text-base leading-none";
   const router = useRouter();
   const setSelectedGlossGroup = useSearchStore((s) => s.setSelectedGlossGroup);
@@ -149,7 +151,7 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
           <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
           <View className="flex-row flex-wrap mt-1 gap-1.5">
             {japaneseEntries.map((e, i) => (
-              <View key={i} className="flex-row items-baseline">
+              <View key={i} className="flex-row items-center">
                 {e.common ? (
                   <View className={commonTokenClass}>
                     <Text
@@ -164,15 +166,19 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                   </View>
                 ) : e.bookmarked ? (
                   <View className={bookmarkedTokenClass} style={BOOKMARK_HIGHLIGHT_STYLE}>
-                    <Text className={`${tokenTextClass} font-semibold text-foreground`}>
+                    <Text className={`${tokenTextClass} text-foreground`}>
                       {e.label}
                     </Text>
                   </View>
                 ) : (
-                  <Text className={`${tokenTextClass} text-muted-foreground`}>{e.label}</Text>
+                  <View className={plainTokenClass}>
+                    <Text className={`${tokenTextClass} text-muted-foreground`}>{e.label}</Text>
+                  </View>
                 )}
-                {i < japaneseEntries.length - 1 && !e.common && (
-                  <Text className="text-sm text-muted-foreground">, </Text>
+                {i < japaneseEntries.length - 1 && !e.common && !e.bookmarked && (
+                  <View className={commaTokenClass}>
+                    <Text className={`${tokenTextClass} text-muted-foreground`}>,</Text>
+                  </View>
                 )}
               </View>
             ))}
