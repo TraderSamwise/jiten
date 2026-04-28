@@ -3,7 +3,6 @@ import {
   View,
   Animated,
   Pressable,
-  ActivityIndicator,
   Dimensions,
   Easing,
   Linking,
@@ -87,6 +86,42 @@ import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
 import { useBookmarkStore } from "@/stores/bookmarks";
+
+type ReaderLoadStage =
+  | "preparing"
+  | "parsing"
+  | "generatingPages"
+  | "generatingFurigana"
+  | "highlightingBookmarks"
+  | "finalizing";
+
+const READER_LOAD_STAGE_META: Record<
+  ReaderLoadStage,
+  { title: string; detail: string; progress: number }
+> = {
+  preparing: { title: "Preparing reader", detail: "Loading book data", progress: 0.08 },
+  parsing: { title: "Parsing book", detail: "Reading and normalizing content", progress: 0.22 },
+  generatingPages: {
+    title: "Generating pages",
+    detail: "Building the current reading slice",
+    progress: 0.48,
+  },
+  generatingFurigana: {
+    title: "Generating furigana",
+    detail: "Applying reading annotations",
+    progress: 0.7,
+  },
+  highlightingBookmarks: {
+    title: "Generating highlighted words",
+    detail: "Marking bookmarked vocabulary",
+    progress: 0.84,
+  },
+  finalizing: {
+    title: "Finalizing reader",
+    detail: "Updating the page view",
+    progress: 0.96,
+  },
+};
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {
@@ -482,6 +517,60 @@ function JumpSlider({
   );
 }
 
+function ReaderLoadingOverlay({
+  visible,
+  isDark,
+  title,
+  detail,
+  progress,
+}: {
+  visible: boolean;
+  isDark: boolean;
+  title: string;
+  detail: string;
+  progress: number;
+}) {
+  if (!visible) return null;
+
+  const clamped = Math.max(0, Math.min(progress, 1));
+
+  return (
+    <View
+      pointerEvents="auto"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 300,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: isDark ? "rgba(24,24,27,0.92)" : "rgba(250,250,249,0.94)",
+        paddingHorizontal: 24,
+      }}
+    >
+      <View
+        className="w-full max-w-[320px] rounded-2xl border border-border/60 px-4 py-4"
+        style={{ backgroundColor: isDark ? "#111113" : "#ffffff" }}
+      >
+        <Text className="text-base font-semibold text-foreground">{title}</Text>
+        <Text className="mt-1 text-sm text-muted-foreground">{detail}</Text>
+        <View
+          className="mt-4 h-2 overflow-hidden rounded-full"
+          style={{ backgroundColor: isDark ? "#27272a" : "#e7e5e4" }}
+        >
+          <View
+            style={{
+              height: "100%",
+              width: `${Math.round(clamped * 100)}%`,
+              backgroundColor: isDark ? "#d6d3a3" : "#8a8450",
+            }}
+          />
+        </View>
+        <Text className="mt-2 text-xs text-muted-foreground">{Math.round(clamped * 100)}%</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function BookReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const goBack = useSafeGoBack("/reader");
@@ -527,8 +616,15 @@ export default function BookReaderScreen() {
   const [showJumpSlider, setShowJumpSlider] = useState(false);
   const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
   const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
+  const [readerLoadState, setReaderLoadState] = useState({
+    visible: true,
+    title: READER_LOAD_STAGE_META.preparing.title,
+    detail: READER_LOAD_STAGE_META.preparing.detail,
+    progress: READER_LOAD_STAGE_META.preparing.progress,
+  });
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
   const furiganaApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readerLoadTokenRef = useRef(0);
   const bookmarkedEntryIds = useMemo(
     () =>
       [...bookmarkedIds]
@@ -727,6 +823,40 @@ export default function BookReaderScreen() {
     }
   }, []);
 
+  const beginReaderLoad = useCallback((stage: ReaderLoadStage = "preparing") => {
+    const token = ++readerLoadTokenRef.current;
+    const meta = READER_LOAD_STAGE_META[stage];
+    setReaderLoadState({
+      visible: true,
+      title: meta.title,
+      detail: meta.detail,
+      progress: meta.progress,
+    });
+    return token;
+  }, []);
+
+  const updateReaderLoadStage = useCallback((token: number, stage: ReaderLoadStage) => {
+    if (readerLoadTokenRef.current !== token) return;
+    const meta = READER_LOAD_STAGE_META[stage];
+    setReaderLoadState((prev) => ({
+      ...prev,
+      visible: true,
+      title: meta.title,
+      detail: meta.detail,
+      progress: Math.max(prev.progress, meta.progress),
+    }));
+  }, []);
+
+  const finishReaderLoad = useCallback((token: number) => {
+    if (readerLoadTokenRef.current !== token) return;
+    setReaderLoadState({
+      visible: false,
+      title: READER_LOAD_STAGE_META.finalizing.title,
+      detail: READER_LOAD_STAGE_META.finalizing.detail,
+      progress: 1,
+    });
+  }, []);
+
   const maybeApplyBookmarkHighlights = useCallback(
     async (html: string, enabled: boolean) => {
       if (!enabled || !dictDb) return html;
@@ -771,6 +901,7 @@ export default function BookReaderScreen() {
       includeCounters,
       includeNames,
       highlightBookmarks,
+      onStage,
     }: {
       sliceText: string;
       startChar: number;
@@ -782,6 +913,7 @@ export default function BookReaderScreen() {
       includeCounters: boolean;
       includeNames: boolean;
       highlightBookmarks: boolean;
+      onStage?: (stage: ReaderLoadStage) => void;
     }) => {
       const cacheKey = [
         isAozora ? "a" : "p",
@@ -810,6 +942,7 @@ export default function BookReaderScreen() {
       }
 
       if (kanjiSetRef.current && dictDb) {
+        onStage?.("generatingFurigana");
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
         if (surfaces.length > 0) {
           const cache = furiganaEntryCacheRef.current;
@@ -844,6 +977,7 @@ export default function BookReaderScreen() {
         sliceHtml = injectRubySpacers(sliceHtml);
       }
 
+      if (highlightBookmarks) onStage?.("highlightingBookmarks");
       sliceHtml = await maybeApplyBookmarkHighlights(sliceHtml, highlightBookmarks);
 
       setCachedSliceHtml(cacheKey, sliceHtml);
@@ -882,7 +1016,7 @@ export default function BookReaderScreen() {
 
   // Reload the reader at a given char offset (used by furigana toggle + jump slider)
   const reloadAtChar = useCallback(
-    async (charOffset: number) => {
+    async (charOffset: number, loadToken?: number) => {
       const model = modelRef.current;
       if (!model || !dictDb) return;
       const isAozora = isAozoraRef.current;
@@ -907,6 +1041,7 @@ export default function BookReaderScreen() {
       fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
       backPrefetchingRef.current = false;
 
+      if (loadToken != null) updateReaderLoadStage(loadToken, "generatingPages");
       const sliceHtml = await renderSliceHtml({
         sliceText: slice.text,
         startChar,
@@ -918,8 +1053,10 @@ export default function BookReaderScreen() {
         includeCounters: showCounters,
         includeNames: showNames,
         highlightBookmarks,
+        onStage: loadToken != null ? (stage) => updateReaderLoadStage(loadToken, stage) : undefined,
       });
 
+      if (loadToken != null) updateReaderLoadStage(loadToken, "finalizing");
       readerRef.current?.postMessage(
         JSON.stringify({
           type: "reloadContent",
@@ -931,7 +1068,7 @@ export default function BookReaderScreen() {
         }),
       );
     },
-    [fontSize, renderSliceHtml],
+    [fontSize, renderSliceHtml, updateReaderLoadStage],
   );
 
   // Track scroll position for saving
@@ -988,187 +1125,219 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!userDb || !bookId) return;
     (async () => {
-      const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
-      if (!row) {
-        goBack();
-        return;
-      }
-      const b = parseBookRow(row);
-      setBook(b);
-      setFontSize(b.fontSize);
-      lastPersistedCharOffsetRef.current = b.charOffset;
-      lastPersistedReadCompleteRef.current = !!b.readComplete;
-      pendingReadCompleteRef.current = !!b.readComplete;
+      const loadToken = beginReaderLoad("preparing");
+      try {
+        const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
+        if (!row) {
+          goBack();
+          return;
+        }
+        const b = parseBookRow(row);
+        setBook(b);
+        setFontSize(b.fontSize);
+        lastPersistedCharOffsetRef.current = b.charOffset;
+        lastPersistedReadCompleteRef.current = !!b.readComplete;
+        pendingReadCompleteRef.current = !!b.readComplete;
 
-      if (!b.rawContent) {
-        goBack();
-        return;
-      }
-
-      // Detect source furigana
-      const hasSource = bookHasSourceFurigana(b.rawContent);
-      hasSourceFuriganaRef.current = hasSource;
-      setHasSourceFurigana(hasSource);
-      sliceRenderCacheRef.current.clear();
-      furiganaEntryCacheRef.current.clear();
-      const highlightBookmarks = readerBookmarkHighlightsRef.current;
-
-      // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
-      const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
-
-      if (hasRubyTags) {
-        modelRef.current = null;
-        // Pre-formatted HTML — send entire content (no slicing)
-        const { content, hasFuri } = await renderPreformattedReaderContent({
-          rawContent: b.rawContent,
-          sourceDefault: sourceFuriganaEnabled,
-          showNames: readerNameFurigana,
-          showCounters: readerCounterFurigana,
-          ruleLevels: furiganaRuleLevels,
-          highlightBookmarks,
-        });
-        const readerHtml = generateReaderHtml(content, {
-          fontSize: b.fontSize,
-          isDark,
-          scrollPosition: b.scrollPosition,
-          hasFurigana: hasFuri,
-          pageAnimations,
-        });
-        setHtml(readerHtml);
-      } else {
-        // Aozora or plain text — slice ~3 pages from char offset
-        const isAozora = hasAozoraMarkup(b.rawContent);
-        const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
-        const format: BookFormat = isAozora ? "aozora" : "plain";
-        const model = parseBookContent(stripped, format);
-
-        const screen = Dimensions.get("window");
-        const hasFuri = hasFuriganaActive(
-          sourceFuriganaEnabled,
-          readerNameFurigana,
-          readerCounterFurigana,
-          furiganaRuleLevels,
-          isAozora,
-        );
-        const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
-
-        // Legacy conversion: scroll_position → char_offset
-        let charOffset = b.charOffset;
-        if (charOffset === 0 && b.scrollPosition > 0) {
-          charOffset = Math.round(b.scrollPosition * model.totalChars);
+        if (!b.rawContent) {
+          goBack();
+          return;
         }
 
-        const startChar = Math.max(0, charOffset - cpp * 10);
-        const totalBudget = charOffset - startChar + cpp * 3;
-        const slice = sliceContent(model, startChar, totalBudget);
-        const targetLocalChar = charOffset - startChar;
-
-        // Store refs for streaming prefetch
-        modelRef.current = model;
-        sliceCharOffsetRef.current = startChar;
-        fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
-        isAozoraRef.current = isAozora;
-
-        // Save total_chars on first load
-        if (b.totalChars === 0) {
-          const now = new Date().toISOString();
-          userDb.runAsync("UPDATE books SET total_chars = ?, updated_at = ? WHERE id = ?", [
-            model.totalChars,
-            now,
-            bookId,
-          ]);
-        }
-
-        // Apply injected furigana if any rule has selected levels
-        const injectedFuriganaSet = dictDb
-          ? await buildInjectedFuriganaKanjiSet(
-              dictDb,
-              furiganaRuleLevels,
-              readerNameFurigana,
-              readerCounterFurigana,
-            )
-          : null;
-        kanjiSetRef.current = injectedFuriganaSet;
+        // Detect source furigana
+        const hasSource = bookHasSourceFurigana(b.rawContent);
+        hasSourceFuriganaRef.current = hasSource;
+        setHasSourceFurigana(hasSource);
+        sliceRenderCacheRef.current.clear();
         furiganaEntryCacheRef.current.clear();
-        const sliceHtml = await renderSliceHtml({
-          sliceText: slice.text,
-          startChar,
-          charCount: slice.text.length,
-          isAozora,
-          hasFuri,
-          sourceDefault: sourceFuriganaEnabled,
-          ruleLevels: furiganaRuleLevels,
-          includeCounters: readerCounterFurigana,
-          includeNames: readerNameFurigana,
-          highlightBookmarks,
-        });
+        const highlightBookmarks = readerBookmarkHighlightsRef.current;
 
-        const readerHtml = generateReaderHtml(sliceHtml, {
-          fontSize: b.fontSize,
-          isDark,
-          targetLocalChar,
-          sliceCharOffset: startChar,
-          totalChars: model.totalChars,
-          hasFurigana: hasFuri,
-          pageAnimations,
-        });
-        setHtml(readerHtml);
+        // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
+        const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
+
+        if (hasRubyTags) {
+          modelRef.current = null;
+          updateReaderLoadStage(loadToken, "generatingPages");
+          // Pre-formatted HTML — send entire content (no slicing)
+          const { content, hasFuri } = await renderPreformattedReaderContent({
+            rawContent: b.rawContent,
+            sourceDefault: sourceFuriganaEnabled,
+            showNames: readerNameFurigana,
+            showCounters: readerCounterFurigana,
+            ruleLevels: furiganaRuleLevels,
+            highlightBookmarks,
+          });
+          if (highlightBookmarks) updateReaderLoadStage(loadToken, "highlightingBookmarks");
+          updateReaderLoadStage(loadToken, "finalizing");
+          const readerHtml = generateReaderHtml(content, {
+            fontSize: b.fontSize,
+            isDark,
+            scrollPosition: b.scrollPosition,
+            hasFurigana: hasFuri,
+            pageAnimations,
+          });
+          setHtml(readerHtml);
+        } else {
+          updateReaderLoadStage(loadToken, "parsing");
+          // Aozora or plain text — slice ~3 pages from char offset
+          const isAozora = hasAozoraMarkup(b.rawContent);
+          const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
+          const format: BookFormat = isAozora ? "aozora" : "plain";
+          const model = parseBookContent(stripped, format);
+
+          const screen = Dimensions.get("window");
+          const hasFuri = hasFuriganaActive(
+            sourceFuriganaEnabled,
+            readerNameFurigana,
+            readerCounterFurigana,
+            furiganaRuleLevels,
+            isAozora,
+          );
+          const cpp = calcCharsPerPage(screen.width, screen.height, b.fontSize, hasFuri);
+
+          // Legacy conversion: scroll_position → char_offset
+          let charOffset = b.charOffset;
+          if (charOffset === 0 && b.scrollPosition > 0) {
+            charOffset = Math.round(b.scrollPosition * model.totalChars);
+          }
+
+          const startChar = Math.max(0, charOffset - cpp * 10);
+          const totalBudget = charOffset - startChar + cpp * 3;
+          const slice = sliceContent(model, startChar, totalBudget);
+          const targetLocalChar = charOffset - startChar;
+
+          // Store refs for streaming prefetch
+          modelRef.current = model;
+          sliceCharOffsetRef.current = startChar;
+          fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
+          isAozoraRef.current = isAozora;
+
+          // Save total_chars on first load
+          if (b.totalChars === 0) {
+            const now = new Date().toISOString();
+            userDb.runAsync("UPDATE books SET total_chars = ?, updated_at = ? WHERE id = ?", [
+              model.totalChars,
+              now,
+              bookId,
+            ]);
+          }
+
+          // Apply injected furigana if any rule has selected levels
+          const injectedFuriganaSet = dictDb
+            ? await buildInjectedFuriganaKanjiSet(
+                dictDb,
+                furiganaRuleLevels,
+                readerNameFurigana,
+                readerCounterFurigana,
+              )
+            : null;
+          kanjiSetRef.current = injectedFuriganaSet;
+          furiganaEntryCacheRef.current.clear();
+          updateReaderLoadStage(loadToken, "generatingPages");
+          const sliceHtml = await renderSliceHtml({
+            sliceText: slice.text,
+            startChar,
+            charCount: slice.text.length,
+            isAozora,
+            hasFuri,
+            sourceDefault: sourceFuriganaEnabled,
+            ruleLevels: furiganaRuleLevels,
+            includeCounters: readerCounterFurigana,
+            includeNames: readerNameFurigana,
+            highlightBookmarks,
+            onStage: (stage) => updateReaderLoadStage(loadToken, stage),
+          });
+
+          updateReaderLoadStage(loadToken, "finalizing");
+          const readerHtml = generateReaderHtml(sliceHtml, {
+            fontSize: b.fontSize,
+            isDark,
+            targetLocalChar,
+            sliceCharOffset: startChar,
+            totalChars: model.totalChars,
+            hasFurigana: hasFuri,
+            pageAnimations,
+          });
+          setHtml(readerHtml);
+        }
+
+        // Update last_read_at
+        const now = new Date().toISOString();
+        await userDb.runAsync("UPDATE books SET last_read_at = ?, updated_at = ? WHERE id = ?", [
+          now,
+          now,
+          bookId,
+        ]);
+      } finally {
+        finishReaderLoad(loadToken);
       }
-
-      // Update last_read_at
-      const now = new Date().toISOString();
-      await userDb.runAsync("UPDATE books SET last_read_at = ?, updated_at = ? WHERE id = ?", [
-        now,
-        now,
-        bookId,
-      ]);
     })();
-  }, [userDb, bookId, goBack, renderSliceHtml, renderPreformattedReaderContent]);
+  }, [
+    beginReaderLoad,
+    bookId,
+    finishReaderLoad,
+    goBack,
+    renderPreformattedReaderContent,
+    renderSliceHtml,
+    updateReaderLoadStage,
+    userDb,
+  ]);
 
   // Re-apply reader transforms when furigana/bookmark settings change
   useEffect(() => {
     if (!book || !book.rawContent || !dictDb || html === null) return;
     const rawContent = book.rawContent;
     (async () => {
-      const hasRubyTags = /<ruby[>\s]/.test(rawContent);
-      if (hasRubyTags) {
-        const { content, hasFuri } = await renderPreformattedReaderContent({
-          rawContent,
-          sourceDefault: sourceFuriganaEnabled,
-          showNames: readerNameFurigana,
-          showCounters: readerCounterFurigana,
-          ruleLevels: furiganaRuleLevels,
-          highlightBookmarks: readerBookmarkHighlights,
-        });
-        readerRef.current?.postMessage(
-          JSON.stringify({
-            type: "reloadContent",
-            html: content,
-            sliceCharOffset: 0,
-            targetLocalChar: scrollPosRef.current || 0,
-            lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
-            hasFurigana: hasFuri,
-          }),
+      const loadToken = beginReaderLoad("preparing");
+      try {
+        const hasRubyTags = /<ruby[>\s]/.test(rawContent);
+        if (hasRubyTags) {
+          updateReaderLoadStage(loadToken, "generatingPages");
+          const { content, hasFuri } = await renderPreformattedReaderContent({
+            rawContent,
+            sourceDefault: sourceFuriganaEnabled,
+            showNames: readerNameFurigana,
+            showCounters: readerCounterFurigana,
+            ruleLevels: furiganaRuleLevels,
+            highlightBookmarks: readerBookmarkHighlights,
+          });
+          if (readerBookmarkHighlights) updateReaderLoadStage(loadToken, "highlightingBookmarks");
+          updateReaderLoadStage(loadToken, "finalizing");
+          readerRef.current?.postMessage(
+            JSON.stringify({
+              type: "reloadContent",
+              html: content,
+              sliceCharOffset: 0,
+              targetLocalChar: scrollPosRef.current || 0,
+              lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
+              hasFurigana: hasFuri,
+            }),
+          );
+          return;
+        }
+
+        if (!modelRef.current) return;
+        updateReaderLoadStage(loadToken, "parsing");
+        kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
+          dictDb,
+          furiganaRuleLevels,
+          readerNameFurigana,
+          readerCounterFurigana,
         );
-        return;
+        furiganaEntryCacheRef.current.clear();
+        sliceRenderCacheRef.current.clear();
+
+        const charOffset = scrollPosRef.current || 0;
+        await reloadAtChar(charOffset, loadToken);
+      } finally {
+        finishReaderLoad(loadToken);
       }
-
-      if (!modelRef.current) return;
-      kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
-        dictDb,
-        furiganaRuleLevels,
-        readerNameFurigana,
-        readerCounterFurigana,
-      );
-      furiganaEntryCacheRef.current.clear();
-      sliceRenderCacheRef.current.clear();
-
-      const charOffset = scrollPosRef.current || 0;
-      await reloadAtChar(charOffset);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    beginReaderLoad,
     sourceFuriganaEnabled,
+    finishReaderLoad,
     readerBookmarkHighlights,
     bookmarkHighlightReloadKey,
     readerCounterFurigana,
@@ -1176,6 +1345,8 @@ export default function BookReaderScreen() {
     furiganaRuleLevels,
     dictDb,
     renderPreformattedReaderContent,
+    reloadAtChar,
+    updateReaderLoadStage,
   ]);
 
   // Save char offset on unmount
@@ -1537,11 +1708,14 @@ export default function BookReaderScreen() {
       </View>
 
       {!book || !html ? (
-        <View
-          className="flex-1 items-center justify-center"
-          style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}
-        >
-          <ActivityIndicator size="large" />
+        <View className="flex-1" style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}>
+          <ReaderLoadingOverlay
+            visible={readerLoadState.visible}
+            isDark={isDark}
+            title={readerLoadState.title}
+            detail={readerLoadState.detail}
+            progress={readerLoadState.progress}
+          />
         </View>
       ) : (
         <>
@@ -1553,6 +1727,13 @@ export default function BookReaderScreen() {
             }}
           >
             <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+            <ReaderLoadingOverlay
+              visible={readerLoadState.visible}
+              isDark={isDark}
+              title={readerLoadState.title}
+              detail={readerLoadState.detail}
+              progress={readerLoadState.progress}
+            />
             {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
             {showSettings && (
               <ScrollView
