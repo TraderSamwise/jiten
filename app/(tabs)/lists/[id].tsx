@@ -10,6 +10,7 @@ import {
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
 import { useTabRouter } from "@/lib/navigation";
+import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -473,14 +474,16 @@ export default function ListDetailScreen() {
         const isBookmarked = useBookmarkStore
           .getState()
           .bookmarkedIds.has(`k:${item.kanji.literal}`);
-        const bookmarkClass = isBookmarked ? "border-l-4 border-l-primary bg-primary/5 pl-2" : "";
         return (
           <SwipeableRow actions={actions}>
             <PressableCard
               className="mb-1 p-3"
               onPress={() => tabRouter.pushKanji(item.kanji.literal)}
             >
-              <View className={bookmarkClass}>
+              <View
+                className={isBookmarked ? BOOKMARK_HIGHLIGHT_CLASS : undefined}
+                style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+              >
                 <View className="flex-row items-baseline gap-2">
                   <Text className="text-lg font-bold text-foreground">{item.kanji.literal}</Text>
                   <Text className="text-sm text-muted-foreground" numberOfLines={1}>

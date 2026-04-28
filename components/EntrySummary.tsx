@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Badge } from "@/components/ui/badge";
 import { PitchAccent } from "@/components/PitchAccent";
+import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
 
@@ -28,11 +29,12 @@ export const EntrySummary = React.memo(function EntrySummary({
     .join("; ");
   const pos = entry.senses[0]?.partOfSpeech?.join(", ");
 
-  const bookmarkClass = isBookmarked ? "border-l-4 border-l-primary pl-2" : "";
-
   if (variant === "compact") {
     return (
-      <View className={bookmarkClass}>
+      <View
+        className={isBookmarked ? BOOKMARK_HIGHLIGHT_CLASS : undefined}
+        style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+      >
         <View className="flex-row items-baseline gap-2">
           {primaryKanji && (
             <Text className="text-lg font-bold text-foreground">{primaryKanji}</Text>
@@ -60,45 +62,54 @@ export const EntrySummary = React.memo(function EntrySummary({
   const hasMore = entry.senses.length > MAX_SENSES;
 
   return (
-    <View className={bookmarkClass}>
+    <View>
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-1">
-          <View className="flex-row flex-wrap items-center gap-3">
-            {primaryKanji ? (
-              <>
-                <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
-                {leadReading?.accents.length ? (
-                  <View className="flex-row flex-wrap items-center gap-2">
-                    {leadReading.accents.map((pa, i) => (
-                      <PitchAccent key={i} accent={pa} fontSize={18} />
-                    ))}
-                  </View>
-                ) : primaryKana ? (
-                  <Text className="text-base text-muted-foreground">{primaryKana}</Text>
-                ) : null}
-              </>
-            ) : leadReading?.accents.length ? (
-              leadReading.accents.map((pa, i) => <PitchAccent key={i} accent={pa} fontSize={20} />)
-            ) : (
-              <Text className="text-2xl font-bold text-foreground">{primaryKana}</Text>
-            )}
-            {entry.common && <Badge variant="common" label="common" />}
-            {entry.jlptLevel != null && <Badge variant="secondary" label={`N${entry.jlptLevel}`} />}
-            {inlineMeta}
-          </View>
-          {stackedReadings.length > 0 && (
-            <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-              {stackedReadings.map(({ kana, accents: rowAccents }, i) => (
-                <View key={`${kana.text}-${i}`} className="flex-row flex-wrap items-center gap-2">
-                  {rowAccents.length > 0 ? (
-                    rowAccents.map((pa, j) => <PitchAccent key={j} accent={pa} />)
-                  ) : (
-                    <Text className="text-base text-muted-foreground">{kana.text}</Text>
-                  )}
-                </View>
-              ))}
+          <View
+            className={isBookmarked ? `self-start ${BOOKMARK_HIGHLIGHT_CLASS}` : "self-start"}
+            style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+          >
+            <View className="flex-row flex-wrap items-center gap-3">
+              {primaryKanji ? (
+                <>
+                  <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
+                  {leadReading?.accents.length ? (
+                    <View className="flex-row flex-wrap items-center gap-2">
+                      {leadReading.accents.map((pa, i) => (
+                        <PitchAccent key={i} accent={pa} fontSize={18} />
+                      ))}
+                    </View>
+                  ) : primaryKana ? (
+                    <Text className="text-base text-muted-foreground">{primaryKana}</Text>
+                  ) : null}
+                </>
+              ) : leadReading?.accents.length ? (
+                leadReading.accents.map((pa, i) => (
+                  <PitchAccent key={i} accent={pa} fontSize={20} />
+                ))
+              ) : (
+                <Text className="text-2xl font-bold text-foreground">{primaryKana}</Text>
+              )}
+              {entry.common && <Badge variant="common" label="common" />}
+              {entry.jlptLevel != null && (
+                <Badge variant="secondary" label={`N${entry.jlptLevel}`} />
+              )}
+              {inlineMeta}
             </View>
-          )}
+            {stackedReadings.length > 0 && (
+              <View className="mt-1 flex-row flex-wrap items-center gap-x-3 gap-y-1">
+                {stackedReadings.map(({ kana, accents: rowAccents }, i) => (
+                  <View key={`${kana.text}-${i}`} className="flex-row flex-wrap items-center gap-2">
+                    {rowAccents.length > 0 ? (
+                      rowAccents.map((pa, j) => <PitchAccent key={j} accent={pa} />)
+                    ) : (
+                      <Text className="text-base text-muted-foreground">{kana.text}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         </View>
         {rightAccessory ? <View className="shrink-0">{rightAccessory}</View> : null}
       </View>
