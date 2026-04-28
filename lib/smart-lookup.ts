@@ -1,7 +1,9 @@
 import * as SQLite from "expo-sqlite";
 import { lookupExactJapanese } from "@/db/search";
 import { lookupExactName } from "@/db/name-search";
+import { getKanjiAsync } from "@/db/kanji-search";
 import type { DictEntry, NameEntry } from "@/db/types";
+import { classifyReaderReadingPattern } from "@jiten/japanese-reader-core";
 import { deinflect, generateSubstrings } from "./deinflect";
 import { toHiragana } from "wanakana";
 
@@ -32,6 +34,8 @@ interface EntrySortContext {
   matchedText: string;
   counterHint?: CounterHint | null;
 }
+
+type KanjiReadingRecord = Awaited<ReturnType<typeof getKanjiAsync>>;
 
 const DIGIT_TO_KANJI: Record<string, string> = {
   "0": "〇",
@@ -121,6 +125,64 @@ function sortEntriesForMatchedSurface(
   const context: EntrySortContext = { matchedText, counterHint };
   return [...entries].sort(
     (a, b) => scoreEntryForMatchedSurface(b, context) - scoreEntryForMatchedSurface(a, context),
+  );
+}
+
+function scoreSingleKanjiEntryForTap(
+  entry: DictEntry,
+  literal: string,
+  kanjiRecord: NonNullable<KanjiReadingRecord>,
+): number {
+  const score = 0;
+  if (!entry.kanji.some((kanji) => kanji.text === literal)) return score;
+
+  const kanjiByLiteral = new Map([[literal, kanjiRecord]]);
+  let bestPatternScore = Number.NEGATIVE_INFINITY;
+
+  for (const kana of entry.kana) {
+    const pattern = classifyReaderReadingPattern({
+      kanjiForm: literal,
+      kanaForm: kana.text,
+      kanjiByLiteral,
+    });
+    let patternScore = 0;
+    if (pattern === "mostly_kunyomi") patternScore += 180;
+    else if (pattern === "mostly_onyomi") patternScore -= 120;
+    else if (pattern === "mixed_on_kun") patternScore += 20;
+    else if (pattern === "irregular") patternScore -= 40;
+    if (kana.text.length >= 3) patternScore += 20;
+    bestPatternScore = Math.max(bestPatternScore, patternScore);
+  }
+
+  return Number.isFinite(bestPatternScore) ? bestPatternScore : score;
+}
+
+async function maybeSortSingleKanjiTapEntries(params: {
+  dictDb: SQLite.SQLiteDatabase;
+  text: string;
+  start: number;
+  matchedText: string;
+  entries: DictEntry[];
+  kanjiCache: Map<string, KanjiReadingRecord>;
+}): Promise<DictEntry[]> {
+  const { dictDb, text, start, matchedText, entries, kanjiCache } = params;
+  if (entries.length <= 1) return entries;
+  const chars = [...matchedText];
+  if (chars.length !== 1 || !isKanjiChar(chars[0])) return entries;
+  const nextChar = text[start + matchedText.length];
+  if (!isKanaChar(nextChar)) return entries;
+
+  const literal = chars[0];
+  if (!kanjiCache.has(literal)) {
+    kanjiCache.set(literal, await getKanjiAsync(dictDb, literal));
+  }
+  const kanjiRecord = kanjiCache.get(literal);
+  if (!kanjiRecord) return entries;
+
+  return [...entries].sort(
+    (a, b) =>
+      scoreSingleKanjiEntryForTap(b, literal, kanjiRecord) -
+      scoreSingleKanjiEntryForTap(a, literal, kanjiRecord),
   );
 }
 
@@ -871,6 +933,7 @@ export async function smartLookupWithOffset(
   dictDb: SQLite.SQLiteDatabase,
   extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<LookupResult[]> {
+  const kanjiCache = new Map<string, KanjiReadingRecord>();
   const tapSurfaces = new Set<string>();
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     const minStart = Math.max(0, tapOffset - len + 1);
@@ -902,11 +965,19 @@ export async function smartLookupWithOffset(
       for (const candidate of candidates) {
         const entries = await lookupExactJapanese(dictDb, candidate.word);
         if (entries.length > 0) {
-          const sortedEntries = sortEntriesForMatchedSurface(
+          let sortedEntries = sortEntriesForMatchedSurface(
             entries,
             substr,
             counterHints.get(substr),
           );
+          sortedEntries = await maybeSortSingleKanjiTapEntries({
+            dictDb,
+            text,
+            start,
+            matchedText: substr,
+            entries: sortedEntries,
+            kanjiCache,
+          });
           const hasCommon = entries.some(
             (entry) => entry.common && entryMatchesSearchSurface(entry, candidate.word),
           );
