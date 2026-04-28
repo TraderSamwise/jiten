@@ -95,6 +95,43 @@ describe("chooseAutoLookupResults", () => {
     expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(nameResults);
   });
 
+  it("prefers a common exact word over an equally exact single-kanji name", () => {
+    const wordResults = [
+      makeWordResult("夢", [
+        makeWordEntry({
+          common: true,
+          kanji: [{ text: "夢", common: true, tags: [] }],
+          kana: [{ text: "ゆめ", common: true, tags: [], romaji: "yume" }],
+        }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("夢", [
+        makeNameEntry({ kanji: "夢", kana: "あゆみ", nameType: "given", translation: "Ayumi" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(wordResults);
+  });
+
+  it("prefers a normal word over a kana-only exact name match in prose-like ambiguity", () => {
+    const wordResults = [
+      makeWordResult("とうに", [
+        makeWordEntry({
+          common: true,
+          kana: [{ text: "とうに", common: true, tags: [], romaji: "touni" }],
+        }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("とうに", [
+        makeNameEntry({ kanji: "唐丹", kana: "とうに", nameType: "place", translation: "Toni" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(wordResults);
+  });
+
   it("returns both top candidates when word and name hits are both strong and close", () => {
     const wordResults = [
       makeWordResult("花子", [

@@ -7,8 +7,9 @@ import { toHiragana } from "wanakana";
 
 export type ReaderLookupMode = "word" | "name" | "auto";
 export type LookupKind = "word" | "name";
-const AUTO_DUAL_SCORE_DELTA = 140;
 const AUTO_DUAL_MIN_MATCH_LENGTH = 2;
+const AUTO_NAME_ONLY_CONFIDENCE = 90;
+const AUTO_NAME_DUAL_CONFIDENCE = 45;
 
 export interface LookupResult {
   matchedText: string;
@@ -79,7 +80,7 @@ async function buildCounterHintMap(
   extDb?: SQLite.SQLiteDatabase | null,
 ): Promise<Map<string, CounterHint>> {
   const hints = new Map<string, CounterHint>();
-  if (!extDb || surfaces.length === 0) return hints;
+  if (!extDb || typeof extDb.getAllAsync !== "function" || surfaces.length === 0) return hints;
 
   const normalizedSurfaces = [...new Set(surfaces.map(normalizeDigitsToKanji))];
   const hiraganaSurfaces = [...new Set(surfaces.map((surface) => toHiragana(surface)))];
@@ -273,64 +274,68 @@ function scoreTapCandidate(
   return score;
 }
 
-function scoreWordResult(result: LookupResult): number {
-  if (result.entries.length === 0) return Number.NEGATIVE_INFINITY;
-
-  const commonCount = result.entries.filter((entry) => entry.common).length;
-  let score = result.matchedText.length * 1000;
-  score += commonCount * 120;
-  score += result.entries.length > 0 ? 20 : 0;
-
-  if (topWordExactSurfaceMatch(result)) score += 260;
-  if (result.deinflectReasons.length > 0) score -= 80;
-
-  const matched = result.matchedText;
-  if (hasKanji(matched) && hasKana(matched)) score += 120;
-  if (hasKana(matched) && !hasKanji(matched)) score += 30;
-
-  return score;
+function countKanjiChars(text: string): number {
+  return [...text].filter((ch) => isKanjiChar(ch)).length;
 }
 
-function scoreNameResult(result: LookupResult): number {
+function computeAutoNameConfidence(result: LookupResult, bestWord: LookupResult): number {
   const names = result.nameMatches ?? [];
-  if (names.length === 0) return Number.NEGATIVE_INFINITY;
+  if (names.length === 0) return 0;
 
-  let score = result.matchedText.length * 1000;
-  score += topNameExactSurfaceMatch(result) ? 260 : 0;
-  score += names.filter((name) => !!name.translation).length * 25;
+  const text = result.matchedText;
+  const topType = names[0]?.nameType ?? null;
+  const exactWordSurface = topWordExactSurfaceMatch(bestWord);
+  const exactCommonWord = exactWordSurface && bestWord.entries.some((entry) => entry.common);
+  const kanjiCount = countKanjiChars(text);
 
-  const strongTypes = new Set([
-    "surname",
-    "given",
-    "fem",
-    "masc",
-    "person",
-    "place",
-    "station",
-    "organization",
-    "company",
-    "product",
-  ]);
-  const topType = names[0]?.nameType;
-  if (topType && strongTypes.has(topType)) score += 90;
-  if (topType === "unclass") score -= 25;
+  let confidence = 55;
 
-  if (hasKanji(result.matchedText) && !hasKana(result.matchedText)) score += 80;
-  if (names.length > 4) score -= Math.min(names.length - 4, 6) * 10;
+  if (kanjiCount >= 2) confidence += 22;
+  else if (kanjiCount === 1) confidence -= 14;
 
-  return score;
+  if (hasKana(text) && !hasKanji(text)) confidence -= 40;
+  if ([...text].length === 1) confidence -= 28;
+
+  if (topType === "given" || topType === "surname" || topType === "person") confidence += 18;
+  else if (topType === "fem" || topType === "masc") confidence += 14;
+  else if (topType === "place" || topType === "station") confidence -= 16;
+  else if (
+    topType === "organization" ||
+    topType === "company" ||
+    topType === "product" ||
+    topType === "unclass"
+  ) {
+    confidence -= 12;
+  }
+
+  if (names.length === 1) confidence += 10;
+  else if (names.length <= 3) confidence += 4;
+  else if (names.length > 4) confidence -= Math.min(names.length - 4, 6) * 4;
+
+  if (names.some((name) => !!name.translation)) confidence += 4;
+
+  if (bestWord.matchedText !== text) confidence -= 18;
+  if (bestWord.matchedText.length > text.length) confidence -= 10;
+  if (text.length > bestWord.matchedText.length) confidence += 6;
+
+  if (exactCommonWord) confidence -= 28;
+  else if (exactWordSurface) confidence -= 16;
+  else if (bestWord.entries.some((entry) => entry.common)) confidence -= 8;
+
+  if (bestWord.deinflectReasons.length > 0) confidence += 10;
+
+  return Math.max(0, Math.min(100, confidence));
 }
 
 function shouldShowBothAutoResults(
   bestWord: LookupResult,
   bestName: LookupResult,
-  wordScore: number,
-  nameScore: number,
+  nameConfidence: number,
 ): boolean {
   if (bestWord.matchedText !== bestName.matchedText) return false;
   if (bestWord.matchedText.length < AUTO_DUAL_MIN_MATCH_LENGTH) return false;
   if (!topWordExactSurfaceMatch(bestWord) || !topNameExactSurfaceMatch(bestName)) return false;
-  return Math.abs(wordScore - nameScore) <= AUTO_DUAL_SCORE_DELTA;
+  return nameConfidence >= AUTO_NAME_DUAL_CONFIDENCE && nameConfidence < AUTO_NAME_ONLY_CONFIDENCE;
 }
 
 function chooseAutoLookupVariants(
@@ -342,17 +347,25 @@ function chooseAutoLookupVariants(
 
   const taggedNames = nameResults.map(asNameLookupResult);
   const bestName = taggedNames[0];
-  const wordScore = scoreWordResult(taggedWord);
-  const nameScore = scoreNameResult(bestName);
+  const nameConfidence = computeAutoNameConfidence(bestName, taggedWord);
 
-  if (bestName.matchedText.length > taggedWord.matchedText.length) return taggedNames;
+  if (
+    bestName.matchedText.length > taggedWord.matchedText.length &&
+    nameConfidence >= AUTO_NAME_ONLY_CONFIDENCE
+  ) {
+    return taggedNames;
+  }
   if (bestName.matchedText.length < taggedWord.matchedText.length) return [taggedWord];
 
-  if (shouldShowBothAutoResults(taggedWord, bestName, wordScore, nameScore)) {
+  if (nameConfidence >= AUTO_NAME_ONLY_CONFIDENCE) {
+    return [bestName];
+  }
+
+  if (shouldShowBothAutoResults(taggedWord, bestName, nameConfidence)) {
     return [taggedWord, bestName];
   }
 
-  return wordScore >= nameScore ? [taggedWord] : [bestName];
+  return [taggedWord];
 }
 
 function attachAutoSelectionAlternates(
