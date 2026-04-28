@@ -328,6 +328,13 @@ function tapCandidateEndsBeforeKanaContinuation(
   return end < text.length - 1 && isKanaChar(text[end + 1]);
 }
 
+function tapCandidateEndsMidKanaRun(text: string, start: number, matchedText: string): boolean {
+  const chars = [...matchedText];
+  if (chars.length === 0 || !chars.every((ch) => isKanaChar(ch))) return false;
+  const end = start + matchedText.length - 1;
+  return end < text.length - 1 && isKanaChar(text[end + 1]);
+}
+
 function hasExactSurfaceMatch(result: LookupResult): boolean {
   return (
     hasExactKanjiSurfaceMatch(result, result.matchedText) ||
@@ -377,6 +384,7 @@ function shouldPreferShorterExactSurface(
 ): boolean {
   if (!hasExactSurfaceMatch(shorterResult) || hasExactSurfaceMatch(longerResult)) return false;
   if ([...shorterResult.matchedText].length < 2) return false;
+  if (hasKana(shorterResult.matchedText) && !hasKanji(shorterResult.matchedText)) return false;
   if (shorterStart !== longerStart) return false;
   if (longerResult.deinflectReasons.length === 0) return false;
   return strictlyContainsCandidate(
@@ -410,6 +418,30 @@ function shouldPreferLongerDeinflectedOkurigana(
   }
   const rest = [...longerResult.matchedText].slice(1);
   return rest.some((ch) => isKanaChar(ch));
+}
+
+function shouldPreferLongerKanaDeinflection(
+  text: string,
+  longerResult: LookupResult,
+  longerStart: number,
+  shorterResult: LookupResult,
+  shorterStart: number,
+): boolean {
+  if (longerStart !== shorterStart) return false;
+  if (longerResult.deinflectReasons.length === 0) return false;
+  if (!hasExactSurfaceMatch(shorterResult)) return false;
+  if (!hasKana(shorterResult.matchedText) || hasKanji(shorterResult.matchedText)) return false;
+  if (
+    !strictlyContainsCandidate(
+      longerStart,
+      longerResult.matchedText,
+      shorterStart,
+      shorterResult.matchedText,
+    )
+  ) {
+    return false;
+  }
+  return tapCandidateEndsMidKanaRun(text, shorterStart, shorterResult.matchedText);
 }
 
 function scoreTapCandidate(
@@ -1040,6 +1072,18 @@ export async function smartLookupWithOffset(
       bestOverall.start,
     );
     if (currentIsBetterLongerDeinflected) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const currentIsBetterLongerKanaDeinflection = shouldPreferLongerKanaDeinflection(
+      text,
+      bestForLength.result,
+      bestForLength.start,
+      bestOverall.result,
+      bestOverall.start,
+    );
+    if (currentIsBetterLongerKanaDeinflection) {
       bestOverall = bestForLength;
       continue;
     }

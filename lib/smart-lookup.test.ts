@@ -245,6 +245,13 @@ function endsBeforeKanaContinuation(text: string, start: number, matchedText: st
   return end < text.length - 1 && isKanaChar(text[end + 1]);
 }
 
+function endsMidKanaRun(text: string, start: number, matchedText: string): boolean {
+  const chars = [...matchedText];
+  if (chars.length === 0 || !chars.every((ch) => isKanaChar(ch))) return false;
+  const end = start + matchedText.length - 1;
+  return end < text.length - 1 && isKanaChar(text[end + 1]);
+}
+
 function hasExactSurfaceMatch(hit: LookupHit): boolean {
   return hasExactKanjiSurfaceMatch(hit) || hasExactKanaSurfaceMatch(hit);
 }
@@ -284,6 +291,11 @@ function shouldPreferShorterExactSurface(
 ): boolean {
   if (!hasExactSurfaceMatch(shorterHit) || hasExactSurfaceMatch(longerHit)) return false;
   if ([...shorterHit.matchedText].length < 2) return false;
+  if (
+    [...shorterHit.matchedText].some(isKanaChar) &&
+    ![...shorterHit.matchedText].some(isKanjiChar)
+  )
+    return false;
   if (shorterStart !== longerStart) return false;
   if (longerHit.reasons.length === 0) return false;
   return strictlyContainsCandidate(
@@ -317,6 +329,31 @@ function shouldPreferLongerDeinflectedOkurigana(
   }
   const rest = [...longerHit.matchedText].slice(1);
   return rest.some((ch) => isKanaChar(ch));
+}
+
+function shouldPreferLongerKanaDeinflection(
+  text: string,
+  longerHit: LookupHit,
+  longerStart: number,
+  shorterHit: LookupHit,
+  shorterStart: number,
+): boolean {
+  if (longerStart !== shorterStart) return false;
+  if (longerHit.reasons.length === 0) return false;
+  if (!hasExactSurfaceMatch(shorterHit)) return false;
+  if (![...shorterHit.matchedText].some(isKanaChar)) return false;
+  if ([...shorterHit.matchedText].some(isKanjiChar)) return false;
+  if (
+    !strictlyContainsCandidate(
+      longerStart,
+      longerHit.matchedText,
+      shorterStart,
+      shorterHit.matchedText,
+    )
+  ) {
+    return false;
+  }
+  return endsMidKanaRun(text, shorterStart, shorterHit.matchedText);
 }
 
 function scoreTapHit(
@@ -441,6 +478,18 @@ function simulateSmartLookupWithOffset(
       bestOverall.start,
     );
     if (currentIsBetterLongerDeinflected) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const currentIsBetterLongerKanaDeinflection = shouldPreferLongerKanaDeinflection(
+      text,
+      bestForLength.hit,
+      bestForLength.start,
+      bestOverall.hit,
+      bestOverall.start,
+    );
+    if (currentIsBetterLongerKanaDeinflection) {
       bestOverall = bestForLength;
       continue;
     }
@@ -978,7 +1027,24 @@ describe("若くもない disambiguation — prefer common 若い over rare 如�
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// 13. SELECTION LOOKUP WITH BOUNDARY EXPANSION
+// 13. EXACT-UNCOMMON VS DEINFLECTED-COMMON KANA LOOKUPS
+//     いかれる exists as an uncommon exact slang entry, but prose usually
+//     intends the inflected 行く path.
+// ═══════════════════════════════════════════════════════════════════
+
+describe("kana inflection disambiguation — prefer common deinflected words", () => {
+  test("tapping い in いかれるって → finds 行く, not the exact slang いかれる", () => {
+    const text = "いかれるって";
+    const tapOffset = 0;
+    const hits = simulateSmartLookupWithOffset(text, tapOffset);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hitsContainWord(hits, "行く")).toBe(true);
+    expect(hits[0].searchWord).not.toBe("いかれる");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 14. SELECTION LOOKUP WITH BOUNDARY EXPANSION
 //     Simulates drag-selection where the user's selection starts or
 //     ends mid-word, and prefix/suffix context is used to find the
 //     correct word spanning the boundary.
