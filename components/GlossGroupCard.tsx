@@ -5,6 +5,7 @@ import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { PitchAccent } from "@/components/PitchAccent";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
+import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { Bookmark, ChevronRight } from "@/lib/icons";
 import { useSearchStore } from "@/stores/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -16,6 +17,10 @@ interface GlossGroupCardProps {
 
 export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: GlossGroupCardProps) {
   const bookmarkAccentClass = "text-[#b4aa62]";
+  const tokenBoxClass = "h-7 items-center justify-center overflow-hidden rounded px-1.5";
+  const commonTokenClass = `${tokenBoxClass} bg-green-100 dark:bg-green-900`;
+  const bookmarkedTokenClass = tokenBoxClass;
+  const tokenTextClass = "text-base leading-none";
   const router = useRouter();
   const setSelectedGlossGroup = useSearchStore((s) => s.setSelectedGlossGroup);
   const isMulti = group.entries.length > 1;
@@ -44,29 +49,70 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
         <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
         <View className="flex-row items-start justify-between gap-3 mt-1">
           <View className="flex-1">
-            <View className="flex-row items-center gap-2">
-              {kanjiText && (
-                <Text
-                  className={`text-lg ${isSingleEntryBookmarked ? bookmarkAccentClass : "text-foreground"} ${entry.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
-                >
-                  {kanjiText}
-                </Text>
-              )}
-              {kana &&
-                (accents.length > 0 ? (
-                  <View className="flex-row items-center gap-1">
-                    {accents.map((pa, i) => (
-                      <PitchAccent key={i} accent={pa} />
-                    ))}
+            {entry.common ? (
+              <View className="flex-row items-center gap-2">
+                {kanjiText && (
+                  <View className={commonTokenClass}>
+                    <Text
+                      className={`${tokenTextClass} ${
+                        isSingleEntryBookmarked
+                          ? `font-semibold ${bookmarkAccentClass}`
+                          : "text-foreground"
+                      }`}
+                    >
+                      {kanjiText}
+                    </Text>
                   </View>
-                ) : (
-                  <Text
-                    className={`text-sm ${isSingleEntryBookmarked ? `font-semibold ${bookmarkAccentClass}` : "text-muted-foreground"}`}
-                  >
-                    {kana.text}
-                  </Text>
-                ))}
-            </View>
+                )}
+                {kana &&
+                  (accents.length > 0 ? (
+                    <View
+                      className={isSingleEntryBookmarked ? bookmarkedTokenClass : "flex-row items-center gap-1"}
+                      style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+                    >
+                      {accents.map((pa, i) => (
+                        <PitchAccent key={i} accent={pa} />
+                      ))}
+                    </View>
+                  ) : (
+                    <View
+                      className={isSingleEntryBookmarked ? bookmarkedTokenClass : undefined}
+                      style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+                    >
+                      <Text
+                        className={
+                          isSingleEntryBookmarked
+                            ? `${tokenTextClass} font-semibold text-foreground`
+                            : tokenTextClass
+                        }
+                      >
+                        {kana.text}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+            ) : (
+              <View
+                className={
+                  isSingleEntryBookmarked
+                    ? `flex-row items-center gap-2 ${BOOKMARK_HIGHLIGHT_CLASS}`
+                    : "flex-row items-center gap-2"
+                }
+                style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+              >
+                {kanjiText && <Text className={`${tokenTextClass} text-foreground`}>{kanjiText}</Text>}
+                {kana &&
+                  (accents.length > 0 ? (
+                    <View className="flex-row items-center gap-1">
+                      {accents.map((pa, i) => (
+                        <PitchAccent key={i} accent={pa} />
+                      ))}
+                    </View>
+                  ) : (
+                    <Text className={`${tokenTextClass} text-muted-foreground`}>{kana.text}</Text>
+                  ))}
+              </View>
+            )}
           </View>
           <View className="flex-row items-center gap-2">
             {isSingleEntryBookmarked ? (
@@ -104,11 +150,27 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
           <View className="flex-row flex-wrap mt-1 gap-1.5">
             {japaneseEntries.map((e, i) => (
               <View key={i} className="flex-row items-baseline">
-                <Text
-                  className={`text-sm ${e.bookmarked ? `font-semibold ${bookmarkAccentClass}` : e.common ? "text-foreground" : "text-muted-foreground"} ${e.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
-                >
-                  {e.label}
-                </Text>
+                {e.common ? (
+                  <View className={commonTokenClass}>
+                    <Text
+                      className={`${tokenTextClass} ${
+                        e.bookmarked
+                          ? `font-semibold ${bookmarkAccentClass}`
+                          : "text-foreground"
+                      }`}
+                    >
+                      {e.label}
+                    </Text>
+                  </View>
+                ) : e.bookmarked ? (
+                  <View className={bookmarkedTokenClass} style={BOOKMARK_HIGHLIGHT_STYLE}>
+                    <Text className={`${tokenTextClass} font-semibold text-foreground`}>
+                      {e.label}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text className={`${tokenTextClass} text-muted-foreground`}>{e.label}</Text>
+                )}
                 {i < japaneseEntries.length - 1 && !e.common && (
                   <Text className="text-sm text-muted-foreground">, </Text>
                 )}
