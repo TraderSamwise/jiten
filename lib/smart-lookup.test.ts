@@ -928,6 +928,13 @@ describe("Production counter-aware lookup", () => {
     expect(hits[0].entries[0].kana.some((kana) => kana.text === "あたま")).toBe(true);
     expect(hits[0].entries[0].senses[0]?.partOfSpeech).not.toContain("ctr");
   });
+
+  test("prose lookup prefers 額=ひたい over 額=がく", async () => {
+    const hits = await smartLookupWithOffset("額に汗がにじむ", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("額");
+    expect(hits[0].entries[0].kana.some((kana) => kana.text === "ひたい")).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
