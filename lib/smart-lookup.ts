@@ -28,6 +28,11 @@ interface CounterHint {
   reading: string;
 }
 
+interface EntrySortContext {
+  matchedText: string;
+  counterHint?: CounterHint | null;
+}
+
 const DIGIT_TO_KANJI: Record<string, string> = {
   "0": "〇",
   "\uff10": "〇",
@@ -67,6 +72,47 @@ function isCounterSurfaceMatch(entry: DictEntry, hint: CounterHint): boolean {
   return (
     entry.kanji.some((kanji) => kanji.text === hint.combinedKanji) ||
     entry.kana.some((kana) => kana.text === hint.reading)
+  );
+}
+
+function isCounterEntry(entry: DictEntry): boolean {
+  return entry.senses.some((sense) => sense.partOfSpeech?.includes("ctr"));
+}
+
+function hasExactEntrySurface(entry: DictEntry, matchedText: string): boolean {
+  return (
+    entry.kanji.some((kanji) => kanji.text === matchedText) ||
+    entry.kana.some((kana) => kana.text === matchedText)
+  );
+}
+
+function scoreEntryForMatchedSurface(entry: DictEntry, context: EntrySortContext): number {
+  let score = 0;
+  if (entry.common) score += 120;
+  if (entry.jlptLevel != null) score += Math.max(0, 80 - entry.jlptLevel * 10);
+  if (hasExactEntrySurface(entry, context.matchedText)) score += 120;
+
+  if (isCounterEntry(entry)) {
+    score -= 240;
+    if (context.counterHint && isCounterSurfaceMatch(entry, context.counterHint)) {
+      score += 520;
+    }
+  } else if (context.counterHint) {
+    score -= 20;
+  }
+
+  return score;
+}
+
+function sortEntriesForMatchedSurface(
+  entries: DictEntry[],
+  matchedText: string,
+  counterHint?: CounterHint | null,
+): DictEntry[] {
+  if (entries.length <= 1) return entries;
+  const context: EntrySortContext = { matchedText, counterHint };
+  return [...entries].sort(
+    (a, b) => scoreEntryForMatchedSurface(b, context) - scoreEntryForMatchedSurface(a, context),
   );
 }
 
@@ -453,10 +499,15 @@ export async function selectionLookup(
         for (const candidate of candidates) {
           const entries = await lookupExactJapanese(dictDb, candidate.word);
           if (entries.length > 0) {
+            const sortedEntries = sortEntriesForMatchedSurface(
+              entries,
+              substr,
+              counterHints.get(substr),
+            );
             const hasCommon = entries.some((e) => e.common);
             const result: LookupResult = {
               matchedText: substr,
-              entries,
+              entries: sortedEntries,
               deinflectReasons: candidate.reasons,
             };
             const score =
@@ -481,10 +532,15 @@ export async function selectionLookup(
   // Try the full selected text as a single lookup first
   const fullEntries = await lookupExactJapanese(dictDb, trimmed);
   if (fullEntries.length > 0) {
+    const sortedEntries = sortEntriesForMatchedSurface(
+      fullEntries,
+      trimmed,
+      counterHints.get(trimmed),
+    );
     onResult(
       asWordLookupResult({
         matchedText: trimmed,
-        entries: fullEntries,
+        entries: sortedEntries,
         deinflectReasons: [],
       }),
     );
@@ -497,10 +553,15 @@ export async function selectionLookup(
     if (candidate.word === trimmed) continue; // already tried exact
     const entries = await lookupExactJapanese(dictDb, candidate.word);
     if (entries.length > 0) {
+      const sortedEntries = sortEntriesForMatchedSurface(
+        entries,
+        trimmed,
+        counterHints.get(trimmed),
+      );
       onResult(
         asWordLookupResult({
           matchedText: trimmed,
-          entries,
+          entries: sortedEntries,
           deinflectReasons: candidate.reasons,
         }),
       );
@@ -574,11 +635,16 @@ async function findFirstWord(
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
+        const sortedEntries = sortEntriesForMatchedSurface(
+          newEntries,
+          substr,
+          counterHints.get(substr),
+        );
         const hasCommon = newEntries.some((e) => e.common);
         const match = {
           result: {
             matchedText: substr,
-            entries: newEntries,
+            entries: sortedEntries,
             deinflectReasons: candidate.reasons,
           },
           matchLength: substr.length,
@@ -640,10 +706,15 @@ async function findBoundaryWord(
         const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
         if (newEntries.length > 0) {
+          const sortedEntries = sortEntriesForMatchedSurface(
+            newEntries,
+            substr,
+            counterHints.get(substr),
+          );
           const hasCommon = newEntries.some((e) => e.common);
           const next: LookupResult = {
             matchedText: substr,
-            entries: newEntries,
+            entries: sortedEntries,
             deinflectReasons: candidate.reasons,
           };
           const score =
@@ -696,11 +767,16 @@ export async function smartLookup(
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
+        const sortedEntries = sortEntriesForMatchedSurface(
+          newEntries,
+          substr,
+          counterHints.get(substr),
+        );
         for (const e of newEntries) seenEntryIds.add(e.id);
         results.push(
           asWordLookupResult({
             matchedText: substr,
-            entries: newEntries,
+            entries: sortedEntries,
             deinflectReasons: candidate.reasons,
           }),
         );
@@ -758,10 +834,15 @@ export async function smartLookupWithOffset(
       for (const candidate of candidates) {
         const entries = await lookupExactJapanese(dictDb, candidate.word);
         if (entries.length > 0) {
+          const sortedEntries = sortEntriesForMatchedSurface(
+            entries,
+            substr,
+            counterHints.get(substr),
+          );
           const hasCommon = entries.some((e) => e.common);
           const result: LookupResult = {
             matchedText: substr,
-            entries,
+            entries: sortedEntries,
             deinflectReasons: candidate.reasons,
             matchStart: start,
           };

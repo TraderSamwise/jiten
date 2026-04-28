@@ -827,6 +827,14 @@ describe("Production counter-aware lookup", () => {
       true,
     );
   });
+
+  test("prose lookup prefers 頭=あたま over the counter entry", async () => {
+    const hits = await smartLookupWithOffset("頭で考えたんだ", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("頭");
+    expect(hits[0].entries[0].kana.some((kana) => kana.text === "あたま")).toBe(true);
+    expect(hits[0].entries[0].senses[0]?.partOfSpeech).not.toContain("ctr");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
