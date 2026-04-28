@@ -17,12 +17,16 @@ function applyTheme(theme: {
   fg: string;
   rubyColor: string;
   highlightBg: string;
+  bookmarkBg?: string;
 }): void {
   const root = document.documentElement;
   root.style.setProperty("--reader-bg", theme.bg);
   root.style.setProperty("--reader-fg", theme.fg);
   root.style.setProperty("--reader-ruby-color", theme.rubyColor);
   root.style.setProperty("--reader-highlight-bg", theme.highlightBg);
+  if (theme.bookmarkBg) {
+    root.style.setProperty("--reader-bookmark-bg", theme.bookmarkBg);
+  }
 }
 
 // Check if a highlighted range extends off-screen and peek to reveal it.

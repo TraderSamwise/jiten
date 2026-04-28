@@ -208,6 +208,30 @@ Handles format-aware text measurement and slicing for streaming pagination:
 - Injects `window.__READER_CONFIG__` with scroll position, char offset, total chars, furigana state
 - Appends the reader JS bundle
 
+#### Slice-local post-processing invariant
+
+All optional reader post-processing after base content/slice generation must be **slice-local**.
+
+Required:
+
+- operate on the current slice HTML/text only
+- cache by slice identity (`startChar`, `charCount`, format) plus relevant setting keys
+- cost must scale with visible slice size, not total book size or total user data size
+
+Allowed global work:
+
+- book parse/model creation
+- source-furigana / format detection
+- static theme/config setup
+
+Forbidden patterns:
+
+- precomputing a global reader transform dataset from the entire bookmark library
+- work on toggle/reload that scales with total bookmarks, total dictionary entries, total lists, or full book length
+- full-book DOM scans in the WebView for optional transforms
+
+If toggling a reader option can trigger work proportional to total bookmarks, total library size, or total book size, the implementation is wrong.
+
 ### Furigana system (`lib/reader-furigana.ts`)
 
 Generates `<ruby>` annotations for kanji based on user's JLPT level settings. The pipeline:

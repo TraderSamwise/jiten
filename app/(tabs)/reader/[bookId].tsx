@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Animated,
@@ -64,6 +64,7 @@ import {
 } from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
 import {
+  readerBookmarkHighlightsAtom,
   readerFuriganaRuleLevelsAtom,
   readerCounterFuriganaAtom,
   readerNameFuriganaAtom,
@@ -81,9 +82,11 @@ import {
   type FuriganaKanjiSet,
   type FuriganaEntry,
 } from "@/lib/reader-furigana";
+import { applyResolvedBookmarkHighlightsToHtml } from "@/lib/reader-bookmarks";
 import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
+import { useBookmarkStore } from "@/stores/bookmarks";
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {
@@ -136,6 +139,7 @@ function getReaderThemePayload(isDark: boolean) {
     fg: isDark ? "#fafafa" : "#18181b",
     rubyColor: isDark ? "#a1a1aa" : "#71717a",
     highlightBg: isDark ? "#2e2e5f" : "#d5d5eb",
+    bookmarkBg: "rgba(180, 170, 98, 0.28)",
   };
 }
 
@@ -491,10 +495,14 @@ export default function BookReaderScreen() {
   const initialScrollFiredRef = useRef(false);
   const readerRef = useRef<ReaderViewRef>(null);
   const [sourceFuriganaEnabled, setSourceFuriganaEnabled] = useAtom(readerSourceFuriganaAtom);
+  const [readerBookmarkHighlights, setReaderBookmarkHighlights] = useAtom(
+    readerBookmarkHighlightsAtom,
+  );
   const [readerCounterFurigana, setReaderCounterFurigana] = useAtom(readerCounterFuriganaAtom);
   const [readerNameFurigana, setReaderNameFurigana] = useAtom(readerNameFuriganaAtom);
   const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
+  const bookmarkedIds = useBookmarkStore((s) => s.bookmarkedIds);
   const [draftSourceFuriganaEnabled, setDraftSourceFuriganaEnabled] =
     useState(sourceFuriganaEnabled);
   const [draftReaderCounterFurigana, setDraftReaderCounterFurigana] =
@@ -521,6 +529,20 @@ export default function BookReaderScreen() {
   const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
   const furiganaApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bookmarkedEntryIds = useMemo(
+    () =>
+      [...bookmarkedIds]
+        .filter((key) => key.startsWith("e:"))
+        .map((key) => Number(key.slice(2)))
+        .filter((id) => Number.isFinite(id))
+        .sort((a, b) => a - b),
+    [bookmarkedIds],
+  );
+  const bookmarkedEntryIdsKey = useMemo(() => bookmarkedEntryIds.join(","), [bookmarkedEntryIds]);
+  const bookmarkHighlightReloadKey = useMemo(
+    () => (readerBookmarkHighlights ? bookmarkedEntryIdsKey : ""),
+    [bookmarkedEntryIdsKey, readerBookmarkHighlights],
+  );
 
   useEffect(() => {
     Animated.timing(advancedReadingPatternsAnim, {
@@ -658,6 +680,8 @@ export default function BookReaderScreen() {
   const sourceFuriganaEnabledRef = useRef(sourceFuriganaEnabled);
   const readerCounterFuriganaRef = useRef(readerCounterFurigana);
   const readerNameFuriganaRef = useRef(readerNameFurigana);
+  const readerBookmarkHighlightsRef = useRef(readerBookmarkHighlights);
+  const bookmarkedIdsRef = useRef(bookmarkedIds);
   const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
@@ -673,6 +697,12 @@ export default function BookReaderScreen() {
   useEffect(() => {
     readerNameFuriganaRef.current = readerNameFurigana;
   }, [readerNameFurigana]);
+  useEffect(() => {
+    readerBookmarkHighlightsRef.current = readerBookmarkHighlights;
+  }, [readerBookmarkHighlights]);
+  useEffect(() => {
+    bookmarkedIdsRef.current = bookmarkedIds;
+  }, [bookmarkedIds]);
   useEffect(() => {
     furiganaRuleLevelsRef.current = furiganaRuleLevels;
   }, [furiganaRuleLevels]);
@@ -697,6 +727,38 @@ export default function BookReaderScreen() {
     }
   }, []);
 
+  const maybeApplyBookmarkHighlights = useCallback(
+    async (html: string, enabled: boolean) => {
+      if (!enabled || !dictDb) return html;
+      return applyResolvedBookmarkHighlightsToHtml(dictDb, html, bookmarkedIdsRef.current);
+    },
+    [dictDb],
+  );
+
+  const renderPreformattedReaderContent = useCallback(
+    async ({
+      rawContent,
+      sourceDefault,
+      showNames,
+      showCounters,
+      ruleLevels,
+      highlightBookmarks,
+    }: {
+      rawContent: string;
+      sourceDefault: boolean;
+      showNames: boolean;
+      showCounters: boolean;
+      ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+      highlightBookmarks: boolean;
+    }) => {
+      const hasFuri = hasFuriganaActive(sourceDefault, showNames, showCounters, ruleLevels, true);
+      let content = hasFuri ? rawContent : stripRubyTags(rawContent);
+      content = await maybeApplyBookmarkHighlights(content, highlightBookmarks);
+      return { content, hasFuri };
+    },
+    [maybeApplyBookmarkHighlights],
+  );
+
   const renderSliceHtml = useCallback(
     async ({
       sliceText,
@@ -708,6 +770,7 @@ export default function BookReaderScreen() {
       ruleLevels,
       includeCounters,
       includeNames,
+      highlightBookmarks,
     }: {
       sliceText: string;
       startChar: number;
@@ -718,6 +781,7 @@ export default function BookReaderScreen() {
       ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
       includeCounters: boolean;
       includeNames: boolean;
+      highlightBookmarks: boolean;
     }) => {
       const cacheKey = [
         isAozora ? "a" : "p",
@@ -727,6 +791,8 @@ export default function BookReaderScreen() {
         sourceDefault ? 1 : 0,
         includeCounters ? 1 : 0,
         includeNames ? 1 : 0,
+        highlightBookmarks ? 1 : 0,
+        highlightBookmarks ? bookmarkedEntryIdsKey : "0",
         getRuleLevelsCacheKey(ruleLevels),
       ].join(":");
       const cachedHtml = sliceRenderCacheRef.current.get(cacheKey);
@@ -778,10 +844,19 @@ export default function BookReaderScreen() {
         sliceHtml = injectRubySpacers(sliceHtml);
       }
 
+      sliceHtml = await maybeApplyBookmarkHighlights(sliceHtml, highlightBookmarks);
+
       setCachedSliceHtml(cacheKey, sliceHtml);
       return sliceHtml;
     },
-    [dictDb, extendedDb, getRuleLevelsCacheKey, setCachedSliceHtml],
+    [
+      bookmarkedEntryIdsKey,
+      dictDb,
+      extendedDb,
+      getRuleLevelsCacheKey,
+      maybeApplyBookmarkHighlights,
+      setCachedSliceHtml,
+    ],
   );
 
   const cycleLookupMode = useCallback(() => {
@@ -815,6 +890,7 @@ export default function BookReaderScreen() {
       const sourceDefault = sourceFuriganaEnabledRef.current;
       const showCounters = readerCounterFuriganaRef.current;
       const showNames = readerNameFuriganaRef.current;
+      const highlightBookmarks = readerBookmarkHighlightsRef.current;
       const ruleLevels = furiganaRuleLevelsRef.current;
       const hasFuri =
         kanjiSetRef.current != null ||
@@ -841,6 +917,7 @@ export default function BookReaderScreen() {
         ruleLevels,
         includeCounters: showCounters,
         includeNames: showNames,
+        highlightBookmarks,
       });
 
       readerRef.current?.postMessage(
@@ -934,23 +1011,22 @@ export default function BookReaderScreen() {
       setHasSourceFurigana(hasSource);
       sliceRenderCacheRef.current.clear();
       furiganaEntryCacheRef.current.clear();
+      const highlightBookmarks = readerBookmarkHighlightsRef.current;
 
       // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
       const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
 
       if (hasRubyTags) {
+        modelRef.current = null;
         // Pre-formatted HTML — send entire content (no slicing)
-        const hasFuri = hasFuriganaActive(
-          sourceFuriganaEnabled,
-          readerNameFurigana,
-          readerCounterFurigana,
-          furiganaRuleLevels,
-          true,
-        );
-        let content = b.rawContent;
-        if (!hasFuri) {
-          content = stripRubyTags(content);
-        }
+        const { content, hasFuri } = await renderPreformattedReaderContent({
+          rawContent: b.rawContent,
+          sourceDefault: sourceFuriganaEnabled,
+          showNames: readerNameFurigana,
+          showCounters: readerCounterFurigana,
+          ruleLevels: furiganaRuleLevels,
+          highlightBookmarks,
+        });
         const readerHtml = generateReaderHtml(content, {
           fontSize: b.fontSize,
           isDark,
@@ -1024,6 +1100,7 @@ export default function BookReaderScreen() {
           ruleLevels: furiganaRuleLevels,
           includeCounters: readerCounterFurigana,
           includeNames: readerNameFurigana,
+          highlightBookmarks,
         });
 
         const readerHtml = generateReaderHtml(sliceHtml, {
@@ -1046,12 +1123,37 @@ export default function BookReaderScreen() {
         bookId,
       ]);
     })();
-  }, [userDb, bookId, goBack, renderSliceHtml]);
+  }, [userDb, bookId, goBack, renderSliceHtml, renderPreformattedReaderContent]);
 
-  // Re-apply furigana when levels change
+  // Re-apply reader transforms when furigana/bookmark settings change
   useEffect(() => {
-    if (!book || !dictDb || !modelRef.current || html === null) return;
+    if (!book || !book.rawContent || !dictDb || html === null) return;
+    const rawContent = book.rawContent;
     (async () => {
+      const hasRubyTags = /<ruby[>\s]/.test(rawContent);
+      if (hasRubyTags) {
+        const { content, hasFuri } = await renderPreformattedReaderContent({
+          rawContent,
+          sourceDefault: sourceFuriganaEnabled,
+          showNames: readerNameFurigana,
+          showCounters: readerCounterFurigana,
+          ruleLevels: furiganaRuleLevels,
+          highlightBookmarks: readerBookmarkHighlights,
+        });
+        readerRef.current?.postMessage(
+          JSON.stringify({
+            type: "reloadContent",
+            html: content,
+            sliceCharOffset: 0,
+            targetLocalChar: scrollPosRef.current || 0,
+            lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
+            hasFurigana: hasFuri,
+          }),
+        );
+        return;
+      }
+
+      if (!modelRef.current) return;
       kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
         dictDb,
         furiganaRuleLevels,
@@ -1067,10 +1169,13 @@ export default function BookReaderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sourceFuriganaEnabled,
+    readerBookmarkHighlights,
+    bookmarkHighlightReloadKey,
     readerCounterFurigana,
     readerNameFurigana,
     furiganaRuleLevels,
     dictDb,
+    renderPreformattedReaderContent,
   ]);
 
   // Save char offset on unmount
@@ -1232,6 +1337,7 @@ export default function BookReaderScreen() {
               ruleLevels: furiganaRuleLevelsRef.current,
               includeCounters: readerCounterFuriganaRef.current,
               includeNames: readerNameFuriganaRef.current,
+              highlightBookmarks: readerBookmarkHighlightsRef.current,
             });
             fwdLoadedEndRef.current = newEnd;
             readerRef.current?.postMessage(
@@ -1272,6 +1378,7 @@ export default function BookReaderScreen() {
                 ruleLevels: furiganaRuleLevelsRef.current,
                 includeCounters: readerCounterFuriganaRef.current,
                 includeNames: readerNameFuriganaRef.current,
+                highlightBookmarks: readerBookmarkHighlightsRef.current,
               });
               readerRef.current?.postMessage(
                 JSON.stringify({
@@ -1729,6 +1836,21 @@ export default function BookReaderScreen() {
                 </View>
 
                 <Separator className="opacity-40" />
+
+                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-foreground">Bookmarked words</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Highlight bookmarked words in the reader.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={readerBookmarkHighlights}
+                      onValueChange={setReaderBookmarkHighlights}
+                    />
+                  </View>
+                </View>
 
                 {/* Page animations toggle */}
                 <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
