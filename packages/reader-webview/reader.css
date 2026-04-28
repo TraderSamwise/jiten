@@ -8,8 +8,8 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background: __BG__;
-  color: __FG__;
+  background: var(--reader-bg);
+  color: var(--reader-fg);
   -webkit-text-size-adjust: none;
   -webkit-touch-callout: none;
 }
@@ -33,7 +33,7 @@ p {
 
 ruby rt {
   font-size: 0.5em;
-  color: __RUBY_COLOR__;
+  color: var(--reader-ruby-color);
   margin-right: -0.45px;
 }
 
@@ -50,12 +50,12 @@ ruby rt {
 }
 
 ::highlight(word-highlight) {
-  background-color: __HIGHLIGHT_BG__;
+  background-color: var(--reader-highlight-bg);
 }
 
 /* Span fallback for older WebKit without CSS Custom Highlight API */
 .highlight {
-  background: __HIGHLIGHT_BG__;
+  background: var(--reader-highlight-bg);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -63,7 +63,7 @@ ruby rt {
 /* Safari: ::highlight() doesn't paint inside <ruby>, so we add .highlight
    class directly. Height won't be perfect but avoids DOM manipulation bugs. */
 ruby.highlight {
-  background: __HIGHLIGHT_BG__;
+  background: var(--reader-highlight-bg);
 }
 
 .furigana-active p {
@@ -102,7 +102,7 @@ ruby.highlight {
 #page-controls button {
   background: none;
   border: none;
-  color: __FG__;
+  color: var(--reader-fg);
   font-size: 28px;
   padding: 6px 16px;
   cursor: pointer;
@@ -123,7 +123,7 @@ ruby.highlight {
 #page-num {
   font-size: 13px;
   font-family: -apple-system, "Helvetica Neue", sans-serif;
-  color: __FG__;
+  color: var(--reader-fg);
   opacity: 0.4;
   user-select: none;
   cursor: pointer;

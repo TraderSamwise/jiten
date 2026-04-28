@@ -12,6 +12,19 @@ import {
   contractPageForHighlight,
 } from "./pagination";
 
+function applyTheme(theme: {
+  bg: string;
+  fg: string;
+  rubyColor: string;
+  highlightBg: string;
+}): void {
+  const root = document.documentElement;
+  root.style.setProperty("--reader-bg", theme.bg);
+  root.style.setProperty("--reader-fg", theme.fg);
+  root.style.setProperty("--reader-ruby-color", theme.rubyColor);
+  root.style.setProperty("--reader-highlight-bg", theme.highlightBg);
+}
+
 // Check if a highlighted range extends off-screen and peek to reveal it.
 function peekForHighlight(absStart: number, absEnd: number): void {
   if (absEnd <= absStart) return;
@@ -101,6 +114,9 @@ export function setupMessageListener(): void {
         });
       } else if (msg.type === "setPageAnimations") {
         state.pageAnimations = !!msg.enabled;
+      } else if (msg.type === "setTheme") {
+        if (!msg.theme) return;
+        applyTheme(msg.theme);
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");

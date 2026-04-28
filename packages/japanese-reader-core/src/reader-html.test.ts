@@ -70,8 +70,8 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: false,
     });
-    expect(html).toContain("background: #fafaf9");
-    expect(html).toContain("color: #18181b");
+    expect(html).toContain("--reader-bg: #fafaf9");
+    expect(html).toContain("--reader-fg: #18181b");
   });
 
   test("dark theme uses dark background", () => {
@@ -79,8 +79,8 @@ describe("generateReaderHtml", () => {
       fontSize: 22,
       isDark: true,
     });
-    expect(html).toContain("background: #18181b");
-    expect(html).toContain("color: #fafafa");
+    expect(html).toContain("--reader-bg: #18181b");
+    expect(html).toContain("--reader-fg: #fafafa");
   });
 
   // ── CSS structure tests ──

@@ -130,6 +130,15 @@ async function buildInjectedFuriganaKanjiSet(
   return null;
 }
 
+function getReaderThemePayload(isDark: boolean) {
+  return {
+    bg: isDark ? "#18181b" : "#fafaf9",
+    fg: isDark ? "#fafafa" : "#18181b",
+    rubyColor: isDark ? "#a1a1aa" : "#71717a",
+    highlightBg: isDark ? "#2e2e5f" : "#d5d5eb",
+  };
+}
+
 /** Strip <ruby> tags keeping only base text (removes <rt> content) */
 function stripRubyTags(html: string): string {
   return html.replace(/<ruby>([\s\S]*?)<rt>[\s\S]*?<\/rt><\/ruby>/g, "$1");
@@ -790,6 +799,12 @@ export default function BookReaderScreen() {
     );
   }, [pageAnimations]);
 
+  useEffect(() => {
+    readerRef.current?.postMessage(
+      JSON.stringify({ type: "setTheme", theme: getReaderThemePayload(isDark) }),
+    );
+  }, [isDark]);
+
   // Reload the reader at a given char offset (used by furigana toggle + jump slider)
   const reloadAtChar = useCallback(
     async (charOffset: number) => {
@@ -1031,7 +1046,7 @@ export default function BookReaderScreen() {
         bookId,
       ]);
     })();
-  }, [userDb, bookId, isDark, goBack, renderSliceHtml]);
+  }, [userDb, bookId, goBack, renderSliceHtml]);
 
   // Re-apply furigana when levels change
   useEffect(() => {
