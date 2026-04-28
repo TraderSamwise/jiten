@@ -39,6 +39,7 @@ describe("defaultSettings", () => {
       readerSourceFurigana: true,
       readerNameFurigana: false,
       readerCounterFurigana: false,
+      readerBookmarkHighlights: false,
       readerFuriganaRuleLevels: {
         matchAnyKanji: {
           n1: false,

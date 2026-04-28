@@ -51,6 +51,7 @@ export const defaultSettings = Object.freeze({
   readerSourceFurigana: true as boolean,
   readerNameFurigana: false as boolean,
   readerCounterFurigana: false as boolean,
+  readerBookmarkHighlights: false as boolean,
   readerFuriganaRuleLevels: defaultReaderFuriganaRuleLevels as Record<
     ReaderFuriganaRule,
     Record<FuriganaMatchLevel, boolean>
@@ -127,6 +128,9 @@ export const readerSourceFuriganaAtom = focusAtom(settingsAtom, (o) =>
 export const readerNameFuriganaAtom = focusAtom(settingsAtom, (o) => o.prop("readerNameFurigana"));
 export const readerCounterFuriganaAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerCounterFurigana"),
+);
+export const readerBookmarkHighlightsAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerBookmarkHighlights"),
 );
 export const readerFuriganaRuleLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaRuleLevels"),

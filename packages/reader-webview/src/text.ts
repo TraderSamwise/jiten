@@ -10,14 +10,49 @@ function isInsideRt(node: Node): boolean {
   return false;
 }
 
+function isBookmarkedWordElement(node: Node | null): node is Element {
+  return !!(
+    node &&
+    node.nodeType === Node.ELEMENT_NODE &&
+    (node as Element).classList.contains("bookmarked-word")
+  );
+}
+
 /** Find the base (non-rt) text node inside a <ruby> element. */
-function rubyBaseText(ruby: Element): { node: Node; offset: number } | null {
-  const w = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT, {
+function firstVisibleTextNode(root: Node): { node: Node; offset: number } | null {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n: Node) {
       return isInsideRt(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
     },
   });
   return w.nextNode() ? { node: w.currentNode, offset: 0 } : null;
+}
+
+/** Find the base (non-rt) text node inside a <ruby> element. */
+function rubyBaseText(ruby: Element): { node: Node; offset: number } | null {
+  return firstVisibleTextNode(ruby);
+}
+
+/**
+ * Resolve a caret position that lands on a reader-injected wrapper span
+ * back to the underlying visible text node so tap/drag selection remain
+ * independent from bookmark highlighting.
+ */
+export function resolveCaretForBookmarkWrapper(
+  node: Node,
+  offset: number,
+): { node: Node; offset: number } | null {
+  if (isBookmarkedWordElement(node)) return firstVisibleTextNode(node);
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const child = node.childNodes[offset] ?? node.childNodes[Math.max(0, offset - 1)] ?? null;
+    if (isBookmarkedWordElement(child)) return firstVisibleTextNode(child);
+  }
+  let parent = node.parentNode;
+  while (parent && parent !== state.pageEl) {
+    if (isBookmarkedWordElement(parent)) return { node, offset };
+    parent = parent.parentNode;
+  }
+  return null;
 }
 
 /**
@@ -57,6 +92,8 @@ export function resolveCaretAt(x: number, y: number): { node: Node; offset: numb
   if (range) {
     const node = range.startContainer;
     const offset = range.startOffset;
+    const bookmarkRes = resolveCaretForBookmarkWrapper(node, offset);
+    if (bookmarkRes) return bookmarkRes;
     // Try ruby resolution first
     const res = resolveCaretForRuby(node, offset);
     if (res) return res;
@@ -65,6 +102,11 @@ export function resolveCaretAt(x: number, y: number): { node: Node; offset: numb
     if (node.nodeType === Node.TEXT_NODE && offset === node.textContent!.length) {
       const el = document.elementFromPoint(x, y);
       if (el) {
+        const bookmark = el.closest(".bookmarked-word");
+        if (bookmark) {
+          const bookmarkText = firstVisibleTextNode(bookmark);
+          if (bookmarkText) return bookmarkText;
+        }
         const ruby = el.closest("ruby");
         if (ruby) return rubyBaseText(ruby);
       }
@@ -74,6 +116,11 @@ export function resolveCaretAt(x: number, y: number): { node: Node; offset: numb
   // No range at all — try elementFromPoint
   const el = document.elementFromPoint(x, y);
   if (el) {
+    const bookmark = el.closest(".bookmarked-word");
+    if (bookmark) {
+      const bookmarkText = firstVisibleTextNode(bookmark);
+      if (bookmarkText) return bookmarkText;
+    }
     const ruby = el.closest("ruby");
     if (ruby) return rubyBaseText(ruby);
   }

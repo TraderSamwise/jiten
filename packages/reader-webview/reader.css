@@ -60,6 +60,13 @@ ruby rt {
   box-decoration-break: clone;
 }
 
+.bookmarked-word {
+  background: var(--reader-bookmark-bg);
+  border-radius: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 /* Safari: ::highlight() doesn't paint inside <ruby>, so we add .highlight
    class directly. Height won't be perfect but avoids DOM manipulation bugs. */
 ruby.highlight {

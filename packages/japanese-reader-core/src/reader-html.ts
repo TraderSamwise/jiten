@@ -17,6 +17,7 @@ function getReaderTheme(isDark: boolean) {
     fg: isDark ? "#fafafa" : "#18181b",
     rubyColor: isDark ? "#a1a1aa" : "#71717a",
     highlightBg: isDark ? "#2e2e5f" : "#d5d5eb",
+    bookmarkBg: "rgba(180, 170, 98, 0.28)",
   };
 }
 
@@ -50,6 +51,7 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
   --reader-fg: ${theme.fg};
   --reader-ruby-color: ${theme.rubyColor};
   --reader-highlight-bg: ${theme.highlightBg};
+  --reader-bookmark-bg: ${theme.bookmarkBg};
 }
 ${css}</style>
 </head>
