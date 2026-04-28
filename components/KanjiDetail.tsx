@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark } from "@/lib/icons";
+import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { useSearchStore } from "@/stores/search";
@@ -225,12 +226,17 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             JLPT N{kanji.jlptLevel}
           </Text>
         )}
-        <Text className="text-7xl text-foreground leading-tight" style={japaneseFontStyle(72)}>
-          {kanji.literal}
-        </Text>
-        {kanji.heisigKeyword && (
-          <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
-        )}
+        <View
+          className={isBookmarked ? BOOKMARK_HIGHLIGHT_CLASS : undefined}
+          style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+        >
+          <Text className="text-7xl text-foreground leading-tight" style={japaneseFontStyle(72)}>
+            {kanji.literal}
+          </Text>
+          {kanji.heisigKeyword && (
+            <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
+          )}
+        </View>
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
           <Badge variant="outline" label={`${kanji.strokeCount} strokes`} />

@@ -18,10 +18,7 @@ export const EntryCard = React.memo(function EntryCard({ entry }: EntryCardProps
   ) : undefined;
 
   return (
-    <PressableCard
-      className={`mb-2 ${isBookmarked ? "bg-primary/5" : ""}`}
-      onPress={() => tabRouter.pushWord(entry.id)}
-    >
+    <PressableCard className="mb-2" onPress={() => tabRouter.pushWord(entry.id)}>
       <EntrySummary entry={entry} rightAccessory={bookmarkAccessory} />
     </PressableCard>
   );

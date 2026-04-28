@@ -26,6 +26,7 @@ import { useAtomValue } from "jotai";
 import { showRomajiAtom } from "@/stores/settings";
 import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
 import { japaneseFontStyle } from "@/lib/japanese-font";
+import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import { decomposeWord, type LookupResult } from "@/lib/smart-lookup";
@@ -150,82 +151,87 @@ export function WordDetail({ entryId }: WordDetailProps) {
         </Pressable>
       </View>
 
-      <View
-        className={
-          isBookmarked ? "mb-4 rounded-lg border-l-4 border-primary bg-primary/5 pl-3 py-2" : "mb-4"
-        }
-      >
+      <View className="mb-4">
         {entry.jlptLevel != null && (
           <Text className="absolute top-2 right-3 text-xs font-semibold text-muted-foreground">
             JLPT N{entry.jlptLevel}
           </Text>
         )}
-        {entry.kanji
-          .filter((k) => !shouldHide(k.tags))
-          .map((k, i) => {
-            const muted = shouldDeEmphasize(k.tags);
-            return (
-              <View key={i} className="flex-row items-center gap-2">
-                <Text
-                  className={
-                    muted ? "text-2xl text-muted-foreground" : "text-4xl font-bold text-foreground"
-                  }
-                >
-                  {muted
-                    ? k.text
-                    : [...k.text].map((ch, ci) =>
-                        isKanji(ch.codePointAt(0)!) ? (
-                          <Text
-                            key={ci}
-                            className="text-4xl font-bold text-foreground"
-                            onPress={() => tabRouter.pushKanji(ch)}
-                          >
-                            {ch}
-                          </Text>
-                        ) : (
-                          ch
-                        ),
-                      )}
-                </Text>
-                {k.common && <Badge variant="common" label="common" />}
-                {k.tags.map((t, j) => (
-                  <Badge key={j} variant="outline" label={getTagLabel(t)} />
-                ))}
-              </View>
-            );
-          })}
-        <View className="flex-wrap gap-2 mt-2">
-          {entry.kana.map((k, i) => {
-            const muted = shouldDeEmphasize(k.tags);
-            const accents = entry.pitchAccents.filter((pa) => pa.reading === k.text);
-            return (
-              <View key={i} className="flex-row items-center gap-1 flex-wrap">
-                {!muted && accents.length > 0 ? (
-                  accents.map((pa, j) => <PitchAccent key={j} accent={pa} fontSize={20} />)
-                ) : (
+        <View
+          className={isBookmarked ? BOOKMARK_HIGHLIGHT_CLASS : undefined}
+          style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
+        >
+          {entry.kanji
+            .filter((k) => !shouldHide(k.tags))
+            .map((k, i) => {
+              const muted = shouldDeEmphasize(k.tags);
+              return (
+                <View key={i} className="flex-row items-center gap-2">
                   <Text
                     className={
-                      muted ? "text-base text-muted-foreground/50" : "text-xl text-muted-foreground"
+                      muted
+                        ? "text-2xl text-muted-foreground"
+                        : "text-4xl font-bold text-foreground"
                     }
                   >
-                    {k.text}
+                    {muted
+                      ? k.text
+                      : [...k.text].map((ch, ci) =>
+                          isKanji(ch.codePointAt(0)!) ? (
+                            <Text
+                              key={ci}
+                              className="text-4xl font-bold text-foreground"
+                              onPress={() => tabRouter.pushKanji(ch)}
+                            >
+                              {ch}
+                            </Text>
+                          ) : (
+                            ch
+                          ),
+                        )}
                   </Text>
-                )}
-                {showRomaji && k.romaji && (
-                  <Text
-                    className={
-                      muted ? "text-xs text-muted-foreground/50" : "text-sm text-muted-foreground"
-                    }
-                  >
-                    ({k.romaji})
-                  </Text>
-                )}
-                {k.tags.map((t, j) => (
-                  <Badge key={j} variant="outline" label={getTagLabel(t)} />
-                ))}
-              </View>
-            );
-          })}
+                  {k.common && <Badge variant="common" label="common" />}
+                  {k.tags.map((t, j) => (
+                    <Badge key={j} variant="outline" label={getTagLabel(t)} />
+                  ))}
+                </View>
+              );
+            })}
+          <View className="mt-2 flex-wrap gap-2">
+            {entry.kana.map((k, i) => {
+              const muted = shouldDeEmphasize(k.tags);
+              const accents = entry.pitchAccents.filter((pa) => pa.reading === k.text);
+              return (
+                <View key={i} className="flex-row flex-wrap items-center gap-1">
+                  {!muted && accents.length > 0 ? (
+                    accents.map((pa, j) => <PitchAccent key={j} accent={pa} fontSize={20} />)
+                  ) : (
+                    <Text
+                      className={
+                        muted
+                          ? "text-base text-muted-foreground/50"
+                          : "text-xl text-muted-foreground"
+                      }
+                    >
+                      {k.text}
+                    </Text>
+                  )}
+                  {showRomaji && k.romaji && (
+                    <Text
+                      className={
+                        muted ? "text-xs text-muted-foreground/50" : "text-sm text-muted-foreground"
+                      }
+                    >
+                      ({k.romaji})
+                    </Text>
+                  )}
+                  {k.tags.map((t, j) => (
+                    <Badge key={j} variant="outline" label={getTagLabel(t)} />
+                  ))}
+                </View>
+              );
+            })}
+          </View>
         </View>
       </View>
 
