@@ -5,7 +5,6 @@ import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { PitchAccent } from "@/components/PitchAccent";
 import { PlayAudioButton } from "@/components/PlayAudioButton";
-import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { Bookmark, ChevronRight } from "@/lib/icons";
 import { useSearchStore } from "@/stores/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -16,6 +15,7 @@ interface GlossGroupCardProps {
 }
 
 export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: GlossGroupCardProps) {
+  const bookmarkAccentClass = "text-[#b4aa62]";
   const router = useRouter();
   const setSelectedGlossGroup = useSearchStore((s) => s.setSelectedGlossGroup);
   const isMulti = group.entries.length > 1;
@@ -44,17 +44,10 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
         <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
         <View className="flex-row items-start justify-between gap-3 mt-1">
           <View className="flex-1">
-            <View
-              className={
-                isSingleEntryBookmarked
-                  ? `flex-row items-center gap-2 ${BOOKMARK_HIGHLIGHT_CLASS}`
-                  : "flex-row items-center gap-2"
-              }
-              style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
-            >
+            <View className="flex-row items-center gap-2">
               {kanjiText && (
                 <Text
-                  className={`text-lg text-foreground ${entry.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
+                  className={`text-lg ${isSingleEntryBookmarked ? bookmarkAccentClass : "text-foreground"} ${entry.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
                 >
                   {kanjiText}
                 </Text>
@@ -67,7 +60,11 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                     ))}
                   </View>
                 ) : (
-                  <Text className="text-sm text-muted-foreground">{kana.text}</Text>
+                  <Text
+                    className={`text-sm ${isSingleEntryBookmarked ? `font-semibold ${bookmarkAccentClass}` : "text-muted-foreground"}`}
+                  >
+                    {kana.text}
+                  </Text>
                 ))}
             </View>
           </View>
@@ -106,17 +103,9 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
           <Text className="text-base font-bold text-foreground">{group.gloss}</Text>
           <View className="flex-row flex-wrap mt-1 gap-1.5">
             {japaneseEntries.map((e, i) => (
-              <View
-                key={i}
-                className={
-                  e.bookmarked
-                    ? `flex-row items-baseline ${BOOKMARK_HIGHLIGHT_CLASS}`
-                    : "flex-row items-baseline"
-                }
-                style={e.bookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
-              >
+              <View key={i} className="flex-row items-baseline">
                 <Text
-                  className={`text-sm ${e.common ? "text-foreground bg-green-100 dark:bg-green-900 rounded px-1" : "text-muted-foreground"}`}
+                  className={`text-sm ${e.bookmarked ? `font-semibold ${bookmarkAccentClass}` : e.common ? "text-foreground" : "text-muted-foreground"} ${e.common ? "bg-green-100 dark:bg-green-900 rounded px-1" : ""}`}
                 >
                   {e.label}
                 </Text>
