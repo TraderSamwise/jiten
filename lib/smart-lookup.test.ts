@@ -194,6 +194,22 @@ function hasExactKanaSurfaceMatch(hit: LookupHit): boolean {
   return hit.results.some((result) => result.kanaTexts.includes(hit.matchedText));
 }
 
+function resultMatchesSearchSurface(result: DictResult, surface: string): boolean {
+  const hiraganaSurface = toHiragana(surface);
+  return (
+    result.kanjiTexts.includes(surface) ||
+    result.kanaTexts.includes(surface) ||
+    result.kanaTexts.includes(hiraganaSurface)
+  );
+}
+
+function isResultCommon(entryId: number): boolean {
+  const row = db.prepare("SELECT common FROM entries WHERE id = ?").get(entryId) as
+    | { common: number }
+    | undefined;
+  return row ? row.common === 1 : false;
+}
+
 function startsAtKanaToKanjiBoundary(text: string, start: number): boolean {
   if (start <= 0 || start >= text.length) return false;
   return isKanaChar(text[start - 1]) && isKanjiChar(text[start]);
@@ -219,6 +235,14 @@ function endsMidKanjiRun(text: string, start: number, matchedText: string): bool
   if (end < 0 || end >= text.length) return false;
   if (!isKanjiChar(text[end])) return false;
   return end < text.length - 1 && isKanjiChar(text[end + 1]);
+}
+
+function endsBeforeKanaContinuation(text: string, start: number, matchedText: string): boolean {
+  const chars = [...matchedText];
+  if (chars.length !== 1) return false;
+  if (!isKanjiChar(chars[0])) return false;
+  const end = start + matchedText.length - 1;
+  return end < text.length - 1 && isKanaChar(text[end + 1]);
 }
 
 function hasExactSurfaceMatch(hit: LookupHit): boolean {
@@ -252,6 +276,49 @@ function shouldPreferContainingExactCandidate(
   return [...outerHit.matchedText].some(isKanjiChar);
 }
 
+function shouldPreferShorterExactSurface(
+  shorterHit: LookupHit,
+  shorterStart: number,
+  longerHit: LookupHit,
+  longerStart: number,
+): boolean {
+  if (!hasExactSurfaceMatch(shorterHit) || hasExactSurfaceMatch(longerHit)) return false;
+  if ([...shorterHit.matchedText].length < 2) return false;
+  if (shorterStart !== longerStart) return false;
+  if (longerHit.reasons.length === 0) return false;
+  return strictlyContainsCandidate(
+    longerStart,
+    longerHit.matchedText,
+    shorterStart,
+    shorterHit.matchedText,
+  );
+}
+
+function shouldPreferLongerDeinflectedOkurigana(
+  longerHit: LookupHit,
+  longerStart: number,
+  shorterHit: LookupHit,
+  shorterStart: number,
+): boolean {
+  if (longerStart !== shorterStart) return false;
+  if (longerHit.reasons.length === 0) return false;
+  if ([...shorterHit.matchedText].length !== 1) return false;
+  if (!hasExactSurfaceMatch(shorterHit)) return false;
+  if (!isKanjiChar(shorterHit.matchedText[0])) return false;
+  if (
+    !strictlyContainsCandidate(
+      longerStart,
+      longerHit.matchedText,
+      shorterStart,
+      shorterHit.matchedText,
+    )
+  ) {
+    return false;
+  }
+  const rest = [...longerHit.matchedText].slice(1);
+  return rest.some((ch) => isKanaChar(ch));
+}
+
 function scoreTapHit(
   text: string,
   tapOffset: number,
@@ -262,6 +329,8 @@ function scoreTapHit(
   let score = hit.matchedText.length * 100;
   const isKanaOnly =
     [...hit.matchedText].some(isKanaChar) && ![...hit.matchedText].some(isKanjiChar);
+  const isMixedKanjiKana =
+    [...hit.matchedText].some(isKanjiChar) && [...hit.matchedText].some(isKanaChar);
   const suffixCharsAfterTap = start + hit.matchedText.length - 1 - tapOffset;
 
   if (hasExactKanjiSurfaceMatch(hit)) score += 160;
@@ -273,9 +342,13 @@ function scoreTapHit(
 
   if (startsMidKanjiRun(text, start)) score -= 140;
   if (endsMidKanjiRun(text, start, hit.matchedText)) score -= 140;
+  if (endsBeforeKanaContinuation(text, start, hit.matchedText)) score -= 120;
 
   if (hasCommon) score += 120;
-  if (hit.reasons.length > 0) score -= 20;
+  if (hit.reasons.length > 0) {
+    score -= 20;
+    if (hasCommon && isMixedKanjiKana) score += 100;
+  }
   if (isKanaOnly && suffixCharsAfterTap > 0) score -= suffixCharsAfterTap * 30;
   if (start < tapOffset) score += 8;
 
@@ -307,12 +380,10 @@ function simulateSmartLookupWithOffset(
       for (const candidate of candidates) {
         const results = searchJapaneseSimple(candidate.word, 5);
         if (results.length > 0) {
-          const hasCommon = results.some((r) => {
-            const row = db.prepare("SELECT common FROM entries WHERE id = ?").get(r.entryId) as
-              | { common: number }
-              | undefined;
-            return row && row.common === 1;
-          });
+          const hasCommon = results.some(
+            (result) =>
+              isResultCommon(result.entryId) && resultMatchesSearchSurface(result, candidate.word),
+          );
           const hit: LookupHit = {
             matchedText: substr,
             searchWord: candidate.word,
@@ -351,6 +422,28 @@ function simulateSmartLookupWithOffset(
       bestForLength.start,
     );
     if (bestContainsCurrent) continue;
+
+    const currentIsBetterShorterExact = shouldPreferShorterExactSurface(
+      bestForLength.hit,
+      bestForLength.start,
+      bestOverall.hit,
+      bestOverall.start,
+    );
+    if (currentIsBetterShorterExact) {
+      bestOverall = bestForLength;
+      continue;
+    }
+
+    const currentIsBetterLongerDeinflected = shouldPreferLongerDeinflectedOkurigana(
+      bestForLength.hit,
+      bestForLength.start,
+      bestOverall.hit,
+      bestOverall.start,
+    );
+    if (currentIsBetterLongerDeinflected) {
+      bestOverall = bestForLength;
+      continue;
+    }
 
     const lengthDiff = bestOverall.length - bestForLength.length;
     if (lengthDiff >= 2) break;
