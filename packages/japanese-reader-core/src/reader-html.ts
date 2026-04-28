@@ -11,6 +11,15 @@ export interface ReaderOptions {
   pageAnimations?: boolean;
 }
 
+function getReaderTheme(isDark: boolean) {
+  return {
+    bg: isDark ? "#18181b" : "#fafaf9",
+    fg: isDark ? "#fafafa" : "#18181b",
+    rubyColor: isDark ? "#a1a1aa" : "#71717a",
+    highlightBg: isDark ? "#2e2e5f" : "#d5d5eb",
+  };
+}
+
 export function generateReaderHtml(content: string, options: ReaderOptions): string {
   const {
     fontSize,
@@ -22,18 +31,11 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
     hasFurigana = false,
     pageAnimations = true,
   } = options;
-  const bg = isDark ? "#18181b" : "#fafaf9";
-  const fg = isDark ? "#fafafa" : "#18181b";
-  const rubyColor = isDark ? "#a1a1aa" : "#71717a";
-  const highlightBg = isDark ? "#2e2e5f" : "#d5d5eb";
+  const theme = getReaderTheme(isDark);
 
   const lineHeight = hasFurigana ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`;
 
   const css = readerCss
-    .replace(/__BG__/g, bg)
-    .replace(/__FG__/g, fg)
-    .replace(/__RUBY_COLOR__/g, rubyColor)
-    .replace(/__HIGHLIGHT_BG__/g, highlightBg)
     .replace(/__FONT_SIZE__/g, String(fontSize))
     .replace(/__LINE_HEIGHT__/g, lineHeight);
 
@@ -43,6 +45,12 @@ export function generateReaderHtml(content: string, options: ReaderOptions): str
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
+:root {
+  --reader-bg: ${theme.bg};
+  --reader-fg: ${theme.fg};
+  --reader-ruby-color: ${theme.rubyColor};
+  --reader-highlight-bg: ${theme.highlightBg};
+}
 ${css}</style>
 </head>
 <body>
@@ -53,7 +61,7 @@ ${css}</style>
   <span id="page-num"></span>
   <button id="btn-prev" aria-label="Previous page">\u203A</button>
 </div>
-<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars},highlightBg:"${highlightBg}",pageAnimations:${pageAnimations}}</script>
+<script>window.__READER_CONFIG__={scrollPosition:${scrollPosition},targetLocalChar:${targetLocalChar},sliceCharOffset:${sliceCharOffset},totalChars:${totalChars},theme:${JSON.stringify(theme)},pageAnimations:${pageAnimations}}</script>
 <script>${readerBundle}</script>
 </body>
 </html>`;

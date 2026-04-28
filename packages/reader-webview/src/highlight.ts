@@ -18,7 +18,14 @@ interface HighlightRegistry {
 const isSafari = /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 const useHighlightAPI = typeof CSS !== "undefined" && CSS.highlights !== undefined;
 const HIGHLIGHT_NAME = "word-highlight";
-const highlightBg: string = (window as any).__READER_CONFIG__?.highlightBg || "#2e2e5f";
+
+function getHighlightBg(): string {
+  const cssVar = getComputedStyle(document.documentElement)
+    .getPropertyValue("--reader-highlight-bg")
+    .trim();
+  if (cssVar) return cssVar;
+  return (window as any).__READER_CONFIG__?.theme?.highlightBg || "#2e2e5f";
+}
 
 // Keep references so we can clear ranges directly
 let activeHighlight: Highlight | null = null;
@@ -219,7 +226,7 @@ function markContinuationRubies(): void {
       for (let j = 0; j < rts.length; j++) {
         rts[j].classList.add("highlight-cont");
         // offset-x=5, spread=5: extends ~10px right, 5px top/bottom (fills height), 0px left
-        (rts[j] as HTMLElement).style.boxShadow = "5px 0 0 5px " + highlightBg;
+        (rts[j] as HTMLElement).style.boxShadow = "5px 0 0 5px " + getHighlightBg();
       }
     }
   }
