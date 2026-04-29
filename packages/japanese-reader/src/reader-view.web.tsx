@@ -1,15 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 
-export interface ReaderViewRef {
-  postMessage: (data: string) => void;
-  focus: () => void;
-}
-
-interface ReaderViewProps {
-  html: string;
-  onMessage: (data: string) => void;
-}
+import type { ReaderViewProps, ReaderViewRef } from "./types";
 
 /**
  * Web implementation: renders reader HTML in an iframe.
@@ -18,7 +10,7 @@ interface ReaderViewProps {
 export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, onMessage }, ref) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Inject shim for ReactNativeWebView.postMessage → parent.postMessage
+  // Inject shim for ReactNativeWebView.postMessage -> parent.postMessage
   const shimmedHtml = html.replace(
     "<head>",
     `<head><script>window.ReactNativeWebView={postMessage:function(d){window.parent.postMessage(d,'*')}}</script>`,
