@@ -96,33 +96,46 @@ type ReaderLoadStage =
   | "highlightingBookmarks"
   | "finalizing";
 
-const READER_LOAD_STAGE_META: Record<
-  ReaderLoadStage,
-  { title: string; detail: string; progress: number }
-> = {
-  preparing: { title: "Preparing reader", detail: "Loading book data", progress: 0.08 },
-  parsing: { title: "Parsing book", detail: "Reading and normalizing content", progress: 0.22 },
+const READER_LOAD_STAGE_META: Record<ReaderLoadStage, { title: string; detail: string }> = {
+  preparing: { title: "Preparing reader", detail: "Loading book data" },
+  parsing: { title: "Parsing book", detail: "Reading and normalizing content" },
   generatingPages: {
     title: "Generating pages",
     detail: "Building the current reading slice",
-    progress: 0.48,
   },
   generatingFurigana: {
     title: "Generating furigana",
     detail: "Applying reading annotations",
-    progress: 0.7,
   },
   highlightingBookmarks: {
     title: "Generating highlighted words",
     detail: "Marking bookmarked vocabulary",
-    progress: 0.84,
   },
   finalizing: {
     title: "Finalizing reader",
     detail: "Updating the page view",
-    progress: 1,
   },
 };
+
+const READER_LOAD_STEP_DURATION_MS = 1000;
+
+function buildReaderLoadSequence({
+  needsParsing,
+  needsFurigana,
+  needsBookmarkHighlights,
+}: {
+  needsParsing: boolean;
+  needsFurigana: boolean;
+  needsBookmarkHighlights: boolean;
+}): ReaderLoadStage[] {
+  const stages: ReaderLoadStage[] = ["preparing"];
+  if (needsParsing) stages.push("parsing");
+  stages.push("generatingPages");
+  if (needsFurigana) stages.push("generatingFurigana");
+  if (needsBookmarkHighlights) stages.push("highlightingBookmarks");
+  stages.push("finalizing");
+  return stages;
+}
 
 /** Does this book's raw content contain source furigana? */
 function bookHasSourceFurigana(rawContent: string): boolean {
@@ -645,10 +658,13 @@ export default function BookReaderScreen() {
     furiganaRuleLevels: cloneRuleLevels(furiganaRuleLevels),
   }));
   const [readerLoadState, setReaderLoadState] = useState({
+    runId: 0,
     visible: true,
     title: READER_LOAD_STAGE_META.preparing.title,
     detail: READER_LOAD_STAGE_META.preparing.detail,
-    progress: READER_LOAD_STAGE_META.preparing.progress,
+    currentStep: 1,
+    totalSteps: 1,
+    stepDurationMs: READER_LOAD_STEP_DURATION_MS,
   });
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
   const readerLoadTokenRef = useRef(0);
@@ -808,41 +824,56 @@ export default function BookReaderScreen() {
     bookmarkSliceHtmlCacheRef.current.clear();
   }, []);
 
-  const beginReaderLoad = useCallback((stage: ReaderLoadStage = "preparing") => {
+  const beginReaderLoad = useCallback((stages: ReaderLoadStage[]) => {
     if (readerLoadDismissTimerRef.current) {
       clearTimeout(readerLoadDismissTimerRef.current);
       readerLoadDismissTimerRef.current = null;
     }
     const token = ++readerLoadTokenRef.current;
-    const meta = READER_LOAD_STAGE_META[stage];
+    const firstStage = stages[0] ?? "preparing";
+    const meta = READER_LOAD_STAGE_META[firstStage];
     setReaderLoadState({
+      runId: token,
       visible: true,
       title: meta.title,
       detail: meta.detail,
-      progress: meta.progress,
+      currentStep: 1,
+      totalSteps: stages.length,
+      stepDurationMs: READER_LOAD_STEP_DURATION_MS,
     });
-    return token;
+    return { token, stages };
   }, []);
 
-  const updateReaderLoadStage = useCallback((token: number, stage: ReaderLoadStage) => {
-    if (readerLoadTokenRef.current !== token) return;
-    const meta = READER_LOAD_STAGE_META[stage];
-    setReaderLoadState((prev) => ({
-      ...prev,
-      visible: true,
-      title: meta.title,
-      detail: meta.detail,
-      progress: Math.max(prev.progress, meta.progress),
-    }));
-  }, []);
+  const updateReaderLoadStage = useCallback(
+    (token: number, stages: ReaderLoadStage[], stage: ReaderLoadStage) => {
+      if (readerLoadTokenRef.current !== token) return;
+      const stageIndex = stages.indexOf(stage);
+      if (stageIndex < 0) return;
+      const meta = READER_LOAD_STAGE_META[stage];
+      const nextStep = stageIndex + 1;
+      setReaderLoadState((prev) => ({
+        ...prev,
+        visible: true,
+        title: meta.title,
+        detail: meta.detail,
+        currentStep: Math.max(prev.currentStep, nextStep),
+        totalSteps: stages.length,
+        stepDurationMs: READER_LOAD_STEP_DURATION_MS,
+      }));
+    },
+    [],
+  );
 
-  const finishReaderLoad = useCallback((token: number) => {
+  const finishReaderLoad = useCallback((token: number, stages: ReaderLoadStage[]) => {
     if (readerLoadTokenRef.current !== token) return;
     setReaderLoadState({
+      runId: token,
       visible: true,
       title: READER_LOAD_STAGE_META.finalizing.title,
       detail: READER_LOAD_STAGE_META.finalizing.detail,
-      progress: 1,
+      currentStep: stages.length,
+      totalSteps: stages.length,
+      stepDurationMs: READER_LOAD_STEP_DURATION_MS,
     });
     if (readerLoadDismissTimerRef.current) {
       clearTimeout(readerLoadDismissTimerRef.current);
@@ -1080,7 +1111,7 @@ export default function BookReaderScreen() {
 
   // Reload the reader at a given char offset (used by furigana toggle + jump slider)
   const reloadAtChar = useCallback(
-    async (charOffset: number, loadToken?: number) => {
+    async (charOffset: number, loadContext?: { token: number; stages: ReaderLoadStage[] }) => {
       const model = modelRef.current;
       if (!model || !dictDb) return;
       const currentFontSize = fontSizeRef.current;
@@ -1106,7 +1137,8 @@ export default function BookReaderScreen() {
       fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
       backPrefetchingRef.current = false;
 
-      if (loadToken != null) updateReaderLoadStage(loadToken, "generatingPages");
+      if (loadContext)
+        updateReaderLoadStage(loadContext.token, loadContext.stages, "generatingPages");
       const sliceHtml = await renderSliceHtml({
         sliceText: slice.text,
         startChar,
@@ -1118,10 +1150,12 @@ export default function BookReaderScreen() {
         includeCounters: showCounters,
         includeNames: showNames,
         highlightBookmarks,
-        onStage: loadToken != null ? (stage) => updateReaderLoadStage(loadToken, stage) : undefined,
+        onStage: loadContext
+          ? (stage) => updateReaderLoadStage(loadContext.token, loadContext.stages, stage)
+          : undefined,
       });
 
-      if (loadToken != null) updateReaderLoadStage(loadToken, "finalizing");
+      if (loadContext) updateReaderLoadStage(loadContext.token, loadContext.stages, "finalizing");
       readerRef.current?.postMessage(
         JSON.stringify({
           type: "reloadContent",
@@ -1192,7 +1226,7 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!userDb || !bookId) return;
     (async () => {
-      const loadToken = beginReaderLoad("preparing");
+      let load: { token: number; stages: ReaderLoadStage[] } | null = null;
       try {
         const row = await userDb.getFirstAsync<any>("SELECT * FROM books WHERE id = ?", [bookId]);
         if (!row) {
@@ -1221,10 +1255,24 @@ export default function BookReaderScreen() {
 
         // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
         const hasRubyTags = /<ruby[>\s]/.test(b.rawContent);
+        load = beginReaderLoad(
+          buildReaderLoadSequence({
+            needsParsing: !hasRubyTags,
+            needsFurigana:
+              !hasRubyTags &&
+              hasInjectedFuriganaActive(
+                readerNameFuriganaRef.current,
+                readerCounterFuriganaRef.current,
+                furiganaRuleLevelsRef.current,
+              ),
+            needsBookmarkHighlights: highlightBookmarks,
+          }),
+        );
+        const activeLoad = load;
 
         if (hasRubyTags) {
           modelRef.current = null;
-          updateReaderLoadStage(loadToken, "generatingPages");
+          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "generatingPages");
           // Pre-formatted HTML — send entire content (no slicing)
           const { content, hasFuri } = await renderPreformattedReaderContent({
             rawContent: b.rawContent,
@@ -1234,8 +1282,10 @@ export default function BookReaderScreen() {
             ruleLevels: furiganaRuleLevels,
             highlightBookmarks,
           });
-          if (highlightBookmarks) updateReaderLoadStage(loadToken, "highlightingBookmarks");
-          updateReaderLoadStage(loadToken, "finalizing");
+          if (highlightBookmarks) {
+            updateReaderLoadStage(activeLoad.token, activeLoad.stages, "highlightingBookmarks");
+          }
+          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "finalizing");
           const readerHtml = generateReaderHtml(content, {
             fontSize: b.fontSize,
             isDark,
@@ -1246,7 +1296,7 @@ export default function BookReaderScreen() {
           appliedTransformSettingsRef.current = getCurrentTransformSettingsSnapshot();
           setHtml(readerHtml);
         } else {
-          updateReaderLoadStage(loadToken, "parsing");
+          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "parsing");
           // Aozora or plain text — slice ~3 pages from char offset
           const isAozora = hasAozoraMarkup(b.rawContent);
           const stripped = isAozora ? stripAozoraBoilerplate(b.rawContent) : b.rawContent;
@@ -1301,7 +1351,7 @@ export default function BookReaderScreen() {
             : null;
           kanjiSetRef.current = injectedFuriganaSet;
           furiganaEntryCacheRef.current.clear();
-          updateReaderLoadStage(loadToken, "generatingPages");
+          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "generatingPages");
           const sliceHtml = await renderSliceHtml({
             sliceText: slice.text,
             startChar,
@@ -1313,10 +1363,10 @@ export default function BookReaderScreen() {
             includeCounters: readerCounterFurigana,
             includeNames: readerNameFurigana,
             highlightBookmarks,
-            onStage: (stage) => updateReaderLoadStage(loadToken, stage),
+            onStage: (stage) => updateReaderLoadStage(activeLoad.token, activeLoad.stages, stage),
           });
 
-          updateReaderLoadStage(loadToken, "finalizing");
+          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "finalizing");
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: b.fontSize,
             isDark,
@@ -1338,7 +1388,7 @@ export default function BookReaderScreen() {
           bookId,
         ]);
       } finally {
-        finishReaderLoad(loadToken);
+        if (load) finishReaderLoad(load.token, load.stages);
       }
     })();
   }, [
@@ -1374,11 +1424,17 @@ export default function BookReaderScreen() {
       previousSnapshot.bookmarkHighlightReloadKey !== nextSnapshot.bookmarkHighlightReloadKey;
 
     (async () => {
-      const loadToken = beginReaderLoad("preparing");
+      const hasRubyTags = /<ruby[>\s]/.test(rawContent);
+      const load = beginReaderLoad(
+        buildReaderLoadSequence({
+          needsParsing: !hasRubyTags,
+          needsFurigana: furiganaChanged,
+          needsBookmarkHighlights: nextSnapshot.readerBookmarkHighlights,
+        }),
+      );
       try {
-        const hasRubyTags = /<ruby[>\s]/.test(rawContent);
         if (hasRubyTags) {
-          updateReaderLoadStage(loadToken, "generatingPages");
+          updateReaderLoadStage(load.token, load.stages, "generatingPages");
           const { content, hasFuri } = await renderPreformattedReaderContent({
             rawContent,
             sourceDefault: sourceFuriganaEnabled,
@@ -1387,8 +1443,10 @@ export default function BookReaderScreen() {
             ruleLevels: furiganaRuleLevels,
             highlightBookmarks: readerBookmarkHighlights,
           });
-          if (readerBookmarkHighlights) updateReaderLoadStage(loadToken, "highlightingBookmarks");
-          updateReaderLoadStage(loadToken, "finalizing");
+          if (readerBookmarkHighlights) {
+            updateReaderLoadStage(load.token, load.stages, "highlightingBookmarks");
+          }
+          updateReaderLoadStage(load.token, load.stages, "finalizing");
           readerRef.current?.postMessage(
             JSON.stringify({
               type: "reloadContent",
@@ -1406,7 +1464,7 @@ export default function BookReaderScreen() {
         }
 
         if (!modelRef.current) return;
-        updateReaderLoadStage(loadToken, "parsing");
+        if (!hasRubyTags) updateReaderLoadStage(load.token, load.stages, "parsing");
         if (furiganaChanged) {
           kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
             dictDb,
@@ -1420,10 +1478,10 @@ export default function BookReaderScreen() {
         }
 
         const charOffset = scrollPosRef.current || 0;
-        await reloadAtChar(charOffset, loadToken);
+        await reloadAtChar(charOffset, load);
         appliedTransformSettingsRef.current = nextSnapshot;
       } finally {
-        finishReaderLoad(loadToken);
+        finishReaderLoad(load.token, load.stages);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1864,11 +1922,14 @@ export default function BookReaderScreen() {
       {!book || !html ? (
         <View className="flex-1" style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}>
           <PhasedLoadingOverlay
+            key={`reader-load-empty-${readerLoadState.runId}`}
             visible={readerLoadState.visible}
             isDark={isDark}
             title={readerLoadState.title}
             detail={readerLoadState.detail}
-            progress={readerLoadState.progress}
+            currentStep={readerLoadState.currentStep}
+            totalSteps={readerLoadState.totalSteps}
+            stepDurationMs={readerLoadState.stepDurationMs}
           />
         </View>
       ) : (
@@ -1882,11 +1943,14 @@ export default function BookReaderScreen() {
           >
             <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
             <PhasedLoadingOverlay
+              key={`reader-load-live-${readerLoadState.runId}`}
               visible={readerLoadState.visible}
               isDark={isDark}
               title={readerLoadState.title}
               detail={readerLoadState.detail}
-              progress={readerLoadState.progress}
+              currentStep={readerLoadState.currentStep}
+              totalSteps={readerLoadState.totalSteps}
+              stepDurationMs={readerLoadState.stepDurationMs}
             />
             {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
             {showSettings && (
