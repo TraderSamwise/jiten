@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
-import { applyFuriganaToHtml, type FuriganaEntry, type FuriganaKanjiSet } from "../reader-furigana";
+import {
+  applyFuriganaToHtml,
+  type FuriganaEntry,
+  type FuriganaKanjiSet,
+} from "../../packages/japanese-reader/src/furigana";
 
 const DB_PATH = path.resolve(__dirname, "../../assets/dictionary.db");
 

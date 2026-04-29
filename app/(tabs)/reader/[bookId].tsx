@@ -23,12 +23,19 @@ import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
 import {
   applyResolvedBookmarkHighlightsToHtml,
+  applyFuriganaToHtml,
   autoLookup,
   autoLookupWithOffset,
   autoSelectionLookup,
+  buildFuriganaKanjiSet,
+  extractSurfacesFromHtml,
+  injectRubySpacers,
   nameLookup,
   nameLookupWithOffset,
   ReaderView,
+  resolveFuriganaBatch,
+  type FuriganaEntry,
+  type FuriganaKanjiSet,
   type ReaderBookmarkMembership,
   type LookupResult,
   type ReaderLookupMode,
@@ -76,15 +83,6 @@ import {
   type FuriganaMatchLevel,
   type ReaderFuriganaRule,
 } from "@/stores/settings";
-import {
-  buildFuriganaKanjiSet,
-  extractSurfacesFromHtml,
-  resolveFuriganaBatch,
-  applyFuriganaToHtml,
-  injectRubySpacers,
-  type FuriganaKanjiSet,
-  type FuriganaEntry,
-} from "@/lib/reader-furigana";
 import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";

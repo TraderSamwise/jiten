@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
-import type { FuriganaMatchLevel } from "@/stores/settings";
 import {
   applyFuriganaToHtml,
   defaultReaderFuriganaSettings,
@@ -11,8 +10,9 @@ import {
   resolveFuriganaBatch,
   type FuriganaEntry,
   type FuriganaKanjiSet,
+  type FuriganaMatchLevel,
   type ReaderFuriganaSettings,
-} from "./reader-furigana";
+} from "../packages/japanese-reader/src/furigana";
 
 const allKanji: FuriganaKanjiSet = { all: true, chars: new Set() };
 const allLevelsDisabled: Record<FuriganaMatchLevel, boolean> = {

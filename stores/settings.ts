@@ -1,19 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { atomWithStorage, createJSONStorage, unwrap } from "jotai/utils";
 import { focusAtom } from "jotai-optics";
+import {
+  defaultReaderFuriganaRuleLevels,
+  type FuriganaMatchLevel,
+  type ReaderFuriganaRule,
+} from "@jiten/japanese-reader/furigana-types";
 
 // ─── Types ───
 
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
-export type FuriganaMatchLevel = "n5" | "n4" | "n3" | "n2" | "n1" | "nonJouyou";
-export type ReaderFuriganaRule =
-  | "matchAnyKanji"
-  | "matchWordLevel"
-  | "matchIrregularReading"
-  | "matchMostlyKunyomi"
-  | "matchMostlyOnyomi"
-  | "matchMixedOnKun";
+export type { FuriganaMatchLevel, ReaderFuriganaRule } from "@jiten/japanese-reader/furigana-types";
 export type ConnectGameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
@@ -22,26 +20,10 @@ export type ConnectBubbleKinds = { kanji: boolean; reading: boolean; meaning: bo
 
 // ─── Defaults ───
 
-export const defaultFuriganaMatchLevels: Record<FuriganaMatchLevel, boolean> = {
-  n5: false,
-  n4: false,
-  n3: false,
-  n2: false,
-  n1: false,
-  nonJouyou: false,
-};
-
-export const defaultReaderFuriganaRuleLevels: Record<
-  ReaderFuriganaRule,
-  Record<FuriganaMatchLevel, boolean>
-> = {
-  matchAnyKanji: { ...defaultFuriganaMatchLevels },
-  matchWordLevel: { ...defaultFuriganaMatchLevels },
-  matchIrregularReading: { ...defaultFuriganaMatchLevels },
-  matchMostlyKunyomi: { ...defaultFuriganaMatchLevels },
-  matchMostlyOnyomi: { ...defaultFuriganaMatchLevels },
-  matchMixedOnKun: { ...defaultFuriganaMatchLevels },
-};
+export {
+  defaultFuriganaMatchLevels,
+  defaultReaderFuriganaRuleLevels,
+} from "@jiten/japanese-reader/furigana-types";
 
 export const defaultSettings = Object.freeze({
   theme: "system" as ThemePreference,

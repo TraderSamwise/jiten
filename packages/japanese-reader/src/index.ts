@@ -5,6 +5,19 @@ export {
   resolveBookmarkedWordSurfacesInHtml,
 } from "./bookmarks";
 export {
+  applyFuriganaToHtml,
+  buildFuriganaKanjiSet,
+  extractSurfacesFromHtml,
+  injectRubySpacers,
+  resolveFuriganaBatch,
+  serializeKanjiSet,
+} from "./furigana";
+export {
+  defaultFuriganaMatchLevels,
+  defaultReaderFuriganaRuleLevels,
+  defaultReaderFuriganaSettings,
+} from "./furigana-types";
+export {
   autoLookup,
   autoLookupWithOffset,
   autoSelectionLookup,
@@ -35,3 +48,10 @@ export type {
   ReaderViewProps,
   ReaderViewRef,
 } from "./types";
+export type {
+  FuriganaEntry,
+  FuriganaKanjiSet,
+  FuriganaMatchLevel,
+  ReaderFuriganaRule,
+  ReaderFuriganaSettings,
+} from "./furigana-types";
