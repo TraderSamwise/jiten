@@ -420,30 +420,59 @@ export default function BookReaderScreen() {
     [markDirty, userDb],
   );
 
-  const reader = useJapaneseReader({
-    bookId: bookId ?? "",
-    bookSource,
-    backend: {
+  const readerBackend = useMemo(
+    () => ({
       dictDb,
       extendedDb,
       bookmarks: bookmarkMembership,
-    },
-    settings: {
+    }),
+    [bookmarkMembership, dictDb, extendedDb],
+  );
+
+  const readerSettings = useMemo(
+    () => ({
       pageAnimations,
       sourceFuriganaEnabled,
       readerCounterFurigana,
       readerNameFurigana,
       readerBookmarkHighlights,
       furiganaRuleLevels,
-    },
-    settingsActions: {
+    }),
+    [
+      furiganaRuleLevels,
+      pageAnimations,
+      readerBookmarkHighlights,
+      readerCounterFurigana,
+      readerNameFurigana,
+      sourceFuriganaEnabled,
+    ],
+  );
+
+  const readerSettingsActions = useMemo(
+    () => ({
       setPageAnimations,
       setSourceFuriganaEnabled,
       setReaderCounterFurigana,
       setReaderNameFurigana,
       setReaderBookmarkHighlights,
       setFuriganaRuleLevels,
-    },
+    }),
+    [
+      setFuriganaRuleLevels,
+      setPageAnimations,
+      setReaderBookmarkHighlights,
+      setReaderCounterFurigana,
+      setReaderNameFurigana,
+      setSourceFuriganaEnabled,
+    ],
+  );
+
+  const reader = useJapaneseReader({
+    bookId: bookId ?? "",
+    bookSource,
+    backend: readerBackend,
+    settings: readerSettings,
+    settingsActions: readerSettingsActions,
     isDark,
   });
 
