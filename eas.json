@@ -16,6 +16,9 @@
         "buildConfiguration": "Release",
         "image": "latest"
       },
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+      },
       "distribution": "store",
       "autoIncrement": false,
       "channel": "testflight"
@@ -27,6 +30,9 @@
       },
       "android": {
         "image": "latest"
+      },
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       },
       "distribution": "store",
       "autoIncrement": false,
