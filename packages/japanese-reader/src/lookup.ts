@@ -1,29 +1,15 @@
-import * as SQLite from "expo-sqlite";
-import { lookupExactJapanese } from "@/db/search";
-import { lookupExactName } from "@/db/name-search";
-import { getKanjiAsync } from "@/db/kanji-search";
-import type { DictEntry, NameEntry } from "@/db/types";
 import { classifyReaderReadingPattern } from "@jiten/japanese-reader-core";
-import { deinflect, generateSubstrings } from "./deinflect";
 import { toHiragana } from "wanakana";
+import type { ReaderSqlDb } from "./backend";
+import { deinflect, generateSubstrings } from "./deinflect";
+import { getKanjiAsync, lookupExactJapanese, lookupExactName } from "./lookup-db";
+import type { LookupResult, ReaderDictEntry } from "./types";
 
-export type ReaderLookupMode = "word" | "name" | "auto";
-export type LookupKind = "word" | "name";
+export type { LookupKind, LookupResult, ReaderLookupMode } from "./types";
+
 const AUTO_DUAL_MIN_MATCH_LENGTH = 2;
 const AUTO_NAME_ONLY_CONFIDENCE = 90;
 const AUTO_NAME_DUAL_CONFIDENCE = 45;
-
-export interface LookupResult {
-  matchedText: string;
-  entries: DictEntry[];
-  deinflectReasons: string[];
-  /** Offset within the sent text window where the match begins (used for highlight positioning) */
-  matchStart?: number;
-  /** Name matches (only set in name lookup mode) */
-  nameMatches?: NameEntry[];
-  lookupKind?: LookupKind;
-  alternateResults?: LookupResult[];
-}
 
 interface CounterHint {
   combinedKanji: string;
@@ -72,18 +58,18 @@ function normalizeDigitsToKanji(text: string): string {
   return text.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
 }
 
-function isCounterSurfaceMatch(entry: DictEntry, hint: CounterHint): boolean {
+function isCounterSurfaceMatch(entry: ReaderDictEntry, hint: CounterHint): boolean {
   return (
     entry.kanji.some((kanji) => kanji.text === hint.combinedKanji) ||
     entry.kana.some((kana) => kana.text === hint.reading)
   );
 }
 
-function isCounterEntry(entry: DictEntry): boolean {
+function isCounterEntry(entry: ReaderDictEntry): boolean {
   return entry.senses.some((sense) => sense.partOfSpeech?.includes("ctr"));
 }
 
-function entryMatchesSearchSurface(entry: DictEntry, surface: string): boolean {
+function entryMatchesSearchSurface(entry: ReaderDictEntry, surface: string): boolean {
   const hiraganaSurface = toHiragana(surface);
   return (
     entry.kanji.some((kanji) => kanji.text === surface) ||
@@ -91,14 +77,14 @@ function entryMatchesSearchSurface(entry: DictEntry, surface: string): boolean {
   );
 }
 
-function hasExactEntrySurface(entry: DictEntry, matchedText: string): boolean {
+function hasExactEntrySurface(entry: ReaderDictEntry, matchedText: string): boolean {
   return (
     entry.kanji.some((kanji) => kanji.text === matchedText) ||
     entry.kana.some((kana) => kana.text === matchedText)
   );
 }
 
-function scoreEntryForMatchedSurface(entry: DictEntry, context: EntrySortContext): number {
+function scoreEntryForMatchedSurface(entry: ReaderDictEntry, context: EntrySortContext): number {
   let score = 0;
   if (entry.common) score += 120;
   if (entry.jlptLevel != null) score += Math.max(0, 80 - entry.jlptLevel * 10);
@@ -117,10 +103,10 @@ function scoreEntryForMatchedSurface(entry: DictEntry, context: EntrySortContext
 }
 
 function sortEntriesForMatchedSurface(
-  entries: DictEntry[],
+  entries: ReaderDictEntry[],
   matchedText: string,
   counterHint?: CounterHint | null,
-): DictEntry[] {
+): ReaderDictEntry[] {
   if (entries.length <= 1) return entries;
   const context: EntrySortContext = { matchedText, counterHint };
   return [...entries].sort(
@@ -129,7 +115,7 @@ function sortEntriesForMatchedSurface(
 }
 
 function scoreSingleKanjiEntryForTap(
-  entry: DictEntry,
+  entry: ReaderDictEntry,
   literal: string,
   kanjiRecord: NonNullable<KanjiReadingRecord>,
 ): number {
@@ -158,13 +144,13 @@ function scoreSingleKanjiEntryForTap(
 }
 
 async function maybeSortSingleKanjiTapEntries(params: {
-  dictDb: SQLite.SQLiteDatabase;
+  dictDb: ReaderSqlDb;
   text: string;
   start: number;
   matchedText: string;
-  entries: DictEntry[];
+  entries: ReaderDictEntry[];
   kanjiCache: Map<string, KanjiReadingRecord>;
-}): Promise<DictEntry[]> {
+}): Promise<ReaderDictEntry[]> {
   const { dictDb, text, start, matchedText, entries, kanjiCache } = params;
   if (entries.length <= 1) return entries;
   const chars = [...matchedText];
@@ -193,7 +179,7 @@ function scoreCounterHint(result: LookupResult, hint: CounterHint | null | undef
 
 async function buildCounterHintMap(
   surfaces: string[],
-  extDb?: SQLite.SQLiteDatabase | null,
+  extDb?: ReaderSqlDb | null,
 ): Promise<Map<string, CounterHint>> {
   const hints = new Map<string, CounterHint>();
   if (!extDb || typeof extDb.getAllAsync !== "function" || surfaces.length === 0) return hints;
@@ -626,9 +612,9 @@ export function chooseAutoLookupResults(
  */
 export async function selectionLookup(
   text: string,
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   onResult: (result: LookupResult) => void,
-  options?: { prefix?: string; suffix?: string; extendedDb?: SQLite.SQLiteDatabase | null },
+  options?: { prefix?: string; suffix?: string; extendedDb?: ReaderSqlDb | null },
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
@@ -778,7 +764,7 @@ export async function selectionLookup(
 /** Find the longest matching word at the start of text. */
 async function findFirstWord(
   text: string,
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   seenEntryIds: Set<number>,
   counterHints: Map<string, CounterHint>,
 ): Promise<{ result: LookupResult; matchLength: number } | null> {
@@ -837,7 +823,7 @@ async function findFirstWord(
 async function findBoundaryWord(
   prefix: string,
   selectionStart: string,
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   seenEntryIds: Set<number>,
   counterHints: Map<string, CounterHint>,
 ): Promise<{ result: LookupResult; selectionCharsConsumed: number } | null> {
@@ -911,8 +897,8 @@ async function findBoundaryWord(
  */
 export async function smartLookup(
   text: string,
-  dictDb: SQLite.SQLiteDatabase,
-  extDb?: SQLite.SQLiteDatabase | null,
+  dictDb: ReaderSqlDb,
+  extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
   const maxLen = Math.min(text.length, 15);
   const substrings = generateSubstrings(text, maxLen);
@@ -962,8 +948,8 @@ export async function smartLookup(
 export async function smartLookupWithOffset(
   text: string,
   tapOffset: number,
-  dictDb: SQLite.SQLiteDatabase,
-  extDb?: SQLite.SQLiteDatabase | null,
+  dictDb: ReaderSqlDb,
+  extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
   const kanjiCache = new Map<string, KanjiReadingRecord>();
   const tapSurfaces = new Set<string>();
@@ -1105,8 +1091,8 @@ export async function smartLookupWithOffset(
 
 export async function autoLookup(
   text: string,
-  dictDb: SQLite.SQLiteDatabase,
-  extDb?: SQLite.SQLiteDatabase | null,
+  dictDb: ReaderSqlDb,
+  extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
   const [wordResults, nameResults] = await Promise.all([
     smartLookup(text, dictDb, extDb),
@@ -1118,8 +1104,8 @@ export async function autoLookup(
 export async function autoLookupWithOffset(
   text: string,
   tapOffset: number,
-  dictDb: SQLite.SQLiteDatabase,
-  extDb?: SQLite.SQLiteDatabase | null,
+  dictDb: ReaderSqlDb,
+  extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
   const [wordResults, nameResults] = await Promise.all([
     smartLookupWithOffset(text, tapOffset, dictDb, extDb),
@@ -1130,8 +1116,8 @@ export async function autoLookupWithOffset(
 
 export async function autoSelectionLookup(
   text: string,
-  dictDb: SQLite.SQLiteDatabase,
-  extDb: SQLite.SQLiteDatabase | null | undefined,
+  dictDb: ReaderSqlDb,
+  extDb: ReaderSqlDb | null | undefined,
   options?: { prefix?: string; suffix?: string },
 ): Promise<LookupResult[]> {
   const wordResults: LookupResult[] = [];
@@ -1173,7 +1159,7 @@ export async function autoSelectionLookup(
 export async function nameLookupWithOffset(
   text: string,
   tapOffset: number,
-  extDb: SQLite.SQLiteDatabase,
+  extDb: ReaderSqlDb,
 ): Promise<LookupResult[]> {
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     const minStart = Math.max(0, tapOffset - len + 1);
@@ -1203,10 +1189,7 @@ export async function nameLookupWithOffset(
  * Uses DP over all valid partitions (word length is small, typically ≤10 chars).
  * Returns [] if the word can't be split into 2+ parts.
  */
-export async function decomposeWord(
-  word: string,
-  dictDb: SQLite.SQLiteDatabase,
-): Promise<LookupResult[]> {
+export async function decomposeWord(word: string, dictDb: ReaderSqlDb): Promise<LookupResult[]> {
   if (word.length < 2 || word.length > 20) return [];
   const maxMatchLen = word.length - 1;
   const n = word.length;
@@ -1274,10 +1257,7 @@ export async function decomposeWord(
 }
 
 /** Simple name lookup: greedy longest-first match from start of text. */
-export async function nameLookup(
-  text: string,
-  extDb: SQLite.SQLiteDatabase,
-): Promise<LookupResult[]> {
+export async function nameLookup(text: string, extDb: ReaderSqlDb): Promise<LookupResult[]> {
   const substrings = generateSubstrings(text, Math.min(text.length, 15));
   for (const substr of substrings) {
     const names = await lookupExactName(extDb, substr);

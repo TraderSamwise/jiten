@@ -14,7 +14,7 @@ import * as path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { toHiragana } from "wanakana";
 import { deinflect, generateSubstrings, generateLookupCandidates } from "./deinflect";
-import { smartLookup, smartLookupWithOffset } from "./smart-lookup";
+import { smartLookup, smartLookupWithOffset } from "../packages/japanese-reader/src/lookup";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");

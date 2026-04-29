@@ -16,8 +16,8 @@ import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
-import type { LookupResult } from "@/lib/smart-lookup";
 import type { NameEntry } from "@/db/types";
+import type { LookupResult } from "@jiten/japanese-reader";
 
 const NAME_TYPE_LABELS: Record<string, string> = {
   surname: "Surname",

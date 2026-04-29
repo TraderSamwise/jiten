@@ -23,9 +23,19 @@ import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
 import {
   applyResolvedBookmarkHighlightsToHtml,
+  autoLookup,
+  autoLookupWithOffset,
+  autoSelectionLookup,
+  nameLookup,
+  nameLookupWithOffset,
   ReaderView,
   type ReaderBookmarkMembership,
+  type LookupResult,
+  type ReaderLookupMode,
   type ReaderViewRef,
+  selectionLookup,
+  smartLookup,
+  smartLookupWithOffset,
 } from "@jiten/japanese-reader";
 import {
   ChevronLeft,
@@ -55,18 +65,6 @@ import {
   sliceContent,
   calcCharsPerPage,
 } from "@jiten/japanese-reader-core";
-import {
-  smartLookup,
-  smartLookupWithOffset,
-  selectionLookup,
-  autoLookup,
-  autoLookupWithOffset,
-  autoSelectionLookup,
-  nameLookup,
-  nameLookupWithOffset,
-  type LookupResult,
-  type ReaderLookupMode,
-} from "@/lib/smart-lookup";
 import { useAtom } from "jotai";
 import {
   readerBookmarkHighlightsAtom,

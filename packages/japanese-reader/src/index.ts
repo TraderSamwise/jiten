@@ -4,6 +4,18 @@ export {
   applyResolvedBookmarkHighlightsToHtml,
   resolveBookmarkedWordSurfacesInHtml,
 } from "./bookmarks";
+export {
+  autoLookup,
+  autoLookupWithOffset,
+  autoSelectionLookup,
+  chooseAutoLookupResults,
+  decomposeWord,
+  nameLookup,
+  nameLookupWithOffset,
+  selectionLookup,
+  smartLookup,
+  smartLookupWithOffset,
+} from "./lookup";
 export { ReaderView } from "./reader-view";
 export type {
   ReaderBookRecord,
@@ -13,6 +25,8 @@ export type {
   ReaderDictKanji,
   ReaderDictSense,
   ReaderGloss,
+  LookupKind,
+  LookupResult,
   ReaderLookupKind,
   ReaderLookupMode,
   ReaderLookupResult,
