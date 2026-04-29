@@ -93,8 +93,7 @@ type ReaderLoadStage =
   | "parsing"
   | "generatingPages"
   | "generatingFurigana"
-  | "highlightingBookmarks"
-  | "finalizing";
+  | "highlightingBookmarks";
 
 const READER_LOAD_STAGE_META: Record<ReaderLoadStage, { title: string; detail: string }> = {
   preparing: { title: "Preparing reader", detail: "Loading book data" },
@@ -110,10 +109,6 @@ const READER_LOAD_STAGE_META: Record<ReaderLoadStage, { title: string; detail: s
   highlightingBookmarks: {
     title: "Generating highlighted words",
     detail: "Marking bookmarked vocabulary",
-  },
-  finalizing: {
-    title: "Finalizing reader",
-    detail: "Updating the page view",
   },
 };
 
@@ -133,7 +128,6 @@ function buildReaderLoadSequence({
   stages.push("generatingPages");
   if (needsFurigana) stages.push("generatingFurigana");
   if (needsBookmarkHighlights) stages.push("highlightingBookmarks");
-  stages.push("finalizing");
   return stages;
 }
 
@@ -866,15 +860,14 @@ export default function BookReaderScreen() {
 
   const finishReaderLoad = useCallback((token: number, stages: ReaderLoadStage[]) => {
     if (readerLoadTokenRef.current !== token) return;
-    setReaderLoadState({
+    setReaderLoadState((prev) => ({
+      ...prev,
       runId: token,
       visible: true,
-      title: READER_LOAD_STAGE_META.finalizing.title,
-      detail: READER_LOAD_STAGE_META.finalizing.detail,
       currentStep: stages.length,
       totalSteps: stages.length,
       stepDurationMs: READER_LOAD_STEP_DURATION_MS,
-    });
+    }));
     if (readerLoadDismissTimerRef.current) {
       clearTimeout(readerLoadDismissTimerRef.current);
     }
@@ -1155,7 +1148,6 @@ export default function BookReaderScreen() {
           : undefined,
       });
 
-      if (loadContext) updateReaderLoadStage(loadContext.token, loadContext.stages, "finalizing");
       readerRef.current?.postMessage(
         JSON.stringify({
           type: "reloadContent",
@@ -1285,7 +1277,6 @@ export default function BookReaderScreen() {
           if (highlightBookmarks) {
             updateReaderLoadStage(activeLoad.token, activeLoad.stages, "highlightingBookmarks");
           }
-          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "finalizing");
           const readerHtml = generateReaderHtml(content, {
             fontSize: b.fontSize,
             isDark,
@@ -1366,7 +1357,6 @@ export default function BookReaderScreen() {
             onStage: (stage) => updateReaderLoadStage(activeLoad.token, activeLoad.stages, stage),
           });
 
-          updateReaderLoadStage(activeLoad.token, activeLoad.stages, "finalizing");
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: b.fontSize,
             isDark,
@@ -1446,7 +1436,6 @@ export default function BookReaderScreen() {
           if (readerBookmarkHighlights) {
             updateReaderLoadStage(load.token, load.stages, "highlightingBookmarks");
           }
-          updateReaderLoadStage(load.token, load.stages, "finalizing");
           readerRef.current?.postMessage(
             JSON.stringify({
               type: "reloadContent",
@@ -1919,219 +1908,65 @@ export default function BookReaderScreen() {
         )}
       </View>
 
-      {!book || !html ? (
-        <View className="flex-1" style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}>
-          <PhasedLoadingOverlay
-            key={`reader-load-empty-${readerLoadState.runId}`}
-            visible={readerLoadState.visible}
-            isDark={isDark}
-            title={readerLoadState.title}
-            detail={readerLoadState.detail}
-            currentStep={readerLoadState.currentStep}
-            totalSteps={readerLoadState.totalSteps}
-            stepDurationMs={readerLoadState.stepDurationMs}
-          />
-        </View>
-      ) : (
-        <>
-          {/* Reader content */}
-          <View
-            style={{ flex: 1 }}
-            onLayout={(e) => {
-              readerLayoutY.current = e.nativeEvent.layout.y;
-            }}
-          >
-            <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
-            <PhasedLoadingOverlay
-              key={`reader-load-live-${readerLoadState.runId}`}
-              visible={readerLoadState.visible}
-              isDark={isDark}
-              title={readerLoadState.title}
-              detail={readerLoadState.detail}
-              currentStep={readerLoadState.currentStep}
-              totalSteps={readerLoadState.totalSteps}
-              stepDurationMs={readerLoadState.stepDurationMs}
-            />
-            {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
-            {showSettings && (
-              <ScrollView
-                className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
-                style={{ zIndex: 10, maxHeight: "100%" }}
-                contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
-                showsVerticalScrollIndicator={false}
-              >
-                <View className="flex-row items-center justify-center gap-4">
-                  <Pressable
-                    onPress={() =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        fontSize: Math.max(14, prev.fontSize - 1),
-                      }))
-                    }
-                    disabled={draftSettings.fontSize <= 14}
-                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize <= 14 ? "opacity-30" : ""}`}
-                  >
-                    <Text className="text-lg text-foreground">A-</Text>
-                  </Pressable>
-                  <Text className="text-base text-foreground w-8 text-center">
-                    {draftSettings.fontSize}
-                  </Text>
-                  <Pressable
-                    onPress={() =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        fontSize: Math.min(32, prev.fontSize + 1),
-                      }))
-                    }
-                    disabled={draftSettings.fontSize >= 32}
-                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize >= 32 ? "opacity-30" : ""}`}
-                  >
-                    <Text className="text-lg text-foreground">A+</Text>
-                  </Pressable>
-                </View>
-
-                <Separator className="opacity-40" />
-
-                {furiganaRuleSections.map(({ title, rules }) => (
-                  <View key={title} className="gap-2">
-                    <Text className="text-xs text-muted-foreground text-center uppercase tracking-wide">
-                      {title === "Show When" ? "Show Furigana" : title}
-                    </Text>
-                    {rules.map(([rule, label]) => (
-                      <View
-                        key={rule}
-                        className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
-                      >
-                        <View className="flex-row items-center justify-between gap-3">
-                          <Text className="text-sm font-medium text-foreground">{label}</Text>
-                          <Text className="text-[11px] text-muted-foreground">
-                            {formatSelectedLevels(rule)}
-                          </Text>
-                        </View>
-                        <View className="flex-row flex-wrap gap-1.5">
-                          {matchLevelOptions.map(([level, levelLabel]) => (
-                            <Pressable
-                              key={`${rule}-${level}`}
-                              onPress={() =>
-                                setDraftSettings((prev) => ({
-                                  ...prev,
-                                  furiganaRuleLevels: {
-                                    ...prev.furiganaRuleLevels,
-                                    [rule]: {
-                                      ...prev.furiganaRuleLevels[rule],
-                                      [level]: !prev.furiganaRuleLevels[rule][level],
-                                    },
-                                  },
-                                }))
-                              }
-                              className={`px-3 py-1.5 rounded-full border ${
-                                draftSettings.furiganaRuleLevels[rule][level]
-                                  ? "bg-foreground border-foreground"
-                                  : "bg-background/40 border-border"
-                              }`}
-                            >
-                              <Text
-                                className={`text-xs font-medium ${
-                                  draftSettings.furiganaRuleLevels[rule][level]
-                                    ? "text-background"
-                                    : "text-muted-foreground"
-                                }`}
-                              >
-                                {levelLabel}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                ))}
-
-                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className="text-sm font-medium text-foreground">Counters</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Show furigana for counters.
-                      </Text>
-                    </View>
-                    <Switch
-                      value={draftSettings.readerCounterFurigana}
-                      onValueChange={(value) =>
-                        setDraftSettings((prev) => ({ ...prev, readerCounterFurigana: value }))
+      <View className="flex-1" style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}>
+        {!book || !html ? null : (
+          <>
+            {/* Reader content */}
+            <View
+              style={{ flex: 1 }}
+              onLayout={(e) => {
+                readerLayoutY.current = e.nativeEvent.layout.y;
+              }}
+            >
+              <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
+              {/* Settings overlay — positioned absolute so it doesn't resize the reader */}
+              {showSettings && (
+                <ScrollView
+                  className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
+                  style={{ zIndex: 10, maxHeight: "100%" }}
+                  contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View className="flex-row items-center justify-center gap-4">
+                    <Pressable
+                      onPress={() =>
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          fontSize: Math.max(14, prev.fontSize - 1),
+                        }))
                       }
-                    />
-                  </View>
-                </View>
-
-                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className="text-sm font-medium text-foreground">Names</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Show furigana for names.
-                      </Text>
-                    </View>
-                    <Switch
-                      value={draftSettings.readerNameFurigana}
-                      onValueChange={(value) =>
-                        setDraftSettings((prev) => ({ ...prev, readerNameFurigana: value }))
-                      }
-                    />
-                  </View>
-                </View>
-
-                <View className="gap-2">
-                  <Pressable
-                    onPress={() => setShowAdvancedReadingPatterns((prev) => !prev)}
-                    className="px-1 py-1 flex-row items-center gap-1.5"
-                  >
-                    {showAdvancedReadingPatterns ? (
-                      <ChevronDown size={16} className="text-muted-foreground" />
-                    ) : (
-                      <ChevronRight size={16} className="text-muted-foreground" />
-                    )}
-                    <Text className="text-sm font-medium text-muted-foreground">
-                      Advanced furigana
-                    </Text>
-                  </Pressable>
-                  <View className="relative">
-                    <View
-                      pointerEvents="none"
-                      className="absolute inset-x-0 top-0 opacity-0 pb-1"
-                      onLayout={(event) => {
-                        const nextHeight = event.nativeEvent.layout.height;
-                        if (nextHeight > 0 && nextHeight !== advancedReadingPatternsHeight) {
-                          setAdvancedReadingPatternsHeight(nextHeight);
-                        }
-                      }}
+                      disabled={draftSettings.fontSize <= 14}
+                      className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize <= 14 ? "opacity-30" : ""}`}
                     >
-                      {hasSourceFurigana && (
-                        <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 mb-2">
-                          <View className="flex-row items-center justify-between gap-3">
-                            <View className="flex-1">
-                              <Text className="text-sm font-medium text-foreground">
-                                Source furigana
-                              </Text>
-                              <Text className="text-xs text-muted-foreground">
-                                Use furigana already embedded in the book.
-                              </Text>
-                            </View>
-                            <Switch
-                              value={draftSettings.sourceFuriganaEnabled}
-                              onValueChange={(value) =>
-                                setDraftSettings((prev) => ({
-                                  ...prev,
-                                  sourceFuriganaEnabled: value,
-                                }))
-                              }
-                            />
-                          </View>
-                        </View>
-                      )}
-                      {readingPatternRules.map(([rule, label]) => (
+                      <Text className="text-lg text-foreground">A-</Text>
+                    </Pressable>
+                    <Text className="text-base text-foreground w-8 text-center">
+                      {draftSettings.fontSize}
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          fontSize: Math.min(32, prev.fontSize + 1),
+                        }))
+                      }
+                      disabled={draftSettings.fontSize >= 32}
+                      className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize >= 32 ? "opacity-30" : ""}`}
+                    >
+                      <Text className="text-lg text-foreground">A+</Text>
+                    </Pressable>
+                  </View>
+
+                  <Separator className="opacity-40" />
+
+                  {furiganaRuleSections.map(({ title, rules }) => (
+                    <View key={title} className="gap-2">
+                      <Text className="text-xs text-muted-foreground text-center uppercase tracking-wide">
+                        {title === "Show When" ? "Show Furigana" : title}
+                      </Text>
+                      {rules.map(([rule, label]) => (
                         <View
-                          key={`${rule}-measure`}
+                          key={rule}
                           className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
                         >
                           <View className="flex-row items-center justify-between gap-3">
@@ -2177,25 +2012,69 @@ export default function BookReaderScreen() {
                         </View>
                       ))}
                     </View>
-                    <Animated.View
-                      style={{
-                        height: advancedReadingPatternsAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, advancedReadingPatternsHeight + 16],
-                        }),
-                        opacity: advancedReadingPatternsAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, 1],
-                        }),
-                        overflow: "hidden",
-                      }}
+                  ))}
+
+                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-sm font-medium text-foreground">Counters</Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Show furigana for counters.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={draftSettings.readerCounterFurigana}
+                        onValueChange={(value) =>
+                          setDraftSettings((prev) => ({ ...prev, readerCounterFurigana: value }))
+                        }
+                      />
+                    </View>
+                  </View>
+
+                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-sm font-medium text-foreground">Names</Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Show furigana for names.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={draftSettings.readerNameFurigana}
+                        onValueChange={(value) =>
+                          setDraftSettings((prev) => ({ ...prev, readerNameFurigana: value }))
+                        }
+                      />
+                    </View>
+                  </View>
+
+                  <View className="gap-2">
+                    <Pressable
+                      onPress={() => setShowAdvancedReadingPatterns((prev) => !prev)}
+                      className="px-1 py-1 flex-row items-center gap-1.5"
                     >
+                      {showAdvancedReadingPatterns ? (
+                        <ChevronDown size={16} className="text-muted-foreground" />
+                      ) : (
+                        <ChevronRight size={16} className="text-muted-foreground" />
+                      )}
+                      <Text className="text-sm font-medium text-muted-foreground">
+                        Advanced furigana
+                      </Text>
+                    </Pressable>
+                    <View className="relative">
                       <View
-                        className="gap-2 pb-3"
-                        pointerEvents={showAdvancedReadingPatterns ? "auto" : "none"}
+                        pointerEvents="none"
+                        className="absolute inset-x-0 top-0 opacity-0 pb-1"
+                        onLayout={(event) => {
+                          const nextHeight = event.nativeEvent.layout.height;
+                          if (nextHeight > 0 && nextHeight !== advancedReadingPatternsHeight) {
+                            setAdvancedReadingPatternsHeight(nextHeight);
+                          }
+                        }}
                       >
                         {hasSourceFurigana && (
-                          <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                          <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 mb-2">
                             <View className="flex-row items-center justify-between gap-3">
                               <View className="flex-1">
                                 <Text className="text-sm font-medium text-foreground">
@@ -2219,7 +2098,7 @@ export default function BookReaderScreen() {
                         )}
                         {readingPatternRules.map(([rule, label]) => (
                           <View
-                            key={rule}
+                            key={`${rule}-measure`}
                             className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
                           >
                             <View className="flex-row items-center justify-between gap-3">
@@ -2265,100 +2144,202 @@ export default function BookReaderScreen() {
                           </View>
                         ))}
                       </View>
-                    </Animated.View>
-                  </View>
-                </View>
-
-                <Separator className="opacity-40" />
-
-                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className="text-sm font-medium text-foreground">Bookmarked words</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Highlight bookmarked words in the reader.
-                      </Text>
+                      <Animated.View
+                        style={{
+                          height: advancedReadingPatternsAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, advancedReadingPatternsHeight + 16],
+                          }),
+                          opacity: advancedReadingPatternsAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 1],
+                          }),
+                          overflow: "hidden",
+                        }}
+                      >
+                        <View
+                          className="gap-2 pb-3"
+                          pointerEvents={showAdvancedReadingPatterns ? "auto" : "none"}
+                        >
+                          {hasSourceFurigana && (
+                            <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                              <View className="flex-row items-center justify-between gap-3">
+                                <View className="flex-1">
+                                  <Text className="text-sm font-medium text-foreground">
+                                    Source furigana
+                                  </Text>
+                                  <Text className="text-xs text-muted-foreground">
+                                    Use furigana already embedded in the book.
+                                  </Text>
+                                </View>
+                                <Switch
+                                  value={draftSettings.sourceFuriganaEnabled}
+                                  onValueChange={(value) =>
+                                    setDraftSettings((prev) => ({
+                                      ...prev,
+                                      sourceFuriganaEnabled: value,
+                                    }))
+                                  }
+                                />
+                              </View>
+                            </View>
+                          )}
+                          {readingPatternRules.map(([rule, label]) => (
+                            <View
+                              key={rule}
+                              className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3 gap-2"
+                            >
+                              <View className="flex-row items-center justify-between gap-3">
+                                <Text className="text-sm font-medium text-foreground">{label}</Text>
+                                <Text className="text-[11px] text-muted-foreground">
+                                  {formatSelectedLevels(rule)}
+                                </Text>
+                              </View>
+                              <View className="flex-row flex-wrap gap-1.5">
+                                {matchLevelOptions.map(([level, levelLabel]) => (
+                                  <Pressable
+                                    key={`${rule}-${level}`}
+                                    onPress={() =>
+                                      setDraftSettings((prev) => ({
+                                        ...prev,
+                                        furiganaRuleLevels: {
+                                          ...prev.furiganaRuleLevels,
+                                          [rule]: {
+                                            ...prev.furiganaRuleLevels[rule],
+                                            [level]: !prev.furiganaRuleLevels[rule][level],
+                                          },
+                                        },
+                                      }))
+                                    }
+                                    className={`px-3 py-1.5 rounded-full border ${
+                                      draftSettings.furiganaRuleLevels[rule][level]
+                                        ? "bg-foreground border-foreground"
+                                        : "bg-background/40 border-border"
+                                    }`}
+                                  >
+                                    <Text
+                                      className={`text-xs font-medium ${
+                                        draftSettings.furiganaRuleLevels[rule][level]
+                                          ? "text-background"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    >
+                                      {levelLabel}
+                                    </Text>
+                                  </Pressable>
+                                ))}
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      </Animated.View>
                     </View>
-                    <Switch
-                      value={draftSettings.readerBookmarkHighlights}
-                      onValueChange={(value) =>
-                        setDraftSettings((prev) => ({ ...prev, readerBookmarkHighlights: value }))
-                      }
-                    />
                   </View>
-                </View>
 
-                {/* Page animations toggle */}
-                <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className="text-sm font-medium text-foreground">Page animations</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Animate page turns in the reader.
-                      </Text>
+                  <Separator className="opacity-40" />
+
+                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-sm font-medium text-foreground">
+                          Bookmarked words
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Highlight bookmarked words in the reader.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={draftSettings.readerBookmarkHighlights}
+                        onValueChange={(value) =>
+                          setDraftSettings((prev) => ({ ...prev, readerBookmarkHighlights: value }))
+                        }
+                      />
                     </View>
-                    <Switch
-                      value={draftSettings.pageAnimations}
-                      onValueChange={(value) =>
-                        setDraftSettings((prev) => ({ ...prev, pageAnimations: value }))
-                      }
-                    />
                   </View>
-                </View>
-              </ScrollView>
+
+                  {/* Page animations toggle */}
+                  <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-sm font-medium text-foreground">Page animations</Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Animate page turns in the reader.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={draftSettings.pageAnimations}
+                        onValueChange={(value) =>
+                          setDraftSettings((prev) => ({ ...prev, pageAnimations: value }))
+                        }
+                      />
+                    </View>
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+
+            {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
+            {Platform.OS !== "web" && copyTooltip && (
+              <HighlightToolbar
+                tooltip={copyTooltip}
+                readerY={readerLayoutY}
+                isDark={isDark}
+                copied={copied}
+                onCopy={handleCopy}
+              />
             )}
-          </View>
 
-          {/* Highlight toolbar: Copy + Open in (mobile only — web has native context menu) */}
-          {Platform.OS !== "web" && copyTooltip && (
-            <HighlightToolbar
-              tooltip={copyTooltip}
-              readerY={readerLayoutY}
-              isDark={isDark}
-              copied={copied}
-              onCopy={handleCopy}
-            />
-          )}
+            {/* Jump slider */}
+            {showJumpSlider && modelRef.current && (
+              <JumpSlider
+                initialPercent={
+                  modelRef.current.totalChars > 0
+                    ? Math.round((scrollPosRef.current / modelRef.current.totalChars) * 100)
+                    : 0
+                }
+                isDark={isDark}
+                onJump={async (pct) => {
+                  setShowJumpSlider(false);
+                  const model = modelRef.current;
+                  if (!model) return;
+                  const charOffset = Math.round((pct / 100) * model.totalChars);
+                  await reloadAtChar(charOffset);
+                }}
+                onDismiss={() => setShowJumpSlider(false)}
+              />
+            )}
 
-          {/* Jump slider */}
-          {showJumpSlider && modelRef.current && (
-            <JumpSlider
-              initialPercent={
-                modelRef.current.totalChars > 0
-                  ? Math.round((scrollPosRef.current / modelRef.current.totalChars) * 100)
-                  : 0
-              }
-              isDark={isDark}
-              onJump={async (pct) => {
-                setShowJumpSlider(false);
-                const model = modelRef.current;
-                if (!model) return;
-                const charOffset = Math.round((pct / 100) * model.totalChars);
-                await reloadAtChar(charOffset);
+            {/* Dictionary popup */}
+            <DictionaryPopup
+              visible={showPopup}
+              loading={lookupLoading}
+              errorMessage={lookupError}
+              onClose={() => {
+                setShowPopup(false);
+                setLookupResults([]);
+                setLookupLoading(false);
+                setLookupError(null);
+                setCopyTooltip(null);
+                setCopied(false);
+                readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
+                readerRef.current?.focus();
               }}
-              onDismiss={() => setShowJumpSlider(false)}
+              results={lookupResults}
             />
-          )}
+          </>
+        )}
 
-          {/* Dictionary popup */}
-          <DictionaryPopup
-            visible={showPopup}
-            loading={lookupLoading}
-            errorMessage={lookupError}
-            onClose={() => {
-              setShowPopup(false);
-              setLookupResults([]);
-              setLookupLoading(false);
-              setLookupError(null);
-              setCopyTooltip(null);
-              setCopied(false);
-              readerRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
-              readerRef.current?.focus();
-            }}
-            results={lookupResults}
-          />
-        </>
-      )}
+        <PhasedLoadingOverlay
+          key={`reader-load-${readerLoadState.runId}`}
+          visible={readerLoadState.visible}
+          isDark={isDark}
+          title={readerLoadState.title}
+          detail={readerLoadState.detail}
+          currentStep={readerLoadState.currentStep}
+          totalSteps={readerLoadState.totalSteps}
+          stepDurationMs={readerLoadState.stepDurationMs}
+        />
+      </View>
     </CustomHeaderScreen>
   );
 }
