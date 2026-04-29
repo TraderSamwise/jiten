@@ -10,11 +10,6 @@ module.exports = {
     scheme: "jiten",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
-    splash: {
-      image: "./assets/images/splash-icon.png",
-      resizeMode: "contain",
-      backgroundColor: "#ffffff",
-    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.tradersamwise.jiten",
@@ -59,6 +54,19 @@ module.exports = {
       "expo-router",
       "expo-updates",
       "@sentry/react-native/expo",
+      [
+        "expo-splash-screen",
+        {
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 200,
+          resizeMode: "contain",
+          backgroundColor: "#ffffff",
+          dark: {
+            image: "./assets/images/splash-icon-dark.png",
+            backgroundColor: "#09090b",
+          },
+        },
+      ],
       [
         "@jamsch/expo-speech-recognition",
         {
