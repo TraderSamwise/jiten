@@ -1,7 +1,7 @@
 export interface ReaderSqlDb {
-  getAllAsync<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
-  getFirstAsync<T = unknown>(sql: string, params?: unknown[]): Promise<T | null>;
-  runAsync?(sql: string, params?: unknown[]): Promise<unknown>;
+  getAllAsync<T = unknown>(sql: string, params?: any): Promise<T[]>;
+  getFirstAsync<T = unknown>(sql: string, params?: any): Promise<T | null>;
+  runAsync?(sql: string, params?: any): Promise<unknown>;
 }
 
 export interface ReaderBookSource {

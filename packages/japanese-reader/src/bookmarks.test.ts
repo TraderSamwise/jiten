@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyBookmarkHighlightsToHtml } from "./reader-bookmarks";
+
+import { applyBookmarkHighlightsToHtml } from "./bookmarks";
 
 describe("applyBookmarkHighlightsToHtml", () => {
   it("wraps exact plain-text matches", () => {
