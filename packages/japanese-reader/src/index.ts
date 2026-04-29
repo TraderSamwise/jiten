@@ -1,4 +1,9 @@
 export type { JapaneseReaderBackend, ReaderBookSource, ReaderSqlDb } from "./backend";
+export {
+  applyBookmarkHighlightsToHtml,
+  applyResolvedBookmarkHighlightsToHtml,
+  resolveBookmarkedWordSurfacesInHtml,
+} from "./bookmarks";
 export { ReaderView } from "./reader-view";
 export type {
   ReaderBookRecord,

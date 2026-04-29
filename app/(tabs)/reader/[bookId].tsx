@@ -21,7 +21,12 @@ import { Text } from "@/components/ui/text";
 import { Separator } from "@/components/ui/separator";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
-import { ReaderView, type ReaderViewRef } from "@jiten/japanese-reader";
+import {
+  applyResolvedBookmarkHighlightsToHtml,
+  ReaderView,
+  type ReaderBookmarkMembership,
+  type ReaderViewRef,
+} from "@jiten/japanese-reader";
 import {
   ChevronLeft,
   ChevronDown,
@@ -82,7 +87,6 @@ import {
   type FuriganaKanjiSet,
   type FuriganaEntry,
 } from "@/lib/reader-furigana";
-import { applyResolvedBookmarkHighlightsToHtml } from "@/lib/reader-bookmarks";
 import { parseBookRow } from "./index";
 import { useSync } from "@/db/sync-provider";
 import type { Book } from "@/db/types";
@@ -730,7 +734,7 @@ export default function BookReaderScreen() {
   const readerNameFuriganaRef = useRef(readerNameFurigana);
   const readerBookmarkHighlightsRef = useRef(readerBookmarkHighlights);
   const fontSizeRef = useRef(fontSize);
-  const bookmarkedIdsRef = useRef(bookmarkedIds);
+  const bookmarkMembershipRef = useRef<ReaderBookmarkMembership | null>(null);
   const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
@@ -756,8 +760,12 @@ export default function BookReaderScreen() {
     fontSizeRef.current = fontSize;
   }, [fontSize]);
   useEffect(() => {
-    bookmarkedIdsRef.current = bookmarkedIds;
-  }, [bookmarkedIds]);
+    const entryIds = new Set(bookmarkedEntryIds);
+    bookmarkMembershipRef.current = {
+      version: bookmarkedEntryIdsKey,
+      hasEntryId: (entryId) => entryIds.has(entryId),
+    };
+  }, [bookmarkedEntryIds, bookmarkedEntryIdsKey]);
   useEffect(() => {
     furiganaRuleLevelsRef.current = furiganaRuleLevels;
   }, [furiganaRuleLevels]);
@@ -881,7 +889,7 @@ export default function BookReaderScreen() {
   const maybeApplyBookmarkHighlights = useCallback(
     async (html: string, enabled: boolean) => {
       if (!enabled || !dictDb) return html;
-      return applyResolvedBookmarkHighlightsToHtml(dictDb, html, bookmarkedIdsRef.current);
+      return applyResolvedBookmarkHighlightsToHtml(dictDb, html, bookmarkMembershipRef.current);
     },
     [dictDb],
   );

@@ -1,4 +1,5 @@
-import type * as SQLite from "expo-sqlite";
+import type { ReaderSqlDb } from "./backend";
+import type { ReaderBookmarkMembership } from "./types";
 
 const BATCH_SIZE = 500;
 const MAX_SURFACE_LENGTH = 10;
@@ -104,18 +105,17 @@ function extractBookmarkCandidateSurfaces(html: string): Set<string> {
   return surfaces;
 }
 
+type BookmarkSurfaceRow = {
+  text: string;
+  entry_id: number;
+};
+
 export async function resolveBookmarkedWordSurfacesInHtml(
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   html: string,
-  bookmarkedIds: Set<string>,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
 ): Promise<Set<string>> {
-  const entryBookmarkIds = new Set<number>();
-  for (const key of bookmarkedIds) {
-    if (!key.startsWith("e:")) continue;
-    const id = Number(key.slice(2));
-    if (Number.isFinite(id)) entryBookmarkIds.add(id);
-  }
-  if (entryBookmarkIds.size === 0) return new Set();
+  if (!bookmarks) return new Set();
 
   const candidates = [...extractBookmarkCandidateSurfaces(html)];
   if (candidates.length === 0) return new Set();
@@ -125,18 +125,18 @@ export async function resolveBookmarkedWordSurfacesInHtml(
     const batch = candidates.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
     const [kanjiRows, kanaRows] = await Promise.all([
-      dictDb.getAllAsync<{ text: string; entry_id: number }>(
+      dictDb.getAllAsync<BookmarkSurfaceRow>(
         `SELECT text, entry_id FROM kanji WHERE text IN (${ph})`,
         batch,
       ),
-      dictDb.getAllAsync<{ text: string; entry_id: number }>(
+      dictDb.getAllAsync<BookmarkSurfaceRow>(
         `SELECT text, entry_id FROM kana WHERE text IN (${ph})`,
         batch,
       ),
     ]);
 
     for (const row of [...kanjiRows, ...kanaRows]) {
-      if (entryBookmarkIds.has(row.entry_id)) {
+      if (bookmarks.hasEntryId(row.entry_id)) {
         surfaces.add(row.text);
       }
     }
@@ -146,11 +146,11 @@ export async function resolveBookmarkedWordSurfacesInHtml(
 }
 
 export async function applyResolvedBookmarkHighlightsToHtml(
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   html: string,
-  bookmarkedIds: Set<string>,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
 ): Promise<string> {
-  const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, html, bookmarkedIds);
+  const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, html, bookmarks);
   if (surfaces.size === 0) return html;
   return applyBookmarkHighlightsToHtml(html, surfaces);
 }
@@ -238,16 +238,14 @@ export function applyBookmarkHighlightsToHtml(html: string, surfaces: Set<string
 
   while (i < html.length) {
     const ch = html[i];
-
     if (ch === "<") {
       if (html.startsWith("<rt>", i) || html.startsWith("<rt ", i)) {
         const close = html.indexOf(">", i);
-        if (close >= 0) {
-          out += html.slice(i, close + 1);
-          i = close + 1;
-          rtDepth++;
-          continue;
-        }
+        const next = close >= 0 ? close + 1 : i + 1;
+        out += html.slice(i, next);
+        i = next;
+        rtDepth++;
+        continue;
       }
       if (html.startsWith("</rt>", i)) {
         out += "</rt>";
@@ -256,65 +254,37 @@ export function applyBookmarkHighlightsToHtml(html: string, surfaces: Set<string
         continue;
       }
       const close = html.indexOf(">", i);
-      if (close >= 0) {
-        out += html.slice(i, close + 1);
-        i = close + 1;
-      } else {
-        out += ch;
-        i++;
-      }
+      const next = close >= 0 ? close + 1 : i + 1;
+      out += html.slice(i, next);
+      i = next;
       continue;
     }
-
-    if (rtDepth > 0) {
+    if (rtDepth > 0 || !isJapaneseTextChar(ch)) {
       out += ch;
       i++;
       continue;
     }
 
-    if (ch === "&") {
-      const semi = html.indexOf(";", i);
-      if (semi >= 0 && semi - i <= 8) {
-        out += html.slice(i, semi + 1);
-        i = semi + 1;
-        continue;
-      }
-    }
-
-    if (!isJapaneseTextChar(ch)) {
-      out += ch;
-      i++;
-      continue;
-    }
-
-    const remaining = getVisibleCharsSkippingRt(html, i, MAX_SURFACE_LENGTH);
-    let matchedSurface: string | null = null;
+    let matched: string | null = null;
     for (const surface of sortedSurfaces) {
-      const surfaceChars = [...surface];
-      if (surfaceChars.length > remaining.length) continue;
-      let isMatch = true;
-      for (let s = 0; s < surfaceChars.length; s++) {
-        if (remaining[s] !== surfaceChars[s]) {
-          isMatch = false;
-          break;
-        }
-      }
-      if (isMatch) {
-        matchedSurface = surface;
+      const chars = [...surface];
+      const visible = getVisibleCharsSkippingRt(html, i, chars.length);
+      if (visible.length !== chars.length) continue;
+      if (visible.join("") === surface) {
+        matched = surface;
         break;
       }
     }
 
-    if (!matchedSurface) {
+    if (!matched) {
       out += ch;
       i++;
       continue;
     }
 
-    const matchedLength = [...matchedSurface].length;
-    const highlighted = renderHighlightedVisibleSegment(html, i, matchedLength);
-    out += highlighted.html;
-    i = highlighted.end;
+    const rendered = renderHighlightedVisibleSegment(html, i, [...matched].length);
+    out += rendered.html;
+    i = rendered.end;
   }
 
   return out;
