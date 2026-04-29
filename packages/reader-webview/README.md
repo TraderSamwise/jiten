@@ -186,9 +186,9 @@ On `setFontSize` message from RN:
 
 ### RN-side files
 
-| File                             | Purpose                                           |
-| -------------------------------- | ------------------------------------------------- |
-| `lib/reader-html.ts`             | Generates the full HTML document with config      |
-| `lib/reader-model.ts`            | App-side content parsing, char counting, slicing  |
-| `lib/aozora-parser.ts`           | Aozora Bunko markup → HTML conversion             |
-| `app/(tabs)/reader/[bookId].tsx` | Reader screen: WebView management, prefetch logic |
+| File                                                 | Purpose                                           |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| `lib/reader-html.ts`                                 | Generates the full HTML document with config      |
+| `lib/reader-model.ts`                                | App-side content parsing, char counting, slicing  |
+| `packages/japanese-reader-core/src/aozora-parser.ts` | Aozora Bunko markup → HTML conversion             |
+| `app/(tabs)/reader/[bookId].tsx`                     | Reader screen: WebView management, prefetch logic |

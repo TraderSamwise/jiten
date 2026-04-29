@@ -84,6 +84,8 @@ export interface ReaderBookRecord {
   charOffset: number;
   totalChars: number;
   fontSize: number;
+  readComplete?: boolean;
+  saved?: number;
 }
 
 export interface ReaderBookmarkMembership {

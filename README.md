@@ -142,7 +142,7 @@ The reader is a vertical Japanese ebook reader with interactive furigana, tap-to
 
 ```
 Book content (raw text / Aozora markup / HTML)
-  → aozora-parser.ts (parse markup to HTML)
+  → packages/japanese-reader-core/src/aozora-parser.ts (parse markup to HTML)
   → reader-furigana.ts (inject <ruby> tags based on JLPT level settings)
   → reader-model.ts (slice into streamable chunks by visible char count)
   → reader-html.ts (wrap in full HTML document with CSS + JS)
@@ -178,7 +178,7 @@ No virtual DOM or framework — vanilla TypeScript compiled to a single JS bundl
 
 ### Content pipeline
 
-#### Aozora parser (`lib/aozora-parser.ts`)
+#### Aozora parser (`packages/japanese-reader-core/src/aozora-parser.ts`)
 
 Converts Aozora Bunko markup to HTML:
 

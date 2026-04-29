@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { parseAozoraToHtml, plainTextToHtml, hasAozoraMarkup } from "./aozora-parser";
+import { hasAozoraMarkup, parseAozoraToHtml, plainTextToHtml } from "@jiten/japanese-reader-core";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. RUBY ANNOTATIONS (FURIGANA)

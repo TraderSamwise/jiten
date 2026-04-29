@@ -8,16 +8,17 @@ export interface ReaderBookSource {
   loadBook(bookId: string): Promise<import("./types").ReaderBookRecord | null>;
   saveProgress(input: {
     bookId: string;
-    scrollPosition: number;
     charOffset: number;
+    scrollPosition?: number;
     totalChars?: number;
+    readComplete?: boolean;
   }): Promise<void>;
   savePreferences?(input: { bookId: string; fontSize?: number }): Promise<void>;
   markOpened?(bookId: string): Promise<void>;
 }
 
 export interface JapaneseReaderBackend {
-  dictDb: ReaderSqlDb;
+  dictDb?: ReaderSqlDb | null;
   extendedDb?: ReaderSqlDb | null;
   bookmarks?: import("./types").ReaderBookmarkMembership;
 }
