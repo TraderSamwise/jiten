@@ -29,7 +29,7 @@ export {
   smartLookup,
   smartLookupWithOffset,
 } from "./lookup";
-export { ReaderView } from "./reader-view";
+export { useJapaneseReader } from "./use-japanese-reader";
 export type {
   ReaderBookRecord,
   ReaderBookmarkMembership,
@@ -55,3 +55,12 @@ export type {
   ReaderFuriganaRule,
   ReaderFuriganaSettings,
 } from "./furigana-types";
+export type {
+  JapaneseReaderSettings,
+  JapaneseReaderSettingsActions,
+  JapaneseReaderSettingsDraft,
+  ReaderLoadingState,
+  ReaderSelectionTooltip,
+  UseJapaneseReaderOptions,
+  UseJapaneseReaderResult,
+} from "./use-japanese-reader";

@@ -1,3 +1,4 @@
+export * from "./aozora-parser";
 export * from "./reader-html";
 export * from "./reader-model";
 export * from "./reader-progress";
