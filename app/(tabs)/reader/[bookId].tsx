@@ -21,6 +21,7 @@ import { Text } from "@/components/ui/text";
 import { Separator } from "@/components/ui/separator";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
+import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
 import {
   ChevronLeft,
   ChevronDown,
@@ -119,7 +120,7 @@ const READER_LOAD_STAGE_META: Record<
   finalizing: {
     title: "Finalizing reader",
     detail: "Updating the page view",
-    progress: 0.96,
+    progress: 1,
   },
 };
 
@@ -189,6 +190,7 @@ const TOOLBAR_SIDE_MARGIN = 8;
 const READ_PROGRESS_FLUSH_MS = 15_000;
 const FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS = 180;
 const SLICE_RENDER_CACHE_LIMIT = 48;
+const READER_LOAD_DISMISS_DELAY_MS = 220;
 
 const EXTERNAL_DICTS = [
   {
@@ -517,60 +519,6 @@ function JumpSlider({
   );
 }
 
-function ReaderLoadingOverlay({
-  visible,
-  isDark,
-  title,
-  detail,
-  progress,
-}: {
-  visible: boolean;
-  isDark: boolean;
-  title: string;
-  detail: string;
-  progress: number;
-}) {
-  if (!visible) return null;
-
-  const clamped = Math.max(0, Math.min(progress, 1));
-
-  return (
-    <View
-      pointerEvents="auto"
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 300,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: isDark ? "rgba(24,24,27,0.92)" : "rgba(250,250,249,0.94)",
-        paddingHorizontal: 24,
-      }}
-    >
-      <View
-        className="w-full max-w-[320px] rounded-2xl border border-border/60 px-4 py-4"
-        style={{ backgroundColor: isDark ? "#111113" : "#ffffff" }}
-      >
-        <Text className="text-base font-semibold text-foreground">{title}</Text>
-        <Text className="mt-1 text-sm text-muted-foreground">{detail}</Text>
-        <View
-          className="mt-4 h-2 overflow-hidden rounded-full"
-          style={{ backgroundColor: isDark ? "#27272a" : "#e7e5e4" }}
-        >
-          <View
-            style={{
-              height: "100%",
-              width: `${Math.round(clamped * 100)}%`,
-              backgroundColor: isDark ? "#d6d3a3" : "#8a8450",
-            }}
-          />
-        </View>
-        <Text className="mt-2 text-xs text-muted-foreground">{Math.round(clamped * 100)}%</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function BookReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const goBack = useSafeGoBack("/reader");
@@ -625,6 +573,7 @@ export default function BookReaderScreen() {
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
   const furiganaApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerLoadTokenRef = useRef(0);
+  const readerLoadDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bookmarkedEntryIds = useMemo(
     () =>
       [...bookmarkedIds]
@@ -752,6 +701,9 @@ export default function BookReaderScreen() {
       if (furiganaApplyTimerRef.current) {
         clearTimeout(furiganaApplyTimerRef.current);
       }
+      if (readerLoadDismissTimerRef.current) {
+        clearTimeout(readerLoadDismissTimerRef.current);
+      }
     };
   }, []);
 
@@ -824,6 +776,10 @@ export default function BookReaderScreen() {
   }, []);
 
   const beginReaderLoad = useCallback((stage: ReaderLoadStage = "preparing") => {
+    if (readerLoadDismissTimerRef.current) {
+      clearTimeout(readerLoadDismissTimerRef.current);
+      readerLoadDismissTimerRef.current = null;
+    }
     const token = ++readerLoadTokenRef.current;
     const meta = READER_LOAD_STAGE_META[stage];
     setReaderLoadState({
@@ -850,11 +806,19 @@ export default function BookReaderScreen() {
   const finishReaderLoad = useCallback((token: number) => {
     if (readerLoadTokenRef.current !== token) return;
     setReaderLoadState({
-      visible: false,
+      visible: true,
       title: READER_LOAD_STAGE_META.finalizing.title,
       detail: READER_LOAD_STAGE_META.finalizing.detail,
       progress: 1,
     });
+    if (readerLoadDismissTimerRef.current) {
+      clearTimeout(readerLoadDismissTimerRef.current);
+    }
+    readerLoadDismissTimerRef.current = setTimeout(() => {
+      if (readerLoadTokenRef.current !== token) return;
+      setReaderLoadState((prev) => ({ ...prev, visible: false }));
+      readerLoadDismissTimerRef.current = null;
+    }, READER_LOAD_DISMISS_DELAY_MS);
   }, []);
 
   const maybeApplyBookmarkHighlights = useCallback(
@@ -1709,7 +1673,7 @@ export default function BookReaderScreen() {
 
       {!book || !html ? (
         <View className="flex-1" style={{ backgroundColor: isDark ? "#18181b" : "#fafaf9" }}>
-          <ReaderLoadingOverlay
+          <PhasedLoadingOverlay
             visible={readerLoadState.visible}
             isDark={isDark}
             title={readerLoadState.title}
@@ -1727,7 +1691,7 @@ export default function BookReaderScreen() {
             }}
           >
             <ReaderView ref={readerRef} html={html} onMessage={handleMessage} />
-            <ReaderLoadingOverlay
+            <PhasedLoadingOverlay
               visible={readerLoadState.visible}
               isDark={isDark}
               title={readerLoadState.title}
