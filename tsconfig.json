@@ -4,6 +4,8 @@
     "strict": true,
     "paths": {
       "@/*": ["./*"],
+      "@jiten/japanese-reader": ["./packages/japanese-reader/src/index.ts"],
+      "@jiten/japanese-reader/*": ["./packages/japanese-reader/src/*"],
       "@jiten/reader-webview/*": ["./packages/reader-webview/*"],
       "@jiten/japanese-reader-core": ["./packages/japanese-reader-core/src/index.ts"],
       "@jiten/japanese-reader-core/*": ["./packages/japanese-reader-core/src/*"]

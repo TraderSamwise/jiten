@@ -20,8 +20,8 @@ import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScr
 import { Text } from "@/components/ui/text";
 import { Separator } from "@/components/ui/separator";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
-import { ReaderView, type ReaderViewRef } from "@/components/ReaderView";
 import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
+import { ReaderView, type ReaderViewRef } from "@jiten/japanese-reader";
 import {
   ChevronLeft,
   ChevronDown,

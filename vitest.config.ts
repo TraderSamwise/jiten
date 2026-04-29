@@ -36,6 +36,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@/": path.resolve(__dirname, "") + "/",
+      "@jiten/japanese-reader": path.resolve(__dirname, "packages/japanese-reader/src/index.ts"),
+      "@jiten/japanese-reader/": path.resolve(__dirname, "packages/japanese-reader/src") + "/",
       "@jiten/japanese-reader-core": path.resolve(
         __dirname,
         "packages/japanese-reader-core/src/index.ts",

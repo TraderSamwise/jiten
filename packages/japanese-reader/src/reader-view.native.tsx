@@ -1,15 +1,7 @@
 import React, { forwardRef, useImperativeHandle, useRef } from "react";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
-export interface ReaderViewRef {
-  postMessage: (data: string) => void;
-  focus: () => void;
-}
-
-interface ReaderViewProps {
-  html: string;
-  onMessage: (data: string) => void;
-}
+import type { ReaderViewProps, ReaderViewRef } from "./types";
 
 export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, onMessage }, ref) => {
   const webViewRef = useRef<WebView>(null);

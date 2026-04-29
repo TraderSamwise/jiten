@@ -1,0 +1,27 @@
+{
+  "name": "@jiten/japanese-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./backend": "./src/backend.ts",
+    "./types": "./src/types.ts",
+    "./reader-view": {
+      "types": "./src/reader-view.d.ts",
+      "react-native": "./src/reader-view.native.tsx",
+      "default": "./src/reader-view.web.tsx"
+    }
+  },
+  "dependencies": {
+    "@jiten/japanese-reader-core": "0.1.0",
+    "@jiten/reader-webview": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0",
+    "react-native": "^0.81.5",
+    "react-native-webview": "^13.16.0"
+  }
+}
