@@ -23,6 +23,15 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
         NSPhotoLibraryUsageDescription:
           "Allow $(PRODUCT_NAME) to access your photo library for saving and sharing content.",
+        LSApplicationQueriesSchemes: [
+          "midori",
+          "shirabelookup",
+          "dakanji",
+          "imiwa",
+          "googletranslate",
+          "claude",
+          "chatgpt",
+        ],
       },
     },
     android: {
