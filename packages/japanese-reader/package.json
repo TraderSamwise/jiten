@@ -8,6 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./backend": "./src/backend.ts",
+    "./furigana": "./src/furigana.ts",
+    "./furigana-types": "./src/furigana-types.ts",
     "./types": "./src/types.ts",
     "./reader-view": {
       "types": "./src/reader-view.d.ts",

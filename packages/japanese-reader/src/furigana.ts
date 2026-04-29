@@ -1,37 +1,32 @@
-import type * as SQLite from "expo-sqlite";
-import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "@/db/kanji-search";
 import { toHiragana } from "wanakana";
 import { deinflect } from "./deinflect";
+import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "./furigana-db";
+import type { ReaderSqlDb } from "./backend";
 import {
   classifyReaderReadingPattern,
   type ReaderReadingPattern,
 } from "@jiten/japanese-reader-core";
 import {
-  defaultReaderFuriganaRuleLevels,
+  defaultReaderFuriganaSettings,
+  type FuriganaEntry,
+  type FuriganaKanjiSet,
   type FuriganaMatchLevel,
   type ReaderFuriganaRule,
-} from "@/stores/settings";
+  type ReaderFuriganaSettings,
+} from "./furigana-types";
 
-// ─── Build kanji set from enabled levels ───
-
-export interface FuriganaKanjiSet {
-  all: boolean;
-  chars: Set<string>;
-}
-
-export interface ReaderFuriganaSettings {
-  sourceDefault: boolean;
-  showNames: boolean;
-  showCounters: boolean;
-  ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
-}
-
-export const defaultReaderFuriganaSettings: ReaderFuriganaSettings = {
-  sourceDefault: true,
-  showNames: false,
-  showCounters: false,
-  ruleLevels: defaultReaderFuriganaRuleLevels,
-};
+export type {
+  FuriganaEntry,
+  FuriganaKanjiSet,
+  FuriganaMatchLevel,
+  ReaderFuriganaRule,
+  ReaderFuriganaSettings,
+} from "./furigana-types";
+export {
+  defaultFuriganaMatchLevels,
+  defaultReaderFuriganaRuleLevels,
+  defaultReaderFuriganaSettings,
+} from "./furigana-types";
 
 const LEVEL_MAP: Record<FuriganaMatchLevel, number | null> = {
   n5: 5,
@@ -43,7 +38,7 @@ const LEVEL_MAP: Record<FuriganaMatchLevel, number | null> = {
 };
 
 export async function buildFuriganaKanjiSet(
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   levels: Record<FuriganaMatchLevel, boolean>,
 ): Promise<FuriganaKanjiSet> {
   const chars = new Set<string>();
@@ -171,7 +166,7 @@ export interface ResolveFuriganaBatchOptions {
 }
 
 async function batchLookupCounters(
-  extDb: SQLite.SQLiteDatabase | null | undefined,
+  extDb: ReaderSqlDb | null | undefined,
   surfaces: string[],
 ): Promise<Map<string, CounterMatch>> {
   const result = new Map<string, CounterMatch>();
@@ -214,7 +209,7 @@ async function batchLookupCounters(
 }
 
 async function batchLookup(
-  dictDb: SQLite.SQLiteDatabase,
+  dictDb: ReaderSqlDb,
   searchWords: string[],
 ): Promise<Map<string, DictMatch>> {
   if (searchWords.length === 0) return new Map();
@@ -366,7 +361,7 @@ async function batchLookup(
 }
 
 async function batchLookupNames(
-  extDb: SQLite.SQLiteDatabase | null | undefined,
+  extDb: ReaderSqlDb | null | undefined,
   surfaces: string[],
 ): Promise<Map<string, NameMatch[]>> {
   const result = new Map<string, NameMatch[]>();
@@ -499,8 +494,8 @@ function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | n
  */
 export async function resolveFuriganaBatch(
   surfaces: string[],
-  dictDb: SQLite.SQLiteDatabase,
-  extendedDb?: SQLite.SQLiteDatabase | null,
+  dictDb: ReaderSqlDb,
+  extendedDb?: ReaderSqlDb | null,
   options: ResolveFuriganaBatchOptions = {},
 ): Promise<Record<string, FuriganaEntry>> {
   const { includeNames = true, includeCounters = true } = options;
@@ -763,19 +758,6 @@ function kanaBeforeKanji(html: string, start: number): boolean {
     if (!isKana(chars[j])) return false; // hit non-Japanese, stop
   }
   return false;
-}
-
-export interface FuriganaEntry {
-  kanjiPart: string;
-  reading: string;
-  kanjiPartLen: number;
-  wordJlpt?: number; // Word-level JLPT (5=easiest, 1=hardest). Used for filtering.
-  irregularReading?: boolean; // True if reading can't be derived from standard on/kun readings.
-  isName?: boolean;
-  isCounter?: boolean;
-  fullKanjiForm?: string;
-  fullKanaForm?: string;
-  readingPattern?: ReaderReadingPattern;
 }
 
 function buildEnabledWordLevels(levels: Record<FuriganaMatchLevel, boolean>): Set<number | null> {

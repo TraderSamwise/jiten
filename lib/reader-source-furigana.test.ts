@@ -6,7 +6,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { hasAozoraMarkup } from "./aozora-parser";
-import type { FuriganaMatchLevel, ReaderFuriganaRule } from "@/stores/settings";
+import type {
+  FuriganaMatchLevel,
+  ReaderFuriganaRule,
+} from "../packages/japanese-reader/src/furigana-types";
 
 // ── Duplicated helpers (same logic as [bookId].tsx) ──
 
