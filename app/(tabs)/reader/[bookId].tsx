@@ -188,7 +188,6 @@ const TOOLBAR_GAP = 24;
 const POPUP_SAFE_ZONE = 380;
 const TOOLBAR_SIDE_MARGIN = 8;
 const READ_PROGRESS_FLUSH_MS = 15_000;
-const FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS = 180;
 const SLICE_RENDER_CACHE_LIMIT = 48;
 const READER_LOAD_DISMISS_DELAY_MS = 220;
 
@@ -227,6 +226,84 @@ function ruleLevelsEqual(
     }
   }
   return true;
+}
+
+function cloneRuleLevels(
+  levels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
+): Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>> {
+  return {
+    matchAnyKanji: { ...levels.matchAnyKanji },
+    matchWordLevel: { ...levels.matchWordLevel },
+    matchIrregularReading: { ...levels.matchIrregularReading },
+    matchMostlyKunyomi: { ...levels.matchMostlyKunyomi },
+    matchMostlyOnyomi: { ...levels.matchMostlyOnyomi },
+    matchMixedOnKun: { ...levels.matchMixedOnKun },
+  };
+}
+
+type ReaderSettingsDraft = {
+  fontSize: number;
+  sourceFuriganaEnabled: boolean;
+  readerCounterFurigana: boolean;
+  readerNameFurigana: boolean;
+  readerBookmarkHighlights: boolean;
+  pageAnimations: boolean;
+  furiganaRuleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+};
+
+type ReaderSettingsDiff = {
+  fontSizeChanged: boolean;
+  pageAnimationsChanged: boolean;
+  bookmarkHighlightsChanged: boolean;
+  furiganaChanged: boolean;
+  anyChanged: boolean;
+};
+
+type ReaderTransformSettingsSnapshot = {
+  sourceFuriganaEnabled: boolean;
+  readerCounterFurigana: boolean;
+  readerNameFurigana: boolean;
+  readerBookmarkHighlights: boolean;
+  furiganaRuleLevelsKey: string;
+  bookmarkHighlightReloadKey: string;
+};
+
+function getReaderSettingsDiff(
+  current: ReaderSettingsDraft,
+  draft: ReaderSettingsDraft,
+): ReaderSettingsDiff {
+  const fontSizeChanged = current.fontSize !== draft.fontSize;
+  const pageAnimationsChanged = current.pageAnimations !== draft.pageAnimations;
+  const bookmarkHighlightsChanged =
+    current.readerBookmarkHighlights !== draft.readerBookmarkHighlights;
+  const furiganaChanged =
+    current.sourceFuriganaEnabled !== draft.sourceFuriganaEnabled ||
+    current.readerCounterFurigana !== draft.readerCounterFurigana ||
+    current.readerNameFurigana !== draft.readerNameFurigana ||
+    !ruleLevelsEqual(current.furiganaRuleLevels, draft.furiganaRuleLevels);
+  return {
+    fontSizeChanged,
+    pageAnimationsChanged,
+    bookmarkHighlightsChanged,
+    furiganaChanged,
+    anyChanged:
+      fontSizeChanged || pageAnimationsChanged || bookmarkHighlightsChanged || furiganaChanged,
+  };
+}
+
+function transformSettingsSnapshotsEqual(
+  a: ReaderTransformSettingsSnapshot | null,
+  b: ReaderTransformSettingsSnapshot,
+): boolean {
+  if (!a) return false;
+  return (
+    a.sourceFuriganaEnabled === b.sourceFuriganaEnabled &&
+    a.readerCounterFurigana === b.readerCounterFurigana &&
+    a.readerNameFurigana === b.readerNameFurigana &&
+    a.readerBookmarkHighlights === b.readerBookmarkHighlights &&
+    a.furiganaRuleLevelsKey === b.furiganaRuleLevelsKey &&
+    a.bookmarkHighlightReloadKey === b.bookmarkHighlightReloadKey
+  );
 }
 
 function HighlightToolbar({
@@ -540,12 +617,6 @@ export default function BookReaderScreen() {
   const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
   const bookmarkedIds = useBookmarkStore((s) => s.bookmarkedIds);
-  const [draftSourceFuriganaEnabled, setDraftSourceFuriganaEnabled] =
-    useState(sourceFuriganaEnabled);
-  const [draftReaderCounterFurigana, setDraftReaderCounterFurigana] =
-    useState(readerCounterFurigana);
-  const [draftReaderNameFurigana, setDraftReaderNameFurigana] = useState(readerNameFurigana);
-  const [draftFuriganaRuleLevels, setDraftFuriganaRuleLevels] = useState(furiganaRuleLevels);
 
   const [book, setBook] = useState<Book | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -564,6 +635,15 @@ export default function BookReaderScreen() {
   const [showJumpSlider, setShowJumpSlider] = useState(false);
   const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
   const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
+  const [draftSettings, setDraftSettings] = useState<ReaderSettingsDraft>(() => ({
+    fontSize: 22,
+    sourceFuriganaEnabled,
+    readerCounterFurigana,
+    readerNameFurigana,
+    readerBookmarkHighlights,
+    pageAnimations,
+    furiganaRuleLevels: cloneRuleLevels(furiganaRuleLevels),
+  }));
   const [readerLoadState, setReaderLoadState] = useState({
     visible: true,
     title: READER_LOAD_STAGE_META.preparing.title,
@@ -571,7 +651,6 @@ export default function BookReaderScreen() {
     progress: READER_LOAD_STAGE_META.preparing.progress,
   });
   const advancedReadingPatternsAnim = useRef(new Animated.Value(0)).current;
-  const furiganaApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerLoadTokenRef = useRef(0);
   const readerLoadDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bookmarkedEntryIds = useMemo(
@@ -598,123 +677,34 @@ export default function BookReaderScreen() {
     }).start();
   }, [advancedReadingPatternsAnim, showAdvancedReadingPatterns]);
 
-  useEffect(() => {
-    if (showSettings) {
-      setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
-      setDraftReaderCounterFurigana(readerCounterFurigana);
-      setDraftReaderNameFurigana(readerNameFurigana);
-      setDraftFuriganaRuleLevels(furiganaRuleLevels);
-      return;
-    }
-    setDraftSourceFuriganaEnabled(sourceFuriganaEnabled);
-    setDraftReaderCounterFurigana(readerCounterFurigana);
-    setDraftReaderNameFurigana(readerNameFurigana);
-    setDraftFuriganaRuleLevels(furiganaRuleLevels);
-  }, [
-    showSettings,
-    sourceFuriganaEnabled,
-    readerCounterFurigana,
-    readerNameFurigana,
-    furiganaRuleLevels,
-  ]);
-
-  const flushDraftFuriganaSettings = useCallback(() => {
-    if (furiganaApplyTimerRef.current) {
-      clearTimeout(furiganaApplyTimerRef.current);
-      furiganaApplyTimerRef.current = null;
-    }
-    if (draftSourceFuriganaEnabled !== sourceFuriganaEnabled) {
-      startTransition(() => {
-        setSourceFuriganaEnabled(draftSourceFuriganaEnabled);
-      });
-    }
-    if (draftReaderCounterFurigana !== readerCounterFurigana) {
-      startTransition(() => {
-        setReaderCounterFurigana(draftReaderCounterFurigana);
-      });
-    }
-    if (draftReaderNameFurigana !== readerNameFurigana) {
-      startTransition(() => {
-        setReaderNameFurigana(draftReaderNameFurigana);
-      });
-    }
-    if (!ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)) {
-      startTransition(() => {
-        setFuriganaRuleLevels(draftFuriganaRuleLevels);
-      });
-    }
-  }, [
-    draftFuriganaRuleLevels,
-    draftReaderCounterFurigana,
-    draftReaderNameFurigana,
-    draftSourceFuriganaEnabled,
-    furiganaRuleLevels,
-    readerCounterFurigana,
-    readerNameFurigana,
-    setFuriganaRuleLevels,
-    setReaderCounterFurigana,
-    setReaderNameFurigana,
-    setSourceFuriganaEnabled,
-    sourceFuriganaEnabled,
-  ]);
-
-  useEffect(() => {
-    if (!showSettings) return;
-    if (
-      draftReaderCounterFurigana === readerCounterFurigana &&
-      draftReaderNameFurigana === readerNameFurigana &&
-      draftSourceFuriganaEnabled === sourceFuriganaEnabled &&
-      ruleLevelsEqual(draftFuriganaRuleLevels, furiganaRuleLevels)
-    ) {
-      if (furiganaApplyTimerRef.current) {
-        clearTimeout(furiganaApplyTimerRef.current);
-        furiganaApplyTimerRef.current = null;
-      }
-      return;
-    }
-    if (furiganaApplyTimerRef.current) clearTimeout(furiganaApplyTimerRef.current);
-    furiganaApplyTimerRef.current = setTimeout(() => {
-      furiganaApplyTimerRef.current = null;
-      flushDraftFuriganaSettings();
-    }, FURIGANA_SETTINGS_APPLY_DEBOUNCE_MS);
-    return () => {
-      if (furiganaApplyTimerRef.current) {
-        clearTimeout(furiganaApplyTimerRef.current);
-        furiganaApplyTimerRef.current = null;
-      }
-    };
-  }, [
-    draftFuriganaRuleLevels,
-    draftReaderCounterFurigana,
-    draftReaderNameFurigana,
-    draftSourceFuriganaEnabled,
-    flushDraftFuriganaSettings,
-    furiganaRuleLevels,
-    readerCounterFurigana,
-    readerNameFurigana,
-    showSettings,
-    sourceFuriganaEnabled,
-  ]);
+  const buildReaderSettingsDraft = useCallback(
+    (): ReaderSettingsDraft => ({
+      fontSize,
+      sourceFuriganaEnabled,
+      readerCounterFurigana,
+      readerNameFurigana,
+      readerBookmarkHighlights,
+      pageAnimations,
+      furiganaRuleLevels: cloneRuleLevels(furiganaRuleLevels),
+    }),
+    [
+      fontSize,
+      furiganaRuleLevels,
+      pageAnimations,
+      readerBookmarkHighlights,
+      readerCounterFurigana,
+      readerNameFurigana,
+      sourceFuriganaEnabled,
+    ],
+  );
 
   useEffect(() => {
     return () => {
-      if (furiganaApplyTimerRef.current) {
-        clearTimeout(furiganaApplyTimerRef.current);
-      }
       if (readerLoadDismissTimerRef.current) {
         clearTimeout(readerLoadDismissTimerRef.current);
       }
     };
   }, []);
-
-  const toggleSettings = useCallback(() => {
-    setShowSettings((prev) => {
-      if (prev) {
-        flushDraftFuriganaSettings();
-      }
-      return !prev;
-    });
-  }, [flushDraftFuriganaSettings]);
 
   // Streaming prefetch refs — used by handleMessage for pageRendered
   const modelRef = useRef<TextModel | null>(null);
@@ -729,12 +719,16 @@ export default function BookReaderScreen() {
   const readerCounterFuriganaRef = useRef(readerCounterFurigana);
   const readerNameFuriganaRef = useRef(readerNameFurigana);
   const readerBookmarkHighlightsRef = useRef(readerBookmarkHighlights);
+  const fontSizeRef = useRef(fontSize);
   const bookmarkedIdsRef = useRef(bookmarkedIds);
   const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
   const hasSourceFuriganaRef = useRef(false);
   const [hasSourceFurigana, setHasSourceFurigana] = useState(false);
   const furiganaEntryCacheRef = useRef<Map<string, FuriganaEntry | null>>(new Map());
-  const sliceRenderCacheRef = useRef<Map<string, string>>(new Map());
+  const baseSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
+  const furiganaSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
+  const bookmarkSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
+  const appliedTransformSettingsRef = useRef<ReaderTransformSettingsSnapshot | null>(null);
 
   useEffect(() => {
     sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
@@ -748,6 +742,9 @@ export default function BookReaderScreen() {
   useEffect(() => {
     readerBookmarkHighlightsRef.current = readerBookmarkHighlights;
   }, [readerBookmarkHighlights]);
+  useEffect(() => {
+    fontSizeRef.current = fontSize;
+  }, [fontSize]);
   useEffect(() => {
     bookmarkedIdsRef.current = bookmarkedIds;
   }, [bookmarkedIds]);
@@ -764,8 +761,27 @@ export default function BookReaderScreen() {
     [],
   );
 
-  const setCachedSliceHtml = useCallback((key: string, html: string) => {
-    const cache = sliceRenderCacheRef.current;
+  const getCurrentTransformSettingsSnapshot = useCallback(
+    (): ReaderTransformSettingsSnapshot => ({
+      sourceFuriganaEnabled,
+      readerCounterFurigana,
+      readerNameFurigana,
+      readerBookmarkHighlights,
+      furiganaRuleLevelsKey: getRuleLevelsCacheKey(furiganaRuleLevels),
+      bookmarkHighlightReloadKey,
+    }),
+    [
+      bookmarkHighlightReloadKey,
+      furiganaRuleLevels,
+      getRuleLevelsCacheKey,
+      readerBookmarkHighlights,
+      readerCounterFurigana,
+      readerNameFurigana,
+      sourceFuriganaEnabled,
+    ],
+  );
+
+  const setCachedHtml = useCallback((cache: Map<string, string>, key: string, html: string) => {
     cache.delete(key);
     cache.set(key, html);
     while (cache.size > SLICE_RENDER_CACHE_LIMIT) {
@@ -773,6 +789,23 @@ export default function BookReaderScreen() {
       if (oldestKey == null) break;
       cache.delete(oldestKey);
     }
+  }, []);
+
+  const clearBaseAndTransformCaches = useCallback(() => {
+    baseSliceHtmlCacheRef.current.clear();
+    furiganaSliceHtmlCacheRef.current.clear();
+    bookmarkSliceHtmlCacheRef.current.clear();
+    furiganaEntryCacheRef.current.clear();
+  }, []);
+
+  const clearFuriganaAndBookmarkCaches = useCallback(() => {
+    furiganaSliceHtmlCacheRef.current.clear();
+    bookmarkSliceHtmlCacheRef.current.clear();
+    furiganaEntryCacheRef.current.clear();
+  }, []);
+
+  const clearBookmarkCaches = useCallback(() => {
+    bookmarkSliceHtmlCacheRef.current.clear();
   }, []);
 
   const beginReaderLoad = useCallback((stage: ReaderLoadStage = "preparing") => {
@@ -853,58 +886,71 @@ export default function BookReaderScreen() {
     [maybeApplyBookmarkHighlights],
   );
 
-  const renderSliceHtml = useCallback(
-    async ({
+  const getBaseSliceHtml = useCallback(
+    ({
       sliceText,
       startChar,
       charCount,
+      isAozora,
+    }: {
+      sliceText: string;
+      startChar: number;
+      charCount: number;
+      isAozora: boolean;
+    }) => {
+      const cacheKey = [isAozora ? "a" : "p", startChar, charCount].join(":");
+      const cachedHtml = baseSliceHtmlCacheRef.current.get(cacheKey);
+      if (cachedHtml != null) {
+        setCachedHtml(baseSliceHtmlCacheRef.current, cacheKey, cachedHtml);
+        return { cacheKey, html: cachedHtml };
+      }
+
+      const html = isAozora
+        ? parseAozoraToHtml(sliceText, { strip: false })
+        : plainTextToHtml(sliceText);
+      setCachedHtml(baseSliceHtmlCacheRef.current, cacheKey, html);
+      return { cacheKey, html };
+    },
+    [setCachedHtml],
+  );
+
+  const getFuriganaSliceHtml = useCallback(
+    async ({
+      baseHtml,
+      baseCacheKey,
       isAozora,
       hasFuri,
       sourceDefault,
       ruleLevels,
       includeCounters,
       includeNames,
-      highlightBookmarks,
       onStage,
     }: {
-      sliceText: string;
-      startChar: number;
-      charCount: number;
+      baseHtml: string;
+      baseCacheKey: string;
       isAozora: boolean;
       hasFuri: boolean;
       sourceDefault: boolean;
       ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
       includeCounters: boolean;
       includeNames: boolean;
-      highlightBookmarks: boolean;
       onStage?: (stage: ReaderLoadStage) => void;
     }) => {
       const cacheKey = [
-        isAozora ? "a" : "p",
-        startChar,
-        charCount,
+        baseCacheKey,
         hasFuri ? 1 : 0,
         sourceDefault ? 1 : 0,
         includeCounters ? 1 : 0,
         includeNames ? 1 : 0,
-        highlightBookmarks ? 1 : 0,
-        highlightBookmarks ? bookmarkedEntryIdsKey : "0",
         getRuleLevelsCacheKey(ruleLevels),
       ].join(":");
-      const cachedHtml = sliceRenderCacheRef.current.get(cacheKey);
+      const cachedHtml = furiganaSliceHtmlCacheRef.current.get(cacheKey);
       if (cachedHtml != null) {
-        setCachedSliceHtml(cacheKey, cachedHtml);
-        return cachedHtml;
+        setCachedHtml(furiganaSliceHtmlCacheRef.current, cacheKey, cachedHtml);
+        return { cacheKey, html: cachedHtml };
       }
 
-      let sliceHtml = isAozora
-        ? parseAozoraToHtml(sliceText, { strip: false })
-        : plainTextToHtml(sliceText);
-
-      if (isAozora && !hasFuri) {
-        sliceHtml = stripRubyTags(sliceHtml);
-      }
-
+      let sliceHtml = isAozora && !sourceDefault ? stripRubyTags(baseHtml) : baseHtml;
       if (kanjiSetRef.current && dictDb) {
         onStage?.("generatingFurigana");
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
@@ -939,21 +985,75 @@ export default function BookReaderScreen() {
           });
         }
         sliceHtml = injectRubySpacers(sliceHtml);
+      } else if (!hasFuri && isAozora) {
+        sliceHtml = stripRubyTags(sliceHtml);
       }
 
-      if (highlightBookmarks) onStage?.("highlightingBookmarks");
-      sliceHtml = await maybeApplyBookmarkHighlights(sliceHtml, highlightBookmarks);
+      setCachedHtml(furiganaSliceHtmlCacheRef.current, cacheKey, sliceHtml);
+      return { cacheKey, html: sliceHtml };
+    },
+    [dictDb, extendedDb, getRuleLevelsCacheKey, setCachedHtml],
+  );
 
-      setCachedSliceHtml(cacheKey, sliceHtml);
-      return sliceHtml;
+  const renderSliceHtml = useCallback(
+    async ({
+      sliceText,
+      startChar,
+      charCount,
+      isAozora,
+      hasFuri,
+      sourceDefault,
+      ruleLevels,
+      includeCounters,
+      includeNames,
+      highlightBookmarks,
+      onStage,
+    }: {
+      sliceText: string;
+      startChar: number;
+      charCount: number;
+      isAozora: boolean;
+      hasFuri: boolean;
+      sourceDefault: boolean;
+      ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+      includeCounters: boolean;
+      includeNames: boolean;
+      highlightBookmarks: boolean;
+      onStage?: (stage: ReaderLoadStage) => void;
+    }) => {
+      const baseSlice = getBaseSliceHtml({ sliceText, startChar, charCount, isAozora });
+      const furiganaSlice = await getFuriganaSliceHtml({
+        baseHtml: baseSlice.html,
+        baseCacheKey: baseSlice.cacheKey,
+        isAozora,
+        hasFuri,
+        sourceDefault,
+        ruleLevels,
+        includeCounters,
+        includeNames,
+        onStage,
+      });
+
+      if (!highlightBookmarks) return furiganaSlice.html;
+
+      const bookmarkCacheKey = [furiganaSlice.cacheKey, bookmarkedEntryIdsKey].join(":");
+      const cachedHtml = bookmarkSliceHtmlCacheRef.current.get(bookmarkCacheKey);
+      if (cachedHtml != null) {
+        setCachedHtml(bookmarkSliceHtmlCacheRef.current, bookmarkCacheKey, cachedHtml);
+        return cachedHtml;
+      }
+
+      onStage?.("highlightingBookmarks");
+      const bookmarkedHtml = await maybeApplyBookmarkHighlights(furiganaSlice.html, true);
+      setCachedHtml(bookmarkSliceHtmlCacheRef.current, bookmarkCacheKey, bookmarkedHtml);
+      return bookmarkedHtml;
     },
     [
       bookmarkedEntryIdsKey,
-      dictDb,
-      extendedDb,
-      getRuleLevelsCacheKey,
+      getBaseSliceHtml,
+      getFuriganaSliceHtml,
       maybeApplyBookmarkHighlights,
-      setCachedSliceHtml,
+      setCachedHtml,
     ],
   );
 
@@ -983,6 +1083,7 @@ export default function BookReaderScreen() {
     async (charOffset: number, loadToken?: number) => {
       const model = modelRef.current;
       if (!model || !dictDb) return;
+      const currentFontSize = fontSizeRef.current;
       const isAozora = isAozoraRef.current;
       const bookHasSource = hasSourceFuriganaRef.current;
       const sourceDefault = sourceFuriganaEnabledRef.current;
@@ -995,7 +1096,7 @@ export default function BookReaderScreen() {
         hasFuriganaActive(sourceDefault, showNames, showCounters, ruleLevels, bookHasSource);
 
       const screen = Dimensions.get("window");
-      const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
+      const cpp = calcCharsPerPage(screen.width, screen.height, currentFontSize, hasFuri);
       const startChar = Math.max(0, charOffset - cpp * 10);
       const totalBudget = charOffset - startChar + cpp * 3;
       const slice = sliceContent(model, startChar, totalBudget);
@@ -1027,12 +1128,14 @@ export default function BookReaderScreen() {
           html: sliceHtml,
           sliceCharOffset: startChar,
           targetLocalChar,
-          lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
+          lineHeight: hasFuri
+            ? `${currentFontSize * 2}px`
+            : `${Math.round(currentFontSize * 1.5)}px`,
           hasFurigana: hasFuri,
         }),
       );
     },
-    [fontSize, renderSliceHtml, updateReaderLoadStage],
+    [dictDb, renderSliceHtml, updateReaderLoadStage],
   );
 
   // Track scroll position for saving
@@ -1098,6 +1201,7 @@ export default function BookReaderScreen() {
         }
         const b = parseBookRow(row);
         setBook(b);
+        fontSizeRef.current = b.fontSize;
         setFontSize(b.fontSize);
         lastPersistedCharOffsetRef.current = b.charOffset;
         lastPersistedReadCompleteRef.current = !!b.readComplete;
@@ -1112,8 +1216,7 @@ export default function BookReaderScreen() {
         const hasSource = bookHasSourceFurigana(b.rawContent);
         hasSourceFuriganaRef.current = hasSource;
         setHasSourceFurigana(hasSource);
-        sliceRenderCacheRef.current.clear();
-        furiganaEntryCacheRef.current.clear();
+        clearBaseAndTransformCaches();
         const highlightBookmarks = readerBookmarkHighlightsRef.current;
 
         // If content already has <ruby> HTML tags (e.g. from Aozora XHTML), use as-is
@@ -1140,6 +1243,7 @@ export default function BookReaderScreen() {
             hasFurigana: hasFuri,
             pageAnimations,
           });
+          appliedTransformSettingsRef.current = getCurrentTransformSettingsSnapshot();
           setHtml(readerHtml);
         } else {
           updateReaderLoadStage(loadToken, "parsing");
@@ -1222,6 +1326,7 @@ export default function BookReaderScreen() {
             hasFurigana: hasFuri,
             pageAnimations,
           });
+          appliedTransformSettingsRef.current = getCurrentTransformSettingsSnapshot();
           setHtml(readerHtml);
         }
 
@@ -1243,6 +1348,8 @@ export default function BookReaderScreen() {
     goBack,
     renderPreformattedReaderContent,
     renderSliceHtml,
+    clearBaseAndTransformCaches,
+    getCurrentTransformSettingsSnapshot,
     updateReaderLoadStage,
     userDb,
   ]);
@@ -1251,6 +1358,21 @@ export default function BookReaderScreen() {
   useEffect(() => {
     if (!book || !book.rawContent || !dictDb || html === null) return;
     const rawContent = book.rawContent;
+    const nextSnapshot = getCurrentTransformSettingsSnapshot();
+    const previousSnapshot = appliedTransformSettingsRef.current;
+    if (transformSettingsSnapshotsEqual(previousSnapshot, nextSnapshot)) return;
+
+    const furiganaChanged =
+      !previousSnapshot ||
+      previousSnapshot.sourceFuriganaEnabled !== nextSnapshot.sourceFuriganaEnabled ||
+      previousSnapshot.readerCounterFurigana !== nextSnapshot.readerCounterFurigana ||
+      previousSnapshot.readerNameFurigana !== nextSnapshot.readerNameFurigana ||
+      previousSnapshot.furiganaRuleLevelsKey !== nextSnapshot.furiganaRuleLevelsKey;
+    const bookmarkChanged =
+      !previousSnapshot ||
+      previousSnapshot.readerBookmarkHighlights !== nextSnapshot.readerBookmarkHighlights ||
+      previousSnapshot.bookmarkHighlightReloadKey !== nextSnapshot.bookmarkHighlightReloadKey;
+
     (async () => {
       const loadToken = beginReaderLoad("preparing");
       try {
@@ -1273,26 +1395,33 @@ export default function BookReaderScreen() {
               html: content,
               sliceCharOffset: 0,
               targetLocalChar: scrollPosRef.current || 0,
-              lineHeight: hasFuri ? `${fontSize * 2}px` : `${Math.round(fontSize * 1.5)}px`,
+              lineHeight: hasFuri
+                ? `${fontSizeRef.current * 2}px`
+                : `${Math.round(fontSizeRef.current * 1.5)}px`,
               hasFurigana: hasFuri,
             }),
           );
+          appliedTransformSettingsRef.current = nextSnapshot;
           return;
         }
 
         if (!modelRef.current) return;
         updateReaderLoadStage(loadToken, "parsing");
-        kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
-          dictDb,
-          furiganaRuleLevels,
-          readerNameFurigana,
-          readerCounterFurigana,
-        );
-        furiganaEntryCacheRef.current.clear();
-        sliceRenderCacheRef.current.clear();
+        if (furiganaChanged) {
+          kanjiSetRef.current = await buildInjectedFuriganaKanjiSet(
+            dictDb,
+            furiganaRuleLevels,
+            readerNameFurigana,
+            readerCounterFurigana,
+          );
+          clearFuriganaAndBookmarkCaches();
+        } else if (bookmarkChanged) {
+          clearBookmarkCaches();
+        }
 
         const charOffset = scrollPosRef.current || 0;
         await reloadAtChar(charOffset, loadToken);
+        appliedTransformSettingsRef.current = nextSnapshot;
       } finally {
         finishReaderLoad(loadToken);
       }
@@ -1300,16 +1429,21 @@ export default function BookReaderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     beginReaderLoad,
-    sourceFuriganaEnabled,
-    finishReaderLoad,
-    readerBookmarkHighlights,
     bookmarkHighlightReloadKey,
+    book,
+    clearBookmarkCaches,
+    clearFuriganaAndBookmarkCaches,
+    dictDb,
+    finishReaderLoad,
+    furiganaRuleLevels,
+    getCurrentTransformSettingsSnapshot,
+    html,
+    renderPreformattedReaderContent,
+    readerBookmarkHighlights,
     readerCounterFurigana,
     readerNameFurigana,
-    furiganaRuleLevels,
-    dictDb,
-    renderPreformattedReaderContent,
     reloadAtChar,
+    sourceFuriganaEnabled,
     updateReaderLoadStage,
   ]);
 
@@ -1459,7 +1593,7 @@ export default function BookReaderScreen() {
                 hasSourceFuriganaRef.current,
               );
             const screen = Dimensions.get("window");
-            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSizeRef.current, hasFuri);
             const nextSlice = sliceContent(model, nextStart, cpp * 3);
             const newEnd = Math.min(nextStart + cpp * 3, model.totalChars);
             const nextHtml = await renderSliceHtml({
@@ -1498,7 +1632,7 @@ export default function BookReaderScreen() {
                 hasSourceFuriganaRef.current,
               );
             const screen = Dimensions.get("window");
-            const cpp = calcCharsPerPage(screen.width, screen.height, fontSize, hasFuri);
+            const cpp = calcCharsPerPage(screen.width, screen.height, fontSizeRef.current, hasFuri);
             const backStart = Math.max(0, sliceCharOffsetRef.current - cpp * 10);
             const backChars = sliceCharOffsetRef.current - backStart;
             if (backChars > 0) {
@@ -1534,7 +1668,7 @@ export default function BookReaderScreen() {
         }
       } catch {}
     },
-    [dictDb, extendedDb, userDb, bookId, fontSize],
+    [dictDb, extendedDb, userDb, bookId],
   );
 
   const handleCopy = useCallback(() => {
@@ -1549,9 +1683,10 @@ export default function BookReaderScreen() {
     }, 800);
   }, [copyTooltip]);
 
-  const handleFontSizeChange = useCallback(
+  const applyFontSizeChange = useCallback(
     (newSize: number) => {
       const rounded = Math.round(newSize);
+      fontSizeRef.current = rounded;
       setFontSize(rounded);
       const hasFuri =
         kanjiSetRef.current != null ||
@@ -1576,6 +1711,61 @@ export default function BookReaderScreen() {
     },
     [userDb, bookId],
   );
+
+  const applyReaderSettingsDraft = useCallback(
+    (draft: ReaderSettingsDraft) => {
+      const current = buildReaderSettingsDraft();
+      const diff = getReaderSettingsDiff(current, draft);
+      if (!diff.anyChanged) return;
+
+      if (diff.fontSizeChanged) {
+        applyFontSizeChange(draft.fontSize);
+      }
+
+      startTransition(() => {
+        if (diff.pageAnimationsChanged) {
+          setPageAnimations(draft.pageAnimations);
+        }
+        if (diff.bookmarkHighlightsChanged) {
+          setReaderBookmarkHighlights(draft.readerBookmarkHighlights);
+        }
+        if (diff.furiganaChanged) {
+          setSourceFuriganaEnabled(draft.sourceFuriganaEnabled);
+          setReaderCounterFurigana(draft.readerCounterFurigana);
+          setReaderNameFurigana(draft.readerNameFurigana);
+          setFuriganaRuleLevels(cloneRuleLevels(draft.furiganaRuleLevels));
+        }
+      });
+    },
+    [
+      applyFontSizeChange,
+      buildReaderSettingsDraft,
+      setFuriganaRuleLevels,
+      setPageAnimations,
+      setReaderBookmarkHighlights,
+      setReaderCounterFurigana,
+      setReaderNameFurigana,
+      setSourceFuriganaEnabled,
+    ],
+  );
+
+  const openSettings = useCallback(() => {
+    setDraftSettings(buildReaderSettingsDraft());
+    setShowSettings(true);
+  }, [buildReaderSettingsDraft]);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    applyReaderSettingsDraft(draftSettings);
+  }, [applyReaderSettingsDraft, draftSettings]);
+
+  const toggleSettings = useCallback(() => {
+    if (showSettings) {
+      closeSettings();
+      return;
+    }
+    openSettings();
+  }, [closeSettings, openSettings, showSettings]);
 
   const furiganaRuleSections: {
     title: string;
@@ -1609,11 +1799,11 @@ export default function BookReaderScreen() {
   const formatSelectedLevels = useCallback(
     (rule: ReaderFuriganaRule) => {
       const labels = matchLevelOptions
-        .filter(([level]) => draftFuriganaRuleLevels[rule][level])
+        .filter(([level]) => draftSettings.furiganaRuleLevels[rule][level])
         .map(([, label]) => label);
       return labels.length > 0 ? labels.join(" ") : "Off";
     },
-    [draftFuriganaRuleLevels],
+    [draftSettings.furiganaRuleLevels],
   );
 
   const handleToggleSaved = useCallback(async () => {
@@ -1708,17 +1898,29 @@ export default function BookReaderScreen() {
               >
                 <View className="flex-row items-center justify-center gap-4">
                   <Pressable
-                    onPress={() => handleFontSizeChange(Math.max(14, fontSize - 1))}
-                    disabled={fontSize <= 14}
-                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize <= 14 ? "opacity-30" : ""}`}
+                    onPress={() =>
+                      setDraftSettings((prev) => ({
+                        ...prev,
+                        fontSize: Math.max(14, prev.fontSize - 1),
+                      }))
+                    }
+                    disabled={draftSettings.fontSize <= 14}
+                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize <= 14 ? "opacity-30" : ""}`}
                   >
                     <Text className="text-lg text-foreground">A-</Text>
                   </Pressable>
-                  <Text className="text-base text-foreground w-8 text-center">{fontSize}</Text>
+                  <Text className="text-base text-foreground w-8 text-center">
+                    {draftSettings.fontSize}
+                  </Text>
                   <Pressable
-                    onPress={() => handleFontSizeChange(Math.min(32, fontSize + 1))}
-                    disabled={fontSize >= 32}
-                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${fontSize >= 32 ? "opacity-30" : ""}`}
+                    onPress={() =>
+                      setDraftSettings((prev) => ({
+                        ...prev,
+                        fontSize: Math.min(32, prev.fontSize + 1),
+                      }))
+                    }
+                    disabled={draftSettings.fontSize >= 32}
+                    className={`h-10 w-10 items-center justify-center rounded-lg border border-border ${draftSettings.fontSize >= 32 ? "opacity-30" : ""}`}
                   >
                     <Text className="text-lg text-foreground">A+</Text>
                   </Pressable>
@@ -1747,23 +1949,26 @@ export default function BookReaderScreen() {
                             <Pressable
                               key={`${rule}-${level}`}
                               onPress={() =>
-                                setDraftFuriganaRuleLevels((prev) => ({
+                                setDraftSettings((prev) => ({
                                   ...prev,
-                                  [rule]: {
-                                    ...prev[rule],
-                                    [level]: !prev[rule][level],
+                                  furiganaRuleLevels: {
+                                    ...prev.furiganaRuleLevels,
+                                    [rule]: {
+                                      ...prev.furiganaRuleLevels[rule],
+                                      [level]: !prev.furiganaRuleLevels[rule][level],
+                                    },
                                   },
                                 }))
                               }
                               className={`px-3 py-1.5 rounded-full border ${
-                                draftFuriganaRuleLevels[rule][level]
+                                draftSettings.furiganaRuleLevels[rule][level]
                                   ? "bg-foreground border-foreground"
                                   : "bg-background/40 border-border"
                               }`}
                             >
                               <Text
                                 className={`text-xs font-medium ${
-                                  draftFuriganaRuleLevels[rule][level]
+                                  draftSettings.furiganaRuleLevels[rule][level]
                                     ? "text-background"
                                     : "text-muted-foreground"
                                 }`}
@@ -1787,8 +1992,10 @@ export default function BookReaderScreen() {
                       </Text>
                     </View>
                     <Switch
-                      value={draftReaderCounterFurigana}
-                      onValueChange={setDraftReaderCounterFurigana}
+                      value={draftSettings.readerCounterFurigana}
+                      onValueChange={(value) =>
+                        setDraftSettings((prev) => ({ ...prev, readerCounterFurigana: value }))
+                      }
                     />
                   </View>
                 </View>
@@ -1802,8 +2009,10 @@ export default function BookReaderScreen() {
                       </Text>
                     </View>
                     <Switch
-                      value={draftReaderNameFurigana}
-                      onValueChange={setDraftReaderNameFurigana}
+                      value={draftSettings.readerNameFurigana}
+                      onValueChange={(value) =>
+                        setDraftSettings((prev) => ({ ...prev, readerNameFurigana: value }))
+                      }
                     />
                   </View>
                 </View>
@@ -1845,8 +2054,13 @@ export default function BookReaderScreen() {
                               </Text>
                             </View>
                             <Switch
-                              value={draftSourceFuriganaEnabled}
-                              onValueChange={setDraftSourceFuriganaEnabled}
+                              value={draftSettings.sourceFuriganaEnabled}
+                              onValueChange={(value) =>
+                                setDraftSettings((prev) => ({
+                                  ...prev,
+                                  sourceFuriganaEnabled: value,
+                                }))
+                              }
                             />
                           </View>
                         </View>
@@ -1867,23 +2081,26 @@ export default function BookReaderScreen() {
                               <Pressable
                                 key={`${rule}-${level}`}
                                 onPress={() =>
-                                  setDraftFuriganaRuleLevels((prev) => ({
+                                  setDraftSettings((prev) => ({
                                     ...prev,
-                                    [rule]: {
-                                      ...prev[rule],
-                                      [level]: !prev[rule][level],
+                                    furiganaRuleLevels: {
+                                      ...prev.furiganaRuleLevels,
+                                      [rule]: {
+                                        ...prev.furiganaRuleLevels[rule],
+                                        [level]: !prev.furiganaRuleLevels[rule][level],
+                                      },
                                     },
                                   }))
                                 }
                                 className={`px-3 py-1.5 rounded-full border ${
-                                  draftFuriganaRuleLevels[rule][level]
+                                  draftSettings.furiganaRuleLevels[rule][level]
                                     ? "bg-foreground border-foreground"
                                     : "bg-background/40 border-border"
                                 }`}
                               >
                                 <Text
                                   className={`text-xs font-medium ${
-                                    draftFuriganaRuleLevels[rule][level]
+                                    draftSettings.furiganaRuleLevels[rule][level]
                                       ? "text-background"
                                       : "text-muted-foreground"
                                   }`}
@@ -1925,8 +2142,13 @@ export default function BookReaderScreen() {
                                 </Text>
                               </View>
                               <Switch
-                                value={draftSourceFuriganaEnabled}
-                                onValueChange={setDraftSourceFuriganaEnabled}
+                                value={draftSettings.sourceFuriganaEnabled}
+                                onValueChange={(value) =>
+                                  setDraftSettings((prev) => ({
+                                    ...prev,
+                                    sourceFuriganaEnabled: value,
+                                  }))
+                                }
                               />
                             </View>
                           </View>
@@ -1947,23 +2169,26 @@ export default function BookReaderScreen() {
                                 <Pressable
                                   key={`${rule}-${level}`}
                                   onPress={() =>
-                                    setDraftFuriganaRuleLevels((prev) => ({
+                                    setDraftSettings((prev) => ({
                                       ...prev,
-                                      [rule]: {
-                                        ...prev[rule],
-                                        [level]: !prev[rule][level],
+                                      furiganaRuleLevels: {
+                                        ...prev.furiganaRuleLevels,
+                                        [rule]: {
+                                          ...prev.furiganaRuleLevels[rule],
+                                          [level]: !prev.furiganaRuleLevels[rule][level],
+                                        },
                                       },
                                     }))
                                   }
                                   className={`px-3 py-1.5 rounded-full border ${
-                                    draftFuriganaRuleLevels[rule][level]
+                                    draftSettings.furiganaRuleLevels[rule][level]
                                       ? "bg-foreground border-foreground"
                                       : "bg-background/40 border-border"
                                   }`}
                                 >
                                   <Text
                                     className={`text-xs font-medium ${
-                                      draftFuriganaRuleLevels[rule][level]
+                                      draftSettings.furiganaRuleLevels[rule][level]
                                         ? "text-background"
                                         : "text-muted-foreground"
                                     }`}
@@ -1991,8 +2216,10 @@ export default function BookReaderScreen() {
                       </Text>
                     </View>
                     <Switch
-                      value={readerBookmarkHighlights}
-                      onValueChange={setReaderBookmarkHighlights}
+                      value={draftSettings.readerBookmarkHighlights}
+                      onValueChange={(value) =>
+                        setDraftSettings((prev) => ({ ...prev, readerBookmarkHighlights: value }))
+                      }
                     />
                   </View>
                 </View>
@@ -2006,7 +2233,12 @@ export default function BookReaderScreen() {
                         Animate page turns in the reader.
                       </Text>
                     </View>
-                    <Switch value={pageAnimations} onValueChange={setPageAnimations} />
+                    <Switch
+                      value={draftSettings.pageAnimations}
+                      onValueChange={(value) =>
+                        setDraftSettings((prev) => ({ ...prev, pageAnimations: value }))
+                      }
+                    />
                   </View>
                 </View>
               </ScrollView>
