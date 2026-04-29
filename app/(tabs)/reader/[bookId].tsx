@@ -80,7 +80,29 @@ const EXTERNAL_DICTS = [
     url: (q: string) => `imiwa://analyser?text=${q}`,
     store: "https://apps.apple.com/app/imiwa-japanese-dictionary/id288499125",
   },
+  {
+    label: "Google Translate",
+    url: () => "googletranslate://",
+    store: "https://apps.apple.com/app/google-translate/id414706506",
+  },
 ];
+
+function buildExplainPrompt({
+  selectedText,
+  bookTitle,
+}: {
+  selectedText: string;
+  bookTitle?: string | null;
+}) {
+  return [
+    bookTitle ? `Context: this Japanese text is from the book "${bookTitle}".` : null,
+    "Explain this Japanese passage in English.",
+    "",
+    selectedText,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function HighlightToolbar({
   tooltip,
@@ -88,18 +110,23 @@ function HighlightToolbar({
   isDark,
   copied,
   onCopy,
+  onCopyText,
+  bookTitle,
 }: {
   tooltip: ReaderSelectionTooltip;
   readerY: React.RefObject<number>;
   isDark: boolean;
   copied: boolean;
   onCopy: () => void;
+  onCopyText: (text: string) => void;
+  bookTitle?: string | null;
 }) {
   const [openInExpanded, setOpenInExpanded] = useState(false);
   const [toolbarWidth, setToolbarWidth] = useState(0);
   const screen = Dimensions.get("window");
   const layoutY = readerY.current ?? 0;
-  const toolbarH = openInExpanded ? 76 : 32;
+  const extraRows = openInExpanded ? EXTERNAL_DICTS.length + 3 : 0;
+  const toolbarH = 32 + extraRows * 34 + (extraRows > 0 ? 18 : 0);
   const estimatedToolbarWidth = openInExpanded ? 260 : 132;
   const anchorX = tooltip.x;
   const anchorY = tooltip.y;
@@ -118,6 +145,48 @@ function HighlightToolbar({
     const nextWidth = Math.round(e.nativeEvent.layout.width);
     setToolbarWidth((prev) => (prev === nextWidth ? prev : nextWidth));
   }
+
+  async function handleExplainOpen(app: "claude" | "chatgpt") {
+    const prompt = buildExplainPrompt({ selectedText: tooltip.text, bookTitle });
+    onCopyText(prompt);
+    if (app === "claude") {
+      await Linking.openURL("claude://").catch(() =>
+        Linking.openURL("https://apps.apple.com/app/claude-by-anthropic/id6473753684"),
+      );
+      return;
+    }
+    await Linking.openURL("chatgpt://").catch(() =>
+      Linking.openURL("https://apps.apple.com/app/chatgpt/id6448311069"),
+    );
+  }
+
+  const directOpenActions = EXTERNAL_DICTS.map((d) => ({
+    key: d.label,
+    label: d.label,
+    onPress: () => {
+      const encoded = encodeURIComponent(tooltip.text);
+      Linking.openURL(d.url(encoded)).catch(() => {
+        Linking.openURL(d.store);
+      });
+    },
+  }));
+
+  const copyOpenActions = [
+    {
+      key: "claude-copy-open",
+      label: "Claude",
+      onPress: () => {
+        void handleExplainOpen("claude");
+      },
+    },
+    {
+      key: "chatgpt-copy-open",
+      label: "ChatGPT",
+      onPress: () => {
+        void handleExplainOpen("chatgpt");
+      },
+    },
+  ];
 
   return (
     <View
@@ -153,7 +222,9 @@ function HighlightToolbar({
             <>
               <View style={{ width: 1, height: 16, backgroundColor: fg, opacity: 0.3 }} />
               <Pressable
-                onPress={() => setOpenInExpanded(!openInExpanded)}
+                onPress={() => {
+                  setOpenInExpanded(!openInExpanded);
+                }}
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
@@ -177,30 +248,44 @@ function HighlightToolbar({
         {openInExpanded && (
           <View
             style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 4,
               marginTop: 6,
               paddingHorizontal: 4,
+              gap: 6,
             }}
           >
-            {EXTERNAL_DICTS.map((d) => (
+            {directOpenActions.map((action) => (
               <Pressable
-                key={d.label}
-                onPress={() => {
-                  const encoded = encodeURIComponent(tooltip.text);
-                  Linking.openURL(d.url(encoded)).catch(() => {
-                    Linking.openURL(d.store);
-                  });
-                }}
+                key={action.key}
+                onPress={action.onPress}
                 style={{
                   backgroundColor: fg,
                   paddingHorizontal: 8,
                   paddingVertical: 3,
                   borderRadius: 10,
+                  alignSelf: "flex-start",
                 }}
               >
-                <Text style={{ color: bg, fontSize: 11, fontWeight: "600" }}>{d.label}</Text>
+                <Text style={{ color: bg, fontSize: 11, fontWeight: "600" }}>{action.label}</Text>
+              </Pressable>
+            ))}
+            <View style={{ marginTop: 2 }}>
+              <Text style={{ color: fg, fontSize: 10, fontWeight: "700", opacity: 0.7 }}>
+                Copy + Open
+              </Text>
+            </View>
+            {copyOpenActions.map((action) => (
+              <Pressable
+                key={action.key}
+                onPress={action.onPress}
+                style={{
+                  backgroundColor: fg,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 10,
+                  alignSelf: "flex-start",
+                }}
+              >
+                <Text style={{ color: bg, fontSize: 11, fontWeight: "600" }}>{action.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -575,6 +660,13 @@ export default function BookReaderScreen() {
     patchBook({ saved: newSaved });
     triggerSync();
   }, [book, patchBook, triggerSync, userDb]);
+
+  const handleCopyText = useCallback(
+    (text: string) => {
+      readerViewRef.current?.postMessage(JSON.stringify({ type: "copyToClipboard", text }));
+    },
+    [readerViewRef],
+  );
 
   return (
     <CustomHeaderScreen webTop={15}>
@@ -989,6 +1081,8 @@ export default function BookReaderScreen() {
                 isDark={isDark}
                 copied={copied}
                 onCopy={handleCopy}
+                onCopyText={handleCopyText}
+                bookTitle={book?.title}
               />
             )}
 
