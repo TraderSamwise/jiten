@@ -64,12 +64,12 @@ export const EntrySummary = React.memo(function EntrySummary({
   return (
     <View>
       <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1 gap-1">
+        <View className="min-w-0 flex-1 gap-1">
           <View
-            className={isBookmarked ? `self-start ${BOOKMARK_HIGHLIGHT_CLASS}` : "self-start"}
+            className={isBookmarked ? `min-w-0 ${BOOKMARK_HIGHLIGHT_CLASS}` : "min-w-0"}
             style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
           >
-            <View className="flex-row flex-wrap items-center gap-3">
+            <View className="min-w-0 flex-row flex-wrap items-start gap-x-3 gap-y-1.5">
               {primaryKanji ? (
                 <>
                   <Text className="text-2xl font-bold text-foreground">{primaryKanji}</Text>
