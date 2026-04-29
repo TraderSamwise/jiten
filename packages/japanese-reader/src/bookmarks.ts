@@ -110,6 +110,10 @@ type BookmarkSurfaceRow = {
   entry_id: number;
 };
 
+type EntryIdRow = {
+  entry_id: number;
+};
+
 export async function resolveBookmarkedWordSurfacesInHtml(
   dictDb: ReaderSqlDb,
   html: string,
@@ -135,10 +139,31 @@ export async function resolveBookmarkedWordSurfacesInHtml(
       ),
     ]);
 
+    const bookmarkedEntryIds = new Set<number>();
     for (const row of [...kanjiRows, ...kanaRows]) {
+      if (bookmarks.hasEntryId(row.entry_id)) bookmarkedEntryIds.add(row.entry_id);
+    }
+
+    let entryIdsWithKanji = new Set<number>();
+    if (bookmarkedEntryIds.size > 0) {
+      const entryBatch = [...bookmarkedEntryIds];
+      const entryPh = entryBatch.map(() => "?").join(",");
+      const rows = await dictDb.getAllAsync<EntryIdRow>(
+        `SELECT DISTINCT entry_id FROM kanji WHERE entry_id IN (${entryPh})`,
+        entryBatch,
+      );
+      entryIdsWithKanji = new Set(rows.map((row) => row.entry_id));
+    }
+
+    for (const row of kanjiRows) {
       if (bookmarks.hasEntryId(row.entry_id)) {
         surfaces.add(row.text);
       }
+    }
+    for (const row of kanaRows) {
+      if (!bookmarks.hasEntryId(row.entry_id)) continue;
+      if (entryIdsWithKanji.has(row.entry_id)) continue;
+      surfaces.add(row.text);
     }
   }
 
