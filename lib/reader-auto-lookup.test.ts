@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { DictEntry, NameEntry } from "@/db/types";
-import { autoSelectionLookup, chooseAutoLookupResults, type LookupResult } from "./smart-lookup";
-import * as searchDb from "@/db/search";
-import * as nameSearchDb from "@/db/name-search";
-import * as sqlite from "expo-sqlite";
+import type {
+  ReaderDictEntry as DictEntry,
+  ReaderNameEntry as NameEntry,
+} from "../packages/japanese-reader/src/types";
+import type { ReaderSqlDb } from "../packages/japanese-reader/src/backend";
+import {
+  autoSelectionLookup,
+  chooseAutoLookupResults,
+  type LookupResult,
+} from "../packages/japanese-reader/src/lookup";
+import * as lookupDb from "../packages/japanese-reader/src/lookup-db";
 import { afterEach, vi } from "vitest";
 
 function makeWordEntry(overrides?: Partial<DictEntry>): DictEntry {
@@ -163,7 +169,7 @@ describe("autoSelectionLookup", () => {
   });
 
   it("keeps top-level segmented word results and nests word/name ambiguity per segment", async () => {
-    vi.spyOn(searchDb, "lookupExactJapanese").mockImplementation(async (_db, query) => {
+    vi.spyOn(lookupDb, "lookupExactJapanese").mockImplementation(async (_db, query) => {
       if (query === "第一") {
         return [
           makeWordEntry({ id: 1, common: true, kanji: [{ text: "第一", common: true, tags: [] }] }),
@@ -186,7 +192,7 @@ describe("autoSelectionLookup", () => {
       return [];
     });
 
-    vi.spyOn(nameSearchDb, "lookupExactName").mockImplementation(async (_db, query) => {
+    vi.spyOn(lookupDb, "lookupExactName").mockImplementation(async (_db, query) => {
       if (query === "第一") {
         return [makeNameEntry({ id: 11, kanji: "第一", kana: "だいいち", nameType: "person" })];
       }
@@ -196,11 +202,7 @@ describe("autoSelectionLookup", () => {
       return [];
     });
 
-    const results = await autoSelectionLookup(
-      "第一夜こんな",
-      {} as sqlite.SQLiteDatabase,
-      {} as sqlite.SQLiteDatabase,
-    );
+    const results = await autoSelectionLookup("第一夜こんな", {} as ReaderSqlDb, {} as ReaderSqlDb);
 
     expect(results).toHaveLength(3);
     expect(results[0].matchedText).toBe("第一");

@@ -13,10 +13,15 @@ export type ReaderLookupKind = "word" | "name";
 
 export interface ReaderDictKanji {
   text: string;
+  common: boolean;
+  tags: string[];
 }
 
 export interface ReaderDictKana {
   text: string;
+  romaji: string | null;
+  common: boolean;
+  tags: string[];
 }
 
 export interface ReaderGloss {
@@ -27,6 +32,9 @@ export interface ReaderGloss {
 export interface ReaderDictSense {
   partOfSpeech: string[];
   glosses: ReaderGloss[];
+  field: string | null;
+  misc: string | null;
+  info: string | null;
 }
 
 export interface ReaderPitchAccent {
@@ -61,6 +69,9 @@ export interface ReaderLookupResult {
   lookupKind?: ReaderLookupKind;
   alternateResults?: ReaderLookupResult[];
 }
+
+export type LookupResult = ReaderLookupResult;
+export type LookupKind = ReaderLookupKind;
 
 export type ReaderBookSourceKind = "aozora" | "import" | "syosetu" | "article";
 

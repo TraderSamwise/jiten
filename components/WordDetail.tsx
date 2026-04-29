@@ -29,8 +29,8 @@ import { japaneseFontStyle } from "@/lib/japanese-font";
 import { BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
-import { decomposeWord, type LookupResult } from "@/lib/smart-lookup";
 import type { DictEntry } from "@/db/types";
+import { decomposeWord, type LookupResult } from "@jiten/japanese-reader";
 
 function isKanji(code: number): boolean {
   return (
