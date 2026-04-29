@@ -5,16 +5,13 @@ import {
   defaultReaderFuriganaRuleLevels,
   type FuriganaMatchLevel,
   type ReaderFuriganaRule,
-} from "../packages/japanese-reader/src/furigana-types";
+} from "@jiten/japanese-reader";
 
 // ─── Types ───
 
 export type ThemePreference = "system" | "light" | "dark";
 export type FuriganaMode = "off" | "auto" | "on";
-export type {
-  FuriganaMatchLevel,
-  ReaderFuriganaRule,
-} from "../packages/japanese-reader/src/furigana-types";
+export type { FuriganaMatchLevel, ReaderFuriganaRule } from "@jiten/japanese-reader";
 export type ConnectGameMode = "timed" | "survival" | "zen";
 export type TimedDuration = 60 | 90 | 120;
 export type SpeedPreset = "easy" | "normal" | "hard";
@@ -26,7 +23,7 @@ export type ConnectBubbleKinds = { kanji: boolean; reading: boolean; meaning: bo
 export {
   defaultFuriganaMatchLevels,
   defaultReaderFuriganaRuleLevels,
-} from "../packages/japanese-reader/src/furigana-types";
+} from "@jiten/japanese-reader";
 
 export const defaultSettings = Object.freeze({
   theme: "system" as ThemePreference,
