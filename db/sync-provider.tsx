@@ -97,6 +97,8 @@ interface SyncProviderProps {
 
 export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProviderProps) {
   const userDb = useUserDb();
+  const userDbRef = useRef(userDb);
+  userDbRef.current = userDb;
   const isRealUser = userId !== "local" && isSyncEnabled();
   const [syncStatus, setSyncStatus] = useState<SyncContextType["syncStatus"]>(
     isRealUser ? "idle" : "disabled",
@@ -180,16 +182,24 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
 
     let cancelled = false;
     (async () => {
+      const currentDb = userDb;
       const lastUser = await getLastUser();
-      if (cancelled) return;
+      if (cancelled || userDbRef.current !== currentDb) return;
 
       if (lastUser === userId) {
         // Same user — proceed
         setReconciled(true);
       } else if (!lastUser) {
         // First sign-in — check for local data
-        const localData = await hasLocalData(userDb);
-        if (cancelled) return;
+        let localData = false;
+        try {
+          localData = await hasLocalData(currentDb);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (message.includes("Null connection")) return;
+          throw err;
+        }
+        if (cancelled || userDbRef.current !== currentDb) return;
         if (localData) {
           setNeedsFirstSyncChoice(true);
         } else {
