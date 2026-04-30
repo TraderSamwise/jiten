@@ -819,7 +819,10 @@ function matchesSelectedWordLevel(
   entry: FuriganaEntry,
   enabledLevels: Set<number | null>,
 ): boolean {
-  return entry.wordJlpt != null && enabledLevels.has(entry.wordJlpt);
+  if (entry.wordJlpt == null) {
+    return enabledLevels.has(null);
+  }
+  return enabledLevels.has(entry.wordJlpt);
 }
 
 function shouldShowFuriganaForSurface(
