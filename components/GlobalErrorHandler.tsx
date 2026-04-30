@@ -40,7 +40,11 @@ export function notifyDbError(err: unknown, sql?: string) {
 
   // Web: stale background tabs can produce transient WASM SQLite errors.
   // Auto-refresh once — if the error recurs after refresh, show recovery UI.
-  if (typeof window !== "undefined") {
+  if (
+    typeof window !== "undefined" &&
+    typeof localStorage !== "undefined" &&
+    typeof window.location?.reload === "function"
+  ) {
     const KEY = "jiten_db_err_refresh";
     const last = localStorage.getItem(KEY);
     const now = Date.now();
