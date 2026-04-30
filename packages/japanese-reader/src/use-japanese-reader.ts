@@ -354,6 +354,8 @@ export function useJapaneseReader({
   const readerLoadTokenRef = useRef(0);
   const readerLoadDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelRef = useRef<TextModel | null>(null);
+  const htmlRef = useRef<string | null>(null);
+  const loadedBookSignatureRef = useRef<{ bookId: string; rawContent: string } | null>(null);
   const sliceCharOffsetRef = useRef(0);
   const fwdLoadedEndRef = useRef(0);
   const isAozoraRef = useRef(false);
@@ -411,6 +413,10 @@ export function useJapaneseReader({
   useEffect(() => {
     fontSizeRef.current = fontSize;
   }, [fontSize]);
+
+  useEffect(() => {
+    htmlRef.current = html;
+  }, [html]);
 
   useEffect(() => {
     if (readerBookmarkHighlights && !bookmarks) {
@@ -881,8 +887,27 @@ export function useJapaneseReader({
           setMissingBook(true);
           setBook(null);
           setHtml(null);
+          htmlRef.current = null;
+          loadedBookSignatureRef.current = null;
           return;
         }
+
+        const previousSignature = loadedBookSignatureRef.current;
+        if (
+          htmlRef.current !== null &&
+          previousSignature?.bookId === bookId &&
+          previousSignature.rawContent === nextBook.rawContent
+        ) {
+          setMissingBook(false);
+          setBook(nextBook);
+          fontSizeRef.current = nextBook.fontSize;
+          setFontSize(nextBook.fontSize);
+          lastPersistedCharOffsetRef.current = nextBook.charOffset;
+          lastPersistedReadCompleteRef.current = !!nextBook.readComplete;
+          pendingReadCompleteRef.current = !!nextBook.readComplete;
+          return;
+        }
+
         setMissingBook(false);
         setBook(nextBook);
         fontSizeRef.current = nextBook.fontSize;
@@ -938,7 +963,9 @@ export function useJapaneseReader({
             pageAnimations: currentPageAnimations,
           });
           appliedTransformSettingsRef.current = transformSnapshot;
+          loadedBookSignatureRef.current = { bookId, rawContent };
           setHtml(readerHtml);
+          htmlRef.current = readerHtml;
         } else {
           updateReaderLoadStage(activeLoad.token, activeLoad.stages, "parsing");
           const isAozora = hasAozoraMarkup(rawContent);
@@ -1017,7 +1044,9 @@ export function useJapaneseReader({
             });
           }
           appliedTransformSettingsRef.current = transformSnapshot;
+          loadedBookSignatureRef.current = { bookId, rawContent };
           setHtml(readerHtml);
+          htmlRef.current = readerHtml;
         }
 
         await bookSource.markOpened?.(bookId);
