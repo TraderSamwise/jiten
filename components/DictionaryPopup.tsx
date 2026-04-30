@@ -81,8 +81,23 @@ function getItemKey(item: FlatLookupItem | null): string {
   return `${item.wordIdx}:${item.variantIdx}:${item.entryIdx}`;
 }
 
+function getPayloadKey(payload: PanelPayload | null): string {
+  if (!payload || !payload.item || !payload.result || !payload.panelWordResult) return "empty";
+  const entryKey = payload.panelEntry
+    ? `entry:${payload.panelEntry.id}`
+    : payload.panelIsNameResult
+      ? `name:${payload.panelWordResult.nameMatches?.[0]?.id ?? "none"}`
+      : "entry:none";
+  return [
+    getItemKey(payload.item),
+    payload.result.matchedText,
+    payload.panelWordResult.lookupKind ?? "lookup",
+    entryKey,
+  ].join("|");
+}
+
 function areSamePayload(a: PanelPayload | null, b: PanelPayload | null): boolean {
-  return areSameItem(a?.item ?? null, b?.item ?? null);
+  return getPayloadKey(a) === getPayloadKey(b);
 }
 
 function getFlatItemsForSelection(
