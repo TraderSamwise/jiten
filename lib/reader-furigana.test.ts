@@ -209,6 +209,23 @@ describe("applyFuriganaToHtml", () => {
     expect(result).toContain("<ruby>油<rt>あぶら</rt></ruby>");
   });
 
+  it("never substitutes dictionary spelling into the visible base text", () => {
+    const map = new Map<string, FuriganaEntry>([
+      [
+        "しょう油",
+        {
+          kanjiPart: "醤油",
+          reading: "しょうゆ",
+          kanjiPartLen: 4,
+        },
+      ],
+    ]);
+    const html = "<p>しょう油</p>";
+    const result = applyFuriganaToHtml(html, map, allKanji, alwaysShowInjectedFurigana);
+    expect(result).not.toContain("醤油");
+    expect(result).toContain("<ruby>しょう油<rt>しょうゆ</rt></ruby>");
+  });
+
   it("cross-boundary: long surface consumes chars from next paragraph", () => {
     // If the dictionary has surface "花屋" and HTML has "花</p><p>屋根",
     // getVisibleCharsFrom skips the </p><p> and sees "花屋根".
@@ -830,6 +847,24 @@ describe("resolveFuriganaBatch compound resolution", () => {
       withRuleLevels({}, { showNames: true, showCounters: false, sourceDefault: false }),
     );
     expect(result).not.toContain("<ruby>最初<rt>");
+  });
+
+  it("full pipeline never rewrites kana prose into alternate-kanji name spellings", async () => {
+    const html = "<p>うーと言ったのは、イギリスの劇作家マーローだ。</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb, { includeNames: true });
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      allKanji,
+      withRuleLevels({}, { showNames: true, showCounters: false, sourceDefault: false }),
+    );
+    expect(result).toContain("イギリス");
+    expect(result).toContain("の");
+    expect(result).not.toContain("英吉利");
+    expect(result).not.toContain("徐");
+    expect(result).not.toContain("寿野");
   });
 
   it("full pipeline does not leak 心地 furigana into 居心地 when only N1 word-level is enabled", async () => {
