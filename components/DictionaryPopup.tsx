@@ -1049,30 +1049,35 @@ export function DictionaryPopup({
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 100,
+          zIndex: 40,
         }}
         pointerEvents="box-none"
       >
         {/* Dismiss area — taps here close the popup, taps pass through to webview once unmounted */}
         <Pressable style={{ flex: 1, cursor: "default" as any }} onPress={onClose} />
-
-        {/* Popup panel */}
-        <Animated.View
-          style={[
-            animatedStyle,
-            {
-              backgroundColor: "transparent",
-            },
-          ]}
-        >
-          <View
-            className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
-            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
-          >
-            {renderContent()}
-          </View>
-        </Animated.View>
       </View>
+
+      {/* Popup panel stays above the selection toolbar; the dismiss layer stays below it. */}
+      <Animated.View
+        style={[
+          animatedStyle,
+          {
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 100,
+            backgroundColor: "transparent",
+          },
+        ]}
+      >
+        <View
+          className="bg-background border-t border-border rounded-t-2xl px-4 pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+        >
+          {renderContent()}
+        </View>
+      </Animated.View>
 
       {popoverVisible && currentEntry && (
         <BookmarkPopover
