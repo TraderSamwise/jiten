@@ -984,6 +984,14 @@ describe("Production counter-aware lookup", () => {
     expect(hits[0].matchedText).toBe("額");
     expect(hits[0].entries[0].kana.some((kana) => kana.text === "ひたい")).toBe(true);
   });
+
+  test("prose lookup prefers 具=ぐ over 具=つま before a kanji continuation", async () => {
+    const hits = await smartLookupWithOffset("具天使徐卯", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("具");
+    expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "具")).toBe(true);
+    expect(hits[0].entries[0].kana.some((kana) => kana.text === "ぐ")).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
