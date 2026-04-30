@@ -362,6 +362,21 @@ describe("reader furigana rule levels", () => {
     expect(result).toContain("<ruby>左右<rt>さゆう</rt></ruby>");
   });
 
+  it("matchWordLevel treats Other as unbucketed JLPT words", () => {
+    const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
+    const map = makeMapWithJlpt([["語彙", "語彙", "ごい", null]]);
+    const html = "<p>語彙を増やす</p>";
+    const result = applyFuriganaToHtml(
+      html,
+      map,
+      n4Only,
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: true },
+      }),
+    );
+    expect(result).toContain("<ruby>語彙<rt>ごい</rt></ruby>");
+  });
+
   it("matchIrregularReading shows irregular readings when the word level matches", () => {
     const n4Only: FuriganaKanjiSet = { all: false, chars: new Set(["昨"]) };
     const map = makeMapWithJlpt([["左右", "左右", "さゆう", 4, true]]);
