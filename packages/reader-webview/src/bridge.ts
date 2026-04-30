@@ -11,6 +11,7 @@ import {
   expandPageForHighlight,
   contractPageForHighlight,
 } from "./pagination";
+import { resetBookmarkHighlightState, setBookmarkHighlights } from "./bookmarks";
 
 function applyTheme(theme: {
   bg: string;
@@ -99,8 +100,10 @@ export function setupMessageListener(): void {
         clearHighlight();
       } else if (msg.type === "setNextContent") {
         replaceOffscreenContent(msg.replaceFromChar, msg.html);
+        resetBookmarkHighlightState();
       } else if (msg.type === "setPrevContent") {
         prependBackSlice(msg.html, msg.charCount);
+        resetBookmarkHighlightState();
       } else if (msg.type === "reloadContent") {
         const charBefore = canonicalOrMFVC();
         if (msg.lineHeight) state.contentEl!.style.lineHeight = String(msg.lineHeight);
@@ -112,6 +115,7 @@ export function setupMessageListener(): void {
         if (msg.sliceCharOffset != null) state.sliceCharOffset = msg.sliceCharOffset;
         state.totalPrependWidth = 0;
         state.prependedPages = 0;
+        resetBookmarkHighlightState();
         requestAnimationFrame(function () {
           paginate();
           alignToTargetChar(msg.targetLocalChar ?? charBefore);
@@ -121,6 +125,8 @@ export function setupMessageListener(): void {
       } else if (msg.type === "setTheme") {
         if (!msg.theme) return;
         applyTheme(msg.theme);
+      } else if (msg.type === "setBookmarkHighlights") {
+        setBookmarkHighlights({ version: msg.version, surfaces: msg.surfaces });
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");

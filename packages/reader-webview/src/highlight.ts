@@ -30,6 +30,7 @@ function getHighlightBg(): string {
 // Keep references so we can clear ranges directly
 let activeHighlight: Highlight | null = null;
 let activeRanges: Range[] = [];
+let activeAbsRange: { start: number; end: number } | null = null;
 
 function isInsideRt(node: Node): boolean {
   let parent = node.parentNode;
@@ -60,6 +61,14 @@ function makeTextWalker(): TreeWalker {
 // ---------- Clear ----------
 
 export function clearHighlight(): void {
+  clearHighlightPaintOnly();
+
+  if (state.dragMode !== "selecting") {
+    animateResetShift();
+  }
+}
+
+function clearHighlightPaintOnly(): void {
   if (useHighlightAPI) {
     // Safari vertical-rl: highlight removal computes wrong repaint rects,
     // leaving stale painted pixels. Adding a full-content range before
@@ -86,9 +95,16 @@ export function clearHighlight(): void {
 
   // Always clear ruby highlight classes (used as supplement on Safari)
   clearRubyHighlight();
+  activeAbsRange = null;
+}
 
-  if (state.dragMode !== "selecting") {
-    animateResetShift();
+export function withPreservedHighlight(mutator: () => void): void {
+  const previousRange = activeAbsRange;
+  if (previousRange) clearHighlightPaintOnly();
+  try {
+    mutator();
+  } finally {
+    if (previousRange) highlightAbsRange(previousRange.start, previousRange.end);
   }
 }
 
@@ -133,6 +149,7 @@ export function applyHighlight(startDelta: number, len: number): void {
 export function highlightAbsRange(absStart: number, absEnd: number): void {
   if (absEnd <= absStart) return;
   if (absStart < 0) absStart = 0;
+  activeAbsRange = { start: absStart, end: absEnd };
 
   if (useHighlightAPI) {
     highlightAbsRangeAPI(absStart, absEnd);
