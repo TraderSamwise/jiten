@@ -199,7 +199,7 @@ function HighlightToolbar({
     <View
       style={{
         position: "absolute",
-        zIndex: 101,
+        zIndex: 50,
         top,
         left,
       }}
@@ -1155,7 +1155,7 @@ export default function BookReaderScreen() {
               )}
             </View>
 
-            {Platform.OS !== "web" && copyTooltip && (
+            {copyTooltip && (
               <HighlightToolbar
                 tooltip={copyTooltip}
                 readerY={readerLayoutY}
