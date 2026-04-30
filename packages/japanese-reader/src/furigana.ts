@@ -440,6 +440,14 @@ function hasKanjiText(text: string): boolean {
   return false;
 }
 
+function firstKanjiIndex(text: string): number {
+  const chars = [...text];
+  for (let i = 0; i < chars.length; i++) {
+    if (isKanji(chars[i])) return i;
+  }
+  return -1;
+}
+
 function scoreFuriganaWordMatch(
   surface: string,
   match: DictMatch,
@@ -494,6 +502,24 @@ function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | n
 
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
   return hasKanjiText(surface);
+}
+
+function resolveLexicalSuffixJlpt(
+  surface: string,
+  lookupMap: Map<string, DictMatch>,
+): number | null | undefined {
+  const kanjiStart = firstKanjiIndex(surface);
+  if (kanjiStart <= 0) return undefined;
+
+  const suffixSurface = [...surface].slice(kanjiStart).join("");
+  const suffixWords = deinflect(suffixSurface).map((c) => c.word);
+
+  for (const word of suffixWords) {
+    const match = lookupMap.get(word);
+    if (match?.jlptLevel != null) return match.jlptLevel;
+  }
+
+  return undefined;
 }
 
 // ─── Public API ───
@@ -629,7 +655,8 @@ export async function resolveFuriganaBatch(
     if (useName) {
       entry.isName = true;
     } else if (bestWordMatch) {
-      if (bestWordMatch.match.jlptLevel != null) entry.wordJlpt = bestWordMatch.match.jlptLevel;
+      entry.wordJlpt =
+        bestWordMatch.match.jlptLevel ?? resolveLexicalSuffixJlpt(surface, lookupMap) ?? undefined;
       if (bestWordMatch.match.irregularReading) entry.irregularReading = true;
     }
     resolved.set(surface, entry);

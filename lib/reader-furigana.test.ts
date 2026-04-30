@@ -945,4 +945,20 @@ describe("resolveFuriganaBatch compound resolution", () => {
     );
     expect(result).toContain("<ruby>悪<rt>わる</rt></ruby>さ");
   });
+
+  it("full pipeline does not treat kana-prefixed lexical words like と言った as Other", async () => {
+    const html = "<p>うーと言ったのは</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: true },
+      }),
+    );
+    expect(result).not.toContain("<ruby>と言<rt>とい</rt></ruby>った");
+  });
 });
