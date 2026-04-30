@@ -14,7 +14,7 @@ import {
   type TextModel,
 } from "@jiten/japanese-reader-core";
 import type { JapaneseReaderBackend, ReaderBookSource } from "./backend";
-import { applyResolvedBookmarkHighlightsToHtml } from "./bookmarks";
+import { resolveBookmarkedWordSurfacesInHtml } from "./bookmarks";
 import {
   applyFuriganaToHtml,
   buildFuriganaKanjiSet,
@@ -44,12 +44,7 @@ import type {
   ReaderViewRef,
 } from "./types";
 
-type ReaderLoadStage =
-  | "preparing"
-  | "parsing"
-  | "generatingPages"
-  | "generatingFurigana"
-  | "highlightingBookmarks";
+type ReaderLoadStage = "preparing" | "parsing" | "generatingPages" | "generatingFurigana";
 
 const READER_LOAD_STAGE_META: Record<ReaderLoadStage, { title: string; detail: string }> = {
   preparing: { title: "Preparing reader", detail: "Loading book data" },
@@ -61,10 +56,6 @@ const READER_LOAD_STAGE_META: Record<ReaderLoadStage, { title: string; detail: s
   generatingFurigana: {
     title: "Generating furigana",
     detail: "Applying reading annotations",
-  },
-  highlightingBookmarks: {
-    title: "Generating highlighted words",
-    detail: "Marking bookmarked vocabulary",
   },
 };
 
@@ -167,9 +158,7 @@ type ReaderTransformSettingsSnapshot = {
   sourceFuriganaEnabled: boolean;
   readerCounterFurigana: boolean;
   readerNameFurigana: boolean;
-  readerBookmarkHighlights: boolean;
   furiganaRuleLevelsKey: string;
-  bookmarkHighlightReloadKey: string;
 };
 
 function warnOnce(key: string, message: string, onWarning?: (message: string) => void) {
@@ -186,17 +175,14 @@ function warnOnce(key: string, message: string, onWarning?: (message: string) =>
 function buildReaderLoadSequence({
   needsParsing,
   needsFurigana,
-  needsBookmarkHighlights,
 }: {
   needsParsing: boolean;
   needsFurigana: boolean;
-  needsBookmarkHighlights: boolean;
 }): ReaderLoadStage[] {
   const stages: ReaderLoadStage[] = ["preparing"];
   if (needsParsing) stages.push("parsing");
   stages.push("generatingPages");
   if (needsFurigana) stages.push("generatingFurigana");
-  if (needsBookmarkHighlights) stages.push("highlightingBookmarks");
   return stages;
 }
 
@@ -316,9 +302,7 @@ function transformSettingsSnapshotsEqual(
     a.sourceFuriganaEnabled === b.sourceFuriganaEnabled &&
     a.readerCounterFurigana === b.readerCounterFurigana &&
     a.readerNameFurigana === b.readerNameFurigana &&
-    a.readerBookmarkHighlights === b.readerBookmarkHighlights &&
-    a.furiganaRuleLevelsKey === b.furiganaRuleLevelsKey &&
-    a.bookmarkHighlightReloadKey === b.bookmarkHighlightReloadKey
+    a.furiganaRuleLevelsKey === b.furiganaRuleLevelsKey
   );
 }
 
@@ -371,8 +355,9 @@ export function useJapaneseReader({
   const furiganaEntryCacheRef = useRef<Map<string, FuriganaEntry | null>>(new Map());
   const baseSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
   const furiganaSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
-  const bookmarkSliceHtmlCacheRef = useRef<Map<string, string>>(new Map());
   const appliedTransformSettingsRef = useRef<ReaderTransformSettingsSnapshot | null>(null);
+  const currentReaderContentHtmlRef = useRef("");
+  const bookmarkHighlightRequestRef = useRef(0);
   const scrollPosRef = useRef(0);
   const pendingReadCompleteRef = useRef(false);
   const lastPersistedCharOffsetRef = useRef(0);
@@ -438,8 +423,6 @@ export function useJapaneseReader({
     settings.readerNameFurigana,
   ]);
 
-  const bookmarkedEntryIdsKey = bookmarks?.version ?? "";
-
   const getRuleLevelsCacheKey = useCallback(
     (ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>) =>
       JSON.stringify(ruleLevels),
@@ -451,11 +434,9 @@ export function useJapaneseReader({
       sourceFuriganaEnabled: settings.sourceFuriganaEnabled,
       readerCounterFurigana: settings.readerCounterFurigana,
       readerNameFurigana: settings.readerNameFurigana,
-      readerBookmarkHighlights: settings.readerBookmarkHighlights,
       furiganaRuleLevelsKey: getRuleLevelsCacheKey(settings.furiganaRuleLevels),
-      bookmarkHighlightReloadKey: settings.readerBookmarkHighlights ? bookmarkedEntryIdsKey : "",
     }),
-    [bookmarkedEntryIdsKey, getRuleLevelsCacheKey, settings],
+    [getRuleLevelsCacheKey, settings],
   );
 
   const setCachedHtml = useCallback((cache: Map<string, string>, key: string, nextHtml: string) => {
@@ -471,18 +452,12 @@ export function useJapaneseReader({
   const clearBaseAndTransformCaches = useCallback(() => {
     baseSliceHtmlCacheRef.current.clear();
     furiganaSliceHtmlCacheRef.current.clear();
-    bookmarkSliceHtmlCacheRef.current.clear();
     furiganaEntryCacheRef.current.clear();
   }, []);
 
-  const clearFuriganaAndBookmarkCaches = useCallback(() => {
+  const clearFuriganaCaches = useCallback(() => {
     furiganaSliceHtmlCacheRef.current.clear();
-    bookmarkSliceHtmlCacheRef.current.clear();
     furiganaEntryCacheRef.current.clear();
-  }, []);
-
-  const clearBookmarkCaches = useCallback(() => {
-    bookmarkSliceHtmlCacheRef.current.clear();
   }, []);
 
   const beginReaderLoad = useCallback((stages: ReaderLoadStage[]) => {
@@ -543,10 +518,29 @@ export function useJapaneseReader({
     }, READER_LOAD_DISMISS_DELAY_MS);
   }, []);
 
-  const maybeApplyBookmarkHighlights = useCallback(
-    async (nextHtml: string, enabled: boolean) => {
-      if (!enabled || !dictDb || !bookmarkMembershipRef.current) return nextHtml;
-      return applyResolvedBookmarkHighlightsToHtml(dictDb, nextHtml, bookmarkMembershipRef.current);
+  const syncBookmarkHighlights = useCallback(
+    async (contentHtml = currentReaderContentHtmlRef.current) => {
+      const token = ++bookmarkHighlightRequestRef.current;
+      const enabled = readerBookmarkHighlightsRef.current;
+      const membership = bookmarkMembershipRef.current;
+      const version = enabled && membership ? membership.version : "";
+
+      if (!enabled || !dictDb || !membership || !contentHtml) {
+        readerViewRef.current?.postMessage(
+          JSON.stringify({ type: "setBookmarkHighlights", version, surfaces: [] }),
+        );
+        return;
+      }
+
+      const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, contentHtml, membership);
+      if (bookmarkHighlightRequestRef.current !== token) return;
+      readerViewRef.current?.postMessage(
+        JSON.stringify({
+          type: "setBookmarkHighlights",
+          version,
+          surfaces: [...surfaces],
+        }),
+      );
     },
     [dictDb],
   );
@@ -558,21 +552,18 @@ export function useJapaneseReader({
       showNames,
       showCounters,
       ruleLevels,
-      highlightBookmarks,
     }: {
       rawContent: string;
       sourceDefault: boolean;
       showNames: boolean;
       showCounters: boolean;
       ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
-      highlightBookmarks: boolean;
     }) => {
       const hasFuri = hasFuriganaActive(sourceDefault, showNames, showCounters, ruleLevels, true);
-      let content = hasFuri ? rawContent : stripRubyTags(rawContent);
-      content = await maybeApplyBookmarkHighlights(content, highlightBookmarks);
+      const content = hasFuri ? rawContent : stripRubyTags(rawContent);
       return { content, hasFuri };
     },
-    [maybeApplyBookmarkHighlights],
+    [],
   );
 
   const getBaseSliceHtml = useCallback(
@@ -695,7 +686,6 @@ export function useJapaneseReader({
       ruleLevels,
       includeCounters,
       includeNames,
-      highlightBookmarks,
       onStage,
     }: {
       sliceText: string;
@@ -707,7 +697,6 @@ export function useJapaneseReader({
       ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
       includeCounters: boolean;
       includeNames: boolean;
-      highlightBookmarks: boolean;
       onStage?: (stage: ReaderLoadStage) => void;
     }) => {
       const baseSlice = getBaseSliceHtml({ sliceText, startChar, charCount, isAozora });
@@ -722,22 +711,9 @@ export function useJapaneseReader({
         includeNames,
         onStage,
       });
-
-      if (!highlightBookmarks) return furiganaSlice.html;
-      const bookmarkVersion = bookmarkMembershipRef.current?.version ?? "";
-      const bookmarkCacheKey = [furiganaSlice.cacheKey, bookmarkVersion].join(":");
-      const cachedHtml = bookmarkSliceHtmlCacheRef.current.get(bookmarkCacheKey);
-      if (cachedHtml != null) {
-        setCachedHtml(bookmarkSliceHtmlCacheRef.current, bookmarkCacheKey, cachedHtml);
-        return cachedHtml;
-      }
-
-      onStage?.("highlightingBookmarks");
-      const bookmarkedHtml = await maybeApplyBookmarkHighlights(furiganaSlice.html, true);
-      setCachedHtml(bookmarkSliceHtmlCacheRef.current, bookmarkCacheKey, bookmarkedHtml);
-      return bookmarkedHtml;
+      return furiganaSlice.html;
     },
-    [getBaseSliceHtml, getFuriganaSliceHtml, maybeApplyBookmarkHighlights, setCachedHtml],
+    [getBaseSliceHtml, getFuriganaSliceHtml],
   );
 
   const cycleLookupMode = useCallback(() => {
@@ -770,7 +746,6 @@ export function useJapaneseReader({
       const sourceDefault = sourceFuriganaEnabledRef.current;
       const showCounters = readerCounterFuriganaRef.current;
       const showNames = readerNameFuriganaRef.current;
-      const highlightBookmarks = readerBookmarkHighlightsRef.current;
       const ruleLevels = furiganaRuleLevelsRef.current;
       const hasFuri =
         kanjiSetRef.current != null ||
@@ -800,11 +775,11 @@ export function useJapaneseReader({
         ruleLevels,
         includeCounters: showCounters,
         includeNames: showNames,
-        highlightBookmarks,
         onStage: loadContext
           ? (stage) => updateReaderLoadStage(loadContext.token, loadContext.stages, stage)
           : undefined,
       });
+      currentReaderContentHtmlRef.current = sliceHtml;
 
       readerViewRef.current?.postMessage(
         JSON.stringify({
@@ -818,8 +793,9 @@ export function useJapaneseReader({
           hasFurigana: hasFuri,
         }),
       );
+      void syncBookmarkHighlights(sliceHtml);
     },
-    [renderSliceHtml, updateReaderLoadStage],
+    [renderSliceHtml, syncBookmarkHighlights, updateReaderLoadStage],
   );
 
   const flushReadingProgress = useCallback(async () => {
@@ -906,7 +882,6 @@ export function useJapaneseReader({
                 settings.readerCounterFurigana,
                 settings.furiganaRuleLevels,
               ),
-            needsBookmarkHighlights: settings.readerBookmarkHighlights,
           }),
         );
         const activeLoad = load;
@@ -920,11 +895,8 @@ export function useJapaneseReader({
             showNames: settings.readerNameFurigana,
             showCounters: settings.readerCounterFurigana,
             ruleLevels: settings.furiganaRuleLevels,
-            highlightBookmarks: settings.readerBookmarkHighlights,
           });
-          if (settings.readerBookmarkHighlights) {
-            updateReaderLoadStage(activeLoad.token, activeLoad.stages, "highlightingBookmarks");
-          }
+          currentReaderContentHtmlRef.current = content;
           const readerHtml = generateReaderHtml(content, {
             fontSize: nextBook.fontSize,
             isDark,
@@ -1002,9 +974,9 @@ export function useJapaneseReader({
             ruleLevels: settings.furiganaRuleLevels,
             includeCounters: settings.readerCounterFurigana,
             includeNames: settings.readerNameFurigana,
-            highlightBookmarks: settings.readerBookmarkHighlights,
             onStage: (stage) => updateReaderLoadStage(activeLoad.token, activeLoad.stages, stage),
           });
+          currentReaderContentHtmlRef.current = sliceHtml;
 
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: nextBook.fontSize,
@@ -1061,18 +1033,12 @@ export function useJapaneseReader({
       previousSnapshot.readerCounterFurigana !== nextSnapshot.readerCounterFurigana ||
       previousSnapshot.readerNameFurigana !== nextSnapshot.readerNameFurigana ||
       previousSnapshot.furiganaRuleLevelsKey !== nextSnapshot.furiganaRuleLevelsKey;
-    const bookmarkChanged =
-      !previousSnapshot ||
-      previousSnapshot.readerBookmarkHighlights !== nextSnapshot.readerBookmarkHighlights ||
-      previousSnapshot.bookmarkHighlightReloadKey !== nextSnapshot.bookmarkHighlightReloadKey;
-
     (async () => {
       const hasRubyTags = /<ruby[>\s]/.test(rawContent);
       const load = beginReaderLoad(
         buildReaderLoadSequence({
           needsParsing: !hasRubyTags,
           needsFurigana: furiganaChanged,
-          needsBookmarkHighlights: nextSnapshot.readerBookmarkHighlights,
         }),
       );
       try {
@@ -1084,11 +1050,8 @@ export function useJapaneseReader({
             showNames: settings.readerNameFurigana,
             showCounters: settings.readerCounterFurigana,
             ruleLevels: settings.furiganaRuleLevels,
-            highlightBookmarks: settings.readerBookmarkHighlights,
           });
-          if (settings.readerBookmarkHighlights) {
-            updateReaderLoadStage(load.token, load.stages, "highlightingBookmarks");
-          }
+          currentReaderContentHtmlRef.current = content;
           readerViewRef.current?.postMessage(
             JSON.stringify({
               type: "reloadContent",
@@ -1101,6 +1064,7 @@ export function useJapaneseReader({
               hasFurigana: hasFuri,
             }),
           );
+          void syncBookmarkHighlights(content);
           appliedTransformSettingsRef.current = nextSnapshot;
           return;
         }
@@ -1115,9 +1079,7 @@ export function useJapaneseReader({
                 settings.readerCounterFurigana,
               )
             : null;
-          clearFuriganaAndBookmarkCaches();
-        } else if (bookmarkChanged) {
-          clearBookmarkCaches();
+          clearFuriganaCaches();
         }
 
         const charOffset = scrollPosRef.current || 0;
@@ -1130,8 +1092,7 @@ export function useJapaneseReader({
   }, [
     beginReaderLoad,
     book,
-    clearBookmarkCaches,
-    clearFuriganaAndBookmarkCaches,
+    clearFuriganaCaches,
     dictDb,
     finishReaderLoad,
     getCurrentTransformSettingsSnapshot,
@@ -1139,8 +1100,14 @@ export function useJapaneseReader({
     reloadAtChar,
     renderPreformattedReaderContent,
     settings,
+    syncBookmarkHighlights,
     updateReaderLoadStage,
   ]);
+
+  useEffect(() => {
+    if (html === null) return;
+    void syncBookmarkHighlights();
+  }, [bookmarks?.version, html, settings.readerBookmarkHighlights, syncBookmarkHighlights]);
 
   useEffect(() => {
     return () => {
@@ -1293,9 +1260,9 @@ export function useJapaneseReader({
               ruleLevels: furiganaRuleLevelsRef.current,
               includeCounters: readerCounterFuriganaRef.current,
               includeNames: readerNameFuriganaRef.current,
-              highlightBookmarks: readerBookmarkHighlightsRef.current,
             });
             fwdLoadedEndRef.current = newEnd;
+            currentReaderContentHtmlRef.current += nextHtml;
             readerViewRef.current?.postMessage(
               JSON.stringify({
                 type: "setNextContent",
@@ -1303,6 +1270,7 @@ export function useJapaneseReader({
                 replaceFromChar: msg.lastCharIndex + 1,
               }),
             );
+            void syncBookmarkHighlights();
           }
 
           const localPage = msg.localPage ?? 1;
@@ -1333,8 +1301,8 @@ export function useJapaneseReader({
                 ruleLevels: furiganaRuleLevelsRef.current,
                 includeCounters: readerCounterFuriganaRef.current,
                 includeNames: readerNameFuriganaRef.current,
-                highlightBookmarks: readerBookmarkHighlightsRef.current,
               });
+              currentReaderContentHtmlRef.current = backHtml + currentReaderContentHtmlRef.current;
               readerViewRef.current?.postMessage(
                 JSON.stringify({
                   type: "setPrevContent",
@@ -1342,6 +1310,7 @@ export function useJapaneseReader({
                   charCount: backChars,
                 }),
               );
+              void syncBookmarkHighlights();
               sliceCharOffsetRef.current = backStart;
             } else {
               backPrefetchingRef.current = false;
@@ -1351,10 +1320,12 @@ export function useJapaneseReader({
           backPrefetchingRef.current = false;
         } else if (msg.type === "percentTap") {
           setShowJumpSlider(true);
+        } else if (msg.type === "ready") {
+          void syncBookmarkHighlights();
         }
       } catch {}
     },
-    [dictDb, extendedDb, renderSliceHtml, scheduleReadingProgressFlush],
+    [dictDb, extendedDb, renderSliceHtml, scheduleReadingProgressFlush, syncBookmarkHighlights],
   );
 
   const handleCopy = useCallback(() => {
