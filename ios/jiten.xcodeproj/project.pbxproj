@@ -7,32 +7,43 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0B24F21CD4DD31160FD60E7C /* libPods-jiten.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A8F4A38F094E622FF4F5B2C5 /* libPods-jiten.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		2BCB2E91C0D49E822595865A /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9464DC7D43BD9DE93B961CC2 /* ExpoModulesProvider.swift */; };
-		3C0AE0309ECD47CAAC406E96 /* ShareExtensionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D64E3D0888A431496F40E0C /* ShareExtensionViewController.swift */; };
+		23F6FFADABC14A35A6C3E3E3 /* jitenShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = 98253639550E43A3B01E72A1 /* jitenShareExtension.appex */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		56D28C56E9C92994AB907F7F /* libPods-jitenShareExtension.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 33CC8FA5E72D97A2BC5A5E32 /* libPods-jitenShareExtension.a */; };
-		8C3D0DC5AC20561A47841BAE /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9436DEED60E772F63033530D /* ExpoModulesProvider.swift */; };
+		53C1CDD64B33438B9F1A1A54 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0FAF80342FF1D83241000841 /* PrivacyInfo.xcprivacy */; };
+		7A7E3CAFC0349D50195E410F /* libPods-jitenShareExtension.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 06B9352585F13606DAA36D79 /* libPods-jitenShareExtension.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		CD34AA3E8174498A89EAC892 /* preprocessing.js in Resources */ = {isa = PBXBuildFile; fileRef = ADA1BE554E4340678D50B4D6 /* preprocessing.js */; };
-		D9B47C659F7A8A2C6330FDA3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C2D988E37F1EF4D94ECCC295 /* PrivacyInfo.xcprivacy */; };
-		E499A36A7F1849E59839AF26 /* jitenShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = 61D37371F50140C295CED45B /* jitenShareExtension.appex */; };
+		C03551208BA3B0A72CDC24E0 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA97DAA3D23C886EB8C94C8B /* ExpoModulesProvider.swift */; };
+		DBD80470F5B5443FB946B007 /* ShareExtensionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C2F311CFEC47A5844D9D3C /* ShareExtensionViewController.swift */; };
+		E18AF9CA1BD24009F7633779 /* libPods-jiten.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A4947E449486C42556727FF4 /* libPods-jiten.a */; };
+		EF8E7B8F35C897E3B2B54DEB /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 069CB81F72408D42DE6C2D1A /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		FE36F34589134D8AA14E549B /* preprocessing.js in Resources */ = {isa = PBXBuildFile; fileRef = D7C066F487A343C68C45A61E /* preprocessing.js */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		DC7EFCD8789F4F16A8F5DB06 /* PBXContainerItemProxy */ = {
+		C804BDF1888643FC8B050DB8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 2C04932D4FD64FA497E287F6;
+			remoteGlobalIDString = F0593C368F044152AAB93F9D;
 			remoteInfo = jitenShareExtension;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		A6E2CFCD0E4541C5B75DCC5D /* Embed Foundation Extensions */ = {
+		5818BEB5AB4C4281BB447ED9 /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				23F6FFADABC14A35A6C3E3E3 /* jitenShareExtension.appex in Copy Files */,
+			);
+			name = "Copy Files";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		996B1DC4B67247BA980DFC10 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
@@ -42,42 +53,31 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C9B57FE18E7D465A94A2B10B /* Copy Files */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				E499A36A7F1849E59839AF26 /* jitenShareExtension.appex in Copy Files */,
-			);
-			name = "Copy Files";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		069CB81F72408D42DE6C2D1A /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-jiten/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		06B9352585F13606DAA36D79 /* libPods-jitenShareExtension.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-jitenShareExtension.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0FAF80342FF1D83241000841 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = jiten/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* jiten.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = jiten.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = jiten/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = jiten/Info.plist; sourceTree = "<group>"; };
-		1E24CB2FA200A16CE2F92031 /* Pods-jiten.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jiten.release.xcconfig"; path = "Target Support Files/Pods-jiten/Pods-jiten.release.xcconfig"; sourceTree = "<group>"; };
-		33CC8FA5E72D97A2BC5A5E32 /* libPods-jitenShareExtension.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-jitenShareExtension.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		61D37371F50140C295CED45B /* jitenShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = jitenShareExtension.appex; path = jitenShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		63AD69BFE1E0D7F60FFD3BF8 /* Pods-jiten.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jiten.debug.xcconfig"; path = "Target Support Files/Pods-jiten/Pods-jiten.debug.xcconfig"; sourceTree = "<group>"; };
-		6A43B3CA97C32CD68332DE0B /* Pods-jitenShareExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jitenShareExtension.debug.xcconfig"; path = "Target Support Files/Pods-jitenShareExtension/Pods-jitenShareExtension.debug.xcconfig"; sourceTree = "<group>"; };
-		6D64E3D0888A431496F40E0C /* ShareExtensionViewController.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = ShareExtensionViewController.swift; path = ShareExtensionViewController.swift; sourceTree = "<group>"; };
-		9436DEED60E772F63033530D /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-jitenShareExtension/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		9464DC7D43BD9DE93B961CC2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-jiten/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		A06EE011F1B74FB8B12E8365 /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
-		A8F4A38F094E622FF4F5B2C5 /* libPods-jiten.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-jiten.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		169FE6E881E54475A0649CAD /* jitenShareExtension.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = jitenShareExtension.entitlements; path = jitenShareExtension.entitlements; sourceTree = "<group>"; };
+		3568748D9D878BAB16DE0C22 /* Pods-jitenShareExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jitenShareExtension.debug.xcconfig"; path = "Target Support Files/Pods-jitenShareExtension/Pods-jitenShareExtension.debug.xcconfig"; sourceTree = "<group>"; };
+		6365B30CE8BE47409D94F284 /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
+		73FF9E7B4F029DE5E552B703 /* Pods-jiten.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jiten.debug.xcconfig"; path = "Target Support Files/Pods-jiten/Pods-jiten.debug.xcconfig"; sourceTree = "<group>"; };
+		98253639550E43A3B01E72A1 /* jitenShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = jitenShareExtension.appex; path = jitenShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A4947E449486C42556727FF4 /* libPods-jiten.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-jiten.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = jiten/SplashScreen.storyboard; sourceTree = "<group>"; };
-		ADA1BE554E4340678D50B4D6 /* preprocessing.js */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = preprocessing.js; path = preprocessing.js; sourceTree = "<group>"; };
-		B0007C001EC34C3AB22F97E4 /* jitenShareExtension.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = jitenShareExtension.entitlements; path = jitenShareExtension.entitlements; sourceTree = "<group>"; };
+		AD40B43DA7899B08FF5EEF37 /* Pods-jiten.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jiten.release.xcconfig"; path = "Target Support Files/Pods-jiten/Pods-jiten.release.xcconfig"; sourceTree = "<group>"; };
+		B6C2F311CFEC47A5844D9D3C /* ShareExtensionViewController.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = ShareExtensionViewController.swift; path = ShareExtensionViewController.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C2D988E37F1EF4D94ECCC295 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = jiten/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		E66ECE58A53DD02434A4C7CC /* Pods-jitenShareExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jitenShareExtension.release.xcconfig"; path = "Target Support Files/Pods-jitenShareExtension/Pods-jitenShareExtension.release.xcconfig"; sourceTree = "<group>"; };
+		D7C066F487A343C68C45A61E /* preprocessing.js */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = preprocessing.js; path = preprocessing.js; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = jiten/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* jiten-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "jiten-Bridging-Header.h"; path = "jiten/jiten-Bridging-Header.h"; sourceTree = "<group>"; };
+		FA93DA9D52F9028AEA7DC871 /* Pods-jitenShareExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-jitenShareExtension.release.xcconfig"; path = "Target Support Files/Pods-jitenShareExtension/Pods-jitenShareExtension.release.xcconfig"; sourceTree = "<group>"; };
+		FA97DAA3D23C886EB8C94C8B /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-jitenShareExtension/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,15 +85,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0B24F21CD4DD31160FD60E7C /* libPods-jiten.a in Frameworks */,
+				E18AF9CA1BD24009F7633779 /* libPods-jiten.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		1601C80B41F2473A830D4745 /* Frameworks */ = {
+		14D32C2D3B794A198627F974 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				56D28C56E9C92994AB907F7F /* libPods-jitenShareExtension.a in Frameworks */,
+				7A7E3CAFC0349D50195E410F /* libPods-jitenShareExtension.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,7 +109,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				C2D988E37F1EF4D94ECCC295 /* PrivacyInfo.xcprivacy */,
+				0FAF80342FF1D83241000841 /* PrivacyInfo.xcprivacy */,
 			);
 			name = jiten;
 			sourceTree = "<group>";
@@ -118,18 +118,22 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				A8F4A38F094E622FF4F5B2C5 /* libPods-jiten.a */,
-				33CC8FA5E72D97A2BC5A5E32 /* libPods-jitenShareExtension.a */,
+				A4947E449486C42556727FF4 /* libPods-jiten.a */,
+				06B9352585F13606DAA36D79 /* libPods-jitenShareExtension.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		807CBE950E691BCC652298FD /* jitenShareExtension */ = {
+		7F1DE1BE63B74ABF9BCDA915 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				9436DEED60E772F63033530D /* ExpoModulesProvider.swift */,
+				73FF9E7B4F029DE5E552B703 /* Pods-jiten.debug.xcconfig */,
+				AD40B43DA7899B08FF5EEF37 /* Pods-jiten.release.xcconfig */,
+				3568748D9D878BAB16DE0C22 /* Pods-jitenShareExtension.debug.xcconfig */,
+				FA93DA9D52F9028AEA7DC871 /* Pods-jitenShareExtension.release.xcconfig */,
 			);
-			name = jitenShareExtension;
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -146,9 +150,9 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				DAE5A656FA7342F59C983CE3 /* jitenShareExtension */,
-				E349930DC33EB979B83B7A41 /* Pods */,
-				CABC2DCA19DDF2E4A8FE04B5 /* ExpoModulesProviders */,
+				D38F6EA3197640CE9F480EE0 /* jitenShareExtension */,
+				7F1DE1BE63B74ABF9BCDA915 /* Pods */,
+				BDA9A0A63478D553AE3A9B5A /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -159,7 +163,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* jiten.app */,
-				61D37371F50140C295CED45B /* jitenShareExtension.appex */,
+				98253639550E43A3B01E72A1 /* jitenShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -173,45 +177,41 @@
 			path = jiten/Supporting;
 			sourceTree = "<group>";
 		};
-		CABC2DCA19DDF2E4A8FE04B5 /* ExpoModulesProviders */ = {
+		BDA9A0A63478D553AE3A9B5A /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				DB2B96013942D2FF6389BD76 /* jiten */,
-				807CBE950E691BCC652298FD /* jitenShareExtension */,
+				DD88E57B4E51B622518C8380 /* jiten */,
+				EF7C15D235A67FDD3F4DF41A /* jitenShareExtension */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
-		DAE5A656FA7342F59C983CE3 /* jitenShareExtension */ = {
+		D38F6EA3197640CE9F480EE0 /* jitenShareExtension */ = {
 			isa = PBXGroup;
 			children = (
-				6D64E3D0888A431496F40E0C /* ShareExtensionViewController.swift */,
-				A06EE011F1B74FB8B12E8365 /* Info.plist */,
-				B0007C001EC34C3AB22F97E4 /* jitenShareExtension.entitlements */,
-				ADA1BE554E4340678D50B4D6 /* preprocessing.js */,
+				B6C2F311CFEC47A5844D9D3C /* ShareExtensionViewController.swift */,
+				6365B30CE8BE47409D94F284 /* Info.plist */,
+				169FE6E881E54475A0649CAD /* jitenShareExtension.entitlements */,
+				D7C066F487A343C68C45A61E /* preprocessing.js */,
 			);
 			name = jitenShareExtension;
 			path = jitenShareExtension;
 			sourceTree = "<group>";
 		};
-		DB2B96013942D2FF6389BD76 /* jiten */ = {
+		DD88E57B4E51B622518C8380 /* jiten */ = {
 			isa = PBXGroup;
 			children = (
-				9464DC7D43BD9DE93B961CC2 /* ExpoModulesProvider.swift */,
+				069CB81F72408D42DE6C2D1A /* ExpoModulesProvider.swift */,
 			);
 			name = jiten;
 			sourceTree = "<group>";
 		};
-		E349930DC33EB979B83B7A41 /* Pods */ = {
+		EF7C15D235A67FDD3F4DF41A /* jitenShareExtension */ = {
 			isa = PBXGroup;
 			children = (
-				63AD69BFE1E0D7F60FFD3BF8 /* Pods-jiten.debug.xcconfig */,
-				1E24CB2FA200A16CE2F92031 /* Pods-jiten.release.xcconfig */,
-				6A43B3CA97C32CD68332DE0B /* Pods-jitenShareExtension.debug.xcconfig */,
-				E66ECE58A53DD02434A4C7CC /* Pods-jitenShareExtension.release.xcconfig */,
+				FA97DAA3D23C886EB8C94C8B /* ExpoModulesProvider.swift */,
 			);
-			name = Pods;
-			path = Pods;
+			name = jitenShareExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -222,39 +222,39 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "jiten" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				185CC284E1C58A0600097AA6 /* [Expo] Configure project */,
+				4C028D06AD9CBF5E74540628 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				A6E2CFCD0E4541C5B75DCC5D /* Embed Foundation Extensions */,
-				C9B57FE18E7D465A94A2B10B /* Copy Files */,
-				0C77E8EC496143749A8B8C8B /* Upload Debug Symbols to Sentry */,
-				B6DBDF95AAD5E3879161F0FE /* [CP] Embed Pods Frameworks */,
+				996B1DC4B67247BA980DFC10 /* Embed Foundation Extensions */,
+				5818BEB5AB4C4281BB447ED9 /* Copy Files */,
+				12A19C26F19D4543BA099C81 /* Upload Debug Symbols to Sentry */,
+				F27E3119B41EADE079304961 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				F8C5745276EE425AA738D2CA /* PBXTargetDependency */,
+				64B9A06E94794E928371330F /* PBXTargetDependency */,
 			);
 			name = jiten;
 			productName = jiten;
 			productReference = 13B07F961A680F5B00A75B9A /* jiten.app */;
 			productType = "com.apple.product-type.application";
 		};
-		2C04932D4FD64FA497E287F6 /* jitenShareExtension */ = {
+		F0593C368F044152AAB93F9D /* jitenShareExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = FF2D099E31AD4B98B696DDFB /* Build configuration list for PBXNativeTarget "jitenShareExtension" */;
+			buildConfigurationList = 695C5E2099F34A3C966CFD41 /* Build configuration list for PBXNativeTarget "jitenShareExtension" */;
 			buildPhases = (
-				AD1857F2A02A7984145FE633 /* [CP] Check Pods Manifest.lock */,
-				924885082BA547F99A1F2DCD /* Start Packager */,
-				88C3D58B213BCE35A362D2FB /* [Expo] Configure project */,
-				A22776519F42437AAB0162C4 /* Sources */,
-				1601C80B41F2473A830D4745 /* Frameworks */,
-				A5D63C0B77C746C181B0F10F /* Resources */,
-				98B4E6FCE7344D548F42B5BA /* Bundle React Native code and images */,
-				E633AE67EB4B718B8B352A50 /* [CP] Copy Pods Resources */,
+				A4EB5AD3E05B9B72F270D13B /* [CP] Check Pods Manifest.lock */,
+				1EDFEDA8E8F442E8950D77BC /* Start Packager */,
+				95F5606DB56E9DC1E3DA2777 /* [Expo] Configure project */,
+				D9C4662EE96A46EFA09B5E7D /* Sources */,
+				14D32C2D3B794A198627F974 /* Frameworks */,
+				C9C790698EC24380AD39A2D1 /* Resources */,
+				3A7A1FE72FC645B4BA8E995F /* Bundle React Native code and images */,
+				F103E316E6798901FFDDD33F /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -262,7 +262,7 @@
 			);
 			name = jitenShareExtension;
 			productName = jitenShareExtension;
-			productReference = 61D37371F50140C295CED45B /* jitenShareExtension.appex */;
+			productReference = 98253639550E43A3B01E72A1 /* jitenShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -276,7 +276,7 @@
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
 					};
-					2C04932D4FD64FA497E287F6 = {
+					F0593C368F044152AAB93F9D = {
 						LastSwiftMigration = 1250;
 					};
 				};
@@ -295,7 +295,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* jiten */,
-				2C04932D4FD64FA497E287F6 /* jitenShareExtension */,
+				F0593C368F044152AAB93F9D /* jitenShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -308,15 +308,15 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				D9B47C659F7A8A2C6330FDA3 /* PrivacyInfo.xcprivacy in Resources */,
+				53C1CDD64B33438B9F1A1A54 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A5D63C0B77C746C181B0F10F /* Resources */ = {
+		C9C790698EC24380AD39A2D1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CD34AA3E8174498A89EAC892 /* preprocessing.js in Resources */,
+				FE36F34589134D8AA14E549B /* preprocessing.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -362,7 +362,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		0C77E8EC496143749A8B8C8B /* Upload Debug Symbols to Sentry */ = {
+		12A19C26F19D4543BA099C81 /* Upload Debug Symbols to Sentry */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -376,7 +376,35 @@
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh `${NODE_BINARY:-node} --print \"require('path').dirname(require.resolve('@sentry/react-native/package.json')) + '/scripts/sentry-xcode-debug-files.sh'\"`";
 		};
-		185CC284E1C58A0600097AA6 /* [Expo] Configure project */ = {
+		1EDFEDA8E8F442E8950D77BC /* Start Packager */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Start Packager";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export RCT_METRO_PORT=\"${RCT_METRO_PORT:=8081}\"\necho \"export RCT_METRO_PORT=${RCT_METRO_PORT}\" > \"${SRCROOT}/../node_modules/react-native/scripts/.packager.env\"\nif [ -z \"${RCT_NO_LAUNCH_PACKAGER+xxx}\" ] ; then\n  if nc -w 5 -z localhost ${RCT_METRO_PORT} ; then\n    if ! curl -s \"http://localhost:${RCT_METRO_PORT}/status\" | grep -q \"packager-status:running\" ; then\n      echo \"Port ${RCT_METRO_PORT} already in use, packager is either not running or not running correctly\"\n      exit 2\n    fi\n  else\n    open \"$SRCROOT/../node_modules/react-native/scripts/launchPackager.command\" || echo \"Can't start packager automatically\"\n  fi\nfi\n";
+		};
+		3A7A1FE72FC645B4BA8E995F /* Bundle React Native code and images */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle React Native code and images";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n  NODE_BINARY=${NODE_BINARY:-node}\n  \n  # Source environment files\n  if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env\"\n  fi\n  if [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env.local\"\n  fi\n  \n  # Set project root\n  export PROJECT_ROOT=\"$PROJECT_DIR\"/..\n  \n  # Set entry file\n  export ENTRY_FILE=\"$PROJECT_ROOT/index.share.js\"\n  \n  # Set up Expo CLI\n  if [[ -z \"$CLI_PATH\" ]]; then\n    export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\n  fi\n  \n  if [[ -z \"$BUNDLE_COMMAND\" ]]; then\n    export BUNDLE_COMMAND=\"export:embed\"\n  fi\n  \n  REACT_NATIVE_SCRIPTS_PATH=$(\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts'\")\n  WITH_ENVIRONMENT=\"$REACT_NATIVE_SCRIPTS_PATH/xcode/with-environment.sh\"\n  REACT_NATIVE_XCODE=\"$REACT_NATIVE_SCRIPTS_PATH/react-native-xcode.sh\"\n  \n  /bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"";
+		};
+		4C028D06AD9CBF5E74540628 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -412,12 +440,15 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXUpdates/EXUpdates.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ReachabilitySwift/ReachabilitySwift.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/Sentry/Sentry.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
@@ -426,19 +457,22 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXUpdates.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReachabilitySwift.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Sentry.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-jiten/Pods-jiten-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		88C3D58B213BCE35A362D2FB /* [Expo] Configure project */ = {
+		95F5606DB56E9DC1E3DA2777 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -462,35 +496,7 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-jitenShareExtension/expo-configure-project.sh\"\n";
 		};
-		924885082BA547F99A1F2DCD /* Start Packager */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Start Packager";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "export RCT_METRO_PORT=\"${RCT_METRO_PORT:=8081}\"\necho \"export RCT_METRO_PORT=${RCT_METRO_PORT}\" > \"${SRCROOT}/../node_modules/react-native/scripts/.packager.env\"\nif [ -z \"${RCT_NO_LAUNCH_PACKAGER+xxx}\" ] ; then\n  if nc -w 5 -z localhost ${RCT_METRO_PORT} ; then\n    if ! curl -s \"http://localhost:${RCT_METRO_PORT}/status\" | grep -q \"packager-status:running\" ; then\n      echo \"Port ${RCT_METRO_PORT} already in use, packager is either not running or not running correctly\"\n      exit 2\n    fi\n  else\n    open \"$SRCROOT/../node_modules/react-native/scripts/launchPackager.command\" || echo \"Can't start packager automatically\"\n  fi\nfi\n";
-		};
-		98B4E6FCE7344D548F42B5BA /* Bundle React Native code and images */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Bundle React Native code and images";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n  NODE_BINARY=${NODE_BINARY:-node}\n  \n  # Source environment files\n  if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env\"\n  fi\n  if [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env.local\"\n  fi\n  \n  # Set project root\n  export PROJECT_ROOT=\"$PROJECT_DIR\"/..\n  \n  # Set entry file\n  export ENTRY_FILE=\"$PROJECT_ROOT/index.share.js\"\n  \n  # Set up Expo CLI\n  if [[ -z \"$CLI_PATH\" ]]; then\n    export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\n  fi\n  \n  if [[ -z \"$BUNDLE_COMMAND\" ]]; then\n    export BUNDLE_COMMAND=\"export:embed\"\n  fi\n  \n  REACT_NATIVE_SCRIPTS_PATH=$(\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts'\")\n  WITH_ENVIRONMENT=\"$REACT_NATIVE_SCRIPTS_PATH/xcode/with-environment.sh\"\n  REACT_NATIVE_XCODE=\"$REACT_NATIVE_SCRIPTS_PATH/react-native-xcode.sh\"\n  \n  /bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"";
-		};
-		AD1857F2A02A7984145FE633 /* [CP] Check Pods Manifest.lock */ = {
+		A4EB5AD3E05B9B72F270D13B /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -512,31 +518,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		B6DBDF95AAD5E3879161F0FE /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-jiten/Pods-jiten-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/op-sqlite/libsql_experimental.framework/libsql_experimental",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/libsql_experimental.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-jiten/Pods-jiten-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		E633AE67EB4B718B8B352A50 /* [CP] Copy Pods Resources */ = {
+		F103E316E6798901FFDDD33F /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -547,11 +529,14 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/Sentry/Sentry.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
@@ -559,15 +544,38 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Sentry.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-jitenShareExtension/Pods-jitenShareExtension-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		F27E3119B41EADE079304961 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-jiten/Pods-jiten-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/op-sqlite/libsql_experimental.framework/libsql_experimental",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/libsql_experimental.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-jiten/Pods-jiten-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -578,38 +586,38 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				2BCB2E91C0D49E822595865A /* ExpoModulesProvider.swift in Sources */,
+				EF8E7B8F35C897E3B2B54DEB /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A22776519F42437AAB0162C4 /* Sources */ = {
+		D9C4662EE96A46EFA09B5E7D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3C0AE0309ECD47CAAC406E96 /* ShareExtensionViewController.swift in Sources */,
-				8C3D0DC5AC20561A47841BAE /* ExpoModulesProvider.swift in Sources */,
+				DBD80470F5B5443FB946B007 /* ShareExtensionViewController.swift in Sources */,
+				C03551208BA3B0A72CDC24E0 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		F8C5745276EE425AA738D2CA /* PBXTargetDependency */ = {
+		64B9A06E94794E928371330F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 2C04932D4FD64FA497E287F6 /* jitenShareExtension */;
-			targetProxy = DC7EFCD8789F4F16A8F5DB06 /* PBXContainerItemProxy */;
+			target = F0593C368F044152AAB93F9D /* jitenShareExtension */;
+			targetProxy = C804BDF1888643FC8B050DB8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 63AD69BFE1E0D7F60FFD3BF8 /* Pods-jiten.debug.xcconfig */;
+			baseConfigurationReference = 73FF9E7B4F029DE5E552B703 /* Pods-jiten.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = jiten/jiten.entitlements;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -640,12 +648,12 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1E24CB2FA200A16CE2F92031 /* Pods-jiten.release.xcconfig */;
+			baseConfigurationReference = AD40B43DA7899B08FF5EEF37 /* Pods-jiten.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = jiten/jiten.entitlements;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = jiten/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -668,9 +676,9 @@
 			};
 			name = Release;
 		};
-		1F39761825A54DAAB10B81D4 /* Debug */ = {
+		3174C66F1D384ECFBE203F5A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 6A43B3CA97C32CD68332DE0B /* Pods-jitenShareExtension.debug.xcconfig */;
+			baseConfigurationReference = 3568748D9D878BAB16DE0C22 /* Pods-jitenShareExtension.debug.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = jitenShareExtension/jitenShareExtension.entitlements;
@@ -752,7 +760,6 @@
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 			};
 			name = Debug;
@@ -806,15 +813,14 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
-		ADC4D248CAF045189AED1AD8 /* Release */ = {
+		F6A91F76E97F4F9981FEA72B /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E66ECE58A53DD02434A4C7CC /* Pods-jitenShareExtension.release.xcconfig */;
+			baseConfigurationReference = FA93DA9D52F9028AEA7DC871 /* Pods-jitenShareExtension.release.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = jitenShareExtension/jitenShareExtension.entitlements;
@@ -849,20 +855,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		695C5E2099F34A3C966CFD41 /* Build configuration list for PBXNativeTarget "jitenShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3174C66F1D384ECFBE203F5A /* Debug */,
+				F6A91F76E97F4F9981FEA72B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "jiten" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		FF2D099E31AD4B98B696DDFB /* Build configuration list for PBXNativeTarget "jitenShareExtension" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				1F39761825A54DAAB10B81D4 /* Debug */,
-				ADC4D248CAF045189AED1AD8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
