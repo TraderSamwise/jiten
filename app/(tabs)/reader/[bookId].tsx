@@ -596,18 +596,23 @@ export default function BookReaderScreen() {
     setShowSettings(true);
   }, [createSettingsDraft]);
 
-  const closeSettings = useCallback(() => {
+  const saveSettings = useCallback(() => {
     setShowSettings(false);
     applySettingsDraft(draftSettings);
   }, [applySettingsDraft, draftSettings]);
 
+  const cancelSettings = useCallback(() => {
+    setShowSettings(false);
+    setDraftSettings(createSettingsDraft());
+  }, [createSettingsDraft]);
+
   const toggleSettings = useCallback(() => {
     if (showSettings) {
-      closeSettings();
+      saveSettings();
       return;
     }
     openSettings();
-  }, [closeSettings, openSettings, showSettings]);
+  }, [openSettings, saveSettings, showSettings]);
 
   const matchLevelOptions: [FuriganaMatchLevel, string][] = [
     ["n5", "N5"],
@@ -674,36 +679,55 @@ export default function BookReaderScreen() {
         className="flex-row items-center px-2 pb-2 border-b border-border bg-background"
         style={webBgStyle}
       >
-        <Pressable onPress={() => goBack()} className="p-2">
-          <ChevronLeft size={24} className="text-foreground" />
-        </Pressable>
-        <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
-          {book?.title ?? ""}
-        </Text>
-        {book && book.source !== "import" && (
-          <Pressable onPress={handleToggleSaved} className="p-2">
-            {book.saved === 1 ? (
-              <Trash2 size={20} className="text-muted-foreground" />
-            ) : (
-              <Download size={20} className="text-muted-foreground" />
+        {showSettings ? (
+          <>
+            <Pressable onPress={cancelSettings} className="px-3 py-2">
+              <Text className="text-sm font-semibold text-primary">Cancel</Text>
+            </Pressable>
+            <Text
+              className="flex-1 text-base font-medium text-foreground text-center"
+              numberOfLines={1}
+            >
+              Reader Settings
+            </Text>
+            <Pressable onPress={saveSettings} className="px-3 py-2">
+              <Text className="text-sm font-semibold text-primary">Save</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Pressable onPress={() => goBack()} className="p-2">
+              <ChevronLeft size={24} className="text-foreground" />
+            </Pressable>
+            <Text className="flex-1 text-base font-medium text-foreground" numberOfLines={1}>
+              {book?.title ?? ""}
+            </Text>
+            {book && book.source !== "import" && (
+              <Pressable onPress={handleToggleSaved} className="p-2">
+                {book.saved === 1 ? (
+                  <Trash2 size={20} className="text-muted-foreground" />
+                ) : (
+                  <Download size={20} className="text-muted-foreground" />
+                )}
+              </Pressable>
             )}
-          </Pressable>
-        )}
-        {book && extendedDb && (
-          <Pressable onPress={cycleLookupMode} className="min-w-[40px] items-center px-2 py-1">
-            {lookupMode === "name" ? (
-              <User size={20} className="text-primary" />
-            ) : lookupMode === "word" ? (
-              <BookText size={20} className="text-primary" />
-            ) : (
-              <Text className="text-sm font-semibold text-primary">Auto</Text>
+            {book && extendedDb && (
+              <Pressable onPress={cycleLookupMode} className="min-w-[40px] items-center px-2 py-1">
+                {lookupMode === "name" ? (
+                  <User size={20} className="text-primary" />
+                ) : lookupMode === "word" ? (
+                  <BookText size={20} className="text-primary" />
+                ) : (
+                  <Text className="text-sm font-semibold text-primary">Auto</Text>
+                )}
+              </Pressable>
             )}
-          </Pressable>
-        )}
-        {book && (
-          <Pressable onPress={toggleSettings} className="p-2">
-            <SlidersHorizontal size={20} className="text-foreground" />
-          </Pressable>
+            {book && (
+              <Pressable onPress={toggleSettings} className="p-2">
+                <SlidersHorizontal size={20} className="text-foreground" />
+              </Pressable>
+            )}
+          </>
         )}
       </View>
 
@@ -720,7 +744,7 @@ export default function BookReaderScreen() {
               {showSettings && (
                 <ScrollView
                   className="absolute left-0 right-0 top-0 px-4 py-3 border-b border-border bg-background gap-3"
-                  style={{ zIndex: 10, maxHeight: "100%" }}
+                  style={{ zIndex: 1000, elevation: 20, maxHeight: "100%" }}
                   contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
                   showsVerticalScrollIndicator={false}
                 >
