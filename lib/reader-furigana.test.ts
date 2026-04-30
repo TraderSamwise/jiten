@@ -961,4 +961,20 @@ describe("resolveFuriganaBatch compound resolution", () => {
     );
     expect(result).not.toContain("<ruby>と言<rt>とい</rt></ruby>った");
   });
+
+  it("full pipeline does not treat kanji words with trailing kana particles like 最後まで as Other", async () => {
+    const html = "<p>最後まで</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchWordLevel: { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: true },
+      }),
+    );
+    expect(result).not.toContain("<ruby>最後<rt>さいご</rt></ruby>まで");
+  });
 });

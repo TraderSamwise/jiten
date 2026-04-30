@@ -508,15 +508,32 @@ function resolveLexicalSuffixJlpt(
   surface: string,
   lookupMap: Map<string, DictMatch>,
 ): number | null | undefined {
+  const tryWords = (candidateSurface: string): number | null | undefined => {
+    const candidateWords = deinflect(candidateSurface).map((c) => c.word);
+    for (const word of candidateWords) {
+      const match = lookupMap.get(word);
+      if (match?.jlptLevel != null) return match.jlptLevel;
+    }
+    return undefined;
+  };
+
   const kanjiStart = firstKanjiIndex(surface);
-  if (kanjiStart <= 0) return undefined;
+  if (kanjiStart < 0) return undefined;
 
   const suffixSurface = [...surface].slice(kanjiStart).join("");
-  const suffixWords = deinflect(suffixSurface).map((c) => c.word);
+  const directJlpt = tryWords(suffixSurface);
+  if (directJlpt != null) return directJlpt;
 
-  for (const word of suffixWords) {
-    const match = lookupMap.get(word);
-    if (match?.jlptLevel != null) return match.jlptLevel;
+  const suffixChars = [...suffixSurface];
+  let trailingKanaStart = suffixChars.length;
+  while (trailingKanaStart > 0 && isKana(suffixChars[trailingKanaStart - 1])) {
+    trailingKanaStart--;
+  }
+  if (trailingKanaStart > 0 && trailingKanaStart < suffixChars.length) {
+    const coreChars = suffixChars.slice(0, trailingKanaStart);
+    if (coreChars.every((ch) => isKanji(ch) || isDigit(ch))) {
+      return tryWords(coreChars.join(""));
+    }
   }
 
   return undefined;
