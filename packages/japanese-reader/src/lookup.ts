@@ -123,6 +123,7 @@ function scoreSingleKanjiEntryForTap(
   entry: ReaderDictEntry,
   literal: string,
   kanjiRecord: NonNullable<KanjiReadingRecord>,
+  context: "before_kana" | "before_kanji",
 ): number {
   const score = 0;
   if (!entry.kanji.some((kanji) => kanji.text === literal)) return score;
@@ -137,9 +138,14 @@ function scoreSingleKanjiEntryForTap(
       kanjiByLiteral,
     });
     let patternScore = 0;
-    if (pattern === "mostly_kunyomi") patternScore += 180;
-    else if (pattern === "mostly_onyomi") patternScore -= 120;
-    else if (pattern === "mixed_on_kun") patternScore += 20;
+    if (context === "before_kana") {
+      if (pattern === "mostly_kunyomi") patternScore += 180;
+      else if (pattern === "mostly_onyomi") patternScore -= 120;
+    } else {
+      if (pattern === "mostly_onyomi") patternScore += 180;
+      else if (pattern === "mostly_kunyomi") patternScore -= 120;
+    }
+    if (pattern === "mixed_on_kun") patternScore += 20;
     else if (pattern === "irregular") patternScore -= 40;
     if (kana.text.length >= 3) patternScore += 20;
     bestPatternScore = Math.max(bestPatternScore, patternScore);
@@ -161,7 +167,12 @@ async function maybeSortSingleKanjiTapEntries(params: {
   const chars = [...matchedText];
   if (chars.length !== 1 || !isKanjiChar(chars[0])) return entries;
   const nextChar = text[start + matchedText.length];
-  if (!isKanaChar(nextChar)) return entries;
+  const context = isKanaChar(nextChar)
+    ? "before_kana"
+    : isKanjiChar(nextChar)
+      ? "before_kanji"
+      : null;
+  if (!context) return entries;
 
   const literal = chars[0];
   if (!kanjiCache.has(literal)) {
@@ -172,8 +183,8 @@ async function maybeSortSingleKanjiTapEntries(params: {
 
   return [...entries].sort(
     (a, b) =>
-      scoreSingleKanjiEntryForTap(b, literal, kanjiRecord) -
-      scoreSingleKanjiEntryForTap(a, literal, kanjiRecord),
+      scoreSingleKanjiEntryForTap(b, literal, kanjiRecord, context) -
+      scoreSingleKanjiEntryForTap(a, literal, kanjiRecord, context),
   );
 }
 
