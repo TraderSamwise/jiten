@@ -23,6 +23,8 @@ import { Text } from "@/components/ui/text";
 import { useDatabase } from "@/db/provider";
 import { useSync } from "@/db/sync-provider";
 import { useUserDb } from "@/db/user-provider";
+import { useAuth } from "@/lib/auth";
+import { env } from "@/lib/env";
 import {
   BookText,
   ChevronDown,
@@ -34,6 +36,10 @@ import {
   User,
 } from "@/lib/icons";
 import { useSafeGoBack } from "@/lib/navigation";
+import {
+  requestReaderSentenceExplanation,
+  type ReaderSentenceExplanationState,
+} from "@/lib/reader-explain";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import {
   readerBookmarkHighlightsAtom,
@@ -47,7 +53,6 @@ import {
 } from "@/stores/settings";
 import {
   type JapaneseReaderSettingsDraft,
-  type ReaderLookupMode,
   type ReaderSelectionTooltip,
   type ReaderBookmarkMembership,
   useJapaneseReader,
@@ -111,6 +116,7 @@ function HighlightToolbar({
   copied,
   onCopy,
   onCopyText,
+  onExplain,
   bookTitle,
 }: {
   tooltip: ReaderSelectionTooltip;
@@ -119,6 +125,7 @@ function HighlightToolbar({
   copied: boolean;
   onCopy: () => void;
   onCopyText: (text: string) => void;
+  onExplain: (text: string) => void;
   bookTitle?: string | null;
 }) {
   const [openInExpanded, setOpenInExpanded] = useState(false);
@@ -127,7 +134,7 @@ function HighlightToolbar({
   const layoutY = readerY.current ?? 0;
   const extraRows = openInExpanded ? EXTERNAL_DICTS.length + 3 : 0;
   const toolbarH = 32 + extraRows * 34 + (extraRows > 0 ? 18 : 0);
-  const estimatedToolbarWidth = openInExpanded ? 260 : 132;
+  const estimatedToolbarWidth = openInExpanded ? 260 : 206;
   const anchorX = tooltip.x;
   const anchorY = tooltip.y;
   const left = Math.max(
@@ -217,6 +224,13 @@ function HighlightToolbar({
             <Text style={{ color: fg, fontSize: 13, fontWeight: "600" }}>
               {copied ? "Copied!" : "Copy"}
             </Text>
+          </Pressable>
+          <View style={{ width: 1, height: 16, backgroundColor: fg, opacity: 0.3 }} />
+          <Pressable
+            onPress={() => onExplain(tooltip.text)}
+            style={{ paddingHorizontal: 10, paddingVertical: 2 }}
+          >
+            <Text style={{ color: fg, fontSize: 13, fontWeight: "600" }}>Explain</Text>
           </Pressable>
           {Platform.OS === "ios" && (
             <>
@@ -442,6 +456,7 @@ export default function BookReaderScreen() {
   const userDb = useUserDb();
   const { dictDb, extendedDb } = useDatabase();
   const { markDirty, triggerSync } = useSync();
+  const { getToken } = useAuth();
   const { webBgStyle } = useWebBackdrop(15);
   const readerLayoutY = useRef(0);
 
@@ -473,6 +488,10 @@ export default function BookReaderScreen() {
   const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
   const [advancedReadingPatternsHeight, setAdvancedReadingPatternsHeight] = useState(0);
   const [advancedReadingPatternsAnim] = useState(() => new Animated.Value(0));
+  const [sentenceExplanation, setSentenceExplanation] = useState<ReaderSentenceExplanationState>({
+    status: "idle",
+  });
+  const explanationRequestIdRef = useRef(0);
   const [draftSettings, setDraftSettings] = useState<JapaneseReaderSettingsDraft>({
     fontSize: 22,
     pageAnimations,
@@ -672,6 +691,44 @@ export default function BookReaderScreen() {
     },
     [readerViewRef],
   );
+
+  const currentBookTitle = book?.title ?? null;
+
+  async function handleExplainText(text: string) {
+    const selectedText = text.trim();
+    if (!selectedText) return;
+    const requestId = explanationRequestIdRef.current + 1;
+    explanationRequestIdRef.current = requestId;
+    setSentenceExplanation({ status: "loading", selectedText });
+    try {
+      const result = await requestReaderSentenceExplanation({
+        apiBaseUrl: env.API_BASE_URL,
+        getToken,
+        input: {
+          selectedText,
+          bookTitle: currentBookTitle,
+        },
+      });
+      if (explanationRequestIdRef.current !== requestId) return;
+      setSentenceExplanation({ status: "ready", selectedText, result });
+    } catch (err) {
+      if (explanationRequestIdRef.current !== requestId) return;
+      const message = err instanceof Error ? err.message : "Could not explain selection.";
+      setSentenceExplanation({ status: "error", selectedText, message });
+    }
+  }
+
+  const handleCloseLookupPopup = useCallback(() => {
+    explanationRequestIdRef.current += 1;
+    setSentenceExplanation({ status: "idle" });
+    closeLookupPopup();
+  }, [closeLookupPopup]);
+
+  const visibleSentenceExplanation =
+    sentenceExplanation.status !== "idle" &&
+    sentenceExplanation.selectedText !== copyTooltip?.text.trim()
+      ? ({ status: "idle" } as const)
+      : sentenceExplanation;
 
   return (
     <CustomHeaderScreen webTop={15}>
@@ -1106,6 +1163,7 @@ export default function BookReaderScreen() {
                 copied={copied}
                 onCopy={handleCopy}
                 onCopyText={handleCopyText}
+                onExplain={handleExplainText}
                 bookTitle={book?.title}
               />
             )}
@@ -1123,7 +1181,8 @@ export default function BookReaderScreen() {
               visible={showLookupPopup}
               loading={lookupLoading}
               errorMessage={lookupError}
-              onClose={closeLookupPopup}
+              explanation={visibleSentenceExplanation}
+              onClose={handleCloseLookupPopup}
               results={lookupResults}
             />
           </>

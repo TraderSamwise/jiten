@@ -17,6 +17,7 @@ import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { NameEntry } from "@/db/types";
+import type { ReaderSentenceExplanationState } from "@/lib/reader-explain";
 import type { LookupResult } from "@jiten/japanese-reader";
 
 const NAME_TYPE_LABELS: Record<string, string> = {
@@ -39,6 +40,7 @@ interface DictionaryPopupProps {
   results: LookupResult[];
   loading?: boolean;
   errorMessage?: string | null;
+  explanation?: ReaderSentenceExplanationState;
 }
 
 interface FlatLookupItem {
@@ -246,6 +248,7 @@ export function DictionaryPopup({
   results,
   loading,
   errorMessage,
+  explanation = { status: "idle" },
 }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -707,9 +710,83 @@ export function DictionaryPopup({
     );
   }
 
+  function renderExplanationPanel() {
+    if (explanation.status === "idle") return null;
+
+    return (
+      <View className="mb-3 rounded-2xl border border-primary/20 bg-primary/10 px-3 py-3">
+        <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
+          Explanation
+        </Text>
+        {explanation.status === "loading" && (
+          <View className="mt-3 flex-row items-center gap-2">
+            <ActivityIndicator size="small" />
+            <Text className="text-sm text-muted-foreground">Explaining selected text...</Text>
+          </View>
+        )}
+        {explanation.status === "error" && (
+          <Text className="mt-2 text-sm text-muted-foreground">{explanation.message}</Text>
+        )}
+        {explanation.status === "ready" && (
+          <ScrollView
+            style={{ maxHeight: 220 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 2, gap: 8 }}
+          >
+            <View>
+              <Text className="text-xs font-semibold text-muted-foreground">Translation</Text>
+              <Text className="mt-1 text-sm text-foreground">{explanation.result.translation}</Text>
+            </View>
+            <View>
+              <Text className="text-xs font-semibold text-muted-foreground">Meaning</Text>
+              <Text className="mt-1 text-sm text-foreground">{explanation.result.summary}</Text>
+            </View>
+            {explanation.result.grammar.length > 0 && (
+              <View>
+                <Text className="text-xs font-semibold text-muted-foreground">Grammar</Text>
+                {explanation.result.grammar.map((item, i) => (
+                  <Text key={`${item.label}-${i}`} className="mt-1 text-sm text-foreground">
+                    <Text className="font-semibold">{item.label}: </Text>
+                    {item.explanation}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {explanation.result.vocabulary.length > 0 && (
+              <View>
+                <Text className="text-xs font-semibold text-muted-foreground">Vocabulary</Text>
+                {explanation.result.vocabulary.map((item, i) => (
+                  <Text key={`${item.term}-${i}`} className="mt-1 text-sm text-foreground">
+                    <Text className="font-semibold">
+                      {item.term}
+                      {item.reading ? ` (${item.reading})` : ""}:{" "}
+                    </Text>
+                    {item.meaning}
+                    {item.note ? ` - ${item.note}` : ""}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {explanation.result.notes.length > 0 && (
+              <View>
+                <Text className="text-xs font-semibold text-muted-foreground">Notes</Text>
+                {explanation.result.notes.map((note, i) => (
+                  <Text key={`${note}-${i}`} className="mt-1 text-sm text-foreground">
+                    {note}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
+
   function renderContent() {
+    const explanationPanel = renderExplanationPanel();
+
     // Loading state
-    if (loading && !hasResults) {
+    if (loading && !hasResults && !explanationPanel) {
       return (
         <View className="items-center py-8">
           <ActivityIndicator size="large" />
@@ -718,17 +795,31 @@ export function DictionaryPopup({
     }
 
     // Error state
-    if (errorMessage) {
+    if (errorMessage && !explanationPanel) {
       return <Text className="text-center text-muted-foreground py-8">{errorMessage}</Text>;
     }
 
     // No results
     if (!hasResults) {
-      return <Text className="text-center text-muted-foreground py-8">No results found</Text>;
+      return (
+        <>
+          {explanationPanel}
+          {errorMessage ? (
+            <Text className="text-center text-muted-foreground py-8">{errorMessage}</Text>
+          ) : loading ? (
+            <View className="items-center py-8">
+              <ActivityIndicator size="large" />
+            </View>
+          ) : (
+            <Text className="text-center text-muted-foreground py-8">No results found</Text>
+          )}
+        </>
+      );
     }
 
     return (
       <>
+        {explanationPanel}
         {/* Header row: pills/matched text (flex) + controls (fixed) */}
         <View className="flex-row items-center mb-3 gap-2">
           {/* Left side: pills or matched text — fills available space */}
