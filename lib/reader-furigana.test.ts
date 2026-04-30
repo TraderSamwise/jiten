@@ -818,6 +818,20 @@ describe("resolveFuriganaBatch compound resolution", () => {
     expect(result).not.toContain("<ruby>一の上<rt>いちのうえ</rt></ruby>");
   });
 
+  it("full pipeline does not promote ambiguous name furigana over a normal word match", async () => {
+    const html = "<p>最初に会ったのは</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb, { includeNames: true });
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      allKanji,
+      withRuleLevels({}, { showNames: true, showCounters: false, sourceDefault: false }),
+    );
+    expect(result).not.toContain("<ruby>最初<rt>");
+  });
+
   it("full pipeline does not leak 心地 furigana into 居心地 when only N1 word-level is enabled", async () => {
     const html = "<p>居心地の悪さ</p>";
     const surfaces = extractSurfacesFromHtml(html, allKanji);

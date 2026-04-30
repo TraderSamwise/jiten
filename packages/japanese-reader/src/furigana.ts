@@ -1,4 +1,10 @@
 import { toHiragana } from "wanakana";
+import {
+  AUTO_NAME_ONLY_CONFIDENCE,
+  computeAutoNameConfidence,
+  type AutoNameNameCandidate,
+  type AutoNameWordCandidate,
+} from "./auto-name";
 import { deinflect } from "./deinflect";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "./furigana-db";
 import type { ReaderSqlDb } from "./backend";
@@ -555,6 +561,7 @@ export async function resolveFuriganaBatch(
     let bestWordMatch: {
       match: DictMatch;
       score: number;
+      deinflectedWord: string;
     } | null = null;
 
     for (const word of deinflected) {
@@ -562,15 +569,44 @@ export async function resolveFuriganaBatch(
       if (!match || !match.kanaForm) continue;
       const score = scoreFuriganaWordMatch(surface, match, word);
       if (!bestWordMatch || score > bestWordMatch.score) {
-        bestWordMatch = { match, score };
+        bestWordMatch = { match, score, deinflectedWord: word };
       }
     }
 
-    const bestNameMatch = pickBestNameMatch(surface, nameLookupMap.get(surface) ?? []);
+    const nameMatches = nameLookupMap.get(surface) ?? [];
+    const bestNameMatch = pickBestNameMatch(surface, nameMatches);
     const bestNameScore = bestNameMatch ? scoreFuriganaNameMatch(surface, bestNameMatch) : null;
+    const nameConfidence =
+      bestNameMatch && bestWordMatch
+        ? computeAutoNameConfidence(
+            {
+              matchedText: surface,
+              exactSurface:
+                bestNameMatch.kanjiForm === surface || bestNameMatch.kanaForm === surface,
+              candidateCount: nameMatches.length,
+              nameType: bestNameMatch.nameType,
+              hasTranslation: nameMatches.some((name) => !!name.translation),
+            } satisfies AutoNameNameCandidate,
+            {
+              matchedText: surface,
+              exactSurface:
+                bestWordMatch.match.kanjiForm === surface ||
+                bestWordMatch.match.kanaForm === surface,
+              exactCommonWord:
+                bestWordMatch.match.common &&
+                (bestWordMatch.match.kanjiForm === surface ||
+                  bestWordMatch.match.kanaForm === surface),
+              commonWord: bestWordMatch.match.common,
+              deinflected: bestWordMatch.deinflectedWord !== surface,
+            } satisfies AutoNameWordCandidate,
+          )
+        : null;
     const useName =
       !!bestNameMatch &&
-      (!bestWordMatch || (bestNameScore ?? Number.NEGATIVE_INFINITY) > bestWordMatch.score);
+      (!bestWordMatch
+        ? true
+        : (bestNameScore ?? Number.NEGATIVE_INFINITY) > bestWordMatch.score &&
+          (nameConfidence ?? 0) >= AUTO_NAME_ONLY_CONFIDENCE);
     const chosen = useName ? bestNameMatch : bestWordMatch?.match;
     if (!chosen) continue;
 
