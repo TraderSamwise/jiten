@@ -492,6 +492,10 @@ function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | n
   return best;
 }
 
+function shouldConsiderNameFuriganaSurface(surface: string): boolean {
+  return hasKanjiText(surface);
+}
+
 // ─── Public API ───
 
 /**
@@ -573,7 +577,9 @@ export async function resolveFuriganaBatch(
       }
     }
 
-    const nameMatches = nameLookupMap.get(surface) ?? [];
+    const nameMatches = shouldConsiderNameFuriganaSurface(surface)
+      ? (nameLookupMap.get(surface) ?? [])
+      : [];
     const bestNameMatch = pickBestNameMatch(surface, nameMatches);
     const bestNameScore = bestNameMatch ? scoreFuriganaNameMatch(surface, bestNameMatch) : null;
     const nameConfidence =
@@ -1008,12 +1014,12 @@ export function applyFuriganaToHtml(
           continue;
         }
 
-        out += `<ruby>${entry.kanjiPart}<rt>${entry.reading}</rt></ruby>`;
+        const baseText = surfaceChars.slice(0, entry.kanjiPartLen).join("");
+        out += `<ruby>${baseText}<rt>${entry.reading}</rt></ruby>`;
 
         // Emit trailing okurigana (chars after kanjiPart within the matched surface)
-        const kanjiPartChars = [...entry.kanjiPart];
-        if (surfaceChars.length > kanjiPartChars.length) {
-          const trailing = surfaceChars.slice(kanjiPartChars.length).join("");
+        if (surfaceChars.length > entry.kanjiPartLen) {
+          const trailing = surfaceChars.slice(entry.kanjiPartLen).join("");
           out += trailing;
         }
 
