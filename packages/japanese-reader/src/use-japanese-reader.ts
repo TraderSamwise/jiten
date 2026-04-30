@@ -317,6 +317,14 @@ export function useJapaneseReader({
   onMissingCapabilityWarning,
 }: UseJapaneseReaderOptions): UseJapaneseReaderResult {
   const { dictDb, extendedDb, bookmarks } = backend;
+  const {
+    pageAnimations,
+    sourceFuriganaEnabled,
+    readerCounterFurigana,
+    readerNameFurigana,
+    readerBookmarkHighlights,
+    furiganaRuleLevels,
+  } = settings;
   const readerViewRef = useRef<ReaderViewRef>(null);
   const initialScrollFiredRef = useRef(false);
   const [book, setBook] = useState<ReaderBookRecord | null>(null);
@@ -364,21 +372,33 @@ export function useJapaneseReader({
   const lastPersistedReadCompleteRef = useRef(false);
   const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTapPos = useRef<{ x: number; y: number } | null>(null);
-  const sourceFuriganaEnabledRef = useRef(settings.sourceFuriganaEnabled);
-  const readerCounterFuriganaRef = useRef(settings.readerCounterFurigana);
-  const readerNameFuriganaRef = useRef(settings.readerNameFurigana);
-  const readerBookmarkHighlightsRef = useRef(settings.readerBookmarkHighlights);
-  const furiganaRuleLevelsRef = useRef(settings.furiganaRuleLevels);
+  const sourceFuriganaEnabledRef = useRef(sourceFuriganaEnabled);
+  const readerCounterFuriganaRef = useRef(readerCounterFurigana);
+  const readerNameFuriganaRef = useRef(readerNameFurigana);
+  const readerBookmarkHighlightsRef = useRef(readerBookmarkHighlights);
+  const furiganaRuleLevelsRef = useRef(furiganaRuleLevels);
+  const pageAnimationsRef = useRef(pageAnimations);
+  const isDarkRef = useRef(isDark);
   const fontSizeRef = useRef(fontSize);
   const bookmarkMembershipRef = useRef<ReaderBookmarkMembership | null>(bookmarks ?? null);
 
   useEffect(() => {
-    sourceFuriganaEnabledRef.current = settings.sourceFuriganaEnabled;
-    readerCounterFuriganaRef.current = settings.readerCounterFurigana;
-    readerNameFuriganaRef.current = settings.readerNameFurigana;
-    readerBookmarkHighlightsRef.current = settings.readerBookmarkHighlights;
-    furiganaRuleLevelsRef.current = settings.furiganaRuleLevels;
-  }, [settings]);
+    sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
+    readerCounterFuriganaRef.current = readerCounterFurigana;
+    readerNameFuriganaRef.current = readerNameFurigana;
+    readerBookmarkHighlightsRef.current = readerBookmarkHighlights;
+    furiganaRuleLevelsRef.current = furiganaRuleLevels;
+    pageAnimationsRef.current = pageAnimations;
+    isDarkRef.current = isDark;
+  }, [
+    furiganaRuleLevels,
+    isDark,
+    pageAnimations,
+    readerBookmarkHighlights,
+    readerCounterFurigana,
+    readerNameFurigana,
+    sourceFuriganaEnabled,
+  ]);
 
   useEffect(() => {
     bookmarkMembershipRef.current = bookmarks ?? null;
@@ -393,21 +413,21 @@ export function useJapaneseReader({
   }, [fontSize]);
 
   useEffect(() => {
-    if (settings.readerBookmarkHighlights && !bookmarks) {
+    if (readerBookmarkHighlights && !bookmarks) {
       warnOnce(
         "missing-bookmarks",
         "Bookmark highlighting requested, but no bookmark membership was provided. Disabling bookmark highlights.",
         onMissingCapabilityWarning,
       );
     }
-    if (settings.readerNameFurigana && !extendedDb) {
+    if (readerNameFurigana && !extendedDb) {
       warnOnce(
         "missing-names",
         "Name furigana requested, but no extended dictionary backend was provided. Name furigana will be disabled.",
         onMissingCapabilityWarning,
       );
     }
-    if (settings.readerCounterFurigana && !extendedDb) {
+    if (readerCounterFurigana && !extendedDb) {
       warnOnce(
         "missing-counters",
         "Counter furigana requested, but no extended dictionary backend was provided. Counter furigana will be disabled.",
@@ -418,9 +438,9 @@ export function useJapaneseReader({
     bookmarks,
     extendedDb,
     onMissingCapabilityWarning,
-    settings.readerBookmarkHighlights,
-    settings.readerCounterFurigana,
-    settings.readerNameFurigana,
+    readerBookmarkHighlights,
+    readerCounterFurigana,
+    readerNameFurigana,
   ]);
 
   const getRuleLevelsCacheKey = useCallback(
@@ -431,12 +451,18 @@ export function useJapaneseReader({
 
   const getCurrentTransformSettingsSnapshot = useCallback(
     (): ReaderTransformSettingsSnapshot => ({
-      sourceFuriganaEnabled: settings.sourceFuriganaEnabled,
-      readerCounterFurigana: settings.readerCounterFurigana,
-      readerNameFurigana: settings.readerNameFurigana,
-      furiganaRuleLevelsKey: getRuleLevelsCacheKey(settings.furiganaRuleLevels),
+      sourceFuriganaEnabled,
+      readerCounterFurigana,
+      readerNameFurigana,
+      furiganaRuleLevelsKey: getRuleLevelsCacheKey(furiganaRuleLevels),
     }),
-    [getRuleLevelsCacheKey, settings],
+    [
+      furiganaRuleLevels,
+      getRuleLevelsCacheKey,
+      readerCounterFurigana,
+      readerNameFurigana,
+      sourceFuriganaEnabled,
+    ],
   );
 
   const setCachedHtml = useCallback((cache: Map<string, string>, key: string, nextHtml: string) => {
@@ -726,9 +752,9 @@ export function useJapaneseReader({
 
   useEffect(() => {
     readerViewRef.current?.postMessage(
-      JSON.stringify({ type: "setPageAnimations", enabled: settings.pageAnimations }),
+      JSON.stringify({ type: "setPageAnimations", enabled: pageAnimations }),
     );
-  }, [settings.pageAnimations]);
+  }, [pageAnimations]);
 
   useEffect(() => {
     readerViewRef.current?.postMessage(
@@ -870,18 +896,25 @@ export function useJapaneseReader({
         hasSourceFuriganaRef.current = hasSource;
         setHasSourceFurigana(hasSource);
         clearBaseAndTransformCaches();
+        const sourceDefault = sourceFuriganaEnabledRef.current;
+        const showNames = readerNameFuriganaRef.current;
+        const showCounters = readerCounterFuriganaRef.current;
+        const ruleLevels = furiganaRuleLevelsRef.current;
+        const currentPageAnimations = pageAnimationsRef.current;
+        const currentIsDark = isDarkRef.current;
+        const transformSnapshot: ReaderTransformSettingsSnapshot = {
+          sourceFuriganaEnabled: sourceDefault,
+          readerCounterFurigana: showCounters,
+          readerNameFurigana: showNames,
+          furiganaRuleLevelsKey: getRuleLevelsCacheKey(ruleLevels),
+        };
 
         const hasRubyTags = /<ruby[>\s]/.test(rawContent);
         load = beginReaderLoad(
           buildReaderLoadSequence({
             needsParsing: !hasRubyTags,
             needsFurigana:
-              !hasRubyTags &&
-              hasInjectedFuriganaActive(
-                settings.readerNameFurigana,
-                settings.readerCounterFurigana,
-                settings.furiganaRuleLevels,
-              ),
+              !hasRubyTags && hasInjectedFuriganaActive(showNames, showCounters, ruleLevels),
           }),
         );
         const activeLoad = load;
@@ -891,20 +924,20 @@ export function useJapaneseReader({
           updateReaderLoadStage(activeLoad.token, activeLoad.stages, "generatingPages");
           const { content, hasFuri } = await renderPreformattedReaderContent({
             rawContent,
-            sourceDefault: settings.sourceFuriganaEnabled,
-            showNames: settings.readerNameFurigana,
-            showCounters: settings.readerCounterFurigana,
-            ruleLevels: settings.furiganaRuleLevels,
+            sourceDefault,
+            showNames,
+            showCounters,
+            ruleLevels,
           });
           currentReaderContentHtmlRef.current = content;
           const readerHtml = generateReaderHtml(content, {
             fontSize: nextBook.fontSize,
-            isDark,
+            isDark: currentIsDark,
             scrollPosition: nextBook.scrollPosition,
             hasFurigana: hasFuri,
-            pageAnimations: settings.pageAnimations,
+            pageAnimations: currentPageAnimations,
           });
-          appliedTransformSettingsRef.current = getCurrentTransformSettingsSnapshot();
+          appliedTransformSettingsRef.current = transformSnapshot;
           setHtml(readerHtml);
         } else {
           updateReaderLoadStage(activeLoad.token, activeLoad.stages, "parsing");
@@ -915,10 +948,10 @@ export function useJapaneseReader({
 
           const screen = Dimensions.get("window");
           const hasFuri = hasFuriganaActive(
-            settings.sourceFuriganaEnabled,
-            settings.readerNameFurigana,
-            settings.readerCounterFurigana,
-            settings.furiganaRuleLevels,
+            sourceDefault,
+            showNames,
+            showCounters,
+            ruleLevels,
             isAozora,
           );
           const cpp = calcCharsPerPage(screen.width, screen.height, nextBook.fontSize, hasFuri);
@@ -938,14 +971,7 @@ export function useJapaneseReader({
           fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
           isAozoraRef.current = isAozora;
 
-          if (
-            !dictDb &&
-            hasInjectedFuriganaActive(
-              settings.readerNameFurigana,
-              settings.readerCounterFurigana,
-              settings.furiganaRuleLevels,
-            )
-          ) {
+          if (!dictDb && hasInjectedFuriganaActive(showNames, showCounters, ruleLevels)) {
             warnOnce(
               "missing-dictdb-furigana",
               "Injected furigana requested, but no dictionary backend was provided. Reader will render without injected furigana.",
@@ -954,12 +980,7 @@ export function useJapaneseReader({
           }
 
           const injectedFuriganaSet = dictDb
-            ? await buildInjectedFuriganaKanjiSet(
-                dictDb,
-                settings.furiganaRuleLevels,
-                settings.readerNameFurigana,
-                settings.readerCounterFurigana,
-              )
+            ? await buildInjectedFuriganaKanjiSet(dictDb, ruleLevels, showNames, showCounters)
             : null;
           kanjiSetRef.current = injectedFuriganaSet;
           furiganaEntryCacheRef.current.clear();
@@ -970,22 +991,22 @@ export function useJapaneseReader({
             charCount: slice.text.length,
             isAozora,
             hasFuri,
-            sourceDefault: settings.sourceFuriganaEnabled,
-            ruleLevels: settings.furiganaRuleLevels,
-            includeCounters: settings.readerCounterFurigana,
-            includeNames: settings.readerNameFurigana,
+            sourceDefault,
+            ruleLevels,
+            includeCounters: showCounters,
+            includeNames: showNames,
             onStage: (stage) => updateReaderLoadStage(activeLoad.token, activeLoad.stages, stage),
           });
           currentReaderContentHtmlRef.current = sliceHtml;
 
           const readerHtml = generateReaderHtml(sliceHtml, {
             fontSize: nextBook.fontSize,
-            isDark,
+            isDark: currentIsDark,
             targetLocalChar,
             sliceCharOffset: startChar,
             totalChars: model.totalChars,
             hasFurigana: hasFuri,
-            pageAnimations: settings.pageAnimations,
+            pageAnimations: currentPageAnimations,
           });
           if (nextBook.totalChars === 0) {
             await bookSource.saveProgress({
@@ -995,7 +1016,7 @@ export function useJapaneseReader({
               readComplete: !!nextBook.readComplete,
             });
           }
-          appliedTransformSettingsRef.current = getCurrentTransformSettingsSnapshot();
+          appliedTransformSettingsRef.current = transformSnapshot;
           setHtml(readerHtml);
         }
 
@@ -1011,12 +1032,10 @@ export function useJapaneseReader({
     clearBaseAndTransformCaches,
     dictDb,
     finishReaderLoad,
-    getCurrentTransformSettingsSnapshot,
-    isDark,
+    getRuleLevelsCacheKey,
     onMissingCapabilityWarning,
     renderPreformattedReaderContent,
     renderSliceHtml,
-    settings,
     updateReaderLoadStage,
   ]);
 
@@ -1046,10 +1065,10 @@ export function useJapaneseReader({
           updateReaderLoadStage(load.token, load.stages, "generatingPages");
           const { content, hasFuri } = await renderPreformattedReaderContent({
             rawContent,
-            sourceDefault: settings.sourceFuriganaEnabled,
-            showNames: settings.readerNameFurigana,
-            showCounters: settings.readerCounterFurigana,
-            ruleLevels: settings.furiganaRuleLevels,
+            sourceDefault: sourceFuriganaEnabled,
+            showNames: readerNameFurigana,
+            showCounters: readerCounterFurigana,
+            ruleLevels: furiganaRuleLevels,
           });
           currentReaderContentHtmlRef.current = content;
           readerViewRef.current?.postMessage(
@@ -1074,9 +1093,9 @@ export function useJapaneseReader({
           kanjiSetRef.current = dictDb
             ? await buildInjectedFuriganaKanjiSet(
                 dictDb,
-                settings.furiganaRuleLevels,
-                settings.readerNameFurigana,
-                settings.readerCounterFurigana,
+                furiganaRuleLevels,
+                readerNameFurigana,
+                readerCounterFurigana,
               )
             : null;
           clearFuriganaCaches();
@@ -1099,7 +1118,10 @@ export function useJapaneseReader({
     html,
     reloadAtChar,
     renderPreformattedReaderContent,
-    settings,
+    furiganaRuleLevels,
+    readerCounterFurigana,
+    readerNameFurigana,
+    sourceFuriganaEnabled,
     syncBookmarkHighlights,
     updateReaderLoadStage,
   ]);
@@ -1107,7 +1129,7 @@ export function useJapaneseReader({
   useEffect(() => {
     if (html === null) return;
     void syncBookmarkHighlights();
-  }, [bookmarks?.version, html, settings.readerBookmarkHighlights, syncBookmarkHighlights]);
+  }, [bookmarks?.version, html, readerBookmarkHighlights, syncBookmarkHighlights]);
 
   useEffect(() => {
     return () => {
@@ -1367,14 +1389,21 @@ export function useJapaneseReader({
   const createSettingsDraft = useCallback(
     (): JapaneseReaderSettingsDraft => ({
       fontSize: fontSizeRef.current,
-      pageAnimations: settings.pageAnimations,
-      sourceFuriganaEnabled: settings.sourceFuriganaEnabled,
-      readerCounterFurigana: settings.readerCounterFurigana,
-      readerNameFurigana: settings.readerNameFurigana,
-      readerBookmarkHighlights: settings.readerBookmarkHighlights,
-      furiganaRuleLevels: cloneRuleLevels(settings.furiganaRuleLevels),
+      pageAnimations,
+      sourceFuriganaEnabled,
+      readerCounterFurigana,
+      readerNameFurigana,
+      readerBookmarkHighlights,
+      furiganaRuleLevels: cloneRuleLevels(furiganaRuleLevels),
     }),
-    [settings],
+    [
+      furiganaRuleLevels,
+      pageAnimations,
+      readerBookmarkHighlights,
+      readerCounterFurigana,
+      readerNameFurigana,
+      sourceFuriganaEnabled,
+    ],
   );
 
   const applySettingsDraft = useCallback(
