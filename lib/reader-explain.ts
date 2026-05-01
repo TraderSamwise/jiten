@@ -1,4 +1,4 @@
-import { getApiErrorMessage } from "@/lib/api-error";
+import { getApiErrorMessage } from "./api-error";
 
 export interface ReaderExplainRequest {
   selectedText: string;
