@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { ApiError } from "./auth";
 import {
+  getEndpointCost,
+  getQuotaBucket,
   getDailyResetEpochSeconds,
   getUtcDay,
   incrementDailyUsage,
@@ -23,51 +25,62 @@ describe("API rate limits", () => {
     expect(
       readStoredApiUsage({
         jitenApiUsage: {
-          reader_sentence_explain: { day: "2026-05-01", count: 12.8 },
+          ai: { day: "2026-05-01", count: 12.8 },
           ignored: { day: "2026-05-01", count: 99 },
         },
       }),
     ).toEqual({
-      reader_sentence_explain: { day: "2026-05-01", count: 12 },
+      ai: { day: "2026-05-01", count: 12 },
     });
   });
 
-  test("increments current-day usage and resets stale days", () => {
+  test("maps AI endpoints to a shared weighted quota bucket", () => {
+    expect(getQuotaBucket("reader_sentence_explain")).toBe("ai");
+    expect(getQuotaBucket("word_example_sentences")).toBe("ai");
+    expect(getEndpointCost("reader_sentence_explain")).toBe(2);
+    expect(getEndpointCost("word_example_sentences")).toBe(1);
+  });
+
+  test("increments current-day usage by cost and resets stale days", () => {
     const stale = incrementDailyUsage({
-      usage: { reader_sentence_explain: { day: "2026-04-30", count: 50 } },
-      feature: "reader_sentence_explain",
+      usage: { ai: { day: "2026-04-30", count: 50 } },
+      bucket: "ai",
       day: "2026-05-01",
-      limit: 50,
+      limit: 100,
+      cost: 2,
     });
-    expect(stale.nextUsage.reader_sentence_explain).toEqual({ day: "2026-05-01", count: 1 });
-    expect(stale.result.remaining).toBe(49);
+    expect(stale.nextUsage.ai).toEqual({ day: "2026-05-01", count: 2 });
+    expect(stale.result.remaining).toBe(98);
+    expect(stale.result.cost).toBe(2);
 
     const current = incrementDailyUsage({
-      usage: { reader_sentence_explain: { day: "2026-05-01", count: 49 } },
-      feature: "reader_sentence_explain",
+      usage: { ai: { day: "2026-05-01", count: 99 } },
+      bucket: "ai",
       day: "2026-05-01",
-      limit: 50,
+      limit: 100,
+      cost: 1,
     });
-    expect(current.nextUsage.reader_sentence_explain).toEqual({ day: "2026-05-01", count: 50 });
+    expect(current.nextUsage.ai).toEqual({ day: "2026-05-01", count: 100 });
     expect(current.result.remaining).toBe(0);
   });
 
-  test("rejects usage after the daily limit", () => {
+  test("rejects usage that would exceed the daily limit", () => {
     expect(() =>
       incrementDailyUsage({
-        usage: { reader_sentence_explain: { day: "2026-05-01", count: 50 } },
-        feature: "reader_sentence_explain",
+        usage: { ai: { day: "2026-05-01", count: 99 } },
+        bucket: "ai",
         day: "2026-05-01",
-        limit: 50,
+        limit: 100,
+        cost: 2,
       }),
     ).toThrow(ApiError);
   });
 
   test("allows the daily limit to be configured by environment", () => {
-    vi.stubEnv("READER_EXPLAIN_DAILY_LIMIT", "7");
-    expect(parseDailyLimit("reader_sentence_explain")).toBe(7);
+    vi.stubEnv("AI_DAILY_QUOTA", "7");
+    expect(parseDailyLimit("ai")).toBe(7);
 
-    vi.stubEnv("READER_EXPLAIN_DAILY_LIMIT", "invalid");
-    expect(parseDailyLimit("reader_sentence_explain")).toBe(50);
+    vi.stubEnv("AI_DAILY_QUOTA", "invalid");
+    expect(parseDailyLimit("ai")).toBe(100);
   });
 });
