@@ -1,3 +1,5 @@
+import { getApiErrorMessage } from "@/lib/api-error";
+
 export interface ReaderExplainRequest {
   selectedText: string;
   bookTitle?: string | null;
@@ -66,8 +68,7 @@ export async function requestReaderSentenceExplanation({
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const message = typeof body?.error === "string" ? body.error : "Could not explain selection.";
-    throw new Error(message);
+    throw new Error(getApiErrorMessage(body, "Could not explain selection."));
   }
   if (!isReaderSentenceExplanation(body?.explanation)) {
     throw new Error("Explanation response was malformed.");

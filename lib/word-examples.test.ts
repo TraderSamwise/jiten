@@ -78,4 +78,24 @@ describe("word example sentence client", () => {
       }),
     ).rejects.toThrow("Sign in to generate example sentences.");
   });
+
+  test("formats quota limit errors", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: "Daily AI limit reached",
+        code: "quota_exceeded",
+        quota: { limit: 100, remaining: 0, resetAt: Date.UTC(2026, 4, 2) / 1000, cost: 1 },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      requestWordExampleSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        input: { word: "会う" },
+      }),
+    ).rejects.toThrow("Daily AI quota reached.");
+  });
 });

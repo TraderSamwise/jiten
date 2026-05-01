@@ -1,3 +1,5 @@
+import { getApiErrorMessage } from "@/lib/api-error";
+
 export interface WordExampleSentencesRequest {
   word: string;
   reading?: string | null;
@@ -52,9 +54,7 @@ export async function requestWordExampleSentences({
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const message =
-      typeof body?.error === "string" ? body.error : "Could not generate example sentences.";
-    throw new Error(message);
+    throw new Error(getApiErrorMessage(body, "Could not generate example sentences."));
   }
   if (!isWordExampleSentences(body?.result)) {
     throw new Error("Example sentence response was malformed.");

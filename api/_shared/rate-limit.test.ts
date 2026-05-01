@@ -8,6 +8,7 @@ import {
   getUtcDay,
   incrementDailyUsage,
   parseDailyLimit,
+  QuotaExceededError,
   readStoredApiUsage,
 } from "./rate-limit";
 
@@ -64,7 +65,7 @@ describe("API rate limits", () => {
     expect(current.result.remaining).toBe(0);
   });
 
-  test("rejects usage that would exceed the daily limit", () => {
+  test("rejects usage that would exceed the daily limit with quota metadata", () => {
     expect(() =>
       incrementDailyUsage({
         usage: { ai: { day: "2026-05-01", count: 99 } },
@@ -73,7 +74,27 @@ describe("API rate limits", () => {
         limit: 100,
         cost: 2,
       }),
-    ).toThrow(ApiError);
+    ).toThrow(QuotaExceededError);
+
+    try {
+      incrementDailyUsage({
+        usage: { ai: { day: "2026-05-01", count: 99 } },
+        bucket: "ai",
+        day: "2026-05-01",
+        limit: 100,
+        cost: 2,
+      });
+      throw new Error("expected quota error");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect(err).toBeInstanceOf(QuotaExceededError);
+      expect((err as QuotaExceededError).quota).toEqual({
+        limit: 100,
+        remaining: 1,
+        resetAt: Date.UTC(2026, 4, 2) / 1000,
+        cost: 2,
+      });
+    }
   });
 
   test("allows the daily limit to be configured by environment", () => {

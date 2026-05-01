@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { ApiError, verifyApiUser } from "../_shared/auth";
 import { setCors } from "../_shared/cors";
 import { assertFeatureAccess } from "../_shared/entitlements";
+import { sendApiError } from "../_shared/errors";
 import { createStructuredJson } from "../_shared/openai";
 import { consumeDailyUserQuota, setRateLimitHeaders } from "../_shared/rate-limit";
 import { parseJsonObjectBody, trimOptional, trimStringArray } from "../_shared/request";
@@ -99,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ result });
   } catch (err) {
     if (err instanceof ApiError) {
-      return res.status(err.status).json({ error: err.message });
+      return sendApiError(res, err);
     }
     console.error("[word-example-sentences] Error:", err);
     return res.status(500).json({ error: "Could not generate example sentences." });
