@@ -12,7 +12,15 @@ export interface WrappedUserDb {
   sync: () => void;
 }
 
-export function wrapUserDb(db: DB): WrappedUserDb {
+interface WrapUserDbOptions {
+  shouldNotifyError?: (err: unknown) => boolean;
+}
+
+function shouldNotifyDbError(err: unknown, options?: WrapUserDbOptions): boolean {
+  return options?.shouldNotifyError ? options.shouldNotifyError(err) : true;
+}
+
+export function wrapUserDb(db: DB, options?: WrapUserDbOptions): WrappedUserDb {
   return {
     getAllAsync: async <T>(sql: string, params?: any[]): Promise<T[]> => {
       try {
@@ -20,7 +28,7 @@ export function wrapUserDb(db: DB): WrappedUserDb {
         return result.rows as T[];
       } catch (err) {
         console.error("[UserDB] getAllAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
-        notifyDbError(err, sql);
+        if (shouldNotifyDbError(err, options)) notifyDbError(err, sql);
         throw err;
       }
     },
@@ -31,7 +39,7 @@ export function wrapUserDb(db: DB): WrappedUserDb {
         return (result.rows[0] as T) ?? null;
       } catch (err) {
         console.error("[UserDB] getFirstAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
-        notifyDbError(err, sql);
+        if (shouldNotifyDbError(err, options)) notifyDbError(err, sql);
         throw err;
       }
     },
@@ -45,7 +53,7 @@ export function wrapUserDb(db: DB): WrappedUserDb {
         };
       } catch (err) {
         console.error("[UserDB] runAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
-        notifyDbError(err, sql);
+        if (shouldNotifyDbError(err, options)) notifyDbError(err, sql);
         throw err;
       }
     },

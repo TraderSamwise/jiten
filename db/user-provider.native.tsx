@@ -5,6 +5,7 @@ import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { captureException } from "@/lib/sentry";
+import { setRecoveryDb } from "@/components/DbRecoveryScreen";
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
@@ -35,6 +36,8 @@ export function UserDatabaseProvider({
 
   useEffect(() => {
     let db: DB | null = null;
+    let cancelled = false;
+    const live = { current: true };
 
     async function init() {
       console.log("[UserDB Native] Opening user.db...");
@@ -60,7 +63,7 @@ export function UserDatabaseProvider({
       }
 
       // Programmatic migration: rename random default IDs → deterministic slugs
-      const wrapped = wrapUserDb(db);
+      const wrapped = wrapUserDb(db, { shouldNotifyError: () => live.current });
       const migrated = await wrapped.getFirstAsync<{ value: string }>(
         "SELECT value FROM app_flags WHERE key = 'default_ids_migrated'",
       );
@@ -109,17 +112,30 @@ export function UserDatabaseProvider({
         .runAsync(`DELETE FROM review_marks WHERE marked_at < datetime('now', '-90 days')`)
         .catch(() => {});
 
+      if (cancelled) {
+        live.current = false;
+        try {
+          db.close();
+        } catch {}
+        return;
+      }
+
       console.log("[UserDB Native] Initialized successfully");
+      setRecoveryDb(wrapped);
       setState({ userDb: wrapped, isReady: true });
     }
 
     init().catch((err) => {
+      if (cancelled) return;
       console.error("[UserDB Native] Init error:", err);
       captureException(err, { tags: { type: "database", source: "native_init" } });
       setState({ userDb: null, isReady: true });
     });
 
     return () => {
+      cancelled = true;
+      live.current = false;
+      setRecoveryDb(null);
       if (db) {
         try {
           db.close();
