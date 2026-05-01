@@ -31,6 +31,9 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { DictEntry } from "@/db/types";
 import { decomposeWord, type LookupResult } from "@jiten/japanese-reader";
+import { useAuth } from "@/lib/auth";
+import { env } from "@/lib/env";
+import { requestWordExampleSentences, type WordExampleSentences } from "@/lib/word-examples";
 
 function isKanji(code: number): boolean {
   return (
@@ -46,6 +49,7 @@ interface WordDetailProps {
 
 export function WordDetail({ entryId }: WordDetailProps) {
   const { dictDb, extendedDb, isReady } = useDatabase();
+  const { getToken } = useAuth();
   const navigation = useNavigation();
   const tabRouter = useTabRouter();
   const [entry, setEntry] = useState<DictEntry | null>(null);
@@ -66,6 +70,9 @@ export function WordDetail({ entryId }: WordDetailProps) {
       counterGloss: string | null;
     }[]
   >([]);
+  const [examples, setExamples] = useState<WordExampleSentences | null>(null);
+  const [examplesLoading, setExamplesLoading] = useState(false);
+  const [examplesError, setExamplesError] = useState<string | null>(null);
 
   function measureAndRun(callback: () => void) {
     bookmarkRef.current?.measureInWindow((x, y, width, height) => {
@@ -113,6 +120,43 @@ export function WordDetail({ entryId }: WordDetailProps) {
   useEffect(() => {
     navigation.setOptions({ headerRight: () => null });
   }, [navigation]);
+
+  useEffect(() => {
+    setExamples(null);
+    setExamplesError(null);
+    setExamplesLoading(false);
+  }, [entryId]);
+
+  async function handleGenerateExamples() {
+    if (!entry || examplesLoading) return;
+
+    const word = entry.kanji.find((k) => !shouldHide(k.tags))?.text ?? entry.kana[0]?.text ?? "";
+    const reading = entry.kana[0]?.text ?? null;
+    const glosses = entry.senses
+      .flatMap((sense) => sense.glosses.filter((g) => g.lang === "eng").map((g) => g.text))
+      .slice(0, 6);
+    const partOfSpeech = [...new Set(entry.senses.flatMap((sense) => sense.partOfSpeech))].slice(
+      0,
+      8,
+    );
+
+    setExamplesLoading(true);
+    setExamplesError(null);
+    try {
+      const result = await requestWordExampleSentences({
+        apiBaseUrl: env.API_BASE_URL,
+        getToken,
+        input: { word, reading, glosses, partOfSpeech },
+      });
+      setExamples(result);
+    } catch (err) {
+      setExamplesError(
+        err instanceof Error ? err.message : "Could not generate example sentences.",
+      );
+    } finally {
+      setExamplesLoading(false);
+    }
+  }
 
   // Entry not found after loading completes — may be unavailable in mini DB
   if (!entry && dictDb && isReady) {
@@ -256,6 +300,43 @@ export function WordDetail({ entryId }: WordDetailProps) {
               <Text className="text-xs text-muted-foreground italic">Field: {sense.field}</Text>
             )}
             {sense.info && <Text className="text-xs text-muted-foreground">{sense.info}</Text>}
+          </View>
+        ))}
+      </Card>
+
+      <Card className="mb-4">
+        <View className="flex-row items-center justify-between gap-3 mb-2">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-foreground">Example Sentences</Text>
+            <Text className="text-xs text-muted-foreground">Generated with AI</Text>
+          </View>
+          <Button
+            variant={examples ? "outline" : "default"}
+            size="sm"
+            label={examplesLoading ? "Generating..." : examples ? "Regenerate" : "Generate"}
+            disabled={examplesLoading}
+            onPress={handleGenerateExamples}
+          />
+        </View>
+        {examplesLoading && (
+          <View className="flex-row items-center gap-2 py-2">
+            <ActivityIndicator size="small" />
+            <Text className="text-sm text-muted-foreground">Generating examples...</Text>
+          </View>
+        )}
+        {examplesError && <Text className="text-sm text-destructive py-2">{examplesError}</Text>}
+        {examples?.examples.map((example, i) => (
+          <View key={`${example.japanese}-${i}`} className={i === 0 ? "pt-1" : "pt-3"}>
+            <Text className="text-base text-foreground" style={japaneseFontStyle(16)}>
+              {example.japanese}
+            </Text>
+            <Text className="mt-0.5 text-xs text-muted-foreground" style={japaneseFontStyle(12)}>
+              {example.reading}
+            </Text>
+            <Text className="mt-1 text-sm text-foreground">{example.english}</Text>
+            {example.note ? (
+              <Text className="mt-1 text-xs text-muted-foreground">{example.note}</Text>
+            ) : null}
           </View>
         ))}
       </Card>
