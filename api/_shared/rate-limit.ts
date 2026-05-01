@@ -28,6 +28,13 @@ export interface DailyQuotaResult {
   cost: number;
 }
 
+export class QuotaExceededError extends ApiError {
+  constructor(public readonly quota: DailyQuotaResult) {
+    super(429, "Daily AI limit reached");
+    this.name = "QuotaExceededError";
+  }
+}
+
 let clerkClient: ReturnType<typeof createClerkClient> | null = null;
 
 function getClerkClient(): ReturnType<typeof createClerkClient> {
@@ -103,7 +110,12 @@ export function incrementDailyUsage({
 }): { nextUsage: StoredApiUsage; result: DailyQuotaResult } {
   const current = usage[bucket]?.day === day ? usage[bucket]!.count : 0;
   if (current + cost > limit) {
-    throw new ApiError(429, "Daily AI limit reached");
+    throw new QuotaExceededError({
+      limit,
+      remaining: Math.max(0, limit - current),
+      resetAt: getDailyResetEpochSeconds(day),
+      cost,
+    });
   }
 
   const nextCount = current + cost;
