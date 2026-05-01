@@ -2,11 +2,16 @@ import { createClerkClient } from "@clerk/backend";
 
 import { ApiError } from "./auth";
 
-export type ApiQuotaFeature = "reader_sentence_explain";
+export type ApiQuotaEndpoint = "reader_sentence_explain" | "word_example_sentences";
+export type ApiQuotaBucket = "ai";
 
 const METADATA_KEY = "jitenApiUsage";
-const DEFAULT_DAILY_LIMITS: Record<ApiQuotaFeature, number> = {
-  reader_sentence_explain: 50,
+const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
+  ai: 100,
+};
+const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
+  reader_sentence_explain: 2,
+  word_example_sentences: 1,
 };
 
 interface StoredFeatureUsage {
@@ -14,12 +19,13 @@ interface StoredFeatureUsage {
   count: number;
 }
 
-type StoredApiUsage = Partial<Record<ApiQuotaFeature, StoredFeatureUsage>>;
+type StoredApiUsage = Partial<Record<ApiQuotaBucket, StoredFeatureUsage>>;
 
 export interface DailyQuotaResult {
   limit: number;
   remaining: number;
   resetAt: number;
+  cost: number;
 }
 
 let clerkClient: ReturnType<typeof createClerkClient> | null = null;
@@ -43,12 +49,24 @@ export function getDailyResetEpochSeconds(day: string): number {
   return Math.floor(Date.UTC(year, month - 1, date + 1) / 1000);
 }
 
-export function parseDailyLimit(feature: ApiQuotaFeature): number {
-  const envName = feature === "reader_sentence_explain" ? "READER_EXPLAIN_DAILY_LIMIT" : undefined;
+export function getQuotaBucket(endpoint: ApiQuotaEndpoint): ApiQuotaBucket {
+  switch (endpoint) {
+    case "reader_sentence_explain":
+    case "word_example_sentences":
+      return "ai";
+  }
+}
+
+export function getEndpointCost(endpoint: ApiQuotaEndpoint): number {
+  return AI_ENDPOINT_COSTS[endpoint];
+}
+
+export function parseDailyLimit(bucket: ApiQuotaBucket): number {
+  const envName = bucket === "ai" ? "AI_DAILY_QUOTA" : undefined;
   const raw = envName ? process.env[envName] : undefined;
-  if (!raw) return DEFAULT_DAILY_LIMITS[feature];
+  if (!raw) return DEFAULT_DAILY_LIMITS[bucket];
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_DAILY_LIMITS[feature];
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_DAILY_LIMITS[bucket];
   return Math.min(Math.floor(parsed), 10_000);
 }
 
@@ -58,13 +76,13 @@ export function readStoredApiUsage(metadata: unknown): StoredApiUsage {
   if (!raw || typeof raw !== "object") return {};
 
   const usage: StoredApiUsage = {};
-  for (const feature of Object.keys(DEFAULT_DAILY_LIMITS) as ApiQuotaFeature[]) {
-    const value = (raw as Record<string, unknown>)[feature];
+  for (const bucket of Object.keys(DEFAULT_DAILY_LIMITS) as ApiQuotaBucket[]) {
+    const value = (raw as Record<string, unknown>)[bucket];
     if (!value || typeof value !== "object") continue;
     const day = (value as Record<string, unknown>).day;
     const count = (value as Record<string, unknown>).count;
     if (typeof day === "string" && Number.isFinite(count)) {
-      usage[feature] = { day, count: Math.max(0, Math.floor(Number(count))) };
+      usage[bucket] = { day, count: Math.max(0, Math.floor(Number(count))) };
     }
   }
   return usage;
@@ -72,47 +90,52 @@ export function readStoredApiUsage(metadata: unknown): StoredApiUsage {
 
 export function incrementDailyUsage({
   usage,
-  feature,
+  bucket,
   day,
   limit,
+  cost,
 }: {
   usage: StoredApiUsage;
-  feature: ApiQuotaFeature;
+  bucket: ApiQuotaBucket;
   day: string;
   limit: number;
+  cost: number;
 }): { nextUsage: StoredApiUsage; result: DailyQuotaResult } {
-  const current = usage[feature]?.day === day ? usage[feature]!.count : 0;
-  if (current >= limit) {
-    throw new ApiError(429, "Daily explain limit reached");
+  const current = usage[bucket]?.day === day ? usage[bucket]!.count : 0;
+  if (current + cost > limit) {
+    throw new ApiError(429, "Daily AI limit reached");
   }
 
-  const nextCount = current + 1;
+  const nextCount = current + cost;
   return {
     nextUsage: {
       ...usage,
-      [feature]: { day, count: nextCount },
+      [bucket]: { day, count: nextCount },
     },
     result: {
       limit,
       remaining: Math.max(0, limit - nextCount),
       resetAt: getDailyResetEpochSeconds(day),
+      cost,
     },
   };
 }
 
 export async function consumeDailyUserQuota(
   userId: string,
-  feature: ApiQuotaFeature,
+  endpoint: ApiQuotaEndpoint,
 ): Promise<DailyQuotaResult> {
   const client = getClerkClient();
   const day = getUtcDay();
-  const limit = parseDailyLimit(feature);
+  const bucket = getQuotaBucket(endpoint);
+  const limit = parseDailyLimit(bucket);
+  const cost = getEndpointCost(endpoint);
 
   try {
     const user = await client.users.getUser(userId);
     const currentMetadata = user.privateMetadata ?? {};
     const usage = readStoredApiUsage(currentMetadata);
-    const { nextUsage, result } = incrementDailyUsage({ usage, feature, day, limit });
+    const { nextUsage, result } = incrementDailyUsage({ usage, bucket, day, limit, cost });
 
     await client.users.updateUserMetadata(userId, {
       privateMetadata: {
@@ -136,4 +159,5 @@ export function setRateLimitHeaders(
   res.setHeader("X-RateLimit-Limit", quota.limit);
   res.setHeader("X-RateLimit-Remaining", quota.remaining);
   res.setHeader("X-RateLimit-Reset", quota.resetAt);
+  res.setHeader("X-RateLimit-Cost", quota.cost);
 }

@@ -1,6 +1,6 @@
 import { ApiError } from "./auth";
 
-export type PremiumFeature = "reader_sentence_explain";
+export type PremiumFeature = "reader_sentence_explain" | "word_example_sentences";
 
 export interface FeatureAccess {
   allowed: boolean;
