@@ -2,10 +2,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { ApiError, verifyApiUser } from "../_shared/auth";
 import { setCors } from "../_shared/cors";
 import { assertFeatureAccess } from "../_shared/entitlements";
+import { consumeDailyUserQuota, setRateLimitHeaders } from "../_shared/rate-limit";
 import type { ReaderExplainRequest, ReaderSentenceExplanation } from "../../lib/reader-explain";
 import { isReaderSentenceExplanation } from "../../lib/reader-explain";
 
 const MODEL = process.env.OPENAI_EXPLAIN_MODEL || "gpt-5.4-mini";
+const MAX_BODY_CHARS = 4096;
 const MAX_SELECTION_CHARS = 500;
 const MAX_CONTEXT_CHARS = 1200;
 
@@ -72,7 +74,24 @@ function trimOptional(value: unknown, maxLength: number): string | null {
   return trimmed.slice(0, maxLength);
 }
 
+function assertRequestEnvelope(req: VercelRequest): void {
+  const contentType = req.headers["content-type"];
+  if (contentType && !String(contentType).toLowerCase().includes("application/json")) {
+    throw new ApiError(415, "Content-Type must be application/json");
+  }
+
+  const contentLength = Number(req.headers["content-length"]);
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_CHARS) {
+    throw new ApiError(413, "Request body is too large");
+  }
+  if (typeof req.body === "string" && req.body.length > MAX_BODY_CHARS) {
+    throw new ApiError(413, "Request body is too large");
+  }
+}
+
 function parseRequestBody(req: VercelRequest): ReaderExplainRequest {
+  assertRequestEnvelope(req);
+
   let body: unknown;
   try {
     body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
@@ -80,6 +99,9 @@ function parseRequestBody(req: VercelRequest): ReaderExplainRequest {
     throw new ApiError(400, "Invalid JSON body");
   }
   const payload = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  if (typeof req.body !== "string" && JSON.stringify(payload).length > MAX_BODY_CHARS) {
+    throw new ApiError(413, "Request body is too large");
+  }
   const selectedText = trimOptional(payload.selectedText, MAX_SELECTION_CHARS);
   if (!selectedText) {
     throw new ApiError(400, "selectedText is required");
@@ -119,6 +141,7 @@ async function createExplanation(
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
+    signal: AbortSignal.timeout(20_000),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -199,6 +222,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { userId } = await verifyApiUser(req);
     await assertFeatureAccess(userId, "reader_sentence_explain");
     const input = parseRequestBody(req);
+    const quota = await consumeDailyUserQuota(userId, "reader_sentence_explain");
+    setRateLimitHeaders(res, quota);
     const explanation = await createExplanation(input, userId);
     return res.status(200).json({ explanation });
   } catch (err) {
