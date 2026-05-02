@@ -10,6 +10,7 @@ import type { DictEntry } from "@/db/types";
 interface EntrySummaryProps {
   entry: DictEntry;
   variant?: "default" | "compact";
+  readingMode?: "all" | "primary-only";
   inlineMeta?: React.ReactNode;
   rightAccessory?: React.ReactNode;
 }
@@ -17,6 +18,7 @@ interface EntrySummaryProps {
 export const EntrySummary = React.memo(function EntrySummary({
   entry,
   variant = "default",
+  readingMode = "all",
   inlineMeta,
   rightAccessory,
 }: EntrySummaryProps) {
@@ -51,12 +53,15 @@ export const EntrySummary = React.memo(function EntrySummary({
   }
 
   // default variant
-  const readingRows = entry.kana.map((kana) => ({
+  const displayKana = entry.kana.filter(
+    (kana, index, all) => all.findIndex((candidate) => candidate.text === kana.text) === index,
+  );
+  const readingRows = displayKana.map((kana) => ({
     kana,
     accents: entry.pitchAccents.filter((pa) => pa.reading === kana.text),
   }));
   const leadReading = readingRows[0] ?? null;
-  const stackedReadings = readingRows.slice(1);
+  const stackedReadings = readingMode === "all" ? readingRows.slice(1) : [];
   const MAX_SENSES = 3;
   const sensesToShow = entry.senses.slice(0, MAX_SENSES);
   const hasMore = entry.senses.length > MAX_SENSES;
