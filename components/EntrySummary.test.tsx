@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EntrySummary } from "@/components/EntrySummary";
 import type { DictEntry } from "@/db/types";
 
@@ -28,6 +28,10 @@ vi.mock("@/stores/bookmarks", () => ({
   useBookmarkStore: (selector: (state: { bookmarkedIds: Set<string> }) => unknown) =>
     selector({ bookmarkedIds: new Set() }),
 }));
+
+afterEach(() => {
+  cleanup();
+});
 
 function makeEntry(overrides?: Partial<DictEntry>): DictEntry {
   return {
@@ -82,5 +86,38 @@ describe("EntrySummary", () => {
     expect(screen.getByText("咫")).toBeTruthy();
     expect(screen.getByText("あた")).toBeTruthy();
     expect(screen.getByText("た")).toBeTruthy();
+  });
+
+  it("can render only the primary reading for search result summaries", () => {
+    const entry = makeEntry({
+      kana: [
+        { text: "あた", romaji: null, common: true, tags: [] },
+        { text: "た", romaji: null, common: false, tags: [] },
+      ],
+      pitchAccents: [],
+      kanji: [{ text: "咫", common: false, tags: [] }],
+    });
+
+    render(<EntrySummary entry={entry} readingMode="primary-only" />);
+
+    expect(screen.getByText("咫")).toBeTruthy();
+    expect(screen.getByText("あた")).toBeTruthy();
+    expect(screen.queryByText("た")).toBeNull();
+  });
+
+  it("deduplicates repeated visible kana readings in the summary variant", () => {
+    const entry = makeEntry({
+      kanji: [{ text: "名義", common: true, tags: [] }],
+      kana: [
+        { text: "めいぎ", romaji: null, common: true, tags: [] },
+        { text: "めいぎ", romaji: null, common: false, tags: [] },
+      ],
+      pitchAccents: [{ reading: "めいぎ", pitchNumber: 0 }],
+    });
+
+    render(<EntrySummary entry={entry} />);
+
+    expect(screen.getByText("名義")).toBeTruthy();
+    expect(screen.getAllByText("PA:めいぎ:0")).toHaveLength(1);
   });
 });

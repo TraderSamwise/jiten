@@ -19,7 +19,7 @@ export const EntryCard = React.memo(function EntryCard({ entry }: EntryCardProps
 
   return (
     <PressableCard className="mb-2" onPress={() => tabRouter.pushWord(entry.id)}>
-      <EntrySummary entry={entry} rightAccessory={bookmarkAccessory} />
+      <EntrySummary entry={entry} readingMode="primary-only" rightAccessory={bookmarkAccessory} />
     </PressableCard>
   );
 });
