@@ -883,6 +883,18 @@ describe("resolveFuriganaBatch compound resolution", () => {
     expect(result).not.toContain("あきら");
   });
 
+  it("full pipeline does not leak shorter readings into negative conditional verb forms", async () => {
+    const html = "<p>終わらなければいいのに</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb, { includeNames: true });
+    expect(readings["終わらなければ"]?.fullKanjiForm).toBe("終わる");
+
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(html, fMap, allKanji, alwaysShowInjectedFurigana);
+    expect(result).toContain("<ruby>終<rt>お</rt></ruby>わらなければ");
+    expect(result).not.toContain("<ruby>終<rt>つい</rt></ruby>");
+  });
+
   it("full pipeline never rewrites kana prose into alternate-kanji name spellings", async () => {
     const html = "<p>うーと言ったのは、イギリスの劇作家マーローだ。</p>";
     const surfaces = extractSurfacesFromHtml(html, allKanji);

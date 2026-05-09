@@ -1211,4 +1211,25 @@ describe("Compound inflection chains — passive/causative/potential + conjugati
   test("読ませない (む causative negative) → 読む", () => {
     expect(hasCandidate("読ませない", "読む")).toBe(true);
   });
+
+  // ── Negative conditional ──
+  test("終わらなければ (る negative conditional) → 終わる", () => {
+    expect(hasCandidate("終わらなければ", "終わる")).toBe(true);
+  });
+
+  test("食べなければ (ichidan negative conditional) → 食べる", () => {
+    expect(hasCandidate("食べなければ", "食べる")).toBe(true);
+  });
+
+  test("書かなければ (く negative conditional) → 書く", () => {
+    expect(hasCandidate("書かなければ", "書く")).toBe(true);
+  });
+
+  test("勉強しなければ (suru negative conditional) → 勉強する", () => {
+    expect(hasCandidate("勉強しなければ", "勉強する")).toBe(true);
+  });
+
+  test("来なければ (kuru negative conditional) → 来る", () => {
+    expect(hasCandidate("来なければ", "来る")).toBe(true);
+  });
 });
