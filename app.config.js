@@ -55,14 +55,6 @@ module.exports = {
       "expo-updates",
       "@sentry/react-native/expo",
       [
-        "expo-build-properties",
-        {
-          ios: {
-            buildReactNativeFromSource: true,
-          },
-        },
-      ],
-      [
         "expo-splash-screen",
         {
           image: "./assets/images/splash-icon.png",
