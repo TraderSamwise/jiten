@@ -910,6 +910,16 @@ function shouldShowFuriganaForSurface(
   );
 }
 
+function isPrefixOfRejectedLongerSurface(
+  surfaceChars: string[],
+  rejectedSurfaceChars: string[] | null,
+): boolean {
+  if (!rejectedSurfaceChars || surfaceChars.length >= rejectedSurfaceChars.length) return false;
+  const rejectedPrefix = rejectedSurfaceChars.slice(0, surfaceChars.length);
+  const removedSuffix = rejectedSurfaceChars.slice(surfaceChars.length);
+  return rejectedPrefix.join("") === surfaceChars.join("") && removedSuffix.length > 0;
+}
+
 /**
  * Apply furigana map to an HTML string.
  *
@@ -1042,16 +1052,8 @@ export function applyFuriganaToHtml(
 
         const entry = furiganaMap.get(surface)!;
 
-        if (
-          longestRejectedSurfaceChars &&
-          (isKanji(longestRejectedSurfaceChars[0]) || isDigit(longestRejectedSurfaceChars[0])) &&
-          surfaceChars.length < longestRejectedSurfaceChars.length
-        ) {
-          const rejectedPrefix = longestRejectedSurfaceChars.slice(0, surfaceChars.length);
-          const removedSuffix = longestRejectedSurfaceChars.slice(surfaceChars.length);
-          if (rejectedPrefix.join("") === surfaceChars.join("") && removedSuffix.length > 0) {
-            continue;
-          }
+        if (isPrefixOfRejectedLongerSurface(surfaceChars, longestRejectedSurfaceChars)) {
+          continue;
         }
 
         if (!shouldShowFuriganaForSurface(surfaceChars, entry, kanjiSet, settings)) {
@@ -1077,11 +1079,7 @@ export function applyFuriganaToHtml(
       }
 
       if (!matched) {
-        if (
-          longestRejectedSurfaceChars &&
-          longestRejectedSurfaceChars.length > 1 &&
-          (isKanji(longestRejectedSurfaceChars[0]) || isDigit(longestRejectedSurfaceChars[0]))
-        ) {
+        if (longestRejectedSurfaceChars && longestRejectedSurfaceChars.length > 1) {
           blockedVisibleChars = longestRejectedSurfaceChars.length - 1;
         }
         out += ch;
