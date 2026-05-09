@@ -864,6 +864,25 @@ describe("resolveFuriganaBatch compound resolution", () => {
     expect(result).not.toContain("<ruby>最初<rt>");
   });
 
+  it("full pipeline does not leak name furigana into passive verb stems", async () => {
+    const html = "<p>照らされながら</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb, extDb, { includeNames: true });
+    expect(readings["照らされ"]?.fullKanjiForm).toBe("照らす");
+
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      allKanji,
+      withRuleLevels({}, { showNames: true, showCounters: false, sourceDefault: false }),
+    );
+    expect(result).toContain("照らされながら");
+    expect(result).not.toContain("<ruby>照<rt>");
+    expect(result).not.toContain("あき");
+    expect(result).not.toContain("あきら");
+  });
+
   it("full pipeline never rewrites kana prose into alternate-kanji name spellings", async () => {
     const html = "<p>うーと言ったのは、イギリスの劇作家マーローだ。</p>";
     const surfaces = extractSurfacesFromHtml(html, allKanji);

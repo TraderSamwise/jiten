@@ -14,7 +14,11 @@ import * as path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { toHiragana } from "wanakana";
 import { deinflect, generateSubstrings, generateLookupCandidates } from "./deinflect";
-import { smartLookup, smartLookupWithOffset } from "../packages/japanese-reader/src/lookup";
+import {
+  autoLookupWithOffset,
+  smartLookup,
+  smartLookupWithOffset,
+} from "../packages/japanese-reader/src/lookup";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
@@ -943,6 +947,21 @@ describe("Production counter-aware lookup", () => {
       expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "発する")).toBe(true);
       expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "競る")).toBe(false);
     }
+  });
+
+  test("tap lookup prefers 照らす over single-kanji name 照 in 照らされながら", async () => {
+    const text = "照らされながら";
+    for (const tapOffset of [0, 1, 2, 3]) {
+      const hits = await smartLookupWithOffset(text, tapOffset, dictDbAsync, extendedDbAsync);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].matchedText).toBe("照らされ");
+      expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "照らす")).toBe(true);
+    }
+
+    const autoHits = await autoLookupWithOffset(text, 0, dictDbAsync, extendedDbAsync);
+    expect(autoHits.length).toBeGreaterThan(0);
+    expect(autoHits[0].lookupKind).toBe("word");
+    expect(autoHits[0].matchedText).toBe("照らされ");
   });
 
   test("tap lookup prefers 一軒 over 軒 using counter hints", async () => {

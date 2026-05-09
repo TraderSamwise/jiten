@@ -1149,6 +1149,10 @@ describe("Compound inflection chains — passive/causative/potential + conjugati
     expect(hasCandidate("話されない", "話す")).toBe(true);
   });
 
+  test("照らされ (す passive stem) → 照らす", () => {
+    expect(hasCandidate("照らされ", "照らす")).toBe(true);
+  });
+
   // ── Godan passive + te-form ──
   test("読まれて (む passive te-form) → 読む", () => {
     expect(hasCandidate("読まれて", "読む")).toBe(true);
@@ -1187,6 +1191,10 @@ describe("Compound inflection chains — passive/causative/potential + conjugati
 
   test("勉強された (compound suru passive past) → 勉強する", () => {
     expect(hasCandidate("勉強された", "勉強する")).toBe(true);
+  });
+
+  test("勉強され (compound suru passive stem) → 勉強する", () => {
+    expect(hasCandidate("勉強され", "勉強する")).toBe(true);
   });
 
   // ── Suru causative + past ──
