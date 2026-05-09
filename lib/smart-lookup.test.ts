@@ -964,6 +964,17 @@ describe("Production counter-aware lookup", () => {
     expect(autoHits[0].matchedText).toBe("照らされ");
   });
 
+  test("tap lookup prefers 終わる over 終=つい in 終わらなければ", async () => {
+    const text = "終わらなければいいのに";
+    for (const tapOffset of [0, 1, 2, 3, 4, 5, 6]) {
+      const hits = await smartLookupWithOffset(text, tapOffset, dictDbAsync, extendedDbAsync);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].matchedText).toBe("終わらなければ");
+      expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "終わる")).toBe(true);
+      expect(hits[0].entries[0].kana.some((kana) => kana.text === "おわる")).toBe(true);
+    }
+  });
+
   test("tap lookup prefers 一軒 over 軒 using counter hints", async () => {
     const hits = await smartLookupWithOffset("一軒に", 1, dictDbAsync, extendedDbAsync);
     expect(hits.length).toBeGreaterThan(0);
