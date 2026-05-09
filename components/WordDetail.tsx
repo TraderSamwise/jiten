@@ -242,39 +242,43 @@ export function WordDetail({ entryId }: WordDetailProps) {
               );
             })}
           <View className="mt-2 flex-wrap gap-2">
-            {entry.kana.map((k, i) => {
-              const muted = shouldDeEmphasize(k.tags);
-              const accents = entry.pitchAccents.filter((pa) => pa.reading === k.text);
-              return (
-                <View key={i} className="flex-row flex-wrap items-center gap-1">
-                  {!muted && accents.length > 0 ? (
-                    accents.map((pa, j) => <PitchAccent key={j} accent={pa} fontSize={20} />)
-                  ) : (
-                    <Text
-                      className={
-                        muted
-                          ? "text-base text-muted-foreground/50"
-                          : "text-xl text-muted-foreground"
-                      }
-                    >
-                      {k.text}
-                    </Text>
-                  )}
-                  {showRomaji && k.romaji && (
-                    <Text
-                      className={
-                        muted ? "text-xs text-muted-foreground/50" : "text-sm text-muted-foreground"
-                      }
-                    >
-                      ({k.romaji})
-                    </Text>
-                  )}
-                  {k.tags.map((t, j) => (
-                    <Badge key={j} variant="outline" label={getTagLabel(t)} />
-                  ))}
-                </View>
-              );
-            })}
+            {entry.kana
+              .filter((k) => !shouldHide(k.tags))
+              .map((k, i) => {
+                const muted = shouldDeEmphasize(k.tags);
+                const accents = entry.pitchAccents.filter((pa) => pa.reading === k.text);
+                return (
+                  <View key={i} className="flex-row flex-wrap items-center gap-1">
+                    {!muted && accents.length > 0 ? (
+                      accents.map((pa, j) => <PitchAccent key={j} accent={pa} fontSize={20} />)
+                    ) : (
+                      <Text
+                        className={
+                          muted
+                            ? "text-base text-muted-foreground/50"
+                            : "text-xl text-muted-foreground"
+                        }
+                      >
+                        {k.text}
+                      </Text>
+                    )}
+                    {showRomaji && k.romaji && (
+                      <Text
+                        className={
+                          muted
+                            ? "text-xs text-muted-foreground/50"
+                            : "text-sm text-muted-foreground"
+                        }
+                      >
+                        ({k.romaji})
+                      </Text>
+                    )}
+                    {k.tags.map((t, j) => (
+                      <Badge key={j} variant="outline" label={getTagLabel(t)} />
+                    ))}
+                  </View>
+                );
+              })}
           </View>
         </View>
       </View>
