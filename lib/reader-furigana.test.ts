@@ -977,4 +977,32 @@ describe("resolveFuriganaBatch compound resolution", () => {
     );
     expect(result).not.toContain("<ruby>最後<rt>さいご</rt></ruby>まで");
   });
+
+  it("full pipeline does not leak kana-prefixed irregular readings into longer words", async () => {
+    const html = "<p>お母さんがみえましたよ</p>";
+    const surfaces = extractSurfacesFromHtml(html, allKanji);
+    const readings = await resolveFuriganaBatch(surfaces, dictDb);
+    expect(readings["お母さん"]?.reading).toBe("おかあ");
+    expect(readings["お母"]?.reading).toBe("おふくろ");
+
+    const fMap = new Map<string, FuriganaEntry>(Object.entries(readings));
+    const result = applyFuriganaToHtml(
+      html,
+      fMap,
+      { all: false, chars: new Set() },
+      withRuleLevels({
+        matchIrregularReading: {
+          n5: false,
+          n4: false,
+          n3: false,
+          n2: true,
+          n1: false,
+          nonJouyou: false,
+        },
+      }),
+    );
+    expect(result).toContain("お母さん");
+    expect(result).not.toContain("おふくろ");
+    expect(result).not.toContain("<ruby>");
+  });
 });
