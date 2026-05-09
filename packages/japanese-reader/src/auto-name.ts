@@ -1,5 +1,6 @@
 export const AUTO_DUAL_MIN_MATCH_LENGTH = 2;
 export const AUTO_NAME_ONLY_CONFIDENCE = 90;
+export const AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE = 96;
 export const AUTO_NAME_DUAL_CONFIDENCE = 45;
 
 export interface AutoNameWordCandidate {

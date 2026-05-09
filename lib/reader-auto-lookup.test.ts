@@ -161,6 +161,34 @@ describe("chooseAutoLookupResults", () => {
       },
     ]);
   });
+
+  it("returns word first with name alternate when an uncommon exact word competes with an exact surname", () => {
+    const wordResults = [
+      makeWordResult("造作", [
+        makeWordEntry({
+          common: false,
+          kanji: [{ text: "造作", common: false, tags: [] }],
+          kana: [{ text: "ぞうさ", common: false, tags: [], romaji: "zousa" }],
+        }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("造作", [
+        makeNameEntry({ kanji: "造作", kana: "ぞうさ", nameType: "surname", translation: "Zousa" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual([
+      {
+        ...wordResults[0],
+        lookupKind: "word",
+        alternateResults: [
+          { ...wordResults[0], lookupKind: "word" },
+          { ...nameResults[0], lookupKind: "name" },
+        ],
+      },
+    ]);
+  });
 });
 
 describe("autoSelectionLookup", () => {
