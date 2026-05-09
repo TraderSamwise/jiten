@@ -4,6 +4,7 @@ import {
   AUTO_DUAL_MIN_MATCH_LENGTH,
   AUTO_NAME_DUAL_CONFIDENCE,
   AUTO_NAME_ONLY_CONFIDENCE,
+  AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE,
   computeAutoNameConfidence,
   shouldShowBothAutoResults,
   type AutoNameNameCandidate,
@@ -493,6 +494,8 @@ function chooseAutoLookupVariants(
 
   const taggedNames = nameResults.map(asNameLookupResult);
   const bestName = taggedNames[0];
+  const wordExactSurface = topWordExactSurfaceMatch(taggedWord);
+  const wordHasCommon = taggedWord.entries.some((entry) => entry.common);
   const nameConfidence = computeAutoNameConfidence(
     {
       matchedText: bestName.matchedText,
@@ -503,45 +506,55 @@ function chooseAutoLookupVariants(
     } satisfies AutoNameNameCandidate,
     {
       matchedText: taggedWord.matchedText,
-      exactSurface: topWordExactSurfaceMatch(taggedWord),
-      exactCommonWord:
-        topWordExactSurfaceMatch(taggedWord) && taggedWord.entries.some((entry) => entry.common),
-      commonWord: taggedWord.entries.some((entry) => entry.common),
+      exactSurface: wordExactSurface,
+      exactCommonWord: wordExactSurface && wordHasCommon,
+      commonWord: wordHasCommon,
       deinflected: taggedWord.deinflectReasons.length > 0,
     } satisfies AutoNameWordCandidate,
   );
+  const nameOnlyConfidence =
+    wordExactSurface && bestName.matchedText === taggedWord.matchedText
+      ? AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE
+      : AUTO_NAME_ONLY_CONFIDENCE;
 
   if (
     bestName.matchedText.length > taggedWord.matchedText.length &&
-    nameConfidence >= AUTO_NAME_ONLY_CONFIDENCE
+    nameConfidence >= nameOnlyConfidence
   ) {
     return taggedNames;
   }
   if (bestName.matchedText.length < taggedWord.matchedText.length) return [taggedWord];
 
-  if (nameConfidence >= AUTO_NAME_ONLY_CONFIDENCE) {
+  if (nameConfidence >= nameOnlyConfidence) {
     return [bestName];
   }
 
+  const wordCandidate = {
+    matchedText: taggedWord.matchedText,
+    exactSurface: wordExactSurface,
+    exactCommonWord: wordExactSurface && wordHasCommon,
+    commonWord: wordHasCommon,
+    deinflected: taggedWord.deinflectReasons.length > 0,
+  } satisfies AutoNameWordCandidate;
+  const nameCandidate = {
+    matchedText: bestName.matchedText,
+    exactSurface: topNameExactSurfaceMatch(bestName),
+    candidateCount: bestName.nameMatches?.length ?? 0,
+    nameType: bestName.nameMatches?.[0]?.nameType ?? null,
+    hasTranslation: bestName.nameMatches?.some((name) => !!name.translation) ?? false,
+  } satisfies AutoNameNameCandidate;
+
+  const exactWordNameAmbiguity =
+    wordExactSurface &&
+    nameCandidate.exactSurface &&
+    taggedWord.matchedText === bestName.matchedText &&
+    taggedWord.matchedText.length >= AUTO_DUAL_MIN_MATCH_LENGTH &&
+    nameConfidence >= AUTO_NAME_DUAL_CONFIDENCE &&
+    nameConfidence < nameOnlyConfidence;
+
   if (
-    shouldShowBothAutoResults(
-      {
-        matchedText: taggedWord.matchedText,
-        exactSurface: topWordExactSurfaceMatch(taggedWord),
-        exactCommonWord:
-          topWordExactSurfaceMatch(taggedWord) && taggedWord.entries.some((entry) => entry.common),
-        commonWord: taggedWord.entries.some((entry) => entry.common),
-        deinflected: taggedWord.deinflectReasons.length > 0,
-      } satisfies AutoNameWordCandidate,
-      {
-        matchedText: bestName.matchedText,
-        exactSurface: topNameExactSurfaceMatch(bestName),
-        candidateCount: bestName.nameMatches?.length ?? 0,
-        nameType: bestName.nameMatches?.[0]?.nameType ?? null,
-        hasTranslation: bestName.nameMatches?.some((name) => !!name.translation) ?? false,
-      } satisfies AutoNameNameCandidate,
-      nameConfidence,
-    )
+    exactWordNameAmbiguity ||
+    shouldShowBothAutoResults(wordCandidate, nameCandidate, nameConfidence)
   ) {
     return [taggedWord, bestName];
   }
