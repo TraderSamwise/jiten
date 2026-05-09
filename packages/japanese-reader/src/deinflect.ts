@@ -215,6 +215,7 @@ const RULES: DeinflectRule[] = [
   { from: "しました", to: "する", typeIn: SURU, typeOut: SURU, reason: "past polite" },
   { from: "しません", to: "する", typeIn: SURU, typeOut: SURU, reason: "negative polite" },
   { from: "できる", to: "する", typeIn: SURU_OR_V1, typeOut: SURU, reason: "potential" },
+  { from: "せられる", to: "する", typeIn: SURU_OR_V1, typeOut: SURU, reason: "passive" },
   { from: "される", to: "する", typeIn: SURU_OR_V1, typeOut: SURU, reason: "passive" },
   { from: "させる", to: "する", typeIn: SURU_OR_V1, typeOut: SURU, reason: "causative" },
   { from: "しろ", to: "する", typeIn: SURU, typeOut: SURU, reason: "imperative" },

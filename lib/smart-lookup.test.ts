@@ -934,6 +934,17 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
 });
 
 describe("Production counter-aware lookup", () => {
+  test("tap lookup prefers 発する over suffix-only 競る in 発せられる", async () => {
+    const text = "発せられるかわからない";
+    for (const tapOffset of [1, 2, 3, 4]) {
+      const hits = await smartLookupWithOffset(text, tapOffset, dictDbAsync, extendedDbAsync);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].matchedText).toBe("発せられる");
+      expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "発する")).toBe(true);
+      expect(hits[0].entries[0].kanji.some((kanji) => kanji.text === "競る")).toBe(false);
+    }
+  });
+
   test("tap lookup prefers 一軒 over 軒 using counter hints", async () => {
     const hits = await smartLookupWithOffset("一軒に", 1, dictDbAsync, extendedDbAsync);
     expect(hits.length).toBeGreaterThan(0);

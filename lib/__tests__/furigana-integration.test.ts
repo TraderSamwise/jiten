@@ -35,16 +35,17 @@ function buildBuggyNonJouyouSet(db: Database.Database): FuriganaKanjiSet {
 }
 
 describe("furigana nonJouyou filter", () => {
-  it("buggy set includes kana — う is in set, causing false matches", () => {
+  it("ignores kana in a malformed nonJouyou set", () => {
     const db = new Database(DB_PATH, { readonly: true });
     const buggySet = buildBuggyNonJouyouSet(db);
-    expect(buggySet.chars.has("う")).toBe(true); // the bug
+    expect(buggySet.chars.has("う")).toBe(true);
+    expect(buggySet.chars.has("吸")).toBe(false);
 
     const fMap = new Map<string, FuriganaEntry>([
       ["吸う", { kanjiPart: "吸", reading: "す", kanjiPartLen: 1 }],
     ]);
     const result = applyFuriganaToHtml("<p>吸う。</p>", fMap, buggySet);
-    expect(result).toContain("<ruby>"); // bug: incorrectly matches
+    expect(result).not.toContain("<ruby>");
     db.close();
   });
 
