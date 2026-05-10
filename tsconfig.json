@@ -11,5 +11,12 @@
       "@jiten/japanese-reader-core/*": ["./packages/japanese-reader-core/src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "nativewind-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "environment.d.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ]
 }

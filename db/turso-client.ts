@@ -32,6 +32,6 @@ export function createTursoClient(userId: string, authToken: string): Client {
  *  Disabled in __DEV__ by default to avoid spamming Turso on hot reloads.
  *  Set EXPO_PUBLIC_DEV_SYNC=1 to enable sync during development. */
 export function isSyncEnabled(): boolean {
-  if (__DEV__ && !process.env.EXPO_PUBLIC_DEV_SYNC) return false;
+  if (__DEV__ && !env.DEV_SYNC) return false;
   return !!(env.CLERK_PUBLISHABLE_KEY && env.TURSO_ORG);
 }

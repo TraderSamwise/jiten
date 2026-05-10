@@ -41,6 +41,8 @@ echo ""
 ./scripts/version-manager.sh current
 echo ""
 
+node scripts/check-release-env.js "$CHANNEL"
+
 echo "🏗️  Starting EAS build ($CHANNEL_NAME)..."
 eas build --platform ios --profile "$EAS_PROFILE" --auto-submit "${EXTRA_ARGS[@]}"
 

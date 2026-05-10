@@ -30,6 +30,7 @@ fi
 
 # Block if dict version is out of sync
 ./scripts/check-dict-version.sh --strict
+node scripts/check-release-env.js "$CHANNEL"
 
 echo "📤 Starting OTA update ($CHANNEL_NAME channel)..."
 
