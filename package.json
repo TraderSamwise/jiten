@@ -28,6 +28,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "check:env": "node scripts/check-release-env.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "patch-package",

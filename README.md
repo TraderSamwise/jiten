@@ -675,12 +675,16 @@ The same `hashUserId()` function is duplicated in `db/turso-client.ts` (client-s
 
 **Client-side env vars**:
 
+Runtime app code should read these through `lib/env.ts`. That file is the typed facade for runtime defaults and validation; `lib/envRuntime.ts` is the only app file that should read `process.env.EXPO_PUBLIC_*` directly.
+
 | Variable                            | Purpose                                                     |
 | ----------------------------------- | ----------------------------------------------------------- |
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk public key (presence enables cloud mode)              |
 | `EXPO_PUBLIC_TURSO_ORG`             | Turso organization slug                                     |
 | `EXPO_PUBLIC_API_BASE_URL`          | API base URL for token minting (e.g. `https://jiten.tokyo`) |
 | `EXPO_PUBLIC_DEV_SYNC`              | Set to `1` to enable sync in dev mode (disabled by default) |
+
+`yarn check:env` enforces the env contract in `lib/envContract.js`, the declarations in `environment.d.ts`, and blocks direct public env reads outside `lib/envRuntime.ts`. Release scripts run this check before EAS build/update.
 
 ### Sync engine (`db/sync-engine.ts`)
 
