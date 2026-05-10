@@ -63,6 +63,7 @@ const READER_LOAD_STEP_DURATION_MS = 1000;
 const READ_PROGRESS_FLUSH_MS = 15_000;
 const READER_LOAD_DISMISS_DELAY_MS = 220;
 const SLICE_RENDER_CACHE_LIMIT = 48;
+const TAP_TOOLTIP_FALLBACK_MS = 1000;
 const warnedKeys = new Set<string>();
 
 export interface JapaneseReaderSettings {
@@ -91,6 +92,7 @@ export interface JapaneseReaderSettingsActions {
 
 export interface ReaderSelectionTooltip {
   text: string;
+  /** Reader-viewport coordinates anchored to the selected text bounds. */
   x: number;
   y: number;
 }
@@ -373,7 +375,14 @@ export function useJapaneseReader({
   const lastPersistedCharOffsetRef = useRef(0);
   const lastPersistedReadCompleteRef = useRef(false);
   const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingTapPos = useRef<{ x: number; y: number } | null>(null);
+  const highlightPlacementRequestRef = useRef(0);
+  const pendingTapTooltipRef = useRef<{
+    placementId: number;
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const pendingTapTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceFuriganaEnabledRef = useRef(sourceFuriganaEnabled);
   const readerCounterFuriganaRef = useRef(readerCounterFurigana);
   const readerNameFuriganaRef = useRef(readerNameFurigana);
@@ -405,6 +414,32 @@ export function useJapaneseReader({
   useEffect(() => {
     bookmarkMembershipRef.current = bookmarks ?? null;
   }, [bookmarks]);
+
+  const clearPendingTapTooltipTimer = useCallback(() => {
+    if (pendingTapTooltipTimerRef.current) {
+      clearTimeout(pendingTapTooltipTimerRef.current);
+      pendingTapTooltipTimerRef.current = null;
+    }
+  }, []);
+
+  const clearPendingTapTooltip = useCallback(() => {
+    clearPendingTapTooltipTimer();
+    pendingTapTooltipRef.current = null;
+  }, [clearPendingTapTooltipTimer]);
+
+  const scheduleTapTooltipFallback = useCallback(
+    (placement: { placementId: number; text: string; x: number; y: number }) => {
+      clearPendingTapTooltipTimer();
+      pendingTapTooltipRef.current = placement;
+      // Tap lookup may expand to a larger lexical match; prefer adjusted bounds, but do not hang forever.
+      pendingTapTooltipTimerRef.current = setTimeout(() => {
+        pendingTapTooltipTimerRef.current = null;
+        if (highlightPlacementRequestRef.current !== placement.placementId) return;
+        setCopyTooltip((prev) => prev ?? { text: placement.text, x: placement.x, y: placement.y });
+      }, TAP_TOOLTIP_FALLBACK_MS);
+    },
+    [clearPendingTapTooltipTimer],
+  );
 
   useEffect(() => {
     lookupModeRef.current = lookupMode;
@@ -874,6 +909,7 @@ export function useJapaneseReader({
     return () => {
       if (readerLoadDismissTimerRef.current) clearTimeout(readerLoadDismissTimerRef.current);
       if (progressFlushTimerRef.current) clearTimeout(progressFlushTimerRef.current);
+      if (pendingTapTooltipTimerRef.current) clearTimeout(pendingTapTooltipTimerRef.current);
     };
   }, []);
 
@@ -1167,6 +1203,8 @@ export function useJapaneseReader({
   }, [bookId, flushReadingProgress]);
 
   const closeLookupPopup = useCallback(() => {
+    highlightPlacementRequestRef.current += 1;
+    clearPendingTapTooltip();
     setShowLookupPopup(false);
     setLookupResults([]);
     setLookupLoading(false);
@@ -1175,16 +1213,35 @@ export function useJapaneseReader({
     setCopied(false);
     readerViewRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
     readerViewRef.current?.focus();
-  }, []);
+  }, [clearPendingTapTooltip]);
 
   const handleMessage = useCallback(
     async (data: string) => {
       try {
         const msg = JSON.parse(data);
 
+        if (msg.type === "highlightBounds") {
+          if (msg.placementId !== highlightPlacementRequestRef.current) return;
+          if (typeof msg.selectionX !== "number" || typeof msg.selectionTop !== "number") return;
+          const pending = pendingTapTooltipRef.current;
+          const pendingText =
+            pending && pending.placementId === msg.placementId ? pending.text : null;
+          clearPendingTapTooltipTimer();
+          setCopyTooltip((prev) => {
+            const text = prev?.text ?? pendingText;
+            if (!text) return prev;
+            return { text, x: msg.selectionX, y: msg.selectionTop };
+          });
+          pendingTapTooltipRef.current = null;
+          return;
+        }
+
         if (msg.type === "tap" || msg.type === "selection") {
           const text = msg.text as string;
           if (!text || text.length === 0) return;
+          const placementId = highlightPlacementRequestRef.current + 1;
+          highlightPlacementRequestRef.current = placementId;
+          clearPendingTapTooltip();
 
           const currentLookupMode = lookupModeRef.current;
           const isNameMode = currentLookupMode === "name";
@@ -1203,8 +1260,8 @@ export function useJapaneseReader({
           if (msg.type === "selection") {
             setCopyTooltip({
               text,
-              x: msg.startX ?? 0,
-              y: msg.startY ?? 0,
+              x: msg.selectionX ?? msg.startX ?? 0,
+              y: msg.selectionTop ?? msg.startY ?? 0,
             });
             if (isNameMode) {
               const names = await nameLookup(text, extendedDb!);
@@ -1226,7 +1283,6 @@ export function useJapaneseReader({
               );
             }
           } else {
-            pendingTapPos.current = { x: msg.x ?? 0, y: msg.y ?? 0 };
             const tapOffset = msg.tapOffset as number | undefined;
             const results = isNameMode
               ? tapOffset && tapOffset > 0
@@ -1241,6 +1297,12 @@ export function useJapaneseReader({
                   : await smartLookup(text, dictDb!, extendedDb);
 
             setLookupResults(results);
+            scheduleTapTooltipFallback({
+              placementId,
+              text: results.length > 0 ? results[0].matchedText : text,
+              x: msg.x ?? 0,
+              y: msg.y ?? 0,
+            });
 
             if (results.length > 0) {
               const matchStart = results[0].matchStart ?? (tapOffset || 0);
@@ -1248,19 +1310,11 @@ export function useJapaneseReader({
               readerViewRef.current?.postMessage(
                 JSON.stringify({
                   type: "highlight",
+                  placementId,
                   start: startDelta,
                   length: results[0].matchedText.length,
                 }),
               );
-            }
-
-            if (pendingTapPos.current) {
-              const tappedText = results.length > 0 ? results[0].matchedText : text;
-              setCopyTooltip({
-                text: tappedText,
-                x: pendingTapPos.current.x,
-                y: pendingTapPos.current.y,
-              });
             }
           }
           setLookupLoading(false);
@@ -1376,7 +1430,16 @@ export function useJapaneseReader({
         }
       } catch {}
     },
-    [dictDb, extendedDb, renderSliceHtml, scheduleReadingProgressFlush, syncBookmarkHighlights],
+    [
+      clearPendingTapTooltip,
+      clearPendingTapTooltipTimer,
+      dictDb,
+      extendedDb,
+      renderSliceHtml,
+      scheduleReadingProgressFlush,
+      scheduleTapTooltipFallback,
+      syncBookmarkHighlights,
+    ],
   );
 
   const handleCopy = useCallback(() => {

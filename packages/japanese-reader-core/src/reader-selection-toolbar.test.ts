@@ -14,7 +14,7 @@ describe("getSelectionToolbarPosition", () => {
         toolbarWidth: 120,
         toolbarHeight: 32,
         toolbarGap: 24,
-        popupSafeZone: 380,
+        bottomSafeGap: 8,
         sideMargin: 8,
       }),
     ).toEqual({ top: 244, left: 140 });
@@ -31,7 +31,7 @@ describe("getSelectionToolbarPosition", () => {
         toolbarWidth: 160,
         toolbarHeight: 32,
         toolbarGap: 24,
-        popupSafeZone: 380,
+        bottomSafeGap: 8,
         sideMargin: 8,
       }),
     ).toEqual({ top: 244, left: 8 });
@@ -48,13 +48,13 @@ describe("getSelectionToolbarPosition", () => {
         toolbarWidth: 180,
         toolbarHeight: 76,
         toolbarGap: 24,
-        popupSafeZone: 380,
+        bottomSafeGap: 8,
         sideMargin: 8,
       }),
     ).toEqual({ top: 200, left: 212 });
   });
 
-  test("keeps the toolbar above the popup safe zone", () => {
+  test("keeps the whole toolbar above the bottom boundary", () => {
     expect(
       getSelectionToolbarPosition({
         anchorX: 200,
@@ -65,9 +65,10 @@ describe("getSelectionToolbarPosition", () => {
         toolbarWidth: 140,
         toolbarHeight: 32,
         toolbarGap: 24,
-        popupSafeZone: 380,
+        bottomBoundaryY: 520,
+        bottomSafeGap: 8,
         sideMargin: 8,
       }),
-    ).toEqual({ top: 520, left: 130 });
+    ).toEqual({ top: 480, left: 130 });
   });
 });

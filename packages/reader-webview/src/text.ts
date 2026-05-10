@@ -159,6 +159,51 @@ export function absoluteToNodeOffset(absOffset: number): { node: Node; offset: n
   return null;
 }
 
+export type AbsRangeBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+};
+
+// Bounds for the actual visible selection range, excluding ruby annotation text.
+export function getAbsRangeBounds(absStart: number, absEnd: number): AbsRangeBounds | null {
+  const start = absoluteToNodeOffset(absStart);
+  const end = absoluteToNodeOffset(absEnd);
+  if (!start || !end) return null;
+
+  const range = document.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+
+  const rects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 || rect.height > 0,
+  );
+  const fallbackRect = range.getBoundingClientRect();
+  const hasFallbackRect = fallbackRect.width > 0 || fallbackRect.height > 0;
+  const visibleRects = rects.length > 0 ? rects : hasFallbackRect ? [fallbackRect] : [];
+
+  range.detach();
+
+  if (visibleRects.length === 0) return null;
+
+  const left = Math.min(...visibleRects.map((rect) => rect.left));
+  const right = Math.max(...visibleRects.map((rect) => rect.right));
+  const top = Math.min(...visibleRects.map((rect) => rect.top));
+  const bottom = Math.max(...visibleRects.map((rect) => rect.bottom));
+
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
 // Extract text between absolute offsets
 export function getAbsText(absStart: number, absEnd: number): string {
   const walker = textWalker(state.pageEl!);

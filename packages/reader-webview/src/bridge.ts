@@ -1,6 +1,6 @@
 import { state } from "./state";
 import { clearHighlight, applyHighlight } from "./highlight";
-import { absoluteToNodeOffset } from "./text";
+import { absoluteToNodeOffset, getAbsRangeBounds } from "./text";
 import {
   paginate,
   goToPage,
@@ -89,13 +89,27 @@ export function setupMessageListener(): void {
         goToPage(page);
       } else if (msg.type === "highlight") {
         // Refine heuristic highlight with actual match length
+        const start = msg.start ?? 0;
+        const length = msg.length ?? 0;
+        const absStart = state.lastTapAbsOffset + start;
+        const absEnd = absStart + length;
         clearHighlight();
-        applyHighlight(msg.start || 0, msg.length || 0);
+        applyHighlight(start, length);
         // Peek if highlight extends off-screen
-        peekForHighlight(
-          state.lastTapAbsOffset + (msg.start || 0),
-          state.lastTapAbsOffset + (msg.start || 0) + (msg.length || 0),
-        );
+        peekForHighlight(absStart, absEnd);
+        requestAnimationFrame(function () {
+          const bounds = getAbsRangeBounds(absStart, absEnd);
+          const startBounds = getAbsRangeBounds(absStart, Math.min(absStart + 1, absEnd));
+          if (!bounds || !startBounds) return;
+          (window as any).ReactNativeWebView?.postMessage(
+            JSON.stringify({
+              type: "highlightBounds",
+              placementId: msg.placementId,
+              selectionX: bounds.centerX,
+              selectionTop: startBounds.top,
+            }),
+          );
+        });
       } else if (msg.type === "clearHighlight") {
         clearHighlight();
       } else if (msg.type === "setNextContent") {

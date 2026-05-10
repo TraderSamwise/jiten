@@ -1,6 +1,6 @@
 import { state } from "./state";
 import { isJapanese } from "./japanese";
-import { nodeOffsetToAbsolute, getAbsText, resolveCaretAt } from "./text";
+import { nodeOffsetToAbsolute, getAbsText, getAbsRangeBounds, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
 import {
   nextPage,
@@ -131,6 +131,7 @@ export function setupTouchHandlers(): void {
           if (text.length > 0 && text.length <= 1000) {
             const prefix = getAbsText(Math.max(0, lo - 10), lo);
             const suffix = getAbsText(hi, hi + 10);
+            const bounds = getAbsRangeBounds(lo, hi);
             window.ReactNativeWebView.postMessage(
               JSON.stringify({
                 type: "selection",
@@ -139,6 +140,8 @@ export function setupTouchHandlers(): void {
                 suffix: suffix,
                 startX: touchStartX,
                 startY: touchStartY,
+                selectionX: bounds?.centerX,
+                selectionTop: bounds?.top,
               }),
             );
           } else if (text.length > 1000) {

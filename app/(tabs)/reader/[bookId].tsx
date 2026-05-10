@@ -55,13 +55,14 @@ import {
   type JapaneseReaderSettingsDraft,
   type ReaderSelectionTooltip,
   type ReaderBookmarkMembership,
+  getSelectionToolbarPosition,
   useJapaneseReader,
 } from "@jiten/japanese-reader";
 import { ReaderView } from "@jiten/japanese-reader/reader-view";
 import { createJitenReaderBookSource } from "./book-source";
 
 const TOOLBAR_GAP = 24;
-const POPUP_SAFE_ZONE = 380;
+const TOOLBAR_DRAWER_GAP = 8;
 const TOOLBAR_SIDE_MARGIN = 8;
 
 const EXTERNAL_DICTS = [
@@ -111,7 +112,8 @@ function buildExplainPrompt({
 
 function HighlightToolbar({
   tooltip,
-  readerY,
+  readerHeight,
+  bottomBoundaryY,
   isDark,
   copied,
   onCopy,
@@ -120,7 +122,8 @@ function HighlightToolbar({
   bookTitle,
 }: {
   tooltip: ReaderSelectionTooltip;
-  readerY: React.RefObject<number>;
+  readerHeight: number;
+  bottomBoundaryY: number;
   isDark: boolean;
   copied: boolean;
   onCopy: () => void;
@@ -131,20 +134,22 @@ function HighlightToolbar({
   const [openInExpanded, setOpenInExpanded] = useState(false);
   const [toolbarWidth, setToolbarWidth] = useState(0);
   const screen = Dimensions.get("window");
-  const layoutY = readerY.current ?? 0;
   const extraRows = openInExpanded ? EXTERNAL_DICTS.length + 3 : 0;
   const toolbarH = 32 + extraRows * 34 + (extraRows > 0 ? 18 : 0);
   const estimatedToolbarWidth = openInExpanded ? 260 : 206;
-  const anchorX = tooltip.x;
-  const anchorY = tooltip.y;
-  const left = Math.max(
-    TOOLBAR_SIDE_MARGIN,
-    Math.min(
-      anchorX - (toolbarWidth || estimatedToolbarWidth) / 2,
-      screen.width - (toolbarWidth || estimatedToolbarWidth) - TOOLBAR_SIDE_MARGIN,
-    ),
-  );
-  const top = Math.max(12, anchorY - layoutY - toolbarH - TOOLBAR_GAP);
+  const { top, left } = getSelectionToolbarPosition({
+    anchorX: tooltip.x,
+    anchorY: tooltip.y,
+    readerTop: 0,
+    screenWidth: screen.width,
+    screenHeight: readerHeight,
+    toolbarWidth: toolbarWidth || estimatedToolbarWidth,
+    toolbarHeight: toolbarH,
+    toolbarGap: TOOLBAR_GAP,
+    bottomBoundaryY,
+    bottomSafeGap: TOOLBAR_DRAWER_GAP,
+    sideMargin: TOOLBAR_SIDE_MARGIN,
+  });
   const bg = isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)";
   const fg = isDark ? "#000" : "#fff";
 
@@ -458,7 +463,8 @@ export default function BookReaderScreen() {
   const { markDirty, triggerSync } = useSync();
   const { getToken } = useAuth();
   const { webBgStyle } = useWebBackdrop(15);
-  const readerLayoutY = useRef(0);
+  const [readerHeight, setReaderHeight] = useState(Dimensions.get("window").height);
+  const [lookupPopupTop, setLookupPopupTop] = useState(Dimensions.get("window").height);
 
   const [sourceFuriganaEnabled, setSourceFuriganaEnabled] = useAtom(readerSourceFuriganaAtom);
   const [readerBookmarkHighlights, setReaderBookmarkHighlights] = useAtom(
@@ -724,6 +730,13 @@ export default function BookReaderScreen() {
     closeLookupPopup();
   }, [closeLookupPopup]);
 
+  const handleLookupPopupTopChange = useCallback((top: number) => {
+    if (top <= 0) return;
+    setLookupPopupTop((prev) => (Math.abs(prev - top) < 1 ? prev : top));
+  }, []);
+
+  const toolbarBottomBoundaryY = showLookupPopup ? lookupPopupTop : readerHeight;
+
   const visibleSentenceExplanation =
     sentenceExplanation.status !== "idle" &&
     sentenceExplanation.selectedText !== copyTooltip?.text.trim()
@@ -794,7 +807,8 @@ export default function BookReaderScreen() {
             <View
               style={{ flex: 1 }}
               onLayout={(e) => {
-                readerLayoutY.current = e.nativeEvent.layout.y;
+                const nextHeight = Math.ceil(e.nativeEvent.layout.height);
+                if (nextHeight > 0) setReaderHeight(nextHeight);
               }}
             >
               <ReaderView ref={readerViewRef} {...readerViewProps} />
@@ -1158,7 +1172,8 @@ export default function BookReaderScreen() {
             {copyTooltip && (
               <HighlightToolbar
                 tooltip={copyTooltip}
-                readerY={readerLayoutY}
+                readerHeight={readerHeight}
+                bottomBoundaryY={toolbarBottomBoundaryY}
                 isDark={isDark}
                 copied={copied}
                 onCopy={handleCopy}
@@ -1183,6 +1198,7 @@ export default function BookReaderScreen() {
               errorMessage={lookupError}
               explanation={visibleSentenceExplanation}
               onClose={handleCloseLookupPopup}
+              onPanelTopChange={handleLookupPopupTopChange}
               results={lookupResults}
             />
           </>

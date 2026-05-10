@@ -41,6 +41,7 @@ interface DictionaryPopupProps {
   loading?: boolean;
   errorMessage?: string | null;
   explanation?: ReaderSentenceExplanationState;
+  onPanelTopChange?: (top: number) => void;
 }
 
 interface FlatLookupItem {
@@ -249,6 +250,7 @@ export function DictionaryPopup({
   loading,
   errorMessage,
   explanation = { status: "idle" },
+  onPanelTopChange,
 }: DictionaryPopupProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -1059,6 +1061,9 @@ export function DictionaryPopup({
 
       {/* Popup panel stays above the selection toolbar; the dismiss layer stays below it. */}
       <Animated.View
+        onLayout={(event) => {
+          onPanelTopChange?.(Math.floor(event.nativeEvent.layout.y));
+        }}
         style={[
           animatedStyle,
           {
