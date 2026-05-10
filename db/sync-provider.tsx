@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useCallback, useSt
 import { AppState, Platform } from "react-native";
 import { useUserDb } from "./user-provider";
 import type { WrappedUserDb } from "./user-db";
+import { isClosedUserDbConnectionError } from "./db-errors";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
 import { getTursoToken } from "@/lib/turso-token";
@@ -149,14 +150,24 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       }
       // Check dirty flag and trigger initial sync
       if (!userDb) return;
-      const [dirtyRow, lastSyncRow] = await Promise.all([
-        userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
-          "sync_dirty",
-        ]),
-        userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
-          LAST_SYNC_COMPLETED_AT_KEY,
-        ]),
-      ]);
+      let dirtyRow: { value: string } | null = null;
+      let lastSyncRow: { value: string } | null = null;
+      try {
+        [dirtyRow, lastSyncRow] = await Promise.all([
+          userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
+            "sync_dirty",
+          ]),
+          userDb.getFirstAsync<{ value: string }>("SELECT value FROM sync_meta WHERE key = ?", [
+            LAST_SYNC_COMPLETED_AT_KEY,
+          ]),
+        ]);
+      } catch (err) {
+        if (cancelled || userDbRef.current !== userDb || isClosedUserDbConnectionError(err)) return;
+        console.error("[SyncProvider] Initial dirty check failed:", err);
+        setSyncStatus("error");
+        setLastError(String(err));
+        return;
+      }
       if (cancelled) return;
       const wasDirty = !!dirtyRow;
       if (wasDirty) {
@@ -195,8 +206,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         try {
           localData = await hasLocalData(currentDb);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          if (message.includes("Null connection")) return;
+          if (isClosedUserDbConnectionError(err)) return;
           throw err;
         }
         if (cancelled || userDbRef.current !== currentDb) return;
