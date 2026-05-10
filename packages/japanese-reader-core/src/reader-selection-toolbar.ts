@@ -7,7 +7,8 @@ type SelectionToolbarPositionOptions = {
   toolbarWidth: number;
   toolbarHeight: number;
   toolbarGap: number;
-  popupSafeZone: number;
+  bottomBoundaryY?: number;
+  bottomSafeGap: number;
   sideMargin: number;
 };
 
@@ -24,7 +25,8 @@ export function getSelectionToolbarPosition(options: SelectionToolbarPositionOpt
     toolbarWidth,
     toolbarHeight,
     toolbarGap,
-    popupSafeZone,
+    bottomBoundaryY,
+    bottomSafeGap,
     sideMargin,
   } = options;
 
@@ -33,7 +35,8 @@ export function getSelectionToolbarPosition(options: SelectionToolbarPositionOpt
   const left = Math.max(sideMargin, Math.min(rawLeft, maxLeft));
 
   const rawTop = readerTop + anchorY - toolbarHeight - toolbarGap;
-  const maxTop = screenHeight - popupSafeZone;
+  const safeBottom = bottomBoundaryY ?? screenHeight;
+  const maxTop = Math.max(readerTop, safeBottom - bottomSafeGap - toolbarHeight);
   const top = Math.max(readerTop, Math.min(rawTop, maxTop));
 
   return { top, left };
