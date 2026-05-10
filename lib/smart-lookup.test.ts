@@ -975,6 +975,17 @@ describe("Production counter-aware lookup", () => {
     }
   });
 
+  test("tap lookup prefers しか over deinflected 叱る in しかなかった", async () => {
+    const text = "欲しいしかなかった";
+    for (const tapOffset of [3, 4]) {
+      const hits = await smartLookupWithOffset(text, tapOffset, dictDbAsync, extendedDbAsync);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].matchedText).toBe("しか");
+      expect(hits[0].entries[0].kana.some((kana) => kana.text === "しか")).toBe(true);
+      expect(hits[0].entries[0].senses[0]?.partOfSpeech).toContain("prt");
+    }
+  });
+
   test("tap lookup prefers 一軒 over 軒 using counter hints", async () => {
     const hits = await smartLookupWithOffset("一軒に", 1, dictDbAsync, extendedDbAsync);
     expect(hits.length).toBeGreaterThan(0);

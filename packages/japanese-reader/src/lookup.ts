@@ -447,6 +447,51 @@ function shouldPreferLongerKanaDeinflection(
   return tapCandidateEndsMidKanaRun(text, shorterStart, shorterResult.matchedText);
 }
 
+const NEGATIVE_SCOPE_PARTICLE_TAILS = ["なかった"] as const;
+const MAX_NEGATIVE_SCOPE_PARTICLE_LENGTH = 4;
+
+function isNegativeScopeParticleEntry(entry: ReaderDictEntry): boolean {
+  return entry.senses.some(
+    (sense) => sense.partOfSpeech.includes("prt") && (sense.info ?? "").includes("neg."),
+  );
+}
+
+async function lookupNegativeScopeParticleAtTap(
+  text: string,
+  tapOffset: number,
+  dictDb: ReaderSqlDb,
+): Promise<LookupResult | null> {
+  const minStart = Math.max(0, tapOffset - MAX_NEGATIVE_SCOPE_PARTICLE_LENGTH);
+  for (let start = minStart; start <= tapOffset; start++) {
+    for (
+      let length = Math.min(MAX_NEGATIVE_SCOPE_PARTICLE_LENGTH, text.length - start);
+      length >= 1;
+      length--
+    ) {
+      const matchedText = text.slice(start, start + length);
+      const tail = text.slice(start + length);
+      const matchingTail = NEGATIVE_SCOPE_PARTICLE_TAILS.find((candidate) =>
+        tail.startsWith(candidate),
+      );
+      if (!matchingTail) continue;
+      if (tapOffset >= start + length + matchingTail.length) continue;
+
+      const entries = (await lookupExactJapanese(dictDb, matchedText)).filter(
+        isNegativeScopeParticleEntry,
+      );
+      if (entries.length === 0) continue;
+
+      return {
+        matchedText,
+        entries,
+        deinflectReasons: [],
+        matchStart: start,
+      };
+    }
+  }
+  return null;
+}
+
 function scoreTapCandidate(
   text: string,
   tapOffset: number,
@@ -951,6 +996,9 @@ export async function smartLookupWithOffset(
   dictDb: ReaderSqlDb,
   extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
+  const negativeScopeParticle = await lookupNegativeScopeParticleAtTap(text, tapOffset, dictDb);
+  if (negativeScopeParticle) return [asWordLookupResult(negativeScopeParticle)];
+
   const kanjiCache = new Map<string, KanjiReadingRecord>();
   const tapSurfaces = new Set<string>();
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
