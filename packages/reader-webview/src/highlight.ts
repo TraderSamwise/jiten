@@ -31,6 +31,12 @@ function getHighlightBg(): string {
 let activeHighlight: Highlight | null = null;
 let activeRanges: Range[] = [];
 let activeAbsRange: { start: number; end: number } | null = null;
+let suppressedRubyBookmarks: {
+  span: HTMLElement;
+  parent: Node;
+  nextSibling: Node | null;
+  children: Node[];
+}[] = [];
 
 function isInsideRt(node: Node): boolean {
   let parent = node.parentNode;
@@ -69,6 +75,8 @@ export function clearHighlight(): void {
 }
 
 function clearHighlightPaintOnly(): void {
+  restoreSuppressedRubyBookmarks();
+
   if (useHighlightAPI) {
     // Safari vertical-rl: highlight removal computes wrong repaint rects,
     // leaving stale painted pixels. Adding a full-content range before
@@ -137,6 +145,80 @@ function clearHighlightSpan(): void {
   void state.contentEl!.offsetWidth;
 }
 
+function closestRubyBookmarkSpan(node: Node): HTMLElement | null {
+  let parent = node.parentNode;
+  let bookmark: HTMLElement | null = null;
+
+  while (parent && parent !== state.contentEl) {
+    if (parent.nodeType === Node.ELEMENT_NODE) {
+      const element = parent as HTMLElement;
+      if (element.classList.contains("bookmarked-word")) {
+        bookmark = element;
+      }
+      if (element.tagName === "RUBY") {
+        return bookmark;
+      }
+    }
+    parent = parent.parentNode;
+  }
+
+  return null;
+}
+
+function suppressOverlappingRubyBookmarks(absStart: number, absEnd: number): void {
+  restoreSuppressedRubyBookmarks();
+
+  // iOS Safari clips ruby annotations when a selected ruby contains an inline
+  // bookmark wrapper. Temporarily remove that wrapper while selection is active.
+  const walker = makeTextWalker();
+  const spans = new Set<HTMLElement>();
+  let pos = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const len = node.textContent!.length;
+    if (pos + len > absStart && pos < absEnd) {
+      const span = closestRubyBookmarkSpan(node);
+      if (span) spans.add(span);
+    }
+    pos += len;
+    if (pos >= absEnd) break;
+  }
+
+  for (const span of spans) {
+    const parent = span.parentNode;
+    if (!parent) continue;
+    const children = Array.from(span.childNodes);
+    suppressedRubyBookmarks.push({
+      span,
+      parent,
+      nextSibling: span.nextSibling,
+      children,
+    });
+    while (span.firstChild) {
+      parent.insertBefore(span.firstChild, span);
+    }
+    parent.removeChild(span);
+  }
+}
+
+function restoreSuppressedRubyBookmarks(): void {
+  if (suppressedRubyBookmarks.length === 0) return;
+
+  for (let i = suppressedRubyBookmarks.length - 1; i >= 0; i--) {
+    const { span, parent, nextSibling, children } = suppressedRubyBookmarks[i];
+    if (!parent.isConnected) continue;
+    const anchor = nextSibling && nextSibling.parentNode === parent ? nextSibling : null;
+    parent.insertBefore(span, anchor);
+    for (const child of children) {
+      if (child.parentNode) {
+        span.appendChild(child);
+      }
+    }
+  }
+
+  suppressedRubyBookmarks = [];
+}
+
 // ---------- Apply ----------
 
 export function applyHighlight(startDelta: number, len: number): void {
@@ -150,6 +232,7 @@ export function highlightAbsRange(absStart: number, absEnd: number): void {
   if (absEnd <= absStart) return;
   if (absStart < 0) absStart = 0;
   activeAbsRange = { start: absStart, end: absEnd };
+  suppressOverlappingRubyBookmarks(absStart, absEnd);
 
   if (useHighlightAPI) {
     highlightAbsRangeAPI(absStart, absEnd);
