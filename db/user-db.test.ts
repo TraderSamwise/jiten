@@ -30,10 +30,10 @@ describe("wrapUserDb", () => {
     expect(notifyDbError).toHaveBeenCalledWith(err, "SELECT 1");
   });
 
-  test("does not report stale closed database query failures to global recovery", async () => {
+  test("does not report closed database query failures to global recovery", async () => {
     const err = new Error("Null connection");
     const db = createRejectingDb(err);
-    const wrapped = wrapUserDb(db, { shouldNotifyError: () => false });
+    const wrapped = wrapUserDb(db);
 
     await expect(
       wrapped.getFirstAsync("SELECT value FROM sync_meta WHERE key = ?"),

@@ -1,5 +1,6 @@
 import type { DB, QueryResult } from "@op-engineering/op-sqlite";
 import { notifyDbError } from "@/components/GlobalErrorHandler";
+import { isClosedUserDbConnectionError } from "./db-errors";
 
 /**
  * Wraps op-sqlite's DB to match the expo-sqlite API our screens already use.
@@ -17,6 +18,7 @@ interface WrapUserDbOptions {
 }
 
 function shouldNotifyDbError(err: unknown, options?: WrapUserDbOptions): boolean {
+  if (isClosedUserDbConnectionError(err)) return false;
   return options?.shouldNotifyError ? options.shouldNotifyError(err) : true;
 }
 
