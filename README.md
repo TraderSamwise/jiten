@@ -5,15 +5,28 @@ Japanese ebook reader and dictionary app. Built with Expo (React Native) targeti
 ## Development
 
 ```bash
-yarn            # install dependencies
-yarn web        # start web dev server
-yarn ios        # run on iOS
-yarn android    # run on Android
-yarn test       # run tests
-yarn lint       # check for lint errors
-yarn lint:fix   # auto-fix lint errors
-yarn format     # format all files with prettier
+yarn              # install dependencies
+cp .env.example .env
+yarn web          # start web dev server
+yarn ios          # build/install/open iOS simulator dev build
+yarn android      # build/install/open Android emulator dev build
+yarn test         # run tests
+yarn lint         # check for lint errors
+yarn lint:fix     # auto-fix lint errors
+yarn format       # format all files with prettier
 ```
+
+`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` is optional for local development. When it
+is blank, the app runs without Clerk-backed auth.
+
+For an already-installed native dev build, start Metro directly:
+
+```bash
+yarn start --dev-client --port 8081 --clear
+```
+
+Only one Expo/Metro process can own port `8081`. If the simulator loads another
+app's JavaScript bundle, stop that other Expo process and restart Jiten Metro.
 
 ## Monorepo Packages
 
