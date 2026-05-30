@@ -26,7 +26,7 @@ import { useSearchStore } from "@/stores/search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
-import { highlightKeywords } from "@/lib/highlight-keywords";
+import { MnemonicText } from "@/components/MnemonicText";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -160,20 +160,18 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     }, [loadComponentUserKeywords]),
   );
 
-  // Compute highlighted mnemonic segments
-  const mnemonicSegments = useMemo(() => {
-    if (!mnemonic) return [];
-    const primaryKeywords = [keyword, kanji?.heisigKeyword].filter(Boolean) as string[];
-    const compKeywords: string[] = [];
+  const { primaryKeywords, componentKeywords } = useMemo(() => {
+    const primary = [keyword, kanji?.heisigKeyword].filter(Boolean) as string[];
+    const comp: string[] = [];
     for (const r of radicals.filter((r) => r !== literal)) {
       const userKw = componentUserKeywords.get(r);
-      if (userKw) compKeywords.push(userKw);
+      if (userKw) comp.push(userKw);
       const ck = componentKanji.get(r);
-      if (ck?.heisigKeyword) compKeywords.push(ck.heisigKeyword);
-      else if (ck?.meanings[0]) compKeywords.push(ck.meanings[0]);
+      if (ck?.heisigKeyword) comp.push(ck.heisigKeyword);
+      else if (ck?.meanings[0]) comp.push(ck.meanings[0]);
     }
-    return highlightKeywords(mnemonic, primaryKeywords, compKeywords);
-  }, [mnemonic, keyword, kanji, radicals, literal, componentKanji, componentUserKeywords]);
+    return { primaryKeywords: primary, componentKeywords: comp };
+  }, [keyword, kanji, radicals, literal, componentKanji, componentUserKeywords]);
 
   const handleRadicalPress = (radical: string) => {
     setSearchMode("radical");
@@ -349,22 +347,11 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             }}
           >
             {mnemonic ? (
-              <Text className="text-base text-foreground">
-                {mnemonicSegments.map((seg, i) =>
-                  seg.type === "plain" ? (
-                    <React.Fragment key={i}>{seg.text}</React.Fragment>
-                  ) : (
-                    <Text
-                      key={i}
-                      className={
-                        seg.type === "primary" ? "text-blue-500 font-semibold" : "text-green-600"
-                      }
-                    >
-                      {seg.text}
-                    </Text>
-                  ),
-                )}
-              </Text>
+              <MnemonicText
+                mnemonic={mnemonic}
+                primaryKeywords={primaryKeywords}
+                componentKeywords={componentKeywords}
+              />
             ) : (
               <Text className="text-base text-muted-foreground italic">
                 Tap to add a mnemonic story...
