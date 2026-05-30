@@ -408,6 +408,50 @@ describe("sync engine", () => {
         .all("my-list") as any[];
       expect(rows).toHaveLength(1);
     });
+
+    it("does not push smart-review lists or their entries / srs_cards", async () => {
+      const now = "2025-01-01T00:00:00.000Z";
+      await insertList(local, "_smart_my-list", "Smart Review", now);
+      await insertListEntry(local, "se-1", "_smart_my-list", 99, now);
+      await insertSrsCard(local, "sc-1", "_smart_my-list", 99, now);
+
+      await sync(local, turso, noop, noop);
+
+      expect(
+        remoteDb.prepare("SELECT * FROM lists WHERE id = ?").all("_smart_my-list") as any[],
+      ).toHaveLength(0);
+      expect(
+        remoteDb
+          .prepare("SELECT * FROM list_entries WHERE list_id = ?")
+          .all("_smart_my-list") as any[],
+      ).toHaveLength(0);
+      expect(
+        remoteDb
+          .prepare("SELECT * FROM srs_cards WHERE list_id = ?")
+          .all("_smart_my-list") as any[],
+      ).toHaveLength(0);
+    });
+
+    it("does not push marked-for-review temp lists or their rows", async () => {
+      const now = "2025-01-01T00:00:00.000Z";
+      await insertList(local, "_marked_123", "Marked", now);
+      await insertListEntry(local, "me-1", "_marked_123", 42, now);
+      await insertSrsCard(local, "mc-1", "_marked_123", 42, now);
+
+      await sync(local, turso, noop, noop);
+
+      expect(
+        remoteDb.prepare("SELECT * FROM lists WHERE id = ?").all("_marked_123") as any[],
+      ).toHaveLength(0);
+      expect(
+        remoteDb
+          .prepare("SELECT * FROM list_entries WHERE list_id = ?")
+          .all("_marked_123") as any[],
+      ).toHaveLength(0);
+      expect(
+        remoteDb.prepare("SELECT * FROM srs_cards WHERE list_id = ?").all("_marked_123") as any[],
+      ).toHaveLength(0);
+    });
   });
 
   describe("append-only cloud sync", () => {
