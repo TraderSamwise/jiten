@@ -19,6 +19,7 @@ import { SwipeableRow, type SwipeAction } from "@/components/SwipeableRow";
 import { ListEntryCard } from "@/components/ListEntryCard";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { GamesModal } from "@/components/GamesModal";
+import { SmartReviewModal } from "@/components/SmartReviewModal";
 import { Trash2, EllipsisVertical } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
@@ -83,6 +84,7 @@ export default function ListDetailScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [gamesModalVisible, setGamesModalVisible] = useState(false);
+  const [smartReviewVisible, setSmartReviewVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
   const [reviewCount, setReviewCount] = useState(0);
@@ -673,6 +675,17 @@ export default function ListDetailScreen() {
             >
               <Text className="text-sm text-foreground">Marked for Review</Text>
             </Pressable>
+            {!list?.isDefault && (
+              <Pressable
+                className="px-4 py-3 border-b border-border"
+                onPress={() => {
+                  setMenuVisible(false);
+                  setSmartReviewVisible(true);
+                }}
+              >
+                <Text className="text-sm text-foreground">Smart Review</Text>
+              </Pressable>
+            )}
             <Pressable
               className="px-4 py-3"
               onPress={() => {
@@ -715,6 +728,12 @@ export default function ListDetailScreen() {
         visible={gamesModalVisible}
         onClose={() => setGamesModalVisible(false)}
         listId={id!}
+      />
+
+      <SmartReviewModal
+        visible={smartReviewVisible}
+        onClose={() => setSmartReviewVisible(false)}
+        sourceList={list}
       />
     </View>
   );

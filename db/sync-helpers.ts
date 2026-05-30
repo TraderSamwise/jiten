@@ -10,16 +10,34 @@ export async function softDelete(db: WrappedUserDb, table: string, where: string
   ]);
 }
 
+// Ephemeral local-only list prefixes. `_smart_*` are smart-review sub-lists
+// (lib/smart-review.ts), `_marked_*` are temp lists built from the
+// marked-for-review screen. Neither should leave the device.
+const EPHEMERAL_LIST_FILTER =
+  "id NOT LIKE '\\_smart\\_%' ESCAPE '\\' AND id NOT LIKE '\\_marked\\_%' ESCAPE '\\'";
+const EPHEMERAL_LIST_ID_FILTER =
+  "list_id NOT LIKE '\\_smart\\_%' ESCAPE '\\' AND list_id NOT LIKE '\\_marked\\_%' ESCAPE '\\'";
+
 /** Table config for mutable (last-write-wins) tables */
 export const MUTABLE_TABLES = [
-  { name: "lists", pk: "id", timestampCol: "updated_at", pushFilter: "is_default = 0" },
+  {
+    name: "lists",
+    pk: "id",
+    timestampCol: "updated_at",
+    pushFilter: `is_default = 0 AND ${EPHEMERAL_LIST_FILTER}`,
+  },
   {
     name: "list_entries",
     pk: "id",
     timestampCol: "updated_at",
-    pushFilter: "list_id NOT LIKE 'default-%'",
+    pushFilter: `list_id NOT LIKE 'default-%' AND ${EPHEMERAL_LIST_ID_FILTER}`,
   },
-  { name: "srs_cards", pk: "id", timestampCol: "updated_at" },
+  {
+    name: "srs_cards",
+    pk: "id",
+    timestampCol: "updated_at",
+    pushFilter: `(list_id IS NULL OR ${EPHEMERAL_LIST_ID_FILTER})`,
+  },
   {
     name: "books",
     pk: "id",

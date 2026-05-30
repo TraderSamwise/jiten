@@ -60,10 +60,15 @@ export const useListsStore = create<ListsState>((set, get) => ({
   lists: [],
   listsLoaded: false,
   load: async (userDb) => {
+    // _smart_% (smart-review sub-lists) and _marked_% (marked-for-review temp
+    // lists) are device-local ephemeral state surfaced only from their
+    // entry-point screens; they never appear in the main list index.
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id AND le.deleted_at IS NULL
        WHERE l.deleted_at IS NULL
+         AND l.id NOT LIKE '\\_smart\\_%' ESCAPE '\\'
+         AND l.id NOT LIKE '\\_marked\\_%' ESCAPE '\\'
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
     type SrsProgress = { list_id: string; total: number; learned: number; learning: number };
