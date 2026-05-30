@@ -141,10 +141,14 @@ export default function ListsIndexScreen() {
 
   async function loadLists() {
     if (!userDb) return;
+    // Filter out _smart_% / _marked_% ephemeral lists — they're surfaced from
+    // their entry-point screens, not the main index. Matches stores/lists.ts.
     const rows = await userDb.getAllAsync<WordList & { entryCount: number }>(
       `SELECT l.*, COUNT(le.id) as entryCount
        FROM lists l LEFT JOIN list_entries le ON l.id = le.list_id AND le.deleted_at IS NULL
        WHERE l.deleted_at IS NULL
+         AND l.id NOT LIKE '\\_smart\\_%' ESCAPE '\\'
+         AND l.id NOT LIKE '\\_marked\\_%' ESCAPE '\\'
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
 
