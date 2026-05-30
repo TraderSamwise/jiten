@@ -51,8 +51,7 @@ function collectSourceFiles() {
 function isTestFile(file) {
   const normalized = file.split(path.sep).join("/");
   return (
-    /\/__tests__\//.test(normalized) ||
-    /\.(test|spec)\.[cm]?[jt]sx?$/.test(path.basename(file))
+    /\/__tests__\//.test(normalized) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path.basename(file))
   );
 }
 
