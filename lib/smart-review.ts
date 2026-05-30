@@ -39,7 +39,9 @@ export function isEphemeralListId(id: string | null | undefined): boolean {
 function windowStartIso(days: number, resetHour: number): string {
   const today = getLogicalToday(resetHour);
   const start = new Date(`${today}T00:00:00Z`);
-  start.setUTCDate(start.getUTCDate() - days);
+  // Inclusive window: "7 days" means today + the previous 6 logical days.
+  // Subtracting `days` directly would yield an 8-day span.
+  start.setUTCDate(start.getUTCDate() - Math.max(0, days - 1));
   return start.toISOString();
 }
 
