@@ -4,6 +4,7 @@ import { useSignUp } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { clerkErrorMessage } from "@/lib/clerk-errors";
 
 export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp();
@@ -24,8 +25,8 @@ export default function SignUpScreen() {
       await signUp.create({ emailAddress: email, password });
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setPendingVerification(true);
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Sign up failed");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Sign up failed"));
     } finally {
       setLoading(false);
     }
@@ -40,8 +41,8 @@ export default function SignUpScreen() {
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Verification failed");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Verification failed"));
     } finally {
       setLoading(false);
     }
@@ -54,8 +55,8 @@ export default function SignUpScreen() {
     try {
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setCode("");
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Failed to resend code");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Failed to resend code"));
     } finally {
       setLoading(false);
     }
