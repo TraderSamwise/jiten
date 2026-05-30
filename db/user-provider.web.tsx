@@ -3,6 +3,7 @@ import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
+import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
 import { setRecoveryDb, DbRecoveryScreen } from "@/components/DbRecoveryScreen";
 import { notifyDbError } from "@/components/GlobalErrorHandler";
 import { captureException } from "@/lib/sentry";
@@ -178,6 +179,8 @@ export function UserDatabaseProvider({
       wrapped
         .runAsync(`DELETE FROM review_marks WHERE marked_at < datetime('now', '-90 days')`)
         .catch(() => {});
+      // Smart-review sub-lists are device-local; sweep idle (>30d) and source-missing.
+      cleanupOrphanedSmartLists(wrapped).catch(() => {});
       setRecoveryDb(wrapped);
       setState({ userDb: wrapped, isReady: true });
       console.log("[UserDB Web] Initialized successfully");
