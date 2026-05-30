@@ -103,6 +103,7 @@ describe("defaultSettings", () => {
       flashcardSwipeAnimation: true,
       flashcardButtonAnimation: true,
       dayResetHour: 3,
+      smartReviewDays: 7,
     });
   });
 
