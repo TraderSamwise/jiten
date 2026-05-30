@@ -13,6 +13,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
+import { MnemonicText } from "@/components/MnemonicText";
+import { useMnemonicData } from "@/hooks/useMnemonicData";
 import { viewportPosition } from "@/lib/viewport-position";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -411,6 +413,8 @@ function getFaceText(entry: DictEntry, face: CardFace): string {
       });
       return parts.filter(Boolean).join(" ");
     }
+    case "mnemonic":
+      return "";
   }
 }
 
@@ -422,10 +426,12 @@ function getKanjiFaceText(kanji: KanjiCharacter, face: CardFace): string {
       return [...kanji.readingsOn, ...kanji.readingsKun].join("\u3001");
     case "english":
       return kanji.meanings.join(", ");
+    case "mnemonic":
+      return "";
   }
 }
 
-const FACE_ORDER: Record<CardFace, number> = { kanji: 0, kana: 1, english: 2 };
+const FACE_ORDER: Record<CardFace, number> = { kanji: 0, kana: 1, english: 2, mnemonic: 3 };
 function sortFaces(faces: CardFace[]): CardFace[] {
   return [...faces].sort((a, b) => FACE_ORDER[a] - FACE_ORDER[b]);
 }
@@ -437,9 +443,11 @@ function scaledFontStyle(
   face: CardFace,
 ): { fontSize: number; lineHeight: number; textAlign: "center" } {
   const scale = 1 / (1 + (count - 1) * 0.5);
-  const typeFactor = face === "english" ? 0.5 : face === "kana" ? 0.8 : 1;
+  const typeFactor =
+    face === "english" ? 0.5 : face === "kana" ? 0.8 : face === "mnemonic" ? 0.22 : 1;
   let size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
   if (face === "english") size = Math.min(size, MAX_ENGLISH_FONT_SIZE);
+  if (face === "mnemonic") size = Math.min(size, 18);
   return {
     fontSize: size,
     lineHeight: Math.round(size * 1.3),
@@ -502,6 +510,12 @@ const StudyCardView = React.memo(
     ref,
   ) {
     const screenWidth = useContainerWidth();
+    const mnemonicData = useMnemonicData(item.kind === "kanji" ? item.kanji.literal : null);
+    function canRenderFace(face: CardFace): boolean {
+      if (face !== "mnemonic") return true;
+      if (item.kind !== "kanji") return false;
+      return !!mnemonicData.mnemonic;
+    }
     // Per-card flip animation
     const flipProgress = useSharedValue(initialFlipped ? 1 : 0);
     const [flipped, setFlipped] = useState(initialFlipped);
@@ -583,6 +597,18 @@ const StudyCardView = React.memo(
       style: { fontSize: number; lineHeight: number; textAlign: "center" },
       opts?: { numberOfLines?: number; adjustsFontSizeToFit?: boolean; minimumFontScale?: number },
     ) {
+      if (face === "mnemonic") {
+        if (!canRenderFace(face)) return null;
+        return (
+          <MnemonicText
+            mnemonic={mnemonicData.mnemonic}
+            primaryKeywords={mnemonicData.primaryKeywords}
+            componentKeywords={mnemonicData.componentKeywords}
+            className="text-base text-foreground text-center px-4"
+            numberOfLines={opts?.numberOfLines}
+          />
+        );
+      }
       const text =
         item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face);
 
@@ -637,12 +663,14 @@ const StudyCardView = React.memo(
         onTypingComplete(wasCorrect);
       };
 
-      const frontCount = frontFaces.length;
-      const secondaryFaces = frontFaces.slice(1).map((face, i) => (
+      const renderableFront = frontFaces.filter(canRenderFace);
+      const primaryFront = renderableFront[0];
+      const frontCount = renderableFront.length;
+      const secondaryFaces = renderableFront.slice(1).map((face, i) => (
         <View key={`front-${i}`} style={{ marginTop: 4 }}>
           {renderFaceContent(face, scaledFontStyle(frontCount, face), {
             numberOfLines: face === "english" ? 3 : 1,
-            adjustsFontSizeToFit: face !== "english",
+            adjustsFontSizeToFit: face !== "english" && face !== "mnemonic",
             minimumFontScale: 0.5,
           })}
         </View>
@@ -659,11 +687,12 @@ const StudyCardView = React.memo(
             />
           ) : (
             <>
-              {renderFaceContent(frontFaces[0], scaledFontStyle(frontCount, frontFaces[0]), {
-                numberOfLines: frontFaces[0] === "english" ? 3 : 1,
-                adjustsFontSizeToFit: frontFaces[0] !== "english",
-                minimumFontScale: 0.5,
-              })}
+              {primaryFront &&
+                renderFaceContent(primaryFront, scaledFontStyle(frontCount, primaryFront), {
+                  numberOfLines: primaryFront === "english" ? 3 : 1,
+                  adjustsFontSizeToFit: primaryFront !== "english" && primaryFront !== "mnemonic",
+                  minimumFontScale: 0.5,
+                })}
               {isTyping && item.kind === "entry" && (
                 <View className="mt-6 items-center w-full px-4">
                   <TypingInput
@@ -716,20 +745,24 @@ const StudyCardView = React.memo(
         return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
       }
 
+      const renderableBackFront = frontFaces.filter(canRenderFace);
+      const renderableBack = backFaces.filter(canRenderFace);
       return (
         <View className="items-center justify-center flex-1">
-          {renderFaceContent(frontFaces[0], backFontStyle(frontFaces[0]))}
-          {frontFaces.slice(1).map((face, i) => (
+          {renderableBackFront[0] &&
+            renderFaceContent(renderableBackFront[0], backFontStyle(renderableBackFront[0]))}
+          {renderableBackFront.slice(1).map((face, i) => (
             <View key={`front-${i}`} style={{ marginTop: 4 }}>
               {renderFaceContent(face, backFontStyle(face))}
             </View>
           ))}
           <View className="mt-6 items-center">
             <View className="h-px w-48 bg-muted-foreground/30 mb-4" />
-            {renderFaceContent(backFaces[0], backFontStyle(backFaces[0]), {
-              numberOfLines: backFaces[0] === "english" ? 4 : undefined,
-            })}
-            {backFaces.slice(1).map((face, i) => (
+            {renderableBack[0] &&
+              renderFaceContent(renderableBack[0], backFontStyle(renderableBack[0]), {
+                numberOfLines: renderableBack[0] === "english" ? 4 : undefined,
+              })}
+            {renderableBack.slice(1).map((face, i) => (
               <View key={`back-${i}`} style={{ marginTop: 4 }}>
                 {renderFaceContent(face, backFontStyle(face), {
                   numberOfLines: face === "english" ? 4 : undefined,

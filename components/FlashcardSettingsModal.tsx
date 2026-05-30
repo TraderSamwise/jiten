@@ -26,6 +26,7 @@ const FACE_OPTIONS: { key: CardFace; label: string }[] = [
   { key: "kanji", label: "Kanji" },
   { key: "kana", label: "Reading" },
   { key: "english", label: "Meaning" },
+  { key: "mnemonic", label: "Mnemonic" },
 ];
 
 export function FlashcardSettingsModal({
@@ -51,6 +52,7 @@ export function FlashcardSettingsModal({
   const [buttonAnimation, setButtonAnimation] = useAtom(flashcardButtonAnimationAtom);
   const [learningStepsText, setLearningStepsText] = useState("");
   const [relearningStepsText, setRelearningStepsText] = useState("");
+  const [hasKanjiEntries, setHasKanjiEntries] = useState(false);
 
   const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
 
@@ -80,6 +82,17 @@ export function FlashcardSettingsModal({
       setRelearningStepsText(list.relearningSteps ? list.relearningSteps.join(", ") : "");
     }
   }, [visible, list]);
+
+  useEffect(() => {
+    if (!visible || !userDb || !listId) return;
+    userDb
+      .getFirstAsync<{ n: number }>(
+        "SELECT 1 AS n FROM list_entries WHERE list_id = ? AND kanji_literal IS NOT NULL AND deleted_at IS NULL LIMIT 1",
+        [listId],
+      )
+      .then((row) => setHasKanjiEntries(row != null))
+      .catch(() => setHasKanjiEntries(false));
+  }, [visible, userDb, listId]);
 
   function toggleFace(current: CardFace[], setter: (v: CardFace[]) => void, face: CardFace) {
     if (current.includes(face)) {
@@ -126,8 +139,9 @@ export function FlashcardSettingsModal({
       }
     }
 
-    // Detect noop — skip save + reload if nothing changed
-    if (list) {
+    // Detect noop — skip save + reload if nothing changed. Always run through the
+    // UPDATE in setup mode so configured=1 gets written and we navigate to study.
+    if (list && !onStartStudy) {
       const arrEq = (a: unknown[] | null | undefined, b: unknown[] | null | undefined) =>
         JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
       const unchanged =
@@ -280,17 +294,23 @@ export function FlashcardSettingsModal({
             <View className="flex-row gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = frontFaces.includes(opt.key);
+                const disabled = opt.key === "mnemonic" && !hasKanjiEntries;
                 return (
                   <Pressable
                     key={opt.key}
-                    onPress={() => toggleFace(frontFaces, setFrontFaces, opt.key)}
+                    onPress={() => !disabled && toggleFace(frontFaces, setFrontFaces, opt.key)}
+                    disabled={disabled}
                     className={`flex-1 items-center rounded-lg border py-2 ${
-                      active ? "border-primary bg-primary/10" : "border-border"
+                      disabled
+                        ? "border-border opacity-40"
+                        : active
+                          ? "border-primary bg-primary/10"
+                          : "border-border"
                     }`}
                   >
                     <Text
                       className={`text-sm font-medium ${
-                        active ? "text-primary" : "text-muted-foreground"
+                        active && !disabled ? "text-primary" : "text-muted-foreground"
                       }`}
                     >
                       {opt.label}
@@ -305,17 +325,23 @@ export function FlashcardSettingsModal({
             <View className="flex-row gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = backFaces.includes(opt.key);
+                const disabled = opt.key === "mnemonic" && !hasKanjiEntries;
                 return (
                   <Pressable
                     key={opt.key}
-                    onPress={() => toggleFace(backFaces, setBackFaces, opt.key)}
+                    onPress={() => !disabled && toggleFace(backFaces, setBackFaces, opt.key)}
+                    disabled={disabled}
                     className={`flex-1 items-center rounded-lg border py-2 ${
-                      active ? "border-primary bg-primary/10" : "border-border"
+                      disabled
+                        ? "border-border opacity-40"
+                        : active
+                          ? "border-primary bg-primary/10"
+                          : "border-border"
                     }`}
                   >
                     <Text
                       className={`text-sm font-medium ${
-                        active ? "text-primary" : "text-muted-foreground"
+                        active && !disabled ? "text-primary" : "text-muted-foreground"
                       }`}
                     >
                       {opt.label}
