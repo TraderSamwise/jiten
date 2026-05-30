@@ -77,6 +77,7 @@ import {
   dayResetHourAtom,
 } from "@/stores/settings";
 import { markForReview, unmarkForReview } from "@/lib/review-marks";
+import { isEphemeralListId } from "@/lib/smart-review";
 import { getLogicalToday, sqlDayExpr } from "@/lib/day-boundary";
 import {
   shouldCheckConfusion,
@@ -1209,7 +1210,7 @@ function StudyScreen() {
           const parsed = parseListRow(row);
           setLocalList(parsed);
           // Don't pollute the lists index with ephemeral _smart_/_marked_ lists
-          if (!parsed.id.startsWith("_smart_") && !parsed.id.startsWith("_marked_")) {
+          if (!isEphemeralListId(parsed.id)) {
             setLists([...useListsStore.getState().lists, parsed]);
           }
         }
@@ -2823,7 +2824,7 @@ function StudyScreen() {
                       isListening={isCursor && isListening}
                       typingMode={isCursor && !!list?.typingMode}
                       voiceMode={isCursor && !!list?.voiceMode}
-                      {...(listId?.startsWith("_marked_")
+                      {...(isEphemeralListId(listId)
                         ? {}
                         : {
                             isMarkedForReview: markedSet.has(
