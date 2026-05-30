@@ -1208,7 +1208,10 @@ function StudyScreen() {
         if (row) {
           const parsed = parseListRow(row);
           setLocalList(parsed);
-          setLists([...useListsStore.getState().lists, parsed]);
+          // Don't pollute the lists index with ephemeral _smart_/_marked_ lists
+          if (!parsed.id.startsWith("_smart_") && !parsed.id.startsWith("_marked_")) {
+            setLists([...useListsStore.getState().lists, parsed]);
+          }
         }
       })
       .catch(() => {});
