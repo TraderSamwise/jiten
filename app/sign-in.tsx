@@ -4,6 +4,7 @@ import { useSignIn } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { clerkErrorMessage } from "@/lib/clerk-errors";
 
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
@@ -37,8 +38,8 @@ export default function SignInScreen() {
         });
         setNeedsVerification(true);
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Sign in failed");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Sign in failed"));
     } finally {
       setLoading(false);
     }
@@ -56,8 +57,8 @@ export default function SignInScreen() {
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Verification failed");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Verification failed"));
     } finally {
       setLoading(false);
     }
@@ -70,8 +71,8 @@ export default function SignInScreen() {
     try {
       await signIn.prepareSecondFactor({ strategy: "email_code" });
       setCode("");
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage ?? "Failed to resend code");
+    } catch (err) {
+      setError(clerkErrorMessage(err, "Failed to resend code"));
     } finally {
       setLoading(false);
     }
