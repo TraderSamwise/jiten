@@ -49,7 +49,11 @@ function collectSourceFiles() {
 }
 
 function isTestFile(file) {
-  return /\.(test|spec)\.[cm]?[jt]sx?$/.test(path.basename(file));
+  const normalized = file.split(path.sep).join("/");
+  return (
+    /\/__tests__\//.test(normalized) ||
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(path.basename(file))
+  );
 }
 
 function findUsedPublicEnvKeys() {
