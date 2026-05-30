@@ -1209,9 +1209,13 @@ function StudyScreen() {
         if (row) {
           const parsed = parseListRow(row);
           setLocalList(parsed);
-          // Don't pollute the lists index with ephemeral _smart_/_marked_ lists
+          // Don't pollute the lists index with ephemeral _smart_/_marked_ lists,
+          // and guard against re-running this effect double-appending the same row.
           if (!isEphemeralListId(parsed.id)) {
-            setLists([...useListsStore.getState().lists, parsed]);
+            const current = useListsStore.getState().lists;
+            if (!current.some((l) => l.id === parsed.id)) {
+              setLists([...current, parsed]);
+            }
           }
         }
       })

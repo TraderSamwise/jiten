@@ -55,7 +55,7 @@ export function SmartReviewModal({ visible, onClose, sourceList }: SmartReviewMo
     }
   }
 
-  const disabled = count === 0 || starting;
+  const disabled = count == null || count === 0 || starting;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
