@@ -112,7 +112,7 @@ export interface SimilarKanji {
 }
 
 // SRS card display modes
-export type CardFace = "kanji" | "kana" | "english";
+export type CardFace = "kanji" | "kana" | "english" | "mnemonic";
 
 export type FlashcardMode = "add_order" | "simple_srs" | "srs";
 
