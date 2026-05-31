@@ -1,0 +1,22 @@
+{
+  "versionFile": "lib/version.ts",
+  "native": {
+    "ios": {
+      "infoPlist": "ios/jiten/Info.plist",
+      "pbxproj": "ios/jiten.xcodeproj/project.pbxproj"
+    }
+  },
+  "eas": {
+    "testflightProfile": "testflight",
+    "productionProfile": "production",
+    "testflightChannel": "testflight",
+    "productionChannel": "production",
+    "defaultBuildPlatform": "ios",
+    "defaultUpdatePlatform": "ios",
+    "autoSubmit": true
+  },
+  "commands": {
+    "checkReleaseEnv": "node scripts/check-release-env.js {target}",
+    "beforeUpdate": ["./scripts/check-dict-version.sh --strict"]
+  }
+}
