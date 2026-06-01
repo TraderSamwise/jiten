@@ -28,6 +28,25 @@ yarn start --dev-client --port 8081 --clear
 Only one Expo/Metro process can own port `8081`. If the simulator loads another
 app's JavaScript bundle, stop that other Expo process and restart Jiten Metro.
 
+### iOS Signing
+
+Jiten has a native `ios/` directory and a share extension, so EAS uses bundle
+IDs and capabilities from the Xcode project, not only from `app.config.js`.
+When changing the iOS bundle ID or App Group:
+
+- update the main app and share extension bundle IDs in native iOS project files
+- keep both entitlements files on the same App Group
+- ensure both Xcode targets have the App Groups capability enabled
+- delete and regenerate the share extension provisioning profile after the App
+  Group is linked, otherwise EAS can reuse a stale profile that does not support
+  the group
+
+Current personal-account identifiers:
+
+- app: `tokyo.jiten.mobile`
+- share extension: `tokyo.jiten.mobile.ShareExtension`
+- app group: `group.tokyo.jiten.mobile`
+
 ## Monorepo Packages
 
 The Expo app remains at the repository root. Reusable reader code lives in Yarn workspace packages:
