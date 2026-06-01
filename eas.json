@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 16.0.0",
+    "version": ">= 20.0.0",
     "appVersionSource": "local"
   },
   "build": {
@@ -43,7 +43,15 @@
     }
   },
   "submit": {
-    "testflight": {},
-    "production": {}
+    "testflight": {
+      "ios": {
+        "ascAppId": "6775416189"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "6775416189"
+      }
+    }
   }
 }
