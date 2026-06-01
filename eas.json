@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "node": "24.16.0",
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
@@ -12,6 +13,7 @@
       }
     },
     "testflight": {
+      "node": "24.16.0",
       "ios": {
         "buildConfiguration": "Release",
         "image": "latest"
@@ -24,6 +26,7 @@
       "channel": "testflight"
     },
     "production": {
+      "node": "24.16.0",
       "ios": {
         "buildConfiguration": "Release",
         "image": "latest"
