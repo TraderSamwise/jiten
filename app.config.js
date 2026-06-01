@@ -43,7 +43,7 @@ module.exports = {
       output: "single",
       favicon: "./assets/images/favicon.png",
     },
-    runtimeVersion: "1.0.0",
+    runtimeVersion: `${APP_VERSION.version}-${APP_VERSION.buildNumber}`,
     updates: {
       url: "https://u.expo.dev/cfa88854-7b95-457e-a330-fd7a1ea55da1",
       enabled: true,
