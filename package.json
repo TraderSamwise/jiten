@@ -121,7 +121,7 @@
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
     "drizzle-kit": "^0.31.8",
-    "eas-cli": "^18.5.0",
+    "eas-cli": "^20.0.0",
     "esbuild": "^0.27.3",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",

@@ -15,6 +15,8 @@ module.exports = {
       bundleIdentifier: "tokyo.jiten.mobile",
       buildNumber: String(APP_VERSION.buildNumber),
       infoPlist: {
+        AppGroup: "group.tokyo.jiten.mobile",
+        AppGroupIdentifier: "group.tokyo.jiten.mobile",
         ITSAppUsesNonExemptEncryption: false,
         NSPhotoLibraryUsageDescription:
           "Allow $(PRODUCT_NAME) to access your photo library for saving and sharing content.",
