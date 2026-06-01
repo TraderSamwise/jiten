@@ -110,6 +110,7 @@
     "@mozilla/readability": "^0.6.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@tradersamwise/eas-release": "0.1.7",
     "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.13",
     "@types/encoding-japanese": "^2.2.1",
@@ -136,8 +137,7 @@
     "typescript": "~5.9.2",
     "typescript-eslint": "^8",
     "vitest": "^4.0.18",
-    "wordnet-db": "^3.1.14",
-    "@tradersamwise/eas-release": "0.1.4"
+    "wordnet-db": "^3.1.14"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --fix --quiet",
