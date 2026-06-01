@@ -12,7 +12,7 @@ module.exports = {
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.tradersamwise.jiten",
+      bundleIdentifier: "tokyo.jiten.mobile",
       buildNumber: String(APP_VERSION.buildNumber),
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
@@ -30,6 +30,7 @@ module.exports = {
       },
     },
     android: {
+      package: "tokyo.jiten.mobile",
       adaptiveIcon: {
         foregroundImage: "./assets/images/adaptive-icon.png",
         backgroundColor: "#ffffff",
