@@ -1078,6 +1078,32 @@ Full FSRS 5.0 implementation via `ts-fsrs`. Uses the same logical day cutoff for
 
 ## Scripts
 
+### Release Workflow
+
+Releases use the shared `@tradersamwise/eas-release` CLI. Two paths, chosen by what
+changed. Always bump the version first, then ship.
+
+```bash
+# OTA update — JavaScript / asset changes only
+yarn version:bump-ota && yarn update              # testflight
+yarn version:bump-ota && yarn update:production   # production
+
+# Native build — native deps, Expo plugins, permissions, icons, splash, native config
+yarn version:bump-build && yarn build:testflight   # testflight
+yarn version:bump-build && yarn build:production    # production
+```
+
+Decision rule: OTA covers JavaScript and assets. A native rebuild is required for
+native dependencies, Expo plugins, permissions, icons, splash screens, build
+profiles, or any native configuration — anything that changes the native binary or
+its Expo runtime fingerprint. `bump-ota` enforces this: it aborts if the Expo
+runtime version changed since the last native build, because an OTA can only target
+the runtime already installed on the device. `bump-build` increments the build
+number, resets the OTA counter to 0, and updates native version files.
+
+Dictionary deploys ride on this flow — see the OTA notes in the dictionary section
+below, which additionally gate on `DICT_BASE_VERSION`.
+
 ### Dictionary Database
 
 ```bash
