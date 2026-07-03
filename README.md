@@ -19,6 +19,14 @@ yarn format       # format all files with prettier
 `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` is optional for local development. When it
 is blank, the app runs without Clerk-backed auth.
 
+### Release Environment Safety
+
+Release and OTA commands run `scripts/check-release-env.js` before bundling.
+Release bundles require `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`; local override files
+such as `.env.local` must not clear or replace release-required keys. If local
+development needs auth disabled, keep that override local-only and verify
+`yarn check:env` passes before `yarn update` or `yarn build`.
+
 For an already-installed native dev build, start Metro directly:
 
 ```bash
