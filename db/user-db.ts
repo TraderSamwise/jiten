@@ -29,6 +29,8 @@ export function wrapUserDb(db: DB, options?: WrapUserDbOptions): WrappedUserDb {
         const result: QueryResult = await db.execute(sql, params);
         return result.rows as T[];
       } catch (err) {
+        // TODO: skip console.error for isClosedUserDbConnectionError (benign DB
+        // reconnect race on userId change) — it spams dev LogBox with "Null connection".
         console.error("[UserDB] getAllAsync FAILED:", String(err), "\n  SQL:", sql.slice(0, 200));
         if (shouldNotifyDbError(err, options)) notifyDbError(err, sql);
         throw err;
