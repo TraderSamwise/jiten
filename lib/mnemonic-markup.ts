@@ -167,10 +167,12 @@ export function serializeMnemonicMarkup(nodes: MarkupNode[]): string {
  * Convert the legacy hand-rolled markup to the new grammar:
  *   **x** → {self}   (the primary keyword; {self} renders the current keyword)
  *   *x*   → [x]       (a primitive reference by keyword)
- * Process double-asterisks first; unbalanced `*` is left literal.
+ * Process double-asterisks first; unbalanced `*` is left literal. The content must
+ * hug the asterisks (no inner whitespace) so paired stars in prose — arithmetic like
+ * `2 * 3 * 4` — are not mistaken for markup.
  */
 export function convertLegacySigils(src: string): string {
-  let out = src.replace(/\*\*(.+?)\*\*/g, SELF_TOKEN);
-  out = out.replace(/\*(.+?)\*/g, (_m, x: string) => `[${escapeLabel(x)}]`);
+  let out = src.replace(/\*\*([^*\s](?:[^*]*[^*\s])?)\*\*/g, SELF_TOKEN);
+  out = out.replace(/\*([^*\s](?:[^*]*[^*\s])?)\*/g, (_m, x: string) => `[${escapeLabel(x)}]`);
   return out;
 }
