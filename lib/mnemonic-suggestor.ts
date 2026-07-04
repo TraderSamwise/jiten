@@ -1,5 +1,6 @@
 import { escapeLabel, isValidTarget } from "@/lib/mnemonic-markup";
-import { canonicalStem } from "@/db/primitive-associations";
+import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
+import type { KanjiPrimitive } from "@/db/types";
 
 /**
  * Pure text-level engine for the mnemonic editor. It operates on the raw markup string
@@ -120,4 +121,27 @@ export function completeBracket(
 /** Session-suppression key: the canonical stem, so rejecting a word backs off for the session. */
 export function suppressionKey(word: string): string {
   return canonicalStem(word);
+}
+
+export interface PrimitiveChoice {
+  target: string;
+  keyword: string;
+}
+
+/**
+ * The kanji's linkable primitives (those with a target and a keyword) whose keyword
+ * contains `query`, for the `[`-triggered dropdown. Empty query returns all of them.
+ */
+export function filterPrimitivesByQuery(
+  primitives: KanjiPrimitive[],
+  query: string,
+): PrimitiveChoice[] {
+  const q = query.trim().toLowerCase();
+  const out: PrimitiveChoice[] = [];
+  for (const p of primitives) {
+    const target = targetForPrimitive(p);
+    if (!target || p.keyword == null) continue;
+    if (q === "" || p.keyword.toLowerCase().includes(q)) out.push({ target, keyword: p.keyword });
+  }
+  return out;
 }
