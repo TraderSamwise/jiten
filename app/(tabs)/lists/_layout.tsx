@@ -31,6 +31,7 @@ export default function ListsLayout() {
       <Stack.Screen name="word/[id]" options={{ title: "Word" }} />
       <Stack.Screen name="kanji/[literal]" options={{ title: "Kanji" }} />
       <Stack.Screen name="counter/[counterId]" options={{ title: "Counter" }} />
+      <Stack.Screen name="primitive/[id]" options={{ title: "Primitive" }} />
       <Stack.Screen name="study" options={{ title: "Study", headerShown: false }} />
       <Stack.Screen name="typing-game" options={{ title: "Typing Game", headerShown: false }} />
       <Stack.Screen name="connect-game" options={{ title: "Connect Game", headerShown: false }} />
