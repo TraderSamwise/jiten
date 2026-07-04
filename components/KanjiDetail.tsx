@@ -255,31 +255,34 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           <Text className="text-7xl text-foreground leading-tight" style={japaneseFontStyle(72)}>
             {kanji.literal}
           </Text>
-          {(keyword ?? kanji.heisigKeyword) != null &&
-            (editingKeyword ? (
-              <TextInput
-                ref={keywordInputRef}
-                className="mt-1 min-w-[140px] rounded bg-secondary/50 px-2 py-0.5 text-lg font-medium text-blue-500"
-                value={keywordDraft}
-                onChangeText={setKeywordDraft}
-                placeholder={kanji.heisigKeyword ?? "keyword"}
-                placeholderTextColor="#999"
-                autoFocus
-                onSubmitEditing={commitKeyword}
-                onBlur={commitKeyword}
-              />
-            ) : (
-              <Pressable onPress={startEditKeyword} className="mt-1 flex-row items-center gap-1.5">
-                <Text
-                  className={
-                    keyword ? "text-lg font-medium text-blue-500" : "text-lg text-muted-foreground"
-                  }
-                >
-                  {keyword ?? kanji.heisigKeyword}
-                </Text>
-                <Pencil size={13} className="text-muted-foreground/50" />
-              </Pressable>
-            ))}
+          {editingKeyword ? (
+            <TextInput
+              ref={keywordInputRef}
+              className="mt-1 min-w-[140px] rounded bg-secondary/50 px-2 py-0.5 text-lg font-medium text-blue-500"
+              value={keywordDraft}
+              onChangeText={setKeywordDraft}
+              placeholder={kanji.heisigKeyword ?? "keyword"}
+              placeholderTextColor="#999"
+              autoFocus
+              onSubmitEditing={commitKeyword}
+              onBlur={commitKeyword}
+            />
+          ) : (
+            <Pressable onPress={startEditKeyword} className="mt-1 flex-row items-center gap-1.5">
+              <Text
+                className={
+                  keyword
+                    ? "text-lg font-medium text-blue-500"
+                    : kanji.heisigKeyword
+                      ? "text-lg text-muted-foreground"
+                      : "text-lg italic text-muted-foreground/50"
+                }
+              >
+                {keyword ?? kanji.heisigKeyword ?? "set keyword…"}
+              </Text>
+              <Pencil size={13} className="text-muted-foreground/50" />
+            </Pressable>
+          )}
         </View>
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
