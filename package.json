@@ -17,6 +17,7 @@
     "build:jlpt": "npx tsx scripts/build-jlpt-list.ts",
     "build:rtk": "node scripts/kanji/extract-rtk-app-db.mjs",
     "build:strokes-primitives": "node scripts/kanji/build-strokes-primitives.mjs",
+    "build:keyword-synonyms": "node scripts/kanji/build-keyword-synonyms.mjs",
     "build:reader": "npx tsx packages/reader-webview/build.ts",
     "build:preprocessing": "npx tsx lib/share-extension/build-preprocessing.ts",
     "prestart": "yarn build:reader && yarn build:preprocessing",
