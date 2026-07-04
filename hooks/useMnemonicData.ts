@@ -1,19 +1,30 @@
 import { useEffect, useState } from "react";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
-import { getKanjiBatchAsync, getRadicalsForKanjiAsync } from "@/db/kanji-search";
+import {
+  getKanjiBatchAsync,
+  getRadicalsForKanjiAsync,
+  getPrimitivesForKanjiAsync,
+} from "@/db/kanji-search";
+import type { KanjiPrimitive } from "@/db/types";
 
 export interface MnemonicData {
   mnemonic: string | null;
   primaryKeywords: string[];
   componentKeywords: string[];
+  primitives: KanjiPrimitive[];
 }
 
-const EMPTY: MnemonicData = { mnemonic: null, primaryKeywords: [], componentKeywords: [] };
+const EMPTY: MnemonicData = {
+  mnemonic: null,
+  primaryKeywords: [],
+  componentKeywords: [],
+  primitives: [],
+};
 
 export function useMnemonicData(literal: string | null | undefined): MnemonicData {
   const userDb = useUserDb();
-  const { dictDb } = useDatabase();
+  const { dictDb, strokesDb } = useDatabase();
   const [data, setData] = useState<MnemonicData>(EMPTY);
 
   useEffect(() => {
@@ -70,7 +81,10 @@ export function useMnemonicData(literal: string | null | undefined): MnemonicDat
         else if (ck?.meanings[0]) componentKeywords.push(ck.meanings[0]);
       }
 
-      setData({ mnemonic, primaryKeywords, componentKeywords });
+      const primitives = strokesDb ? await getPrimitivesForKanjiAsync(strokesDb, literal) : [];
+      if (cancelled) return;
+
+      setData({ mnemonic, primaryKeywords, componentKeywords, primitives });
     })().catch(() => {
       if (!cancelled) setData(EMPTY);
     });
@@ -78,7 +92,7 @@ export function useMnemonicData(literal: string | null | undefined): MnemonicDat
     return () => {
       cancelled = true;
     };
-  }, [userDb, dictDb, literal]);
+  }, [userDb, dictDb, strokesDb, literal]);
 
   return data;
 }
