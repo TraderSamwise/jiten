@@ -14,6 +14,7 @@ import { BackgroundDownloadBanner } from "@/components/BackgroundDownloadBanner"
 import { UserDatabaseProvider } from "@/db/user-provider";
 import { SyncProvider, useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
+import { AssociationBackfill } from "@/components/AssociationBackfill";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
 import { setRecoverySignedIn } from "@/components/DbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
@@ -107,6 +108,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <SyncProvider userId={effectiveUserId} onSignOut={signOut} getToken={getToken}>
             <ReconciliationCheck />
             <FirstSyncCheck />
+            <AssociationBackfill />
             <View style={{ flex: 1 }}>
               {children}
               <BackgroundDownloadBanner />

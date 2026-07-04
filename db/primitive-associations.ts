@@ -1,4 +1,5 @@
 import type * as SQLite from "expo-sqlite";
+import type { WrappedUserDb } from "./user-db";
 import { STOP_WORDS } from "./search";
 import { getPrimitivesForKanjiAsync } from "./kanji-search";
 import type { KanjiPrimitive } from "./types";
@@ -57,7 +58,7 @@ export function extractAssocWords(text: string): string[] {
  * inside rebuildAllAssociations' single transaction (SQLite has no nested txns).
  */
 async function writeNoteAssociations(
-  userDb: SQLite.SQLiteDatabase,
+  userDb: WrappedUserDb,
   strokesDb: SQLite.SQLiteDatabase | null,
   literal: string,
   mnemonic: string | null,
@@ -91,21 +92,24 @@ async function writeNoteAssociations(
   }
 }
 
-/** Recompute the association rows for a single kanji's note (incremental maintenance). */
+/**
+ * Recompute the association rows for a single kanji's note (incremental maintenance).
+ * Deliberately not wrapped in its own transaction: the user DB is a single connection
+ * shared with the sync engine's transactions, so a nested BEGIN would collide. The
+ * index is best-effort and rebuildable, so unwrapped statements are safe here.
+ */
 export async function updateAssociationsForNote(
-  userDb: SQLite.SQLiteDatabase,
+  userDb: WrappedUserDb,
   strokesDb: SQLite.SQLiteDatabase | null,
   literal: string,
   mnemonic: string | null,
 ): Promise<void> {
-  await userDb.withTransactionAsync(async () => {
-    await writeNoteAssociations(userDb, strokesDb, literal, mnemonic);
-  });
+  await writeNoteAssociations(userDb, strokesDb, literal, mnemonic);
 }
 
 /** Rebuild the entire index from all stored mnemonics (initial population). */
 export async function rebuildAllAssociations(
-  userDb: SQLite.SQLiteDatabase,
+  userDb: WrappedUserDb,
   strokesDb: SQLite.SQLiteDatabase | null,
 ): Promise<void> {
   // Without the primitives tier we can't rebuild — leave the existing index intact
@@ -114,12 +118,13 @@ export async function rebuildAllAssociations(
   const notes = await userDb.getAllAsync<{ literal: string; mnemonic: string }>(
     "SELECT literal, mnemonic FROM user_kanji_notes WHERE mnemonic IS NOT NULL AND mnemonic != '' AND deleted_at IS NULL",
   );
-  await userDb.withTransactionAsync(async () => {
-    await userDb.runAsync("DELETE FROM primitive_note_assoc");
-    for (const note of notes) {
-      await writeNoteAssociations(userDb, strokesDb, note.literal, note.mnemonic);
-    }
-  });
+  // Unwrapped (no transaction) to avoid a nested BEGIN on the sync engine's shared
+  // connection; a partial rebuild self-heals on the next launch (the backfill flag is
+  // only set after this resolves).
+  await userDb.runAsync("DELETE FROM primitive_note_assoc");
+  for (const note of notes) {
+    await writeNoteAssociations(userDb, strokesDb, note.literal, note.mnemonic);
+  }
 }
 
 /**
@@ -128,7 +133,7 @@ export async function rebuildAllAssociations(
  * target. Returns target → distinct-story count.
  */
 export async function getAssociationsForWordAsync(
-  userDb: SQLite.SQLiteDatabase,
+  userDb: WrappedUserDb,
   word: string,
   excludeLiteral?: string,
 ): Promise<Map<string, number>> {
@@ -150,7 +155,7 @@ export async function getAssociationsForWordAsync(
  * One query for the whole story, so the resolver doesn't fire a query per word.
  */
 export async function getAssociationsForWordsAsync(
-  userDb: SQLite.SQLiteDatabase,
+  userDb: WrappedUserDb,
   words: string[],
   excludeLiteral?: string,
 ): Promise<Map<string, Map<string, number>>> {
