@@ -64,13 +64,28 @@ afterEach(() => {
 describe("canonicalStem / extractAssocWords", () => {
   it("folds inflections to a base stem", () => {
     expect(canonicalStem("relaxing")).toBe("relax");
+    expect(canonicalStem("relaxes")).toBe("relax");
+  });
+
+  it("collapses inflected and base forms of silent-e roots to the same key", () => {
+    // The bug this guards: shortest-stem would give make→make but making→mak.
+    for (const [a, b] of [
+      ["make", "making"],
+      ["close", "closed"],
+      ["close", "closing"],
+      ["move", "moved"],
+      ["house", "houses"],
+      ["rule", "ruled"],
+    ]) {
+      expect(canonicalStem(a)).toBe(canonicalStem(b));
+    }
   });
 
   it("drops stop words and short tokens, dedupes", () => {
     const words = extractAssocWords("a woman relaxing at home");
     expect(words).toContain("relax");
     expect(words).toContain("woman");
-    expect(words).toContain("home");
+    expect(words).toContain(canonicalStem("home"));
     expect(words).not.toContain("at");
     expect(words).not.toContain("a");
   });
