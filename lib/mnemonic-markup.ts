@@ -136,7 +136,7 @@ function escapeText(s: string): string {
   return s.replace(/[\\[\]{}]/g, (m) => "\\" + m);
 }
 
-function escapeLabel(s: string): string {
+export function escapeLabel(s: string): string {
   return s.replace(/[\\[\]]/g, (m) => "\\" + m);
 }
 
