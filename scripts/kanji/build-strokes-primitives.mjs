@@ -93,6 +93,7 @@ for (const c of chunk(prRows, 500)) {
 }
 stmts.push("CREATE INDEX idx_kp_literal ON kanji_primitives(literal);");
 stmts.push("COMMIT;");
+stmts.push("VACUUM;"); // compact after augmentation so callers ship a tight DB
 
 try {
   execFileSync("sqlite3", [STROKES_DB], { input: stmts.join("\n"), maxBuffer: 256 * 1024 * 1024 });
@@ -123,6 +124,24 @@ const sen = check
 if (sen !== "house,span") {
   console.error(`VALIDATION FAILED: 宣 primitives = "${sen}" (expected house,span)`);
   process.exit(1);
+}
+
+// Round-trip a keyword containing an apostrophe to exercise quote-escaping.
+const aposEntry = Object.entries(data.primitives).find(([, p]) => (p.keyword || "").includes("'"));
+if (aposEntry) {
+  const [aid, ap] = aposEntry;
+  const raw = execFileSync(
+    "sqlite3",
+    ["-json", "-readonly", STROKES_DB, `SELECT keyword FROM primitives WHERE id=${Number(aid)}`],
+    { encoding: "utf8" },
+  ).trim();
+  const got = raw ? JSON.parse(raw)[0]?.keyword : null;
+  if (got !== ap.keyword) {
+    console.error(
+      `VALIDATION FAILED: primitive ${aid} keyword = ${JSON.stringify(got)} (expected ${JSON.stringify(ap.keyword)})`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log(
