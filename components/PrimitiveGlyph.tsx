@@ -10,17 +10,16 @@ interface Props {
   glyph?: string | null;
   /** The RTK substitute char for an invented primitive (drawn in the primitive font). */
   displayGlyph?: string | null;
-  /** Last-resort label when there is no glyph to draw. */
-  keyword?: string | null;
   className?: string;
   style?: StyleProp<TextStyle>;
 }
 
 /**
- * Renders a primitive's visual form: a real Unicode glyph as-is, else the RTK
- * substitute char in the bundled primitive font, else the keyword as a label.
+ * Renders a primitive's visual form — a real Unicode glyph as-is, or the RTK substitute
+ * char in the bundled primitive font. Returns null when there is nothing to draw, so
+ * callers pair it with a separate keyword label rather than a fallback here.
  */
-export function PrimitiveGlyph({ glyph, displayGlyph, keyword, className, style }: Props) {
+export function PrimitiveGlyph({ glyph, displayGlyph, className, style }: Props) {
   if (glyph) {
     return (
       <Text className={className} style={style}>
@@ -35,9 +34,5 @@ export function PrimitiveGlyph({ glyph, displayGlyph, keyword, className, style 
       </Text>
     );
   }
-  return (
-    <Text className={className} style={style}>
-      {keyword ?? "?"}
-    </Text>
-  );
+  return null;
 }

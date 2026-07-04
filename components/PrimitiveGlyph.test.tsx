@@ -18,21 +18,19 @@ describe("PrimitiveGlyph", () => {
   const styleOf = (c: HTMLElement) => c.querySelector("span")?.getAttribute("data-style") ?? "";
 
   it("renders a real Unicode glyph as-is, in the default font", () => {
-    const { container } = render(<PrimitiveGlyph glyph="亘" displayGlyph="屆" keyword="span" />);
+    const { container } = render(<PrimitiveGlyph glyph="亘" displayGlyph="屆" />);
     expect(container.textContent).toBe("亘");
     expect(styleOf(container)).not.toContain(RTK_PRIMITIVE_FONT);
   });
 
   it("draws the substitute char in the RTK primitive font when there is no real glyph", () => {
-    const { container } = render(<PrimitiveGlyph glyph={null} displayGlyph="屆" keyword="house" />);
+    const { container } = render(<PrimitiveGlyph glyph={null} displayGlyph="屆" />);
     expect(container.textContent).toBe("屆");
     expect(styleOf(container)).toContain(RTK_PRIMITIVE_FONT);
   });
 
-  it("falls back to the keyword when there is no glyph at all", () => {
-    const { container } = render(
-      <PrimitiveGlyph glyph={null} displayGlyph={null} keyword="house" />,
-    );
-    expect(container.textContent).toBe("house");
+  it("renders nothing when there is no glyph to draw", () => {
+    const { container } = render(<PrimitiveGlyph glyph={null} displayGlyph={null} />);
+    expect(container.textContent).toBe("");
   });
 });

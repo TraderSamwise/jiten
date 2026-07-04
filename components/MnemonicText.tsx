@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Text } from "@/components/ui/text";
 import { parseMnemonicMarkup } from "@/lib/mnemonic-markup";
 import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
-import { RTK_PRIMITIVE_FONT } from "@/components/PrimitiveGlyph";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import type { KanjiPrimitive } from "@/db/types";
 
 interface Props {
@@ -78,17 +78,22 @@ export function MnemonicText({
         }
         const onPress =
           onNavigate && resolved.target ? () => onNavigate(resolved.target as string) : undefined;
-        const glyph = resolved.glyph && resolved.glyph !== node.label ? resolved.glyph : null;
+        // Show the primitive's shape inline in parens: a real glyph, or the RTK
+        // substitute drawn in the primitive font (delegated to PrimitiveGlyph so the
+        // glyph/font logic lives in one place). Skip a real glyph identical to the label.
+        const inlineGlyph = resolved.glyph && resolved.glyph !== node.label ? resolved.glyph : null;
+        const hasInline = inlineGlyph != null || resolved.displayGlyph != null;
         return (
           <Text key={i} className="text-green-600" onPress={onPress}>
             {node.label}
-            {glyph ? (
-              <Text className="text-green-700/70">{` (${glyph})`}</Text>
-            ) : resolved.displayGlyph ? (
-              // Invented primitive: draw its RTK substitute shape in the primitive font.
+            {hasInline ? (
               <Text className="text-green-700/70">
                 {" ("}
-                <Text style={{ fontFamily: RTK_PRIMITIVE_FONT }}>{resolved.displayGlyph}</Text>
+                <PrimitiveGlyph
+                  glyph={inlineGlyph}
+                  displayGlyph={resolved.displayGlyph}
+                  className="text-green-700/70"
+                />
                 {")"}
               </Text>
             ) : null}

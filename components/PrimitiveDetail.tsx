@@ -102,13 +102,11 @@ export function PrimitiveDetail({ primitiveId }: PrimitiveDetailProps) {
     <ScrollView className="flex-1 bg-background px-4 pt-4">
       {/* Hero: the primitive's shape (real glyph, or RTK-font substitute) over its keyword. */}
       <View className="mb-4 items-center">
-        {(primitive.realGlyph != null || primitive.displayGlyph != null) && (
-          <PrimitiveGlyph
-            glyph={primitive.realGlyph}
-            displayGlyph={primitive.displayGlyph}
-            className="mb-1 text-6xl font-bold text-foreground"
-          />
-        )}
+        <PrimitiveGlyph
+          glyph={primitive.realGlyph}
+          displayGlyph={primitive.displayGlyph}
+          className="mb-1 text-6xl font-bold text-foreground"
+        />
         <Text className="text-3xl font-bold text-foreground">
           {primitive.keyword ?? "Primitive"}
         </Text>
