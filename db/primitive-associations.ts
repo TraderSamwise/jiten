@@ -1,5 +1,5 @@
 import type * as SQLite from "expo-sqlite";
-import { stemForFts, STOP_WORDS } from "./search";
+import { STOP_WORDS } from "./search";
 import { getPrimitivesForKanjiAsync } from "./kanji-search";
 import type { KanjiPrimitive } from "./types";
 
@@ -22,10 +22,24 @@ export function targetForPrimitive(p: KanjiPrimitive): string | null {
   return null;
 }
 
-/** Canonical stem for indexing/matching: the shortest base form so "relaxing" ≈ "relax". */
+/**
+ * Inflection-stable canonical stem for indexing/matching. Both an inflected form
+ * and its base must collapse to the SAME key, so we strip one inflectional suffix
+ * then normalize a trailing silent-e and a doubled final consonant — otherwise
+ * silent-e roots diverge (make→make vs making→mak). Deliberately fuzzy: a few
+ * over-merges are fine given the auto-linker's confidence threshold + no-fight UX.
+ */
 export function canonicalStem(word: string): string {
-  const stems = stemForFts(word.toLowerCase());
-  return stems.reduce((a, b) => (b.length < a.length ? b : a), word.toLowerCase());
+  let w = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (w.length <= 3) return w;
+  if (w.endsWith("ies")) w = w.slice(0, -3) + "y";
+  else if (w.endsWith("ing") && w.length > 5) w = w.slice(0, -3);
+  else if (w.endsWith("ed") && w.length > 4) w = w.slice(0, -2);
+  else if (w.endsWith("es") && w.length > 4) w = w.slice(0, -2);
+  else if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) w = w.slice(0, -1);
+  if (w.length > 3 && w.endsWith("e")) w = w.slice(0, -1);
+  if (w.length > 3 && w[w.length - 1] === w[w.length - 2]) w = w.slice(0, -1);
+  return w;
 }
 
 /** Content-word stems of a mnemonic, deduped (stop words and <3-char tokens dropped). */
@@ -38,8 +52,11 @@ export function extractAssocWords(text: string): string[] {
   return [...out];
 }
 
-/** Recompute the association rows for a single kanji's note (incremental maintenance). */
-export async function updateAssociationsForNote(
+/**
+ * Recompute one kanji's association rows. NOT transaction-wrapped, so it can run
+ * inside rebuildAllAssociations' single transaction (SQLite has no nested txns).
+ */
+async function writeNoteAssociations(
   userDb: SQLite.SQLiteDatabase,
   strokesDb: SQLite.SQLiteDatabase | null,
   literal: string,
@@ -58,14 +75,27 @@ export async function updateAssociationsForNote(
   const words = extractAssocWords(mnemonic);
   if (words.length === 0) return;
 
+  const values: string[] = [];
   for (const word of words) {
-    for (const target of targets) {
-      await userDb.runAsync(
-        "INSERT OR IGNORE INTO primitive_note_assoc (literal, word, target) VALUES (?, ?, ?)",
-        [literal, word, target],
-      );
-    }
+    for (const target of targets) values.push(literal, word, target);
   }
+  const placeholders = Array.from({ length: values.length / 3 }, () => "(?, ?, ?)").join(", ");
+  await userDb.runAsync(
+    `INSERT OR IGNORE INTO primitive_note_assoc (literal, word, target) VALUES ${placeholders}`,
+    values,
+  );
+}
+
+/** Recompute the association rows for a single kanji's note (incremental maintenance). */
+export async function updateAssociationsForNote(
+  userDb: SQLite.SQLiteDatabase,
+  strokesDb: SQLite.SQLiteDatabase | null,
+  literal: string,
+  mnemonic: string | null,
+): Promise<void> {
+  await userDb.withTransactionAsync(async () => {
+    await writeNoteAssociations(userDb, strokesDb, literal, mnemonic);
+  });
 }
 
 /** Rebuild the entire index from all stored mnemonics (initial population). */
@@ -73,17 +103,16 @@ export async function rebuildAllAssociations(
   userDb: SQLite.SQLiteDatabase,
   strokesDb: SQLite.SQLiteDatabase | null,
 ): Promise<void> {
-  if (!strokesDb) {
-    await userDb.runAsync("DELETE FROM primitive_note_assoc");
-    return;
-  }
+  // Without the primitives tier we can't rebuild — leave the existing index intact
+  // rather than wiping it while strokes is merely still downloading.
+  if (!strokesDb) return;
   const notes = await userDb.getAllAsync<{ literal: string; mnemonic: string }>(
     "SELECT literal, mnemonic FROM user_kanji_notes WHERE mnemonic IS NOT NULL AND mnemonic != '' AND deleted_at IS NULL",
   );
   await userDb.withTransactionAsync(async () => {
     await userDb.runAsync("DELETE FROM primitive_note_assoc");
     for (const note of notes) {
-      await updateAssociationsForNote(userDb, strokesDb, note.literal, note.mnemonic);
+      await writeNoteAssociations(userDb, strokesDb, note.literal, note.mnemonic);
     }
   });
 }

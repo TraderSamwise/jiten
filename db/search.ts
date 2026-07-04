@@ -88,7 +88,7 @@ function stemForLike(word: string): string {
 }
 
 /** Simple English stemming for FTS: returns base forms so "passing" → ["passing", "pass"]. */
-export function stemForFts(word: string): string[] {
+function stemForFts(word: string): string[] {
   const w = word.toLowerCase();
   const stems = new Set<string>([w]);
   // -ing: passing → pass, running → run, making → make

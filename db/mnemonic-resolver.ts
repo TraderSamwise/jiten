@@ -106,7 +106,7 @@ export async function resolveKanjiWordCandidates(
         score = pScore;
         source = "personal";
       }
-      if (score >= threshold) {
+      if (score > 0 && score >= threshold) {
         candidates.push({ target: c.target, keyword: c.keyword, confidence: score, source });
       }
     }

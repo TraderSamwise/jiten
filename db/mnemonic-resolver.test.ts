@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type * as SQLite from "expo-sqlite";
 import { resolveKanjiWordCandidates } from "./mnemonic-resolver";
+import { canonicalStem } from "./primitive-associations";
 
 function asyncAdapter(d: Database.Database): SQLite.SQLiteDatabase {
   return {
@@ -97,7 +98,11 @@ describe("resolveKanjiWordCandidates", () => {
   it("a strong personal association overrides an official synonym on the same target", async () => {
     // "home" is an official synonym of house (0.7); the user has also used it for
     // p51 in two other stories → personal 0.76 wins, with source 'personal'.
-    userRaw.exec(`INSERT INTO primitive_note_assoc VALUES ('宣','home','p51'),('宇','home','p51')`);
+    // The index stores canonical stems, so insert canonicalStem("home").
+    const hs = canonicalStem("home");
+    userRaw
+      .prepare(`INSERT INTO primitive_note_assoc VALUES ('宣',?,'p51'),('宇',?,'p51')`)
+      .run(hs, hs);
     const c = (await resolveKanjiWordCandidates(strokesDb, userDb, "安", ["home"])).get("home");
     expect(c?.[0]).toMatchObject({ target: "p51", source: "personal" });
     expect(c?.[0].confidence).toBeCloseTo(0.76);
