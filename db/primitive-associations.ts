@@ -31,14 +31,14 @@ export function targetForPrimitive(p: KanjiPrimitive): string | null {
  */
 export function canonicalStem(word: string): string {
   let w = word.toLowerCase().replace(/[^a-z]/g, "");
-  if (w.length <= 3) return w;
+  if (w.length <= 2) return w;
   if (w.endsWith("ies")) w = w.slice(0, -3) + "y";
-  else if (w.endsWith("ing") && w.length > 5) w = w.slice(0, -3);
-  else if (w.endsWith("ed") && w.length > 4) w = w.slice(0, -2);
-  else if (w.endsWith("es") && w.length > 4) w = w.slice(0, -2);
+  else if (w.endsWith("ing") && w.length > 4) w = w.slice(0, -3);
+  else if (w.endsWith("ed") && w.length > 3) w = w.slice(0, -2);
+  else if (w.endsWith("es") && w.length > 3) w = w.slice(0, -2);
   else if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) w = w.slice(0, -1);
-  if (w.length > 3 && w.endsWith("e")) w = w.slice(0, -1);
-  if (w.length > 3 && w[w.length - 1] === w[w.length - 2]) w = w.slice(0, -1);
+  if (w.length > 2 && w.endsWith("e")) w = w.slice(0, -1);
+  if (w.length > 2 && w[w.length - 1] === w[w.length - 2]) w = w.slice(0, -1);
   return w;
 }
 
@@ -79,11 +79,16 @@ async function writeNoteAssociations(
   for (const word of words) {
     for (const target of targets) values.push(literal, word, target);
   }
-  const placeholders = Array.from({ length: values.length / 3 }, () => "(?, ?, ?)").join(", ");
-  await userDb.runAsync(
-    `INSERT OR IGNORE INTO primitive_note_assoc (literal, word, target) VALUES ${placeholders}`,
-    values,
-  );
+  // Chunk rows to stay well under SQLite's bound-variable limit for long mnemonics.
+  const CHUNK_ROWS = 300;
+  for (let i = 0; i < values.length; i += CHUNK_ROWS * 3) {
+    const slice = values.slice(i, i + CHUNK_ROWS * 3);
+    const placeholders = Array.from({ length: slice.length / 3 }, () => "(?, ?, ?)").join(", ");
+    await userDb.runAsync(
+      `INSERT OR IGNORE INTO primitive_note_assoc (literal, word, target) VALUES ${placeholders}`,
+      slice,
+    );
+  }
 }
 
 /** Recompute the association rows for a single kanji's note (incremental maintenance). */
