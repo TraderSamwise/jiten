@@ -76,6 +76,11 @@ describe("canonicalStem / extractAssocWords", () => {
       ["move", "moved"],
       ["house", "houses"],
       ["rule", "ruled"],
+      // short 3-letter roots
+      ["use", "using"],
+      ["use", "used"],
+      ["age", "aged"],
+      ["age", "aging"],
     ]) {
       expect(canonicalStem(a)).toBe(canonicalStem(b));
     }
