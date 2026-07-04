@@ -101,7 +101,7 @@ export function highlightKeywords(
   matches.sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start;
     if (a.type !== b.type) return a.type === "primary" ? -1 : 1;
-    return (b.end - b.start) - (a.end - a.start);
+    return b.end - b.start - (a.end - a.start);
   });
 
   // Remove overlapping matches (first match wins due to sort order)
