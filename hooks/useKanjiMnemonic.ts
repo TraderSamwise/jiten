@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useUserDb } from "@/db/user-provider";
+import { useDatabase } from "@/db/provider";
 import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
+import { updateAssociationsForNote } from "@/db/primitive-associations";
 
 interface KanjiNotesRow {
   mnemonic: string;
@@ -10,6 +12,7 @@ interface KanjiNotesRow {
 
 export function useKanjiMnemonic(literal: string) {
   const userDb = useUserDb();
+  const { strokesDb } = useDatabase();
   const { markDirty } = useSync();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [keyword, setKeyword] = useState<string | null>(null);
@@ -49,8 +52,10 @@ export function useKanjiMnemonic(literal: string) {
         await softDelete(userDb, "user_kanji_notes", "literal = ?", [literal]);
       }
       markDirty();
+      // Keep the personal association index in step with the saved story (best-effort).
+      updateAssociationsForNote(userDb, strokesDb, literal, m || null).catch(() => {});
     },
-    [userDb, literal, markDirty],
+    [userDb, strokesDb, literal, markDirty],
   );
 
   const saveMnemonic = useCallback(
