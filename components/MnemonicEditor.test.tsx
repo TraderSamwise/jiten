@@ -23,7 +23,12 @@ vi.mock("react-native", () => ({
     </button>
   ),
   TextInput: (props: Record<string, unknown>) => (
-    <textarea data-testid="input" value={props.value as string} readOnly />
+    <textarea
+      data-testid="input"
+      value={props.value as string}
+      onBlur={props.onBlur as React.FocusEventHandler}
+      readOnly
+    />
   ),
 }));
 vi.mock("@/components/ui/text", () => ({
@@ -71,7 +76,13 @@ describe("MnemonicEditor", () => {
       suppress: vi.fn(),
     });
     const { getAllByText, container } = render(
-      <MnemonicEditor literal="安" initialValue="" primitives={PRIMS} onSave={vi.fn()} />,
+      <MnemonicEditor
+        literal="安"
+        initialValue=""
+        primitives={PRIMS}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />,
     );
     // "house" shows in the dropdown and the unlinked bar; the dropdown draws the
     // primitive's shape after the arrow (its RTK substitute here) instead of "p51".
@@ -94,11 +105,63 @@ describe("MnemonicEditor", () => {
       suppress,
     });
     const { getByText } = render(
-      <MnemonicEditor literal="安" initialValue="at house" primitives={PRIMS} onSave={onSave} />,
+      <MnemonicEditor
+        literal="安"
+        initialValue="at house"
+        primitives={PRIMS}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />,
     );
     expect(getByText(/Link/)).toBeTruthy();
     fireEvent.click(getByText("✕"));
     expect(suppress).toHaveBeenCalledWith("house");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("saves the current text on Save and only exits on Cancel", () => {
+    hookMocks.useMnemonicSuggestor.mockReturnValue({
+      ambient: null,
+      dropdown: null,
+      suppress: vi.fn(),
+    });
+    const onSave = vi.fn();
+    const onCancel = vi.fn();
+    const { getByText } = render(
+      <MnemonicEditor
+        literal="安"
+        initialValue="my story"
+        primitives={PRIMS}
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.click(getByText("Cancel"));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(getByText("Save"));
+    expect(onSave).toHaveBeenCalledWith("my story");
+  });
+
+  it("does not save when the input merely blurs (saving is explicit)", () => {
+    hookMocks.useMnemonicSuggestor.mockReturnValue({
+      ambient: null,
+      dropdown: null,
+      suppress: vi.fn(),
+    });
+    const onSave = vi.fn();
+    const { getByTestId } = render(
+      <MnemonicEditor
+        literal="安"
+        initialValue="my story"
+        primitives={PRIMS}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.blur(getByTestId("input"));
     expect(onSave).not.toHaveBeenCalled();
   });
 });

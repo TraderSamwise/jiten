@@ -24,15 +24,24 @@ interface Props {
   initialValue: string;
   primitives: KanjiPrimitive[];
   onSave: (text: string) => void;
+  onCancel: () => void;
   autoFocus?: boolean;
 }
 
 /**
  * The mnemonic editing surface: a raw-markup TextInput augmented with the suggestor —
  * a [-triggered primitive dropdown, an ambient link suggestion chip (tap/Tab to accept,
- * ✕ to suppress for the session), and an "not yet linked" nudge bar.
+ * ✕ to suppress for the session), and an "not yet linked" nudge bar. Saving is explicit
+ * via the Save button; Cancel discards the draft and the caller restores the prior story.
  */
-export function MnemonicEditor({ literal, initialValue, primitives, onSave, autoFocus }: Props) {
+export function MnemonicEditor({
+  literal,
+  initialValue,
+  primitives,
+  onSave,
+  onCancel,
+  autoFocus,
+}: Props) {
   const [text, setText] = useState(initialValue);
   const [cursor, setCursor] = useState(initialValue.length);
   // A forced selection is applied right after a transform (to move the cursor), then
@@ -80,12 +89,13 @@ export function MnemonicEditor({ literal, initialValue, primitives, onSave, auto
   };
 
   const onBlur = () => {
+    // Suggestion taps blur the input; refocus so the keyboard stays up. Saving is
+    // explicit (Save button), so blurring away never persists — the draft lives in
+    // this component's state until the user hits Save or Cancel.
     if (skipBlurSave.current) {
       skipBlurSave.current = false;
       inputRef.current?.focus();
-      return;
     }
-    onSave(text);
   };
 
   const onKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
@@ -188,6 +198,18 @@ export function MnemonicEditor({ literal, initialValue, primitives, onSave, auto
           Tip: type “[” to link a primitive, or tap a green suggestion above.
         </Text>
       )}
+
+      <View className="mt-1 flex-row justify-end gap-2">
+        <Pressable onPress={onCancel} className="rounded-lg px-4 py-2 active:opacity-70">
+          <Text className="text-sm font-medium text-muted-foreground">Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onSave(text)}
+          className="rounded-lg bg-blue-500 px-4 py-2 active:opacity-70"
+        >
+          <Text className="text-sm font-medium text-white">Save</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

@@ -210,7 +210,11 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerStyle={{ padding: 16 }}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Header */}
       <View className="items-center mb-6">
         <View className="flex-row justify-end w-full mb-2">
@@ -351,6 +355,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               saveMnemonic(t);
               setEditingMnemonic(false);
             }}
+            onCancel={() => setEditingMnemonic(false)}
           />
         ) : mnemonic ? (
           <MnemonicText
