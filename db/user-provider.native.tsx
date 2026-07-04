@@ -3,6 +3,7 @@ import { open } from "@op-engineering/op-sqlite";
 import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { migrateLegacyMnemonics } from "./mnemonic-migration";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
 import { captureException } from "@/lib/sentry";
@@ -102,6 +103,12 @@ export function UserDatabaseProvider({
         );
         await db.execute("PRAGMA foreign_keys = ON");
       }
+
+      // One-time conversion of legacy mnemonic markup (**x**/*x*) to the new grammar.
+      // Best-effort: a failure must not brick init; the flag is set last so it retries.
+      await migrateLegacyMnemonics(wrapped).catch((e) =>
+        console.warn("[UserDB Native] legacy mnemonic migration failed:", String(e)),
+      );
 
       // Cleanup old temporary marked-for-review lists (>24h old) and old review marks (>90 days)
       wrapped

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -179,19 +179,6 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     }, [loadComponentUserKeywords]),
   );
 
-  const { primaryKeywords, componentKeywords } = useMemo(() => {
-    const primary = [keyword, kanji?.heisigKeyword].filter(Boolean) as string[];
-    const comp: string[] = [];
-    for (const r of radicals.filter((r) => r !== literal)) {
-      const userKw = componentUserKeywords.get(r);
-      if (userKw) comp.push(userKw);
-      const ck = componentKanji.get(r);
-      if (ck?.heisigKeyword) comp.push(ck.heisigKeyword);
-      else if (ck?.meanings[0]) comp.push(ck.meanings[0]);
-    }
-    return { primaryKeywords: primary, componentKeywords: comp };
-  }, [keyword, kanji, radicals, literal, componentKanji, componentUserKeywords]);
-
   const handleRadicalPress = (radical: string) => {
     setSearchMode("radical");
     setSelectedRadicals([radical]);
@@ -368,8 +355,9 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             {mnemonic ? (
               <MnemonicText
                 mnemonic={mnemonic}
-                primaryKeywords={primaryKeywords}
-                componentKeywords={componentKeywords}
+                selfKeyword={keyword ?? kanji?.heisigKeyword ?? null}
+                primitives={primitives}
+                onNavigate={tabRouter.pushTarget}
               />
             ) : (
               <Text className="text-base text-muted-foreground italic">

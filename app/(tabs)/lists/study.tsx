@@ -605,8 +605,8 @@ const StudyCardView = React.memo(
           <View className="items-center gap-2">
             <MnemonicText
               mnemonic={mnemonicData.mnemonic}
-              primaryKeywords={mnemonicData.primaryKeywords}
-              componentKeywords={mnemonicData.componentKeywords}
+              selfKeyword={mnemonicData.primaryKeywords[0] ?? null}
+              primitives={mnemonicData.primitives}
               className="text-base text-foreground text-center px-4"
               numberOfLines={opts?.numberOfLines}
             />
