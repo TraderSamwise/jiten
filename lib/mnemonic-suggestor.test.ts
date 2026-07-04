@@ -6,6 +6,7 @@ import {
   completeBracket,
   suppressionKey,
   filterPrimitivesByQuery,
+  unlinkedPrimitives,
 } from "./mnemonic-suggestor";
 import { parseMnemonicMarkup } from "./mnemonic-markup";
 import { canonicalStem } from "@/db/primitive-associations";
@@ -132,5 +133,31 @@ describe("filterPrimitivesByQuery", () => {
   it("filters by case-insensitive keyword substring and drops null-keyword entries", () => {
     expect(filterPrimitivesByQuery(prims, "HOU")).toEqual([{ target: "p51", keyword: "house" }]);
     expect(filterPrimitivesByQuery(prims, "zzz")).toEqual([]);
+  });
+});
+
+describe("unlinkedPrimitives", () => {
+  const prims: KanjiPrimitive[] = [
+    { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
+    { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+    { position: 2, glyph: "女", primitiveId: null, keyword: null, isPrimitive: false },
+  ];
+
+  it("returns linkable primitives not yet referenced, by target or keyword stem", () => {
+    // 'house' referenced by explicit target, 'span' not referenced yet
+    expect(unlinkedPrimitives("my [house](p51) here", prims)).toEqual([
+      { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+    ]);
+  });
+
+  it("treats a bare ref by keyword stem as linked", () => {
+    expect(unlinkedPrimitives("my [spanning]", prims).map((p) => p.keyword)).toEqual(["house"]);
+  });
+
+  it("returns all linkable primitives when nothing is referenced", () => {
+    expect(unlinkedPrimitives("plain story", prims).map((p) => p.keyword)).toEqual([
+      "house",
+      "span",
+    ]);
   });
 });
