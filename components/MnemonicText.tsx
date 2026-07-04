@@ -1,47 +1,65 @@
 import React, { useMemo } from "react";
 import { Text } from "@/components/ui/text";
-import { highlightKeywords } from "@/lib/highlight-keywords";
+import { parseMnemonicMarkup } from "@/lib/mnemonic-markup";
+import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
+import type { KanjiPrimitive } from "@/db/types";
 
 interface Props {
   mnemonic: string | null | undefined;
-  primaryKeywords: string[];
-  componentKeywords: string[];
+  /** The kanji's own keyword, rendered for {self}. */
+  selfKeyword: string | null;
+  /** The kanji's decomposition, used to resolve bare [label] references by keyword. */
+  primitives: KanjiPrimitive[];
+  /** When provided, primitive references are tappable and call this with their target. */
+  onNavigate?: (target: string) => void;
   className?: string;
   numberOfLines?: number;
 }
 
 /**
- * Highlighted mnemonic renderer. Returns null when mnemonic is empty so callers
- * can omit the whole layout slot rather than render an empty box.
+ * Renders a mnemonic from the markup language: {self} as the kanji's keyword and
+ * [label]/[label](target) primitive references inline, colored and (when onNavigate
+ * is given) tappable to deep-link. Returns null when empty so callers can omit the slot.
  */
 export function MnemonicText({
   mnemonic,
-  primaryKeywords,
-  componentKeywords,
+  selfKeyword,
+  primitives,
+  onNavigate,
   className = "text-base text-foreground",
   numberOfLines,
 }: Props) {
-  const segments = useMemo(() => {
-    if (!mnemonic) return [];
-    return highlightKeywords(mnemonic, primaryKeywords, componentKeywords);
-  }, [mnemonic, primaryKeywords, componentKeywords]);
+  const nodes = useMemo(() => (mnemonic ? parseMnemonicMarkup(mnemonic) : []), [mnemonic]);
 
-  if (!mnemonic || segments.length === 0) return null;
+  const resolveBareTarget = (label: string): string | null => {
+    const stem = canonicalStem(label);
+    const match = primitives.find((p) => p.keyword != null && canonicalStem(p.keyword) === stem);
+    return match ? targetForPrimitive(match) : null;
+  };
+
+  if (!mnemonic || nodes.length === 0) return null;
 
   return (
     <Text className={className} numberOfLines={numberOfLines}>
-      {segments.map((seg, i) =>
-        seg.type === "plain" ? (
-          <React.Fragment key={i}>{seg.text}</React.Fragment>
-        ) : (
-          <Text
-            key={i}
-            className={seg.type === "primary" ? "text-blue-500 font-semibold" : "text-green-600"}
-          >
-            {seg.text}
+      {nodes.map((node, i) => {
+        if (node.type === "text") {
+          return <React.Fragment key={i}>{node.value}</React.Fragment>;
+        }
+        if (node.type === "self") {
+          return (
+            <Text key={i} className="text-blue-500 font-semibold">
+              {selfKeyword ?? ""}
+            </Text>
+          );
+        }
+        const target = node.target ?? resolveBareTarget(node.label);
+        const onPress = onNavigate && target ? () => onNavigate(target) : undefined;
+        return (
+          <Text key={i} className="text-green-600" onPress={onPress}>
+            {node.label}
           </Text>
-        ),
-      )}
+        );
+      })}
     </Text>
   );
 }

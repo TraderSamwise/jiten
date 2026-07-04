@@ -128,5 +128,10 @@ export function useTabRouter() {
     pushWord: (id: number) => router.push(`${prefix}/word/${id}` as any),
     pushCounter: (counterId: number) => router.push(`${prefix}/counter/${counterId}` as any),
     pushPrimitive: (id: number) => router.push(`${prefix}/primitive/${id}` as any),
+    /** Navigate to a markup target: `p<id>` → primitive page, otherwise a kanji glyph. */
+    pushTarget: (target: string) => {
+      if (/^p\d+$/.test(target)) router.push(`${prefix}/primitive/${target.slice(1)}` as any);
+      else router.push(`${prefix}/kanji/${encodeURIComponent(target)}` as any);
+    },
   };
 }
