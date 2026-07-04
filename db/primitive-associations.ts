@@ -110,3 +110,35 @@ export async function getAssociationsForWordAsync(
       );
   return new Map(rows.map((r) => [r.target, r.n]));
 }
+
+/**
+ * Batch variant: for many words at once, returns canonicalStem → (target → count).
+ * One query for the whole story, so the resolver doesn't fire a query per word.
+ */
+export async function getAssociationsForWordsAsync(
+  userDb: SQLite.SQLiteDatabase,
+  words: string[],
+  excludeLiteral?: string,
+): Promise<Map<string, Map<string, number>>> {
+  const stems = [...new Set(words.map(canonicalStem))].filter((s) => s.length > 0);
+  const result = new Map<string, Map<string, number>>();
+  if (stems.length === 0) return result;
+
+  const ph = stems.map(() => "?").join(",");
+  const sql = excludeLiteral
+    ? `SELECT word, target, COUNT(DISTINCT literal) AS n FROM primitive_note_assoc WHERE word IN (${ph}) AND literal != ? GROUP BY word, target`
+    : `SELECT word, target, COUNT(DISTINCT literal) AS n FROM primitive_note_assoc WHERE word IN (${ph}) GROUP BY word, target`;
+  const rows = await userDb.getAllAsync<{ word: string; target: string; n: number }>(
+    sql,
+    excludeLiteral ? [...stems, excludeLiteral] : stems,
+  );
+  for (const r of rows) {
+    let inner = result.get(r.word);
+    if (!inner) {
+      inner = new Map();
+      result.set(r.word, inner);
+    }
+    inner.set(r.target, r.n);
+  }
+  return result;
+}
