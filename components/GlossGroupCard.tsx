@@ -69,7 +69,11 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                 {kana &&
                   (accents.length > 0 ? (
                     <View
-                      className={isSingleEntryBookmarked ? bookmarkedTokenClass : "flex-row items-center gap-1"}
+                      className={
+                        isSingleEntryBookmarked
+                          ? bookmarkedTokenClass
+                          : "flex-row items-center gap-1"
+                      }
                       style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
                     >
                       {accents.map((pa, i) => (
@@ -102,7 +106,9 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                 }
                 style={isSingleEntryBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
               >
-                {kanjiText && <Text className={`${tokenTextClass} text-foreground`}>{kanjiText}</Text>}
+                {kanjiText && (
+                  <Text className={`${tokenTextClass} text-foreground`}>{kanjiText}</Text>
+                )}
                 {kana &&
                   (accents.length > 0 ? (
                     <View className="flex-row items-center gap-1">
@@ -156,9 +162,7 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                   <View className={commonTokenClass}>
                     <Text
                       className={`${tokenTextClass} ${
-                        e.bookmarked
-                          ? `font-semibold ${bookmarkAccentClass}`
-                          : "text-foreground"
+                        e.bookmarked ? `font-semibold ${bookmarkAccentClass}` : "text-foreground"
                       }`}
                     >
                       {e.label}
@@ -166,9 +170,7 @@ export const GlossGroupCard = React.memo(function GlossGroupCard({ group }: Glos
                   </View>
                 ) : e.bookmarked ? (
                   <View className={bookmarkedTokenClass} style={BOOKMARK_HIGHLIGHT_STYLE}>
-                    <Text className={`${tokenTextClass} text-foreground`}>
-                      {e.label}
-                    </Text>
+                    <Text className={`${tokenTextClass} text-foreground`}>{e.label}</Text>
                   </View>
                 ) : (
                   <View className={plainTokenClass}>
