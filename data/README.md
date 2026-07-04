@@ -154,3 +154,17 @@ Notes:
   `primitiveId`, because the app stores them as private-font substitute glyphs.
 - **Source data is proprietary** (RTK app / Heisig keywords). The raw DB is not
   committed; only this derived artifact is.
+
+## Strokes-tier augmentation (`kanji_primitives`, `primitives`, `keyword_synonyms`)
+
+`yarn build:strokes-primitives` folds the RTK decomposition (`kanji_primitives`,
+`primitives`) into `assets/dictionary-strokes.db`, and `yarn build:keyword-synonyms`
+adds a `keyword_synonyms(keyword, synonym)` map — WordNet synonyms for every RTK
+keyword (e.g. `house → home, dwelling`). This lets the semantic auto-linker match a
+user's story words against a kanji's primitive keywords **offline**, without the
+117MB extended tier. Both run automatically inside `yarn build:db`. Synonyms are
+intentionally broad (no gloss-vocab filter) since they are matched against arbitrary
+user wording.
+
+After running either, the rebuilt strokes DB **and** `dict-manifest.json`
+(`strokes.version` + `sizeBytes`) must be published together.

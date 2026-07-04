@@ -46,7 +46,7 @@ const OUT_DIR = path.resolve(__dirname, "..", "assets");
 const DB_PATH = path.join(OUT_DIR, "dictionary.db");
 // Strokes tier version — bump when the strokes DB contents change (e.g. RTK
 // primitive tables) so clients re-download. Mirrors the committed manifest.
-const STROKES_VERSION = 2;
+const STROKES_VERSION = 3;
 const CACHE_DIR = SHARED_CACHE_DIR;
 
 interface JMdictWord {
@@ -491,6 +491,12 @@ async function main() {
   // the same script used by `yarn build:strokes-primitives`).
   const { execFileSync, execSync } = await import("child_process");
   execFileSync("node", ["scripts/kanji/build-strokes-primitives.mjs"], {
+    stdio: "inherit",
+    env: { ...process.env, STROKES_DB: STROKES_DB_PATH },
+  });
+  // Precompute the RTK keyword->synonym map into the same strokes tier. Must run
+  // BEFORE the statSync below so strokes.sizeBytes counts the synonyms too.
+  execFileSync("node", ["scripts/kanji/build-keyword-synonyms.mjs"], {
     stdio: "inherit",
     env: { ...process.env, STROKES_DB: STROKES_DB_PATH },
   });
