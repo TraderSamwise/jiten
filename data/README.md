@@ -132,3 +132,25 @@ This downloads the Waller CSVs and frequency data (cached in `.cache/`), loads a
 - **Waller JLPT vocab**: via [mjuhanne/yomichan-jlpt-vocab](https://github.com/mjuhanne/yomichan-jlpt-vocab)
 - **JPDB frequency data**: from [jpdb.io](https://jpdb.io) via [MarvNC/jpdb-freq-list](https://github.com/MarvNC/jpdb-freq-list)
 - **This derived list**: CC-BY-SA 4.0
+
+---
+
+# RTK Primitives (`rtk-primitives.json`)
+
+Per-kanji Heisig keyword, RTK 6th-edition frame number, stroke count, and ordered
+**primitive-element decomposition** (each component with its own keyword), plus a
+map of the ~244 named primitives. Powers the primitive rendering and mnemonic
+markup features.
+
+Regenerate with `yarn build:rtk`, which reads a **local** install of the
+"Remembering the Kanji" iOS app Core Data SQLite (default
+`/Applications/Kanji.app/Wrapper/Heisig.app/Heisig3.17.sqlite`, override via
+`RTK_APP_DB`) — see `scripts/kanji/extract-rtk-app-db.mjs`.
+
+Notes:
+
+- Component `glyph` is only populated for real-font components (real Unicode
+  kanji); invented primitives (e.g. 宀 "house") render by keyword and link via
+  `primitiveId`, because the app stores them as private-font substitute glyphs.
+- **Source data is proprietary** (RTK app / Heisig keywords). The raw DB is not
+  committed; only this derived artifact is.
