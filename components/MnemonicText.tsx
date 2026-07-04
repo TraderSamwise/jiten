@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Text } from "@/components/ui/text";
 import { parseMnemonicMarkup } from "@/lib/mnemonic-markup";
 import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
+import { RTK_PRIMITIVE_FONT } from "@/components/PrimitiveGlyph";
 import type { KanjiPrimitive } from "@/db/types";
 
 interface Props {
@@ -37,15 +38,22 @@ export function MnemonicText({
   const resolveRef = (
     label: string,
     explicitTarget: string | null,
-  ): { target: string | null; glyph: string | null } | null => {
+  ): { target: string | null; glyph: string | null; displayGlyph: string | null } | null => {
     if (explicitTarget) {
-      if (!/^p\d+$/.test(explicitTarget)) return { target: explicitTarget, glyph: explicitTarget };
+      if (!/^p\d+$/.test(explicitTarget))
+        return { target: explicitTarget, glyph: explicitTarget, displayGlyph: null };
       const byId = primitives.find((p) => targetForPrimitive(p) === explicitTarget);
-      return { target: explicitTarget, glyph: byId?.glyph ?? null };
+      return {
+        target: explicitTarget,
+        glyph: byId?.glyph ?? null,
+        displayGlyph: byId?.displayGlyph ?? null,
+      };
     }
     const stem = canonicalStem(label);
     const match = primitives.find((p) => p.keyword != null && canonicalStem(p.keyword) === stem);
-    return match ? { target: targetForPrimitive(match), glyph: match.glyph } : null;
+    return match
+      ? { target: targetForPrimitive(match), glyph: match.glyph, displayGlyph: match.displayGlyph }
+      : null;
   };
 
   if (!mnemonic || nodes.length === 0) return null;
@@ -74,7 +82,16 @@ export function MnemonicText({
         return (
           <Text key={i} className="text-green-600" onPress={onPress}>
             {node.label}
-            {glyph ? <Text className="text-green-700/70">{` (${glyph})`}</Text> : null}
+            {glyph ? (
+              <Text className="text-green-700/70">{` (${glyph})`}</Text>
+            ) : resolved.displayGlyph ? (
+              // Invented primitive: draw its RTK substitute shape in the primitive font.
+              <Text className="text-green-700/70">
+                {" ("}
+                <Text style={{ fontFamily: RTK_PRIMITIVE_FONT }}>{resolved.displayGlyph}</Text>
+                {")"}
+              </Text>
+            ) : null}
           </Text>
         );
       })}

@@ -98,13 +98,14 @@ describe("MnemonicText", () => {
     expect(onNavigate).not.toHaveBeenCalledWith("banana");
   });
 
-  it("shows a resolved glyph inline, but keyword-only for a glyphless primitive", () => {
+  it("shows real glyphs and invented-primitive substitutes inline", () => {
     const { container } = render(
       <MnemonicText mnemonic="[span](亘) and [house]" selfKeyword={null} primitives={PRIMS} />,
     );
     const text = container.textContent ?? "";
-    expect(text).toContain("span (亘)"); // real glyph shown inline
-    expect(text).not.toContain("house ("); // invented primitive has no glyph → keyword only
+    expect(text).toContain("span (亘)"); // real Unicode glyph shown inline
+    // invented primitive: its RTK substitute char is shown inline (drawn as 宀 via the font)
+    expect(text).toContain("house (屆)");
   });
 
   it("does not throw when a primitive keyword is null", () => {

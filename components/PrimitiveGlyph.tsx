@@ -1,3 +1,4 @@
+import React from "react";
 import type { StyleProp, TextStyle } from "react-native";
 import { Text } from "@/components/ui/text";
 
