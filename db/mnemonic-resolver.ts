@@ -1,4 +1,5 @@
 import type * as SQLite from "expo-sqlite";
+import type { WrappedUserDb } from "./user-db";
 import { getPrimitivesForKanjiAsync, getSynonymsForKeywordAsync } from "./kanji-search";
 import {
   getAssociationsForWordsAsync,
@@ -47,7 +48,7 @@ interface Component {
 
 export async function resolveKanjiWordCandidates(
   strokesDb: SQLite.SQLiteDatabase | null,
-  userDb: SQLite.SQLiteDatabase | null,
+  userDb: WrappedUserDb | null,
   literal: string,
   words: string[],
   opts?: { threshold?: number; excludeCurrentNote?: boolean },

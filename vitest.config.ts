@@ -35,6 +35,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      // More specific than the "@/" prefix below, so it must come first. user-provider
+      // is platform-specific (.native.tsx / .web.tsx) — resolve to web for tests.
+      "@/db/user-provider": path.resolve(__dirname, "db/user-provider.web.tsx"),
       "@/": path.resolve(__dirname, "") + "/",
       "@jiten/japanese-reader": path.resolve(__dirname, "packages/japanese-reader/src/index.ts"),
       "@jiten/japanese-reader/furigana-types": path.resolve(

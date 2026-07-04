@@ -27,6 +27,7 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { MnemonicText } from "@/components/MnemonicText";
+import { MnemonicEditor } from "@/components/MnemonicEditor";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -76,7 +77,6 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [editingKeyword, setEditingKeyword] = useState(false);
   const [mnemonicDraft, setMnemonicDraft] = useState("");
   const [keywordDraft, setKeywordDraft] = useState("");
-  const mnemonicInputRef = useRef<TextInput>(null);
   const keywordInputRef = useRef<TextInput>(null);
 
   const userDb = useUserDb();
@@ -329,18 +329,13 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
 
         {/* Story field */}
         {editingMnemonic ? (
-          <TextInput
-            ref={mnemonicInputRef}
-            className="text-base text-foreground bg-secondary/50 rounded-lg p-3 min-h-[80px]"
-            value={mnemonicDraft}
-            onChangeText={setMnemonicDraft}
-            multiline
-            textAlignVertical="top"
-            placeholder="Write your mnemonic story..."
-            placeholderTextColor="#999"
+          <MnemonicEditor
+            literal={literal}
+            initialValue={mnemonicDraft}
+            primitives={primitives}
             autoFocus
-            onBlur={() => {
-              saveMnemonic(mnemonicDraft);
+            onSave={(t) => {
+              saveMnemonic(t);
               setEditingMnemonic(false);
             }}
           />
@@ -349,7 +344,6 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
             onPress={() => {
               setMnemonicDraft(mnemonic ?? "");
               setEditingMnemonic(true);
-              setTimeout(() => mnemonicInputRef.current?.focus(), 50);
             }}
           >
             {mnemonic ? (

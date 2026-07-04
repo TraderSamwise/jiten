@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type * as SQLite from "expo-sqlite";
+import type { WrappedUserDb } from "./user-db";
 import {
   canonicalStem,
   extractAssocWords,
@@ -31,7 +32,7 @@ function asyncAdapter(d: Database.Database): SQLite.SQLiteDatabase {
 
 let userRaw: Database.Database;
 let strokesRaw: Database.Database;
-let userDb: SQLite.SQLiteDatabase;
+let userDb: WrappedUserDb;
 let strokesDb: SQLite.SQLiteDatabase;
 
 beforeEach(() => {
@@ -52,7 +53,7 @@ beforeEach(() => {
       ('安', 0, NULL, 51, 'house', 1),
       ('安', 1, '女', NULL, 'woman', 0);
   `);
-  userDb = asyncAdapter(userRaw);
+  userDb = asyncAdapter(userRaw) as unknown as WrappedUserDb;
   strokesDb = asyncAdapter(strokesRaw);
 });
 
