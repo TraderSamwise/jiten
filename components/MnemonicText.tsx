@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Text } from "@/components/ui/text";
 import { parseMnemonicMarkup } from "@/lib/mnemonic-markup";
 import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import type { KanjiPrimitive } from "@/db/types";
 
 interface Props {
@@ -31,10 +32,28 @@ export function MnemonicText({
 }: Props) {
   const nodes = useMemo(() => (mnemonic ? parseMnemonicMarkup(mnemonic) : []), [mnemonic]);
 
-  const resolveBareTarget = (label: string): string | null => {
+  // Resolve a ref to its navigation target and inline glyph, or null when the label
+  // matches none of the kanji's primitives — an unresolved ref renders as plain prose
+  // rather than a dead green link.
+  const resolveRef = (
+    label: string,
+    explicitTarget: string | null,
+  ): { target: string | null; glyph: string | null; displayGlyph: string | null } | null => {
+    if (explicitTarget) {
+      if (!/^p\d+$/.test(explicitTarget))
+        return { target: explicitTarget, glyph: explicitTarget, displayGlyph: null };
+      const byId = primitives.find((p) => targetForPrimitive(p) === explicitTarget);
+      return {
+        target: explicitTarget,
+        glyph: byId?.glyph ?? null,
+        displayGlyph: byId?.displayGlyph ?? null,
+      };
+    }
     const stem = canonicalStem(label);
     const match = primitives.find((p) => p.keyword != null && canonicalStem(p.keyword) === stem);
-    return match ? targetForPrimitive(match) : null;
+    return match
+      ? { target: targetForPrimitive(match), glyph: match.glyph, displayGlyph: match.displayGlyph }
+      : null;
   };
 
   if (!mnemonic || nodes.length === 0) return null;
@@ -52,11 +71,32 @@ export function MnemonicText({
             </Text>
           );
         }
-        const target = node.target ?? resolveBareTarget(node.label);
-        const onPress = onNavigate && target ? () => onNavigate(target) : undefined;
+        const resolved = resolveRef(node.label, node.target);
+        if (!resolved) {
+          // Label matches no primitive (or data not loaded) — render as plain prose.
+          return <React.Fragment key={i}>{node.label}</React.Fragment>;
+        }
+        const onPress =
+          onNavigate && resolved.target ? () => onNavigate(resolved.target as string) : undefined;
+        // Show the primitive's shape inline in parens: a real glyph, or the RTK
+        // substitute drawn in the primitive font (delegated to PrimitiveGlyph so the
+        // glyph/font logic lives in one place). Skip a real glyph identical to the label.
+        const inlineGlyph = resolved.glyph && resolved.glyph !== node.label ? resolved.glyph : null;
+        const hasInline = inlineGlyph != null || resolved.displayGlyph != null;
         return (
           <Text key={i} className="text-green-600" onPress={onPress}>
             {node.label}
+            {hasInline ? (
+              <Text className="text-green-700/70">
+                {" ("}
+                <PrimitiveGlyph
+                  glyph={inlineGlyph}
+                  displayGlyph={resolved.displayGlyph}
+                  className="text-green-700/70"
+                />
+                {")"}
+              </Text>
+            ) : null}
           </Text>
         );
       })}

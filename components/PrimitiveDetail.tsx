@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import { useDatabase } from "@/db/provider";
 import { useTabRouter } from "@/lib/navigation";
 import {
@@ -99,8 +100,13 @@ export function PrimitiveDetail({ primitiveId }: PrimitiveDetailProps) {
 
   return (
     <ScrollView className="flex-1 bg-background px-4 pt-4">
-      {/* Hero: invented primitives have no reliable glyph, so lead with the keyword */}
+      {/* Hero: the primitive's shape (real glyph, or RTK-font substitute) over its keyword. */}
       <View className="mb-4 items-center">
+        <PrimitiveGlyph
+          glyph={primitive.realGlyph}
+          displayGlyph={primitive.displayGlyph}
+          className="mb-1 text-6xl font-bold text-foreground"
+        />
         <Text className="text-3xl font-bold text-foreground">
           {primitive.keyword ?? "Primitive"}
         </Text>

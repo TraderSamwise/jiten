@@ -46,7 +46,8 @@
     "version:bump-ota": "eas-release bump-ota",
     "version:rollback": "eas-release rollback",
     "version:set": "eas-release set",
-    "version:sync": "eas-release sync"
+    "version:sync": "eas-release sync",
+    "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.22",

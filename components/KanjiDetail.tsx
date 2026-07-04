@@ -28,6 +28,7 @@ import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { MnemonicText } from "@/components/MnemonicText";
 import { MnemonicEditor } from "@/components/MnemonicEditor";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -286,7 +287,19 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
 
       {/* Mnemonic & Keyword */}
       <Card className="mb-3">
-        <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-sm font-medium text-muted-foreground">Mnemonic</Text>
+          {mnemonic && !editingMnemonic && (
+            <Pressable
+              onPress={() => {
+                setMnemonicDraft(mnemonic ?? "");
+                setEditingMnemonic(true);
+              }}
+            >
+              <Text className="text-xs font-medium text-blue-500">Edit</Text>
+            </Pressable>
+          )}
+        </View>
 
         {/* Keyword field */}
         <View className="flex-row items-center mb-2">
@@ -339,25 +352,23 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               setEditingMnemonic(false);
             }}
           />
+        ) : mnemonic ? (
+          <MnemonicText
+            mnemonic={mnemonic}
+            selfKeyword={keyword ?? kanji?.heisigKeyword ?? null}
+            primitives={primitives}
+            onNavigate={tabRouter.pushTarget}
+          />
         ) : (
           <Pressable
             onPress={() => {
-              setMnemonicDraft(mnemonic ?? "");
+              setMnemonicDraft("");
               setEditingMnemonic(true);
             }}
           >
-            {mnemonic ? (
-              <MnemonicText
-                mnemonic={mnemonic}
-                selfKeyword={keyword ?? kanji?.heisigKeyword ?? null}
-                primitives={primitives}
-                onNavigate={tabRouter.pushTarget}
-              />
-            ) : (
-              <Text className="text-base text-muted-foreground italic">
-                Tap to add a mnemonic story...
-              </Text>
-            )}
+            <Text className="text-base text-muted-foreground italic">
+              Tap to add a mnemonic story...
+            </Text>
           </Pressable>
         )}
       </Card>
@@ -447,18 +458,14 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                     disabled={!onPress}
                     className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
                   >
-                    {hasGlyph ? (
-                      <>
-                        <Text className="text-xl font-bold text-foreground">{p.glyph}</Text>
-                        {p.keyword && (
-                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                            {p.keyword}
-                          </Text>
-                        )}
-                      </>
-                    ) : (
-                      <Text className="text-base font-medium text-foreground" numberOfLines={1}>
-                        {p.keyword ?? "?"}
+                    <PrimitiveGlyph
+                      glyph={p.glyph}
+                      displayGlyph={p.displayGlyph}
+                      className="text-xl font-bold text-foreground"
+                    />
+                    {p.keyword != null && (
+                      <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                        {p.keyword}
                       </Text>
                     )}
                   </Pressable>
