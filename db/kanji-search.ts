@@ -364,6 +364,18 @@ export async function getPrimitiveAsync(
     : null;
 }
 
+/** Get literals of kanji that use a given invented primitive as a component (async). */
+export async function getKanjiUsingPrimitiveAsync(
+  strokesDb: SQLite.SQLiteDatabase,
+  primitiveId: number,
+): Promise<string[]> {
+  const rows = await strokesDb.getAllAsync<{ literal: string }>(
+    "SELECT DISTINCT literal FROM kanji_primitives WHERE primitive_id = ?",
+    [primitiveId],
+  );
+  return rows.map((r) => r.literal);
+}
+
 /** Batch-fetch kanji by their literal characters (async). */
 export async function getKanjiBatchAsync(
   db: SQLite.SQLiteDatabase,

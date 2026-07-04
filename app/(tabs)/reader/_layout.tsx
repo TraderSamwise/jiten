@@ -19,6 +19,7 @@ export default function ReaderLayout() {
       <Stack.Screen name="word/[id]" options={{ title: "Word" }} />
       <Stack.Screen name="kanji/[literal]" options={{ title: "Kanji" }} />
       <Stack.Screen name="counter/[counterId]" options={{ title: "Counter" }} />
+      <Stack.Screen name="primitive/[id]" options={{ title: "Primitive" }} />
     </Stack>
   );
 }
