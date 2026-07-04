@@ -18,7 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
-import { Bookmark } from "@/lib/icons";
+import { Bookmark, Pencil } from "@/lib/icons";
 import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
@@ -89,6 +89,19 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     { top: number; right: number } | undefined
   >();
   const { mnemonic, keyword, saveMnemonic, saveKeyword } = useKanjiMnemonic(literal);
+
+  const startEditKeyword = () => {
+    setKeywordDraft(keyword ?? kanji?.heisigKeyword ?? "");
+    setEditingKeyword(true);
+    setTimeout(() => keywordInputRef.current?.focus(), 50);
+  };
+  const commitKeyword = () => {
+    // A keyword equal to the Heisig default (or blank) is stored as null, so it keeps
+    // tracking the dictionary rather than freezing a redundant override.
+    const trimmed = keywordDraft.trim();
+    saveKeyword(trimmed && trimmed !== (kanji?.heisigKeyword ?? "") ? trimmed : "");
+    setEditingKeyword(false);
+  };
 
   function measureAndRun(callback: () => void) {
     bookmarkRef.current?.measureInWindow((x, y, width, height) => {
@@ -242,9 +255,31 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           <Text className="text-7xl text-foreground leading-tight" style={japaneseFontStyle(72)}>
             {kanji.literal}
           </Text>
-          {kanji.heisigKeyword && (
-            <Text className="text-lg text-muted-foreground mt-1">{kanji.heisigKeyword}</Text>
-          )}
+          {(keyword ?? kanji.heisigKeyword) != null &&
+            (editingKeyword ? (
+              <TextInput
+                ref={keywordInputRef}
+                className="mt-1 min-w-[140px] rounded bg-secondary/50 px-2 py-0.5 text-lg font-medium text-blue-500"
+                value={keywordDraft}
+                onChangeText={setKeywordDraft}
+                placeholder={kanji.heisigKeyword ?? "keyword"}
+                placeholderTextColor="#999"
+                autoFocus
+                onSubmitEditing={commitKeyword}
+                onBlur={commitKeyword}
+              />
+            ) : (
+              <Pressable onPress={startEditKeyword} className="mt-1 flex-row items-center gap-1.5">
+                <Text
+                  className={
+                    keyword ? "text-lg font-medium text-blue-500" : "text-lg text-muted-foreground"
+                  }
+                >
+                  {keyword ?? kanji.heisigKeyword}
+                </Text>
+                <Pencil size={13} className="text-muted-foreground/50" />
+              </Pressable>
+            ))}
         </View>
         <View className="flex-row flex-wrap justify-center gap-2 mt-3">
           {kanji.grade != null && <Badge variant="secondary" label={`Grade ${kanji.grade}`} />}
@@ -289,7 +324,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         </Card>
       )}
 
-      {/* Mnemonic & Keyword */}
+      {/* Mnemonic */}
       <Card className="mb-3">
         <View className="flex-row items-center justify-between mb-2">
           <Text className="text-sm font-medium text-muted-foreground">Mnemonic</Text>
@@ -301,45 +336,6 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               }}
             >
               <Text className="text-xs font-medium text-blue-500">Edit</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Keyword field */}
-        <View className="flex-row items-center mb-2">
-          <Text className="text-xs text-muted-foreground mr-1.5">Keyword:</Text>
-          {editingKeyword ? (
-            <TextInput
-              ref={keywordInputRef}
-              className="flex-1 text-sm text-blue-500 font-semibold bg-secondary/50 rounded px-2 py-0.5"
-              value={keywordDraft}
-              onChangeText={setKeywordDraft}
-              placeholder="set keyword..."
-              placeholderTextColor="#999"
-              autoFocus
-              onSubmitEditing={() => {
-                saveKeyword(keywordDraft);
-                setEditingKeyword(false);
-              }}
-              onBlur={() => {
-                saveKeyword(keywordDraft);
-                setEditingKeyword(false);
-              }}
-            />
-          ) : (
-            <Pressable
-              onPress={() => {
-                setKeywordDraft(keyword ?? "");
-                setEditingKeyword(true);
-                setTimeout(() => keywordInputRef.current?.focus(), 50);
-              }}
-              className="flex-1"
-            >
-              {keyword ? (
-                <Text className="text-sm text-blue-500 font-semibold">{keyword}</Text>
-              ) : (
-                <Text className="text-sm text-muted-foreground/60 italic">tap to set...</Text>
-              )}
             </Pressable>
           )}
         </View>
