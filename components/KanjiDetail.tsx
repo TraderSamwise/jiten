@@ -28,6 +28,7 @@ import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { MnemonicText } from "@/components/MnemonicText";
 import { MnemonicEditor } from "@/components/MnemonicEditor";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import {
   getKanjiAsync,
   getSimilarKanjiAsync,
@@ -457,18 +458,16 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                     disabled={!onPress}
                     className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
                   >
-                    {hasGlyph ? (
-                      <>
-                        <Text className="text-xl font-bold text-foreground">{p.glyph}</Text>
-                        {p.keyword && (
-                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                            {p.keyword}
-                          </Text>
-                        )}
-                      </>
-                    ) : (
-                      <Text className="text-base font-medium text-foreground" numberOfLines={1}>
-                        {p.keyword ?? "?"}
+                    {(p.glyph != null || p.displayGlyph != null) && (
+                      <PrimitiveGlyph
+                        glyph={p.glyph}
+                        displayGlyph={p.displayGlyph}
+                        className="text-xl font-bold text-foreground"
+                      />
+                    )}
+                    {p.keyword != null && (
+                      <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                        {p.keyword}
                       </Text>
                     )}
                   </Pressable>
