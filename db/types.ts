@@ -111,6 +111,23 @@ export interface SimilarKanji {
   rank: number;
 }
 
+// RTK primitive-element decomposition (lives in the strokes DB tier).
+export interface KanjiPrimitive {
+  position: number;
+  glyph: string | null; // real Unicode glyph, or null for invented primitives
+  primitiveId: number | null; // link target for invented primitives
+  keyword: string | null;
+  isPrimitive: boolean;
+}
+
+export interface Primitive {
+  id: number;
+  keyword: string | null;
+  displayGlyph: string | null;
+  realGlyph: string | null;
+  strokes: number | null;
+}
+
 // SRS card display modes
 export type CardFace = "kanji" | "kana" | "english" | "mnemonic";
 

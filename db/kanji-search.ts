@@ -7,7 +7,7 @@
  */
 
 import type * as SQLite from "expo-sqlite";
-import type { KanjiCharacter, StrokePath, SimilarKanji } from "./types";
+import type { KanjiCharacter, StrokePath, SimilarKanji, KanjiPrimitive, Primitive } from "./types";
 
 /** Generic DB interface that works with both better-sqlite3 and expo-sqlite. */
 interface QueryDB {
@@ -315,6 +315,53 @@ export async function getStrokePathsAsync(
     [literal],
   );
   return row ? parseJsonArray<StrokePath>(row.stroke_paths) : [];
+}
+
+/** Get the RTK primitive decomposition for a kanji from the strokes DB (async). */
+export async function getPrimitivesForKanjiAsync(
+  strokesDb: SQLite.SQLiteDatabase,
+  literal: string,
+): Promise<KanjiPrimitive[]> {
+  const rows = await strokesDb.getAllAsync<{
+    position: number;
+    glyph: string | null;
+    primitive_id: number | null;
+    keyword: string | null;
+    is_primitive: number;
+  }>(
+    "SELECT position, glyph, primitive_id, keyword, is_primitive FROM kanji_primitives WHERE literal = ? ORDER BY position",
+    [literal],
+  );
+  return rows.map((r) => ({
+    position: r.position,
+    glyph: r.glyph,
+    primitiveId: r.primitive_id,
+    keyword: r.keyword,
+    isPrimitive: r.is_primitive === 1,
+  }));
+}
+
+/** Get a single primitive by id from the strokes DB (async). */
+export async function getPrimitiveAsync(
+  strokesDb: SQLite.SQLiteDatabase,
+  id: number,
+): Promise<Primitive | null> {
+  const row = await strokesDb.getFirstAsync<{
+    id: number;
+    keyword: string | null;
+    display_glyph: string | null;
+    real_glyph: string | null;
+    strokes: number | null;
+  }>("SELECT id, keyword, display_glyph, real_glyph, strokes FROM primitives WHERE id = ?", [id]);
+  return row
+    ? {
+        id: row.id,
+        keyword: row.keyword,
+        displayGlyph: row.display_glyph,
+        realGlyph: row.real_glyph,
+        strokes: row.strokes,
+      }
+    : null;
 }
 
 /** Batch-fetch kanji by their literal characters (async). */
