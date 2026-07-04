@@ -351,6 +351,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               saveMnemonic(t);
               setEditingMnemonic(false);
             }}
+            onCancel={() => setEditingMnemonic(false)}
           />
         ) : mnemonic ? (
           <MnemonicText
