@@ -139,6 +139,21 @@ describe("convertLegacySigils", () => {
     expect(convertLegacySigils("the *a* primitive")).toBe("the [a] primitive");
   });
 
+  it("does not pair asterisks across unrelated tokens, newlines, or arithmetic", () => {
+    // two multiplications must not merge into one ref (data-loss guard)
+    expect(convertLegacySigils("note: 3*4=12 and 5*6=30")).toBe("note: 3*4=12 and 5*6=30");
+    // a delimiter never pairs across a line break
+    expect(convertLegacySigils("first *line\nsecond* line")).toBe("first *line\nsecond* line");
+    // triple stars degrade without producing a garbage {self}-labeled ref
+    expect(convertLegacySigils("***word***")).not.toContain("[{self}]");
+    // real multi-token story still converts the intended spans
+    expect(convertLegacySigils("I **relax** at *home*, then rest.")).toBe(
+      "I {self} at [home], then rest.",
+    );
+    // a multi-word primitive keyword with internal spaces still converts
+    expect(convertLegacySigils("the *walking stick* here")).toBe("the [walking stick] here");
+  });
+
   it("escaped conversion output re-parses to refs", () => {
     const converted = convertLegacySigils("my *house* here");
     expect(parseMnemonicMarkup(converted)).toEqual([
