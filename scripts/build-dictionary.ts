@@ -44,6 +44,9 @@ async function getJmdictUrl(): Promise<string> {
 
 const OUT_DIR = path.resolve(__dirname, "..", "assets");
 const DB_PATH = path.join(OUT_DIR, "dictionary.db");
+// Strokes tier version — bump when the strokes DB contents change (e.g. RTK
+// primitive tables) so clients re-download. Mirrors the committed manifest.
+const STROKES_VERSION = 2;
 const CACHE_DIR = SHARED_CACHE_DIR;
 
 interface JMdictWord {
@@ -484,6 +487,14 @@ async function main() {
   strokesDb.exec("VACUUM");
   strokesDb.close();
 
+  // Fold RTK primitive tables into the strokes tier (single source of truth:
+  // the same script used by `yarn build:strokes-primitives`).
+  const { execFileSync, execSync } = await import("child_process");
+  execFileSync("node", ["scripts/kanji/build-strokes-primitives.mjs"], {
+    stdio: "inherit",
+    env: { ...process.env, STROKES_DB: STROKES_DB_PATH },
+  });
+
   const strokesStats = fs.statSync(STROKES_DB_PATH);
   console.log(
     `  Strokes DB: ${(strokesStats.size / 1024 / 1024).toFixed(1)} MB (${strokeCount} kanji)`,
@@ -491,7 +502,6 @@ async function main() {
 
   // Compute gzip-compressed size (what GitHub CDN actually transfers)
   console.log("\n22. Computing compressed sizes...");
-  const { execSync } = await import("child_process");
   const compressedSize = parseInt(execSync(`gzip -c "${DB_PATH}" | wc -c`).toString().trim(), 10);
   console.log(`  Core DB compressed: ${(compressedSize / 1024 / 1024).toFixed(1)} MB`);
 
@@ -510,7 +520,7 @@ async function main() {
     miniCompressedSizeBytes: miniResult.compressedSizeBytes,
     audioSizeBytes: audioStats.size,
     strokes: {
-      version: 1,
+      version: STROKES_VERSION,
       sizeBytes: strokesStats.size,
     },
   };
