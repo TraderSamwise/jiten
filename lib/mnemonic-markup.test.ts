@@ -132,6 +132,13 @@ describe("convertLegacySigils", () => {
     expect(convertLegacySigils("2 * 3 = 6")).toBe("2 * 3 = 6");
   });
 
+  it("does not treat space-padded paired asterisks (prose/arithmetic) as markup", () => {
+    expect(convertLegacySigils("2 * 3 * 4")).toBe("2 * 3 * 4");
+    expect(convertLegacySigils("a ** b ** c")).toBe("a ** b ** c");
+    // but a tightly-hugged single char still converts
+    expect(convertLegacySigils("the *a* primitive")).toBe("the [a] primitive");
+  });
+
   it("escaped conversion output re-parses to refs", () => {
     const converted = convertLegacySigils("my *house* here");
     expect(parseMnemonicMarkup(converted)).toEqual([
