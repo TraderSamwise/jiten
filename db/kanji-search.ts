@@ -368,10 +368,11 @@ export async function getPrimitiveAsync(
 export async function getKanjiUsingPrimitiveAsync(
   strokesDb: SQLite.SQLiteDatabase,
   primitiveId: number,
+  limit: number = 100,
 ): Promise<string[]> {
   const rows = await strokesDb.getAllAsync<{ literal: string }>(
-    "SELECT DISTINCT literal FROM kanji_primitives WHERE primitive_id = ?",
-    [primitiveId],
+    "SELECT DISTINCT literal FROM kanji_primitives WHERE primitive_id = ? ORDER BY literal LIMIT ?",
+    [primitiveId, limit],
   );
   return rows.map((r) => r.literal);
 }

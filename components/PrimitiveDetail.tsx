@@ -51,13 +51,17 @@ export function PrimitiveDetail({ primitiveId }: PrimitiveDetailProps) {
           return;
         }
         setPrimitive(prim);
-        const literals = await getKanjiUsingPrimitiveAsync(strokesDb, primitiveId);
-        if (cancelled) return;
-        const list =
-          dictDb && literals.length > 0 ? await getKanjiBatchAsync(dictDb, literals) : [];
-        if (cancelled) return;
-        setKanji(list.sort(byHeisigThenFrequency));
-        setStatus("ready");
+        try {
+          const literals = await getKanjiUsingPrimitiveAsync(strokesDb, primitiveId);
+          if (cancelled) return;
+          const list =
+            dictDb && literals.length > 0 ? await getKanjiBatchAsync(dictDb, literals) : [];
+          if (cancelled) return;
+          setKanji(list.sort(byHeisigThenFrequency));
+        } catch {
+          // Reverse-index/batch hiccup: still show the primitive, just no "appears in" list.
+        }
+        if (!cancelled) setStatus("ready");
       })
       .catch(() => {
         if (!cancelled) setStatus("not-found");
