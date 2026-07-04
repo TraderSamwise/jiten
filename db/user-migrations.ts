@@ -188,4 +188,13 @@ export const USER_DB_MIGRATIONS = [
   `ALTER TABLE books ADD COLUMN source_url TEXT DEFAULT NULL`,
   `ALTER TABLE books ADD COLUMN image_url TEXT DEFAULT NULL`,
   `ALTER TABLE books ADD COLUMN read_complete INTEGER NOT NULL DEFAULT 0`,
+  // Personal primitive↔word co-occurrence index for the semantic auto-linker.
+  // Local-only + rebuildable from user_kanji_notes, so it is NOT synced.
+  `CREATE TABLE IF NOT EXISTS primitive_note_assoc (
+    literal TEXT NOT NULL,
+    word TEXT NOT NULL,
+    target TEXT NOT NULL,
+    PRIMARY KEY (literal, word, target)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pna_word ON primitive_note_assoc(word)`,
 ];
