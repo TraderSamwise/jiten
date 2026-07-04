@@ -127,5 +127,6 @@ export function useTabRouter() {
       router.push(`${prefix}/kanji/${encodeURIComponent(literal)}` as any),
     pushWord: (id: number) => router.push(`${prefix}/word/${id}` as any),
     pushCounter: (counterId: number) => router.push(`${prefix}/counter/${counterId}` as any),
+    pushPrimitive: (id: number) => router.push(`${prefix}/primitive/${id}` as any),
   };
 }

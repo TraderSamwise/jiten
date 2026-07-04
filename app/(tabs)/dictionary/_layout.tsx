@@ -14,6 +14,7 @@ export default function DictionaryLayout() {
       <Stack.Screen name="word/[id]" />
       <Stack.Screen name="kanji/[literal]" />
       <Stack.Screen name="counter/[counterId]" />
+      <Stack.Screen name="primitive/[id]" />
       <Stack.Screen name="gloss-group" />
     </Stack>
   );
