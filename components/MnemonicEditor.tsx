@@ -9,6 +9,7 @@ import {
   type TextInputKeyPressEventData,
 } from "react-native";
 import { Text } from "@/components/ui/text";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import type { KanjiPrimitive } from "@/db/types";
 import { useMnemonicSuggestor } from "@/hooks/useMnemonicSuggestor";
 import {
@@ -105,7 +106,15 @@ export function MnemonicEditor({ literal, initialValue, primitives, onSave, auto
         <View className="flex-row items-center gap-1 flex-wrap">
           <Text className="text-xs text-muted-foreground">Not yet linked:</Text>
           {unlinked.map((p) => (
-            <View key={p.position} className="bg-secondary rounded-full px-2 py-0.5">
+            <View
+              key={p.position}
+              className="flex-row items-center gap-1 rounded-full bg-secondary px-2 py-0.5"
+            >
+              <PrimitiveGlyph
+                glyph={p.glyph}
+                displayGlyph={p.displayGlyph}
+                className="text-xs text-foreground"
+              />
               <Text className="text-xs text-muted-foreground">{p.keyword}</Text>
             </View>
           ))}

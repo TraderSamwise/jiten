@@ -458,13 +458,11 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
                     disabled={!onPress}
                     className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
                   >
-                    {(p.glyph != null || p.displayGlyph != null) && (
-                      <PrimitiveGlyph
-                        glyph={p.glyph}
-                        displayGlyph={p.displayGlyph}
-                        className="text-xl font-bold text-foreground"
-                      />
-                    )}
+                    <PrimitiveGlyph
+                      glyph={p.glyph}
+                      displayGlyph={p.displayGlyph}
+                      className="text-xl font-bold text-foreground"
+                    />
                     {p.keyword != null && (
                       <Text className="text-xs text-muted-foreground" numberOfLines={1}>
                         {p.keyword}
