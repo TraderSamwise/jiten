@@ -32,11 +32,18 @@ let globalErrorSetter: ((error: CaughtError) => void) | null = null;
 
 /** Call this from DB wrappers to surface query errors as recoverable DB errors */
 export function notifyDbError(err: unknown, sql?: string) {
+  // The personal association index (primitive_note_assoc) is best-effort and rebuildable;
+  // its query failures must never surface the recovery UI or reload the page. Still report
+  // to Sentry (tagged) for diagnostics, then stop.
+  const bestEffort = sql?.includes("primitive_note_assoc") ?? false;
+
   // Always report to Sentry, even if we auto-refresh
   captureException(err, {
-    tags: { type: "database", autoRefresh: "false" },
+    tags: { type: "database", autoRefresh: "false", bestEffort: String(bestEffort) },
     extra: { sql: sql?.slice(0, 500) },
   });
+
+  if (bestEffort) return;
 
   // Web: stale background tabs can produce transient WASM SQLite errors.
   // Auto-refresh once — if the error recurs after refresh, show recovery UI.

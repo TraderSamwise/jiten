@@ -50,10 +50,12 @@ export function MnemonicEditor({ literal, initialValue, primitives, onSave, auto
     // Clear here too: on native a suggestion tap often doesn't blur the input, so the
     // holdFocus flag would otherwise stick and swallow the next genuine blur-to-save.
     skipBlurSave.current = false;
+    inputRef.current?.focus();
+    // A stale span makes the transform a no-op; don't yank the cursor in that case.
+    if (result.text === text) return;
     setForcedSelection({ start: result.cursor, end: result.cursor });
     setText(result.text);
     setCursor(result.cursor);
-    inputRef.current?.focus();
   };
 
   const acceptAmbient = () => {

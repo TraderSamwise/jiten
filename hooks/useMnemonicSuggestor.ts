@@ -92,9 +92,5 @@ export function useMnemonicSuggestor(
     setAmbient(null);
   }, []);
 
-  const clearSuppression = useCallback((word: string) => {
-    suppressed.current.delete(suppressionKey(word));
-  }, []);
-
-  return { ambient, dropdown, suppress, clearSuppression };
+  return { ambient, dropdown, suppress };
 }
