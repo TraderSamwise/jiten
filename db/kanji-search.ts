@@ -377,6 +377,25 @@ export async function getKanjiUsingPrimitiveAsync(
   return rows.map((r) => r.literal);
 }
 
+/**
+ * Get the synonym set for an RTK keyword from the strokes tier (async).
+ * Bidirectional: matches rows where the keyword is either side of a pair, so
+ * "house"→"home" and "home"→"house" both resolve. Returns lowercased words.
+ */
+export async function getSynonymsForKeywordAsync(
+  strokesDb: SQLite.SQLiteDatabase,
+  keyword: string,
+): Promise<string[]> {
+  const kw = keyword.toLowerCase();
+  const rows = await strokesDb.getAllAsync<{ word: string }>(
+    `SELECT synonym AS word FROM keyword_synonyms WHERE keyword = ?
+     UNION
+     SELECT keyword AS word FROM keyword_synonyms WHERE synonym = ?`,
+    [kw, kw],
+  );
+  return rows.map((r) => r.word).filter((w) => w !== kw);
+}
+
 /** Batch-fetch kanji by their literal characters (async). */
 export async function getKanjiBatchAsync(
   db: SQLite.SQLiteDatabase,

@@ -5,6 +5,7 @@ import {
   getPrimitivesForKanjiAsync,
   getPrimitiveAsync,
   getKanjiUsingPrimitiveAsync,
+  getSynonymsForKeywordAsync,
 } from "./kanji-search";
 
 let raw: Database.Database;
@@ -40,6 +41,14 @@ beforeAll(() => {
       real_glyph TEXT,
       strokes INTEGER
     );
+    CREATE TABLE keyword_synonyms (
+      keyword TEXT NOT NULL,
+      synonym TEXT NOT NULL
+    );
+    INSERT INTO keyword_synonyms (keyword, synonym) VALUES
+      ('house', 'home'),
+      ('house', 'dwelling'),
+      ('relax', 'rest');
     INSERT INTO kanji_primitives (literal, position, glyph, primitive_id, keyword, is_primitive) VALUES
       ('宣', 1, '亘', NULL, 'span', 0),
       ('宣', 0, NULL, 51, 'house', 1),
@@ -75,6 +84,21 @@ describe("getKanjiUsingPrimitiveAsync", () => {
 
   it("returns [] for an unused primitive id", async () => {
     expect(await getKanjiUsingPrimitiveAsync(db, 9999)).toEqual([]);
+  });
+});
+
+describe("getSynonymsForKeywordAsync", () => {
+  it("returns synonyms for a keyword (forward)", async () => {
+    const result = await getSynonymsForKeywordAsync(db, "house");
+    expect(result.sort()).toEqual(["dwelling", "home"]);
+  });
+
+  it("resolves bidirectionally and is case-insensitive", async () => {
+    expect(await getSynonymsForKeywordAsync(db, "HOME")).toEqual(["house"]);
+  });
+
+  it("returns [] for a keyword with no synonyms", async () => {
+    expect(await getSynonymsForKeywordAsync(db, "span")).toEqual([]);
   });
 });
 

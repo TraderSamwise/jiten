@@ -92,6 +92,7 @@ for (const c of chunk(prRows, 500)) {
   );
 }
 stmts.push("CREATE INDEX idx_kp_literal ON kanji_primitives(literal);");
+stmts.push("CREATE INDEX idx_kp_primitive_id ON kanji_primitives(primitive_id);");
 stmts.push("COMMIT;");
 stmts.push("VACUUM;"); // compact after augmentation so callers ship a tight DB
 
