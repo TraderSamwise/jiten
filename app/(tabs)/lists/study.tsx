@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { MnemonicText } from "@/components/MnemonicText";
+import { PrimitiveChips } from "@/components/PrimitiveChips";
 import { useMnemonicData } from "@/hooks/useMnemonicData";
 import { viewportPosition } from "@/lib/viewport-position";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -601,13 +602,16 @@ const StudyCardView = React.memo(
       if (face === "mnemonic") {
         if (!canRenderFace(face)) return null;
         return (
-          <MnemonicText
-            mnemonic={mnemonicData.mnemonic}
-            primaryKeywords={mnemonicData.primaryKeywords}
-            componentKeywords={mnemonicData.componentKeywords}
-            className="text-base text-foreground text-center px-4"
-            numberOfLines={opts?.numberOfLines}
-          />
+          <View className="items-center gap-2">
+            <MnemonicText
+              mnemonic={mnemonicData.mnemonic}
+              primaryKeywords={mnemonicData.primaryKeywords}
+              componentKeywords={mnemonicData.componentKeywords}
+              className="text-base text-foreground text-center px-4"
+              numberOfLines={opts?.numberOfLines}
+            />
+            <PrimitiveChips primitives={mnemonicData.primitives} className="px-4" />
+          </View>
         );
       }
       const text =
