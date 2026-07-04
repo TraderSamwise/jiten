@@ -163,16 +163,49 @@ export function serializeMnemonicMarkup(nodes: MarkupNode[]): string {
   return out;
 }
 
+const isWordChar = (c: string | undefined) => c !== undefined && /[A-Za-z0-9]/.test(c);
+
 /**
  * Convert the legacy hand-rolled markup to the new grammar:
  *   **x** → {self}   (the primary keyword; {self} renders the current keyword)
  *   *x*   → [x]       (a primitive reference by keyword)
- * Process double-asterisks first; unbalanced `*` is left literal. The content must
- * hug the asterisks (no inner whitespace) so paired stars in prose — arithmetic like
- * `2 * 3 * 4` — are not mistaken for markup.
+ *
+ * A markdown-style flanking scanner: a delimiter opens only when not preceded by an
+ * alphanumeric and immediately followed by non-space, and closes on the nearest
+ * same-line partner that is space-hugged and not followed by an alphanumeric. This
+ * keeps stray/unbalanced stars and prose like `3*4=12 and 5*6` literal instead of
+ * pairing distant, unrelated asterisks — critical because the migration is one-shot.
  */
 export function convertLegacySigils(src: string): string {
-  let out = src.replace(/\*\*([^*\s](?:[^*]*[^*\s])?)\*\*/g, SELF_TOKEN);
-  out = out.replace(/\*([^*\s](?:[^*]*[^*\s])?)\*/g, (_m, x: string) => `[${escapeLabel(x)}]`);
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    if (src[i] === "*" && !isWordChar(src[i - 1])) {
+      const double = src[i + 1] === "*";
+      const open = double ? i + 2 : i + 1;
+      if (open < n && !/\s/.test(src[open])) {
+        let j = open;
+        let found = -1;
+        while (j < n && src[j] !== "\n") {
+          const isClose = src[j] === "*" && (double ? src[j + 1] === "*" : true);
+          if (isClose && src[j - 1] !== "*" && !/\s/.test(src[j - 1])) {
+            found = j;
+            break;
+          }
+          j += 1;
+        }
+        const closeEnd = double ? found + 2 : found + 1;
+        const content = found > open ? src.slice(open, found) : "";
+        if (found > open && !content.includes("*") && !isWordChar(src[closeEnd])) {
+          out += double ? SELF_TOKEN : `[${escapeLabel(content)}]`;
+          i = closeEnd;
+          continue;
+        }
+      }
+    }
+    out += src[i];
+    i += 1;
+  }
   return out;
 }
