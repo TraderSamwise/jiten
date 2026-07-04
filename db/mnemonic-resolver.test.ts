@@ -4,6 +4,7 @@ import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { resolveKanjiWordCandidates } from "./mnemonic-resolver";
 import { canonicalStem } from "./primitive-associations";
+import { createPrimitivesTable } from "../test/strokes-schema";
 
 function asyncAdapter(d: Database.Database): SQLite.SQLiteDatabase {
   return {
@@ -21,6 +22,7 @@ let userDb: WrappedUserDb;
 
 beforeEach(() => {
   strokesRaw = new Database(":memory:");
+  createPrimitivesTable(strokesRaw);
   strokesRaw.exec(`
     CREATE TABLE kanji_primitives (literal TEXT, position INTEGER, glyph TEXT, primitive_id INTEGER, keyword TEXT, is_primitive INTEGER);
     CREATE TABLE keyword_synonyms (keyword TEXT NOT NULL, synonym TEXT NOT NULL);

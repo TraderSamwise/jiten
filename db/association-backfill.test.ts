@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { runAssociationBackfill } from "./association-backfill";
+import { createPrimitivesTable } from "../test/strokes-schema";
 
 function asyncAdapter(d: Database.Database): SQLite.SQLiteDatabase {
   return {
@@ -39,6 +40,7 @@ beforeEach(() => {
     INSERT INTO user_kanji_notes (literal, mnemonic, deleted_at) VALUES ('宣', 'I proclaim in my house', NULL);
   `);
   strokesRaw = new Database(":memory:");
+  createPrimitivesTable(strokesRaw);
   strokesRaw.exec(`
     CREATE TABLE kanji_primitives (literal TEXT, position INTEGER, glyph TEXT, primitive_id INTEGER, keyword TEXT, is_primitive INTEGER);
     INSERT INTO kanji_primitives VALUES ('宣', 0, NULL, 51, 'house', 1);

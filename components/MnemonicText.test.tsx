@@ -17,8 +17,22 @@ vi.mock("@/components/ui/text", () => ({
 import { MnemonicText } from "./MnemonicText";
 
 const PRIMS: KanjiPrimitive[] = [
-  { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
-  { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+  {
+    position: 0,
+    glyph: null,
+    primitiveId: 51,
+    keyword: "house",
+    isPrimitive: true,
+    displayGlyph: "屆",
+  },
+  {
+    position: 1,
+    glyph: "亘",
+    primitiveId: null,
+    keyword: "span",
+    isPrimitive: false,
+    displayGlyph: null,
+  },
 ];
 
 describe("MnemonicText", () => {
@@ -64,9 +78,46 @@ describe("MnemonicText", () => {
     expect(onNavigate).toHaveBeenCalledWith("亘");
   });
 
+  it("renders an unresolved ref as plain prose, not a dead link", () => {
+    const onNavigate = vi.fn();
+    const { queryByText, container } = render(
+      <MnemonicText
+        mnemonic="a [banana] and [house]"
+        selfKeyword={null}
+        primitives={PRIMS}
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(container.textContent).toContain("banana");
+    // 'house' resolves → its own tappable node; 'banana' is merged into surrounding prose.
+    expect(queryByText("banana")).toBeNull();
+    const house = queryByText("house");
+    expect(house).not.toBeNull();
+    fireEvent.click(house!);
+    expect(onNavigate).toHaveBeenCalledWith("p51");
+    expect(onNavigate).not.toHaveBeenCalledWith("banana");
+  });
+
+  it("shows real glyphs and invented-primitive substitutes inline", () => {
+    const { container } = render(
+      <MnemonicText mnemonic="[span](亘) and [house]" selfKeyword={null} primitives={PRIMS} />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("span (亘)"); // real Unicode glyph shown inline
+    // invented primitive: its RTK substitute char is shown inline (drawn as 宀 via the font)
+    expect(text).toContain("house (屆)");
+  });
+
   it("does not throw when a primitive keyword is null", () => {
     const prims: KanjiPrimitive[] = [
-      { position: 0, glyph: null, primitiveId: 7, keyword: null, isPrimitive: true },
+      {
+        position: 0,
+        glyph: null,
+        primitiveId: 7,
+        keyword: null,
+        isPrimitive: true,
+        displayGlyph: null,
+      },
     ];
     const { container } = render(
       <MnemonicText mnemonic="a [mystery] thing" selfKeyword={null} primitives={prims} />,

@@ -328,8 +328,12 @@ export async function getPrimitivesForKanjiAsync(
     primitive_id: number | null;
     keyword: string | null;
     is_primitive: number;
+    display_glyph: string | null;
   }>(
-    "SELECT position, glyph, primitive_id, keyword, is_primitive FROM kanji_primitives WHERE literal = ? ORDER BY position",
+    `SELECT kp.position, kp.glyph, kp.primitive_id, kp.keyword, kp.is_primitive, p.display_glyph
+     FROM kanji_primitives kp
+     LEFT JOIN primitives p ON p.id = kp.primitive_id
+     WHERE kp.literal = ? ORDER BY kp.position`,
     [literal],
   );
   return rows.map((r) => ({
@@ -338,6 +342,7 @@ export async function getPrimitivesForKanjiAsync(
     primitiveId: r.primitive_id,
     keyword: r.keyword,
     isPrimitive: r.is_primitive === 1,
+    displayGlyph: r.display_glyph,
   }));
 }
 

@@ -118,6 +118,7 @@ export interface KanjiPrimitive {
   primitiveId: number | null; // link target for invented primitives
   keyword: string | null;
   isPrimitive: boolean;
+  displayGlyph: string | null; // RTK-font substitute char for invented primitives, else null
 }
 
 export interface Primitive {

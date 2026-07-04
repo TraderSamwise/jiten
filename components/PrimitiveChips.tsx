@@ -1,6 +1,7 @@
 import React from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
+import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import type { KanjiPrimitive } from "@/db/types";
 
 interface PrimitiveChipsProps {
@@ -13,7 +14,9 @@ interface PrimitiveChipsProps {
  * used on flashcards where a tap would disrupt the study session.
  */
 export function PrimitiveChips({ primitives, className }: PrimitiveChipsProps) {
-  const renderable = primitives.filter((p) => p.glyph != null || p.keyword != null);
+  const renderable = primitives.filter(
+    (p) => p.glyph != null || p.displayGlyph != null || p.keyword != null,
+  );
   if (renderable.length === 0) return null;
 
   return (
@@ -23,7 +26,11 @@ export function PrimitiveChips({ primitives, className }: PrimitiveChipsProps) {
           key={p.position}
           className="flex-row items-center gap-1 rounded-md bg-secondary px-2 py-0.5"
         >
-          {p.glyph != null && <Text className="text-sm font-bold text-foreground">{p.glyph}</Text>}
+          <PrimitiveGlyph
+            glyph={p.glyph}
+            displayGlyph={p.displayGlyph}
+            className="text-sm font-bold text-foreground"
+          />
           {p.keyword != null && <Text className="text-xs text-muted-foreground">{p.keyword}</Text>}
         </View>
       ))}
