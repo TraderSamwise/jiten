@@ -56,7 +56,7 @@ interface ScoredEntry {
   matchedGloss?: string;
 }
 
-const STOP_WORDS = new Set([
+export const STOP_WORDS = new Set([
   "a",
   "an",
   "the",
@@ -88,7 +88,7 @@ function stemForLike(word: string): string {
 }
 
 /** Simple English stemming for FTS: returns base forms so "passing" → ["passing", "pass"]. */
-function stemForFts(word: string): string[] {
+export function stemForFts(word: string): string[] {
   const w = word.toLowerCase();
   const stems = new Set<string>([w]);
   // -ing: passing → pass, running → run, making → make
