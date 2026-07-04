@@ -31,10 +31,21 @@ export function MnemonicText({
 }: Props) {
   const nodes = useMemo(() => (mnemonic ? parseMnemonicMarkup(mnemonic) : []), [mnemonic]);
 
-  const resolveBareTarget = (label: string): string | null => {
+  // Resolve a ref to its navigation target and inline glyph, or null when the label
+  // matches none of the kanji's primitives — an unresolved ref renders as plain prose
+  // rather than a dead green link.
+  const resolveRef = (
+    label: string,
+    explicitTarget: string | null,
+  ): { target: string | null; glyph: string | null } | null => {
+    if (explicitTarget) {
+      if (!/^p\d+$/.test(explicitTarget)) return { target: explicitTarget, glyph: explicitTarget };
+      const byId = primitives.find((p) => targetForPrimitive(p) === explicitTarget);
+      return { target: explicitTarget, glyph: byId?.glyph ?? null };
+    }
     const stem = canonicalStem(label);
     const match = primitives.find((p) => p.keyword != null && canonicalStem(p.keyword) === stem);
-    return match ? targetForPrimitive(match) : null;
+    return match ? { target: targetForPrimitive(match), glyph: match.glyph } : null;
   };
 
   if (!mnemonic || nodes.length === 0) return null;
@@ -52,11 +63,18 @@ export function MnemonicText({
             </Text>
           );
         }
-        const target = node.target ?? resolveBareTarget(node.label);
-        const onPress = onNavigate && target ? () => onNavigate(target) : undefined;
+        const resolved = resolveRef(node.label, node.target);
+        if (!resolved) {
+          // Label matches no primitive (or data not loaded) — render as plain prose.
+          return <React.Fragment key={i}>{node.label}</React.Fragment>;
+        }
+        const onPress =
+          onNavigate && resolved.target ? () => onNavigate(resolved.target as string) : undefined;
+        const glyph = resolved.glyph && resolved.glyph !== node.label ? resolved.glyph : null;
         return (
           <Text key={i} className="text-green-600" onPress={onPress}>
             {node.label}
+            {glyph ? <Text className="text-green-700/70">{` (${glyph})`}</Text> : null}
           </Text>
         );
       })}
