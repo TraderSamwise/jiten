@@ -1,4 +1,4 @@
-import { escapeLabel, isValidTarget } from "@/lib/mnemonic-markup";
+import { escapeLabel, isValidTarget, parseMnemonicMarkup } from "@/lib/mnemonic-markup";
 import { canonicalStem, targetForPrimitive } from "@/db/primitive-associations";
 import type { KanjiPrimitive } from "@/db/types";
 
@@ -144,4 +144,24 @@ export function filterPrimitivesByQuery(
     if (q === "" || p.keyword.toLowerCase().includes(q)) out.push({ target, keyword: p.keyword });
   }
   return out;
+}
+
+/**
+ * The kanji's linkable primitives not yet referenced in `text` — by exact target or by
+ * keyword stem — so the editor can nudge the user toward the ones they haven't linked.
+ */
+export function unlinkedPrimitives(text: string, primitives: KanjiPrimitive[]): KanjiPrimitive[] {
+  const usedTargets = new Set<string>();
+  const usedStems = new Set<string>();
+  for (const node of parseMnemonicMarkup(text)) {
+    if (node.type === "ref") {
+      if (node.target) usedTargets.add(node.target);
+      usedStems.add(canonicalStem(node.label));
+    }
+  }
+  return primitives.filter((p) => {
+    const target = targetForPrimitive(p);
+    if (!target || p.keyword == null) return false;
+    return !usedTargets.has(target) && !usedStems.has(canonicalStem(p.keyword));
+  });
 }
