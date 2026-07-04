@@ -41,7 +41,13 @@ fs.mkdirSync(path.dirname(OUT_FONT), { recursive: true });
 // KanjiBooks) rather than erroring — exactly what we want.
 execFileSync(
   "python3",
-  ["-m", "fontTools.subset", SRC_FONT, `--unicodes=${unicodes.join(",")}`, `--output-file=${OUT_FONT}`],
+  [
+    "-m",
+    "fontTools.subset",
+    SRC_FONT,
+    `--unicodes=${unicodes.join(",")}`,
+    `--output-file=${OUT_FONT}`,
+  ],
   { stdio: ["ignore", "ignore", "inherit"] },
 );
 
