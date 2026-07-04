@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { migrateLegacyMnemonics } from "./mnemonic-migration";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
 import { setRecoveryDb, DbRecoveryScreen } from "@/components/DbRecoveryScreen";
@@ -149,6 +150,12 @@ async function openAndMigrateUserDb(): Promise<{
     );
     await db.execAsync("PRAGMA foreign_keys = ON");
   }
+
+  // One-time conversion of legacy mnemonic markup (**x**/*x*) to the new grammar.
+  // Best-effort: a failure must not brick init; the flag is set last so it retries.
+  await migrateLegacyMnemonics(wrapped).catch((e) =>
+    console.warn("[UserDB Web] legacy mnemonic migration failed:", String(e)),
+  );
 
   return { raw: db, wrapped };
 }
