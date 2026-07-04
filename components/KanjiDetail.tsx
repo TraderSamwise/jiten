@@ -35,13 +35,20 @@ import {
   getKanjiUsingRadicalAsync,
   getKanjiBatchAsync,
   getStrokePathsAsync,
+  getPrimitivesForKanjiAsync,
 } from "@/db/kanji-search";
 import { getWordsForKanjiAsync } from "@/db/search";
 import { EntryCard } from "@/components/EntryCard";
 import { StrokeOrderDiagram } from "@/components/StrokeOrderDiagram";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { japaneseFontStyle } from "@/lib/japanese-font";
-import type { KanjiCharacter, StrokePath, SimilarKanji, DictEntry } from "@/db/types";
+import type {
+  KanjiCharacter,
+  StrokePath,
+  SimilarKanji,
+  DictEntry,
+  KanjiPrimitive,
+} from "@/db/types";
 
 interface KanjiDetailProps {
   literal: string;
@@ -58,6 +65,7 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
   const [similarMeaning, setSimilarMeaning] = useState<KanjiCharacter[]>([]);
   const [radicals, setRadicals] = useState<string[]>([]);
   const [strokePaths, setStrokePaths] = useState<StrokePath[]>([]);
+  const [primitives, setPrimitives] = useState<KanjiPrimitive[]>([]);
   const [words, setWords] = useState<DictEntry[]>([]);
   const [usedIn, setUsedIn] = useState<KanjiCharacter[]>([]);
   const [componentKanji, setComponentKanji] = useState<Map<string, KanjiCharacter>>(new Map());
@@ -120,6 +128,17 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
     if (!strokesDb || !literal) return;
     getStrokePathsAsync(strokesDb, literal)
       .then(setStrokePaths)
+      .catch(() => {});
+  }, [strokesDb, literal]);
+
+  // Lazy-load RTK primitive decomposition from the strokes DB
+  useEffect(() => {
+    if (!strokesDb || !literal) {
+      setPrimitives([]);
+      return;
+    }
+    getPrimitivesForKanjiAsync(strokesDb, literal)
+      .then(setPrimitives)
       .catch(() => {});
   }, [strokesDb, literal]);
 
@@ -416,6 +435,55 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
         <Card className="mb-3">
           <Text className="text-sm font-medium text-muted-foreground mb-2">Meanings</Text>
           <Text className="text-base text-foreground">{kanji.meanings.join(", ")}</Text>
+        </Card>
+      )}
+
+      {/* Primitive Elements (RTK decomposition) */}
+      {primitives.length > 0 && (
+        <Card className="mb-3">
+          <CollapsibleSection
+            collapsedHeight={90}
+            fadeHeight={30}
+            header={
+              <Text className="text-sm font-medium text-muted-foreground mb-2">
+                Primitive Elements
+              </Text>
+            }
+          >
+            <View className="flex-row flex-wrap gap-2">
+              {primitives.map((p) => {
+                const hasGlyph = p.glyph != null;
+                const onPress = hasGlyph
+                  ? () => tabRouter.pushKanji(p.glyph as string)
+                  : p.primitiveId != null
+                    ? () => tabRouter.pushPrimitive(p.primitiveId as number)
+                    : undefined;
+                return (
+                  <Pressable
+                    key={p.position}
+                    onPress={onPress}
+                    disabled={!onPress}
+                    className="items-center rounded-lg bg-secondary px-2.5 py-1.5 active:opacity-70"
+                  >
+                    {hasGlyph ? (
+                      <>
+                        <Text className="text-xl font-bold text-foreground">{p.glyph}</Text>
+                        {p.keyword && (
+                          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                            {p.keyword}
+                          </Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text className="text-base font-medium text-foreground" numberOfLines={1}>
+                        {p.keyword ?? "?"}
+                      </Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </CollapsibleSection>
         </Card>
       )}
 

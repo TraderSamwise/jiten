@@ -1,7 +1,11 @@
 import Database from "better-sqlite3";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type * as SQLite from "expo-sqlite";
-import { getPrimitivesForKanjiAsync, getPrimitiveAsync } from "./kanji-search";
+import {
+  getPrimitivesForKanjiAsync,
+  getPrimitiveAsync,
+  getKanjiUsingPrimitiveAsync,
+} from "./kanji-search";
 
 let raw: Database.Database;
 let db: SQLite.SQLiteDatabase;
@@ -38,7 +42,9 @@ beforeAll(() => {
     );
     INSERT INTO kanji_primitives (literal, position, glyph, primitive_id, keyword, is_primitive) VALUES
       ('宣', 1, '亘', NULL, 'span', 0),
-      ('宣', 0, NULL, 51, 'house', 1);
+      ('宣', 0, NULL, 51, 'house', 1),
+      ('安', 0, NULL, 51, 'house', 1),
+      ('安', 1, '女', NULL, 'woman', 0);
     INSERT INTO primitives (id, keyword, display_glyph, real_glyph, strokes) VALUES
       (51, 'house', '屆', NULL, 3);
   `);
@@ -58,6 +64,17 @@ describe("getPrimitivesForKanjiAsync", () => {
 
   it("returns [] for a kanji with no decomposition", async () => {
     expect(await getPrimitivesForKanjiAsync(db, "一")).toEqual([]);
+  });
+});
+
+describe("getKanjiUsingPrimitiveAsync", () => {
+  it("returns distinct literals of kanji using the primitive", async () => {
+    const result = await getKanjiUsingPrimitiveAsync(db, 51);
+    expect(result.sort()).toEqual(["安", "宣"]);
+  });
+
+  it("returns [] for an unused primitive id", async () => {
+    expect(await getKanjiUsingPrimitiveAsync(db, 9999)).toEqual([]);
   });
 });
 
