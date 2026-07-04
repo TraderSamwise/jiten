@@ -47,7 +47,7 @@ describe("useMnemonicSuggestor", () => {
     expect(result.current.dropdown).toEqual({
       start: 3,
       query: "hou",
-      candidates: [{ target: "p51", keyword: "house" }],
+      candidates: [{ target: "p51", keyword: "house", glyph: null, displayGlyph: "屆" }],
     });
     expect(result.current.ambient).toBeNull();
   });
