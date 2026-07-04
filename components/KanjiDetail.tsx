@@ -286,7 +286,19 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
 
       {/* Mnemonic & Keyword */}
       <Card className="mb-3">
-        <Text className="text-sm font-medium text-muted-foreground mb-2">Mnemonic</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-sm font-medium text-muted-foreground">Mnemonic</Text>
+          {mnemonic && !editingMnemonic && (
+            <Pressable
+              onPress={() => {
+                setMnemonicDraft(mnemonic ?? "");
+                setEditingMnemonic(true);
+              }}
+            >
+              <Text className="text-xs font-medium text-blue-500">Edit</Text>
+            </Pressable>
+          )}
+        </View>
 
         {/* Keyword field */}
         <View className="flex-row items-center mb-2">
@@ -339,25 +351,23 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
               setEditingMnemonic(false);
             }}
           />
+        ) : mnemonic ? (
+          <MnemonicText
+            mnemonic={mnemonic}
+            selfKeyword={keyword ?? kanji?.heisigKeyword ?? null}
+            primitives={primitives}
+            onNavigate={tabRouter.pushTarget}
+          />
         ) : (
           <Pressable
             onPress={() => {
-              setMnemonicDraft(mnemonic ?? "");
+              setMnemonicDraft("");
               setEditingMnemonic(true);
             }}
           >
-            {mnemonic ? (
-              <MnemonicText
-                mnemonic={mnemonic}
-                selfKeyword={keyword ?? kanji?.heisigKeyword ?? null}
-                primitives={primitives}
-                onNavigate={tabRouter.pushTarget}
-              />
-            ) : (
-              <Text className="text-base text-muted-foreground italic">
-                Tap to add a mnemonic story...
-              </Text>
-            )}
+            <Text className="text-base text-muted-foreground italic">
+              Tap to add a mnemonic story...
+            </Text>
           </Pressable>
         )}
       </Card>

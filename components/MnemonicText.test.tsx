@@ -64,6 +64,35 @@ describe("MnemonicText", () => {
     expect(onNavigate).toHaveBeenCalledWith("亘");
   });
 
+  it("renders an unresolved ref as plain prose, not a dead link", () => {
+    const onNavigate = vi.fn();
+    const { queryByText, container } = render(
+      <MnemonicText
+        mnemonic="a [banana] and [house]"
+        selfKeyword={null}
+        primitives={PRIMS}
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(container.textContent).toContain("banana");
+    // 'house' resolves → its own tappable node; 'banana' is merged into surrounding prose.
+    expect(queryByText("banana")).toBeNull();
+    const house = queryByText("house");
+    expect(house).not.toBeNull();
+    fireEvent.click(house!);
+    expect(onNavigate).toHaveBeenCalledWith("p51");
+    expect(onNavigate).not.toHaveBeenCalledWith("banana");
+  });
+
+  it("shows a resolved glyph inline, but keyword-only for a glyphless primitive", () => {
+    const { container } = render(
+      <MnemonicText mnemonic="[span](亘) and [house]" selfKeyword={null} primitives={PRIMS} />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("span (亘)"); // real glyph shown inline
+    expect(text).not.toContain("house ("); // invented primitive has no glyph → keyword only
+  });
+
   it("does not throw when a primitive keyword is null", () => {
     const prims: KanjiPrimitive[] = [
       { position: 0, glyph: null, primitiveId: 7, keyword: null, isPrimitive: true },
