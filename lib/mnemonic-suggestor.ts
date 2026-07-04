@@ -126,6 +126,8 @@ export function suppressionKey(word: string): string {
 export interface PrimitiveChoice {
   target: string;
   keyword: string;
+  glyph: string | null;
+  displayGlyph: string | null;
 }
 
 /**
@@ -141,7 +143,8 @@ export function filterPrimitivesByQuery(
   for (const p of primitives) {
     const target = targetForPrimitive(p);
     if (!target || p.keyword == null) continue;
-    if (q === "" || p.keyword.toLowerCase().includes(q)) out.push({ target, keyword: p.keyword });
+    if (q === "" || p.keyword.toLowerCase().includes(q))
+      out.push({ target, keyword: p.keyword, glyph: p.glyph, displayGlyph: p.displayGlyph });
   }
   return out;
 }

@@ -63,15 +63,20 @@ describe("MnemonicEditor", () => {
   it("renders the dropdown candidates and the unlinked-primitives bar", () => {
     hookMocks.useMnemonicSuggestor.mockReturnValue({
       ambient: null,
-      dropdown: { start: 0, query: "", candidates: [{ target: "p51", keyword: "house" }] },
+      dropdown: {
+        start: 0,
+        query: "",
+        candidates: [{ target: "p51", keyword: "house", glyph: null, displayGlyph: "屆" }],
+      },
       suppress: vi.fn(),
     });
     const { getAllByText, container } = render(
       <MnemonicEditor literal="安" initialValue="" primitives={PRIMS} onSave={vi.fn()} />,
     );
-    // "house" shows in the dropdown and the unlinked bar; "→ p51" is dropdown-only
+    // "house" shows in the dropdown and the unlinked bar; the dropdown draws the
+    // primitive's shape after the arrow (its RTK substitute here) instead of "p51".
     expect(getAllByText("house").length).toBeGreaterThanOrEqual(1);
-    expect(container.textContent).toContain("→ p51");
+    expect(container.textContent).toContain("→ 屆");
     // unlinked bar (nothing referenced) lists both primitive keywords
     expect(container.textContent).toContain("Not yet linked:");
     expect(container.textContent).toContain("span");
