@@ -132,7 +132,18 @@ export function MnemonicEditor({ literal, initialValue, primitives, onSave, auto
             >
               <Text className="text-sm text-foreground">
                 {choice.keyword}
-                <Text className="text-xs text-muted-foreground"> → {choice.target}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {" → "}
+                  {choice.glyph != null || choice.displayGlyph != null ? (
+                    <PrimitiveGlyph
+                      glyph={choice.glyph}
+                      displayGlyph={choice.displayGlyph}
+                      className="text-xs text-muted-foreground"
+                    />
+                  ) : (
+                    choice.target
+                  )}
+                </Text>
               </Text>
             </Pressable>
           ))}

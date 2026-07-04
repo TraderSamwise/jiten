@@ -146,13 +146,15 @@ describe("filterPrimitivesByQuery", () => {
 
   it("returns all linkable primitives (target + keyword) for an empty query", () => {
     expect(filterPrimitivesByQuery(prims, "")).toEqual([
-      { target: "p51", keyword: "house" },
-      { target: "亘", keyword: "span" },
+      { target: "p51", keyword: "house", glyph: null, displayGlyph: "屆" },
+      { target: "亘", keyword: "span", glyph: "亘", displayGlyph: null },
     ]);
   });
 
   it("filters by case-insensitive keyword substring and drops null-keyword entries", () => {
-    expect(filterPrimitivesByQuery(prims, "HOU")).toEqual([{ target: "p51", keyword: "house" }]);
+    expect(filterPrimitivesByQuery(prims, "HOU")).toEqual([
+      { target: "p51", keyword: "house", glyph: null, displayGlyph: "屆" },
+    ]);
     expect(filterPrimitivesByQuery(prims, "zzz")).toEqual([]);
   });
 });
