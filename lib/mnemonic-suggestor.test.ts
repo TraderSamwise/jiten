@@ -5,9 +5,11 @@ import {
   wrapAsRef,
   completeBracket,
   suppressionKey,
+  filterPrimitivesByQuery,
 } from "./mnemonic-suggestor";
 import { parseMnemonicMarkup } from "./mnemonic-markup";
 import { canonicalStem } from "@/db/primitive-associations";
+import type { KanjiPrimitive } from "@/db/types";
 
 describe("wordEndingAtCursor", () => {
   it("returns the word whose trailing edge is at the cursor", () => {
@@ -110,5 +112,25 @@ describe("suppressionKey", () => {
   it("is the canonical stem so inflections share a key", () => {
     expect(suppressionKey("relaxing")).toBe(canonicalStem("relaxing"));
     expect(suppressionKey("relaxing")).toBe(suppressionKey("relaxes"));
+  });
+});
+
+describe("filterPrimitivesByQuery", () => {
+  const prims: KanjiPrimitive[] = [
+    { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
+    { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+    { position: 2, glyph: "女", primitiveId: null, keyword: null, isPrimitive: false }, // no keyword
+  ];
+
+  it("returns all linkable primitives (target + keyword) for an empty query", () => {
+    expect(filterPrimitivesByQuery(prims, "")).toEqual([
+      { target: "p51", keyword: "house" },
+      { target: "亘", keyword: "span" },
+    ]);
+  });
+
+  it("filters by case-insensitive keyword substring and drops null-keyword entries", () => {
+    expect(filterPrimitivesByQuery(prims, "HOU")).toEqual([{ target: "p51", keyword: "house" }]);
+    expect(filterPrimitivesByQuery(prims, "zzz")).toEqual([]);
   });
 });
