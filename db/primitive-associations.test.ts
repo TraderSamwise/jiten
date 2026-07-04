@@ -47,6 +47,7 @@ beforeEach(() => {
   strokesRaw = new Database(":memory:");
   strokesRaw.exec(`
     CREATE TABLE kanji_primitives (literal TEXT, position INTEGER, glyph TEXT, primitive_id INTEGER, keyword TEXT, is_primitive INTEGER);
+    CREATE TABLE primitives (id INTEGER PRIMARY KEY, keyword TEXT, display_glyph TEXT, real_glyph TEXT, strokes INTEGER);
     INSERT INTO kanji_primitives VALUES
       ('宣', 0, NULL, 51, 'house', 1),
       ('宣', 1, '亘', NULL, 'span', 0),

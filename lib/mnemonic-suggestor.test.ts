@@ -118,9 +118,30 @@ describe("suppressionKey", () => {
 
 describe("filterPrimitivesByQuery", () => {
   const prims: KanjiPrimitive[] = [
-    { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
-    { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
-    { position: 2, glyph: "女", primitiveId: null, keyword: null, isPrimitive: false }, // no keyword
+    {
+      position: 0,
+      glyph: null,
+      primitiveId: 51,
+      keyword: "house",
+      isPrimitive: true,
+      displayGlyph: "屆",
+    },
+    {
+      position: 1,
+      glyph: "亘",
+      primitiveId: null,
+      keyword: "span",
+      isPrimitive: false,
+      displayGlyph: null,
+    },
+    {
+      position: 2,
+      glyph: "女",
+      primitiveId: null,
+      keyword: null,
+      isPrimitive: false,
+      displayGlyph: null,
+    }, // no keyword
   ];
 
   it("returns all linkable primitives (target + keyword) for an empty query", () => {
@@ -138,15 +159,43 @@ describe("filterPrimitivesByQuery", () => {
 
 describe("unlinkedPrimitives", () => {
   const prims: KanjiPrimitive[] = [
-    { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
-    { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
-    { position: 2, glyph: "女", primitiveId: null, keyword: null, isPrimitive: false },
+    {
+      position: 0,
+      glyph: null,
+      primitiveId: 51,
+      keyword: "house",
+      isPrimitive: true,
+      displayGlyph: "屆",
+    },
+    {
+      position: 1,
+      glyph: "亘",
+      primitiveId: null,
+      keyword: "span",
+      isPrimitive: false,
+      displayGlyph: null,
+    },
+    {
+      position: 2,
+      glyph: "女",
+      primitiveId: null,
+      keyword: null,
+      isPrimitive: false,
+      displayGlyph: null,
+    },
   ];
 
   it("returns linkable primitives not yet referenced, by target or keyword stem", () => {
     // 'house' referenced by explicit target, 'span' not referenced yet
     expect(unlinkedPrimitives("my [house](p51) here", prims)).toEqual([
-      { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+      {
+        position: 1,
+        glyph: "亘",
+        primitiveId: null,
+        keyword: "span",
+        isPrimitive: false,
+        displayGlyph: null,
+      },
     ]);
   });
 

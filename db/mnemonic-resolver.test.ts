@@ -23,6 +23,7 @@ beforeEach(() => {
   strokesRaw = new Database(":memory:");
   strokesRaw.exec(`
     CREATE TABLE kanji_primitives (literal TEXT, position INTEGER, glyph TEXT, primitive_id INTEGER, keyword TEXT, is_primitive INTEGER);
+    CREATE TABLE primitives (id INTEGER PRIMARY KEY, keyword TEXT, display_glyph TEXT, real_glyph TEXT, strokes INTEGER);
     CREATE TABLE keyword_synonyms (keyword TEXT NOT NULL, synonym TEXT NOT NULL);
     -- 安 (relax) = house[p51] + woman[女]
     INSERT INTO kanji_primitives VALUES

@@ -16,8 +16,22 @@ vi.mock("@/db/mnemonic-resolver", () => ({
 import { useMnemonicSuggestor } from "./useMnemonicSuggestor";
 
 const PRIMS: KanjiPrimitive[] = [
-  { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
-  { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+  {
+    position: 0,
+    glyph: null,
+    primitiveId: 51,
+    keyword: "house",
+    isPrimitive: true,
+    displayGlyph: "屆",
+  },
+  {
+    position: 1,
+    glyph: "亘",
+    primitiveId: null,
+    keyword: "span",
+    isPrimitive: false,
+    displayGlyph: null,
+  },
 ];
 
 const HOUSE = { target: "p51", keyword: "house", confidence: 1, source: "keyword" as const };

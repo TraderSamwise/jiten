@@ -66,8 +66,22 @@ describe("getPrimitivesForKanjiAsync", () => {
   it("returns components in position order with types mapped", async () => {
     const result = await getPrimitivesForKanjiAsync(db, "宣");
     expect(result).toEqual([
-      { position: 0, glyph: null, primitiveId: 51, keyword: "house", isPrimitive: true },
-      { position: 1, glyph: "亘", primitiveId: null, keyword: "span", isPrimitive: false },
+      {
+        position: 0,
+        glyph: null,
+        primitiveId: 51,
+        keyword: "house",
+        isPrimitive: true,
+        displayGlyph: "屆",
+      },
+      {
+        position: 1,
+        glyph: "亘",
+        primitiveId: null,
+        keyword: "span",
+        isPrimitive: false,
+        displayGlyph: null,
+      },
     ]);
   });
 
