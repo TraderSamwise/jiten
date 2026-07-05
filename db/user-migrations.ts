@@ -197,4 +197,18 @@ export const USER_DB_MIGRATIONS = [
     PRIMARY KEY (literal, word, target)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pna_word ON primitive_note_assoc(word)`,
+  // Explicit per-list ordering. Preserves import/insertion order instead of
+  // relying on added_at (which the list view was showing reversed). ALTER runs
+  // on the remote too; the backfill UPDATE SQL is not replayed remotely (sync
+  // filters UPDATEs) — each device computes the same ranks (added_at then id)
+  // locally and the bumped updated_at delta-syncs the values. Index is local.
+  `ALTER TABLE list_entries ADD COLUMN position INTEGER`,
+  `UPDATE list_entries SET position = (
+     SELECT COUNT(*) FROM list_entries AS le2
+     WHERE le2.list_id = list_entries.list_id
+       AND (le2.added_at < list_entries.added_at
+            OR (le2.added_at = list_entries.added_at AND le2.id < list_entries.id))
+   ), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+   WHERE position IS NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_list_entries_list_position ON list_entries(list_id, position)`,
 ];

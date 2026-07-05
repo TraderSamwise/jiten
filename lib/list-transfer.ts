@@ -103,7 +103,7 @@ export async function buildListExport(
     kanji_literal: string | null;
     added_at: string;
   }>(
-    "SELECT entry_id, kanji_literal, added_at FROM list_entries WHERE list_id = ? ORDER BY added_at ASC",
+    "SELECT entry_id, kanji_literal, added_at FROM list_entries WHERE list_id = ? ORDER BY position ASC, added_at ASC, id ASC",
     [listId],
   );
   result.entries = entryRows.map((r) => {
@@ -272,13 +272,13 @@ export async function importListToDb(
       const entry = data.entries[i];
       if (isKanjiEntry(entry)) {
         await userDb.runAsync(
-          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)",
-          [generateId(), listId, entry.kanjiLiteral, entry.addedAt, now],
+          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, position, updated_at) VALUES (?, ?, 0, ?, ?, ?, ?)",
+          [generateId(), listId, entry.kanjiLiteral, entry.addedAt, i, now],
         );
       } else {
         await userDb.runAsync(
-          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-          [generateId(), listId, entry.entryId, entry.addedAt, now],
+          "INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, position, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [generateId(), listId, entry.entryId, entry.addedAt, i, now],
         );
       }
       if (onProgress && i % 100 === 0) {

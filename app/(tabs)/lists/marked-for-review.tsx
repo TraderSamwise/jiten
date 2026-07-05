@@ -134,12 +134,13 @@ export default function MarkedForReviewScreen() {
         }
       }
 
-      for (const mark of uniqueMarks) {
+      for (let i = 0; i < uniqueMarks.length; i++) {
+        const mark = uniqueMarks[i];
         const entryRowId = `${tempId}-${mark.entryId}-${mark.kanjiLiteral ?? ""}`;
         await userDb.runAsync(
-          `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [entryRowId, tempId, mark.entryId, mark.kanjiLiteral, now, now],
+          `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, position, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [entryRowId, tempId, mark.entryId, mark.kanjiLiteral, now, i, now],
         );
       }
 

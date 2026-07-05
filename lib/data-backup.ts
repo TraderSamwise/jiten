@@ -24,7 +24,8 @@ export const BACKUP_TABLES: {
   },
   {
     name: "list_entries",
-    query: "SELECT id, list_id, entry_id, kanji_literal, added_at, updated_at FROM list_entries",
+    query:
+      "SELECT id, list_id, entry_id, kanji_literal, added_at, position, updated_at FROM list_entries",
   },
   {
     name: "srs_cards",
@@ -92,7 +93,15 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
-  list_entries: ["id", "list_id", "entry_id", "kanji_literal", "added_at", "updated_at"],
+  list_entries: [
+    "id",
+    "list_id",
+    "entry_id",
+    "kanji_literal",
+    "added_at",
+    "position",
+    "updated_at",
+  ],
   srs_cards: [
     "id",
     "entry_id",
@@ -294,6 +303,21 @@ export async function importBackup(
       result.failed.push({ table: tableName, error: String(err) });
       processedRows += rows.length;
     }
+  }
+
+  // Pre-feature backups have no position — assign one deterministically so
+  // restored entries keep their added_at order instead of piling at the top.
+  try {
+    await db.runAsync(
+      `UPDATE list_entries SET position = (
+         SELECT COUNT(*) FROM list_entries AS le2
+         WHERE le2.list_id = list_entries.list_id
+           AND (le2.added_at < list_entries.added_at
+                OR (le2.added_at = list_entries.added_at AND le2.id < list_entries.id))
+       ) WHERE position IS NULL`,
+    );
+  } catch (err) {
+    console.error("[Import] Failed to backfill list_entries.position:", err);
   }
 
   onProgress?.(100, "Done");
