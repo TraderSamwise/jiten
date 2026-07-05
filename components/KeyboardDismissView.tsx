@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  Keyboard,
-  TouchableWithoutFeedback,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { Keyboard, Pressable, type StyleProp, type ViewStyle } from "react-native";
 
 /**
  * App-wide "tap outside a text field to blur it". A tap on any non-interactive
@@ -21,8 +15,8 @@ export function KeyboardDismissView({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <TouchableWithoutFeedback accessible={false} onPress={() => Keyboard.dismiss()}>
-      <View style={[{ flex: 1 }, style]}>{children}</View>
-    </TouchableWithoutFeedback>
+    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} style={[{ flex: 1 }, style]}>
+      {children}
+    </Pressable>
   );
 }
