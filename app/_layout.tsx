@@ -16,6 +16,7 @@ import { SyncProvider, useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import { AssociationBackfill } from "@/components/AssociationBackfill";
 import { GlobalErrorHandler } from "@/components/GlobalErrorHandler";
+import { KeyboardDismissView } from "@/components/KeyboardDismissView";
 import { setRecoverySignedIn } from "@/components/DbRecoveryScreen";
 import { useThemeEffect } from "@/lib/theme-effect";
 import { confirm } from "@/lib/confirm";
@@ -226,22 +227,24 @@ export default function RootLayout() {
         <ThemeProvider value={navTheme}>
           <AuthProvider>
             <AppShell>
-              <Stack>
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="sign-in"
-                  options={{ headerShown: false, presentation: "modal" }}
-                />
-                <Stack.Screen
-                  name="sign-up"
-                  options={{ headerShown: false, presentation: "modal" }}
-                />
-                <Stack.Screen
-                  name="import-article"
-                  options={{ headerShown: false, animation: "none" }}
-                />
-              </Stack>
+              <KeyboardDismissView>
+                <Stack>
+                  <Stack.Screen name="index" options={{ headerShown: false }} />
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="sign-in"
+                    options={{ headerShown: false, presentation: "modal" }}
+                  />
+                  <Stack.Screen
+                    name="sign-up"
+                    options={{ headerShown: false, presentation: "modal" }}
+                  />
+                  <Stack.Screen
+                    name="import-article"
+                    options={{ headerShown: false, animation: "none" }}
+                  />
+                </Stack>
+              </KeyboardDismissView>
             </AppShell>
           </AuthProvider>
         </ThemeProvider>
