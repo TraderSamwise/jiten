@@ -239,7 +239,7 @@ export default function ListDetailScreen() {
 
     // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
     const rows = await userDb.getAllAsync<ListEntryRow>(
-      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at DESC",
+      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY position ASC, added_at ASC, id ASC",
       [id],
     );
 
