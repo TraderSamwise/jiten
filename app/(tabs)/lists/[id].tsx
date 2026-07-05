@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Platform,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from "expo-router";
@@ -20,13 +21,21 @@ import { ListEntryCard } from "@/components/ListEntryCard";
 import { FlashcardSettingsModal } from "@/components/FlashcardSettingsModal";
 import { GamesModal } from "@/components/GamesModal";
 import { SmartReviewModal } from "@/components/SmartReviewModal";
-import { Trash2, EllipsisVertical } from "@/lib/icons";
+import { Trash2, EllipsisVertical, Check } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { useDatabase } from "@/db/provider";
 import { getEntries, searchListEntries } from "@/db/search";
 import { getKanjiBatchAsync } from "@/db/kanji-search";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore, parseListRow, type ListScrollCache } from "@/stores/lists";
+import {
+  useListSortMode,
+  isDictSort,
+  SORT_ORDER,
+  SORT_LABELS,
+  KANJI_ONLY_MODES,
+} from "@/stores/list-sort";
+import { sortRowsByDictKey } from "@/lib/list-sort-keys";
 import { ExportListModal } from "@/components/ExportListModal";
 import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
@@ -97,6 +106,8 @@ export default function ListDetailScreen() {
   const { lastSyncAt } = useSync();
   const list = useListsStore((s) => s.lists.find((l) => l.id === id));
   const restoredOffsetRef = useRef<number | null>(null);
+  const [sortMode, setSortMode] = useListSortMode(id);
+  const [hasKanji, setHasKanji] = useState(false);
 
   // Load list from DB if not in store (e.g. direct navigation / refresh)
 
@@ -140,6 +151,21 @@ export default function ListDetailScreen() {
     });
     return () => task.cancel();
   }, [userDb, dictDb, id]);
+
+  // Reload when the sort changes (also fires once when the persisted sort
+  // hydrates from storage after the initial "list"-order render).
+  const sortInitRef = useRef(true);
+  useEffect(() => {
+    if (sortInitRef.current) {
+      sortInitRef.current = false;
+      return;
+    }
+    if (!userDb || !dictDb || !id) return;
+    if (Platform.OS === "web") useListsStore.getState().clearScrollCache(id);
+    flashListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    loadEntriesFresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortMode]);
 
   // Silent refresh after sync (no spinner — entries already visible)
   const prevSyncAt = useRef(lastSyncAt);
@@ -208,6 +234,7 @@ export default function ListDetailScreen() {
         allRowsRef.current = cached.allRows;
         loadedCountRef.current = cached.loadedCount;
         setTotalCount(cached.totalCount);
+        setHasKanji(cached.allRows.some((r) => r.kanji_literal != null));
         setItems(cached.items);
         restoredOffsetRef.current = cached.scrollOffset;
         setLoading(false);
@@ -237,11 +264,21 @@ export default function ListDetailScreen() {
     if (!userDb || !dictDb || !id) return;
     if (!silent) setLoading(true);
 
-    // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries)
-    const rows = await userDb.getAllAsync<ListEntryRow>(
-      "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY position ASC, added_at ASC, id ASC",
+    // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries).
+    // "added" sorts newest-first in SQL; every other mode starts from list order
+    // and dict-derived modes then re-sort in JS (dict data is in a separate DB).
+    const orderBy =
+      sortMode === "added"
+        ? "ORDER BY added_at DESC, id ASC"
+        : "ORDER BY position ASC, added_at ASC, id ASC";
+    let rows = await userDb.getAllAsync<ListEntryRow>(
+      `SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ${orderBy}`,
       [id],
     );
+    setHasKanji(rows.some((r) => r.kanji_literal != null));
+    if (isDictSort(sortMode)) {
+      rows = await sortRowsByDictKey(dictDb, rows, sortMode);
+    }
 
     allRowsRef.current = rows;
     setTotalCount(rows.length);
@@ -647,54 +684,74 @@ export default function ListDetailScreen() {
             style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
             onPress={() => setMenuVisible(false)}
           />
-          <View className="absolute top-0 right-4 z-10 mt-1 rounded-lg border border-border bg-background shadow-lg min-w-[180px]">
-            <Pressable
-              className="px-4 py-3 border-b border-border"
-              onPress={() => {
-                setMenuVisible(false);
-                setSettingsVisible(true);
-              }}
-            >
-              <Text className="text-sm text-foreground">Flashcard Settings</Text>
-            </Pressable>
-            <Pressable
-              className="px-4 py-3 border-b border-border"
-              onPress={() => {
-                setMenuVisible(false);
-                router.push(`/lists/stats?listId=${id}`);
-              }}
-            >
-              <Text className="text-sm text-foreground">Review Statistics</Text>
-            </Pressable>
-            <Pressable
-              className="px-4 py-3 border-b border-border"
-              onPress={() => {
-                setMenuVisible(false);
-                router.push(`/lists/marked-for-review?listId=${id}`);
-              }}
-            >
-              <Text className="text-sm text-foreground">Marked for Review</Text>
-            </Pressable>
-            {!list?.isDefault && (
+          <View className="absolute top-0 right-4 z-10 mt-1 rounded-lg border border-border bg-background shadow-lg min-w-[200px]">
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              <View className="px-4 py-2 border-b border-border">
+                <Text className="text-xs font-semibold uppercase text-muted-foreground">
+                  Sort by
+                </Text>
+              </View>
+              {SORT_ORDER.filter((m) => hasKanji || !KANJI_ONLY_MODES.includes(m)).map((m) => (
+                <Pressable
+                  key={m}
+                  className="flex-row items-center justify-between px-4 py-3 border-b border-border"
+                  onPress={() => {
+                    setMenuVisible(false);
+                    setSortMode(m);
+                  }}
+                >
+                  <Text className="text-sm text-foreground">{SORT_LABELS[m]}</Text>
+                  {sortMode === m && <Check size={16} className="text-primary" />}
+                </Pressable>
+              ))}
               <Pressable
                 className="px-4 py-3 border-b border-border"
                 onPress={() => {
                   setMenuVisible(false);
-                  setSmartReviewVisible(true);
+                  setSettingsVisible(true);
                 }}
               >
-                <Text className="text-sm text-foreground">Smart Review</Text>
+                <Text className="text-sm text-foreground">Flashcard Settings</Text>
               </Pressable>
-            )}
-            <Pressable
-              className="px-4 py-3"
-              onPress={() => {
-                setMenuVisible(false);
-                setExportModalVisible(true);
-              }}
-            >
-              <Text className="text-sm text-foreground">Export List</Text>
-            </Pressable>
+              <Pressable
+                className="px-4 py-3 border-b border-border"
+                onPress={() => {
+                  setMenuVisible(false);
+                  router.push(`/lists/stats?listId=${id}`);
+                }}
+              >
+                <Text className="text-sm text-foreground">Review Statistics</Text>
+              </Pressable>
+              <Pressable
+                className="px-4 py-3 border-b border-border"
+                onPress={() => {
+                  setMenuVisible(false);
+                  router.push(`/lists/marked-for-review?listId=${id}`);
+                }}
+              >
+                <Text className="text-sm text-foreground">Marked for Review</Text>
+              </Pressable>
+              {!list?.isDefault && (
+                <Pressable
+                  className="px-4 py-3 border-b border-border"
+                  onPress={() => {
+                    setMenuVisible(false);
+                    setSmartReviewVisible(true);
+                  }}
+                >
+                  <Text className="text-sm text-foreground">Smart Review</Text>
+                </Pressable>
+              )}
+              <Pressable
+                className="px-4 py-3"
+                onPress={() => {
+                  setMenuVisible(false);
+                  setExportModalVisible(true);
+                }}
+              >
+                <Text className="text-sm text-foreground">Export List</Text>
+              </Pressable>
+            </ScrollView>
           </View>
         </>
       )}
