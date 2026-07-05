@@ -1454,7 +1454,7 @@ function StudyScreen() {
         // add_order mode: unchanged
         let position = list.studyPosition ?? 0;
         let rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
-          "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC LIMIT 10 OFFSET ?",
+          "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY position ASC, added_at ASC, id ASC LIMIT 10 OFFSET ?",
           [listId, position],
         );
 
@@ -1467,7 +1467,7 @@ function StudyScreen() {
           );
           updateList(listId, { studyPosition: 0, updatedAt: new Date().toISOString() });
           rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
-            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC LIMIT 10 OFFSET 0",
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY position ASC, added_at ASC, id ASC LIMIT 10 OFFSET 0",
             [listId],
           );
         }
@@ -1524,7 +1524,7 @@ function StudyScreen() {
             entry_id: number;
             kanji_literal: string | null;
           }>(
-            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY added_at ASC",
+            "SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ORDER BY position ASC, added_at ASC, id ASC",
             [listId],
           );
           const now = new Date().toISOString();

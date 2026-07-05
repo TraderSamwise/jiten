@@ -133,6 +133,7 @@ export const listEntries = sqliteTable("list_entries", {
   entryId: integer("entry_id").notNull(), // FK to dictionary entries.id (0 = kanji sentinel)
   addedAt: text("added_at").notNull(),
   kanjiLiteral: text("kanji_literal"), // set when this is a kanji entry (entry_id = 0)
+  position: integer("position"), // per-list order; append at MAX+1, imports keep source order
   updatedAt: text("updated_at"),
   deletedAt: text("deleted_at"),
 });

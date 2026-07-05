@@ -264,21 +264,22 @@ export async function getOrCreateSmartList(
 
     if (existingEntryKeys.has(key)) {
       await userDb.runAsync(
-        `UPDATE list_entries SET added_at = ?, updated_at = ?, deleted_at = NULL
+        `UPDATE list_entries SET added_at = ?, position = ?, updated_at = ?, deleted_at = NULL
          WHERE list_id = ? AND entry_id = ?
            AND ((kanji_literal IS NULL AND ? IS NULL) OR kanji_literal = ?)`,
-        [ts, now, smartId, cand.entryId, cand.kanjiLiteral, cand.kanjiLiteral],
+        [ts, rank, now, smartId, cand.entryId, cand.kanjiLiteral, cand.kanjiLiteral],
       );
     } else {
       await userDb.runAsync(
-        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, position, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           makeId(smartId, cand.entryId, cand.kanjiLiteral),
           smartId,
           cand.entryId,
           cand.kanjiLiteral,
           ts,
+          rank,
           now,
         ],
       );

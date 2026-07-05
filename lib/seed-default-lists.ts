@@ -134,13 +134,13 @@ async function seedKanjiLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
     const BATCH_SIZE = 200;
     for (let i = 0; i < literals.length; i += BATCH_SIZE) {
       const batch = literals.slice(i, i + BATCH_SIZE);
-      const placeholders = batch.map(() => "(?, ?, 0, ?, ?)").join(", ");
+      const placeholders = batch.map(() => "(?, ?, 0, ?, ?, ?)").join(", ");
       const params: (string | number)[] = [];
-      for (const row of batch) {
-        params.push(generateId(), listId, now, row.literal);
-      }
+      batch.forEach((row, j) => {
+        params.push(generateId(), listId, now, row.literal, i + j);
+      });
       await userDb.runAsync(
-        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal, position) VALUES ${placeholders}`,
         params,
       );
     }
@@ -210,13 +210,13 @@ export async function seedRtkLessonsIfNeeded(
     const BATCH_SIZE = 200;
     for (let i = 0; i < literals.length; i += BATCH_SIZE) {
       const batch = literals.slice(i, i + BATCH_SIZE);
-      const placeholders = batch.map(() => "(?, ?, 0, ?, ?)").join(", ");
+      const placeholders = batch.map(() => "(?, ?, 0, ?, ?, ?)").join(", ");
       const params: (string | number)[] = [];
-      for (const row of batch) {
-        params.push(generateId(), listId, now, row.literal);
-      }
+      batch.forEach((row, j) => {
+        params.push(generateId(), listId, now, row.literal, i + j);
+      });
       await userDb.runAsync(
-        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, kanji_literal, position) VALUES ${placeholders}`,
         params,
       );
     }
@@ -256,13 +256,13 @@ async function seedVocabLists(userDb: WrappedUserDb, dictDb: SQLite.SQLiteDataba
     const BATCH_SIZE = 200;
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
       const batch = entries.slice(i, i + BATCH_SIZE);
-      const placeholders = batch.map(() => "(?, ?, ?, ?)").join(", ");
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?)").join(", ");
       const params: (string | number)[] = [];
-      for (const row of batch) {
-        params.push(generateId(), listId, row.id, now);
-      }
+      batch.forEach((row, j) => {
+        params.push(generateId(), listId, row.id, now, i + j);
+      });
       await userDb.runAsync(
-        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at) VALUES ${placeholders}`,
+        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, added_at, position) VALUES ${placeholders}`,
         params,
       );
     }
