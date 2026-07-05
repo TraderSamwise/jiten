@@ -1,4 +1,5 @@
 import type { WrappedUserDb } from "@/db/user-db";
+import { LIST_POSITION_RANK } from "@/db/user-migrations";
 
 export interface BackupResult {
   tables: Record<string, any[]>;
@@ -24,7 +25,8 @@ export const BACKUP_TABLES: {
   },
   {
     name: "list_entries",
-    query: "SELECT id, list_id, entry_id, kanji_literal, added_at, updated_at FROM list_entries",
+    query:
+      "SELECT id, list_id, entry_id, kanji_literal, added_at, position, updated_at FROM list_entries",
   },
   {
     name: "srs_cards",
@@ -92,7 +94,15 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
-  list_entries: ["id", "list_id", "entry_id", "kanji_literal", "added_at", "updated_at"],
+  list_entries: [
+    "id",
+    "list_id",
+    "entry_id",
+    "kanji_literal",
+    "added_at",
+    "position",
+    "updated_at",
+  ],
   srs_cards: [
     "id",
     "entry_id",
@@ -294,6 +304,16 @@ export async function importBackup(
       result.failed.push({ table: tableName, error: String(err) });
       processedRows += rows.length;
     }
+  }
+
+  // Pre-feature backups have no position — assign one deterministically so
+  // restored entries keep their added_at order instead of piling at the top.
+  try {
+    await db.runAsync(
+      `UPDATE list_entries SET position = ${LIST_POSITION_RANK} WHERE position IS NULL`,
+    );
+  } catch (err) {
+    console.error("[Import] Failed to backfill list_entries.position:", err);
   }
 
   onProgress?.(100, "Done");

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, max } from "drizzle-orm";
 import { createNewCard } from "@/stores/srs";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore } from "@/stores/lists";
@@ -26,6 +26,15 @@ export function setLastQuickActionKanjiLiteral(literal: string | null) {
   lastQuickActionKanjiLiteral = literal;
 }
 
+/** Next append position for a list (MAX(position) + 1, or 0 for an empty list). */
+async function nextListPosition(db: UserDrizzle, listId: string): Promise<number> {
+  const [row] = await db
+    .select({ maxPos: max(listEntries.position) })
+    .from(listEntries)
+    .where(eq(listEntries.listId, listId));
+  return (row?.maxPos ?? -1) + 1;
+}
+
 // ---------------------------------------------------------------------------
 // Word entry DB operations
 // ---------------------------------------------------------------------------
@@ -40,6 +49,7 @@ export async function addEntryToList(db: UserDrizzle, entryId: number, listId: s
       listId,
       entryId,
       addedAt: now,
+      position: await nextListPosition(db, listId),
       updatedAt: now,
     })
     .onConflictDoNothing();
@@ -141,6 +151,7 @@ export async function addKanjiToList(db: UserDrizzle, kanjiLiteral: string, list
       entryId: 0,
       kanjiLiteral,
       addedAt: now,
+      position: await nextListPosition(db, listId),
       updatedAt: now,
     })
     .onConflictDoNothing();
