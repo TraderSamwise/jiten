@@ -1,4 +1,5 @@
 import type { WrappedUserDb } from "@/db/user-db";
+import { LIST_POSITION_RANK } from "@/db/user-migrations";
 
 export interface BackupResult {
   tables: Record<string, any[]>;
@@ -309,12 +310,7 @@ export async function importBackup(
   // restored entries keep their added_at order instead of piling at the top.
   try {
     await db.runAsync(
-      `UPDATE list_entries SET position = (
-         SELECT COUNT(*) FROM list_entries AS le2
-         WHERE le2.list_id = list_entries.list_id
-           AND (le2.added_at < list_entries.added_at
-                OR (le2.added_at = list_entries.added_at AND le2.id < list_entries.id))
-       ) WHERE position IS NULL`,
+      `UPDATE list_entries SET position = ${LIST_POSITION_RANK} WHERE position IS NULL`,
     );
   } catch (err) {
     console.error("[Import] Failed to backfill list_entries.position:", err);

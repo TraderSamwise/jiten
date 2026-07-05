@@ -108,6 +108,13 @@ export default function ListDetailScreen() {
   const restoredOffsetRef = useRef<number | null>(null);
   const [sortMode, setSortMode] = useListSortMode(id);
   const [hasKanji, setHasKanji] = useState(false);
+  // Mirror sortMode into a ref so a deferred/in-flight load reads the current
+  // mode (jotai hydrates async), and a generation counter so only the latest
+  // load commits — guards against the mount load clobbering a hydrated sort and
+  // against rapid sort toggles racing.
+  const sortModeRef = useRef(sortMode);
+  sortModeRef.current = sortMode;
+  const loadGenRef = useRef(0);
 
   // Load list from DB if not in store (e.g. direct navigation / refresh)
 
@@ -226,11 +233,15 @@ export default function ListDetailScreen() {
 
   async function loadEntries() {
     if (!userDb || !dictDb || !id) return;
+    // Claim the latest generation so any in-flight loadEntriesFresh becomes stale
+    // and can't clobber this load's committed state.
+    ++loadGenRef.current;
 
-    // Web only: try to restore from scroll cache
+    // Web only: try to restore from scroll cache (only if it was cached under the
+    // current sort — otherwise fall through to a fresh sorted load).
     if (Platform.OS === "web") {
       const cached = useListsStore.getState().getScrollCache(id);
-      if (cached && cached.items.length > 0) {
+      if (cached && cached.items.length > 0 && cached.sortMode === sortModeRef.current) {
         allRowsRef.current = cached.allRows;
         loadedCountRef.current = cached.loadedCount;
         setTotalCount(cached.totalCount);
@@ -262,24 +273,28 @@ export default function ListDetailScreen() {
 
   async function loadEntriesFresh(silent = false) {
     if (!userDb || !dictDb || !id) return;
+    const gen = ++loadGenRef.current;
+    const mode = sortModeRef.current;
     if (!silent) setLoading(true);
 
-    // Step 1: Load just the IDs (fast, tiny data even for 8000+ entries).
-    // "added" sorts newest-first in SQL; every other mode starts from list order
-    // and dict-derived modes then re-sort in JS (dict data is in a separate DB).
+    // "added" sorts newest-first in SQL; every other mode starts from list order,
+    // and dict-derived modes then re-sort in JS (dict data is a separate DB).
     const orderBy =
-      sortMode === "added"
+      mode === "added"
         ? "ORDER BY added_at DESC, id ASC"
         : "ORDER BY position ASC, added_at ASC, id ASC";
     let rows = await userDb.getAllAsync<ListEntryRow>(
       `SELECT entry_id, kanji_literal FROM list_entries WHERE list_id = ? AND deleted_at IS NULL ${orderBy}`,
       [id],
     );
-    setHasKanji(rows.some((r) => r.kanji_literal != null));
-    if (isDictSort(sortMode)) {
-      rows = await sortRowsByDictKey(dictDb, rows, sortMode);
+    if (gen !== loadGenRef.current) return;
+    const kanjiPresent = rows.some((r) => r.kanji_literal != null);
+    if (isDictSort(mode)) {
+      rows = await sortRowsByDictKey(dictDb, rows, mode);
+      if (gen !== loadGenRef.current) return;
     }
 
+    setHasKanji(kanjiPresent);
     allRowsRef.current = rows;
     setTotalCount(rows.length);
 
@@ -296,6 +311,7 @@ export default function ListDetailScreen() {
     // Step 2: Load only the first page of full entry details
     const firstPage = rows.slice(0, PAGE_SIZE);
     const resolved = await resolvePageItems(dictDb, firstPage);
+    if (gen !== loadGenRef.current) return;
     loadedCountRef.current = PAGE_SIZE;
     setItems(resolved);
     setLoading(false);
@@ -307,6 +323,7 @@ export default function ListDetailScreen() {
         allRows: rows,
         loadedCount: PAGE_SIZE,
         totalCount: rows.length,
+        sortMode: mode,
       });
     }
   }

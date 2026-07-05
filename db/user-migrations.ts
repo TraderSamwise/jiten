@@ -2,6 +2,14 @@
  * User DB migrations — shared between native/web providers and the sync engine.
  * Both user-provider.native.tsx and user-provider.web.tsx import this array.
  */
+
+/** Ranks each list_entries row within its list by (added_at, then id) — a stable
+ *  0-based order. Shared by the position backfill migration and backup restore. */
+export const LIST_POSITION_RANK =
+  "(SELECT COUNT(*) FROM list_entries AS le2 WHERE le2.list_id = list_entries.list_id" +
+  " AND (le2.added_at < list_entries.added_at" +
+  " OR (le2.added_at = list_entries.added_at AND le2.id < list_entries.id)))";
+
 export const USER_DB_MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS lists (
     id TEXT PRIMARY KEY,
@@ -197,18 +205,10 @@ export const USER_DB_MIGRATIONS = [
     PRIMARY KEY (literal, word, target)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pna_word ON primitive_note_assoc(word)`,
-  // Explicit per-list ordering. Preserves import/insertion order instead of
-  // relying on added_at (which the list view was showing reversed). ALTER runs
-  // on the remote too; the backfill UPDATE SQL is not replayed remotely (sync
-  // filters UPDATEs) — each device computes the same ranks (added_at then id)
-  // locally and the bumped updated_at delta-syncs the values. Index is local.
+  // Explicit per-list ordering (added_at was shown reversed). ALTER runs on the
+  // remote too; the backfill UPDATE runs locally on each device (sync skips
+  // UPDATEs) and the bumped updated_at delta-syncs the values; index is local.
   `ALTER TABLE list_entries ADD COLUMN position INTEGER`,
-  `UPDATE list_entries SET position = (
-     SELECT COUNT(*) FROM list_entries AS le2
-     WHERE le2.list_id = list_entries.list_id
-       AND (le2.added_at < list_entries.added_at
-            OR (le2.added_at = list_entries.added_at AND le2.id < list_entries.id))
-   ), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-   WHERE position IS NULL`,
+  `UPDATE list_entries SET position = ${LIST_POSITION_RANK}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE position IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_list_entries_list_position ON list_entries(list_id, position)`,
 ];
