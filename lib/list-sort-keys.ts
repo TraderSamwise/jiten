@@ -20,12 +20,9 @@ async function chunkedIn<T>(
   return out;
 }
 
-/**
- * Re-sort list rows by a dict-derived key (kanji_characters / entries live in the
- * dict DB, separate from list_entries, so this can't be a SQL join). Ascending, with
- * "most relevant first": lower heisig/strokes/frequency_rank and higher word priority.
- * Rows with no value for the mode (e.g. a word under Heisig) sort last. Stable.
- */
+/** Re-sort list rows by a dict-derived key (dict tables can't join list_entries).
+ *  Ascending "most relevant first" (low heisig/strokes/rank, high word priority);
+ *  rows with no value for the mode (e.g. a word under Heisig) sort last. Stable. */
 export async function sortRowsByDictKey(
   dictDb: SQLite.SQLiteDatabase,
   rows: SortRow[],

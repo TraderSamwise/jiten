@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { WrappedUserDb } from "@/db/user-db";
 import type { WordList, CardFace, ListItem } from "@/db/types";
+import type { SortMode } from "@/stores/list-sort";
 
 type ListEntryRow = { entry_id: number; kanji_literal: string | null };
 
@@ -10,6 +11,7 @@ export interface ListScrollCache {
   allRows: ListEntryRow[];
   loadedCount: number;
   totalCount: number;
+  sortMode: SortMode;
 }
 
 interface ListsState {
