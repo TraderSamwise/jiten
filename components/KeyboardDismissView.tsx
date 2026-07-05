@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import {
   findNodeHandle,
   Keyboard,
+  Platform,
   StyleSheet,
   TextInput,
   View,
@@ -27,19 +28,34 @@ export function KeyboardDismissView({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const start = useRef({ x: 0, y: 0, t: 0 });
+  const start = useRef({ x: 0, y: 0, t: 0, id: "", valid: false });
 
   const onTouchStart = (e: GestureResponderEvent) => {
-    start.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, t: e.timeStamp };
+    const ne = e.nativeEvent;
+    // Only a single-finger gesture can be a tap-to-dismiss; a second finger
+    // (pinch/scroll assist) invalidates so a later touchEnd can't spuriously fire.
+    if (ne.touches.length > 1) {
+      start.current.valid = false;
+      return;
+    }
+    start.current = { x: ne.pageX, y: ne.pageY, t: e.timeStamp, id: ne.identifier, valid: true };
   };
 
   const onTouchEnd = (e: GestureResponderEvent) => {
-    const dx = Math.abs(e.nativeEvent.pageX - start.current.x);
-    const dy = Math.abs(e.nativeEvent.pageY - start.current.y);
-    if (dx > TAP_SLOP || dy > TAP_SLOP || e.timeStamp - start.current.t > TAP_MAX_MS) return;
-    const focused = TextInput.State.currentlyFocusedInput();
-    const focusedTag = focused ? findNodeHandle(focused as unknown as React.Component) : null;
-    if (focusedTag != null && String(e.nativeEvent.target) === String(focusedTag)) return;
+    const ne = e.nativeEvent;
+    const s = start.current;
+    if (!s.valid || ne.identifier !== s.id || ne.touches.length > 0) return;
+    const dx = Math.abs(ne.pageX - s.x);
+    const dy = Math.abs(ne.pageY - s.y);
+    if (dx > TAP_SLOP || dy > TAP_SLOP || e.timeStamp - s.t > TAP_MAX_MS) return;
+    // Skip when the tap lands on the field already being edited (so tapping to
+    // move the cursor doesn't close the keyboard). findNodeHandle is native-only
+    // — react-native-web removed it, and web has no soft keyboard to dismiss.
+    if (Platform.OS !== "web") {
+      const focused = TextInput.State.currentlyFocusedInput();
+      const focusedTag = focused ? findNodeHandle(focused as unknown as React.Component) : null;
+      if (focusedTag != null && String(ne.target) === String(focusedTag)) return;
+    }
     Keyboard.dismiss();
   };
 
