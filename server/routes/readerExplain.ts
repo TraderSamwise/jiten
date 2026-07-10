@@ -13,7 +13,10 @@ import { optTrimmed, reqTrimmed } from "../lib/zodFields";
 import type { AppVariables } from "../types";
 
 const MODEL = process.env.OPENAI_EXPLAIN_MODEL || "gpt-5.4-mini";
-const MAX_BODY_CHARS = 4096;
+// Coarse pre-parse DoS guard (BYTES). The zod field caps are the real content
+// limit; this only needs to comfortably fit max-length fields in UTF-8 (Japanese
+// is ~3 bytes/char), so it's sized well above the summed char caps.
+const MAX_BODY_BYTES = 16 * 1024;
 
 const requestSchema = z.object({
   selectedText: reqTrimmed(500, "selectedText is required"),
@@ -64,7 +67,7 @@ const EXPLANATION_SCHEMA = {
 export const readerExplainRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/reader/explain-sentence",
   bodyLimit({
-    maxSize: MAX_BODY_CHARS,
+    maxSize: MAX_BODY_BYTES,
     onError: (c) => c.json({ error: "Request body is too large" }, 413),
   }),
   authMiddleware,

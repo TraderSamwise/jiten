@@ -28,6 +28,18 @@ dev.use(
 dev.get("/*", serveStatic({ root: "./assets" }));
 dev.route("/", app);
 
+// Surface missing API secrets up front — those routes 500 without them, and it's
+// easy to lose an afternoon to a per-request "Server misconfigured". serve:dev
+// loads .env via node's --env-file; add the missing keys there (see README).
+const NEEDED_SECRETS = ["CLERK_SECRET_KEY", "OPENAI_API_KEY", "TURSO_ORG", "TURSO_API_TOKEN"];
+const missing = NEEDED_SECRETS.filter((k) => !process.env[k]);
+if (missing.length) {
+  console.warn(
+    `⚠️  Missing API env vars — routes using them will return 500: ${missing.join(", ")}.\n` +
+      `   Add them to .env (see README → "Dev Server"). Static/proxy still work without them.`,
+  );
+}
+
 serve({ fetch: dev.fetch, port: PORT }, (info) => {
   console.log(`jiten dev server (API + data) on http://localhost:${info.port}`);
 });

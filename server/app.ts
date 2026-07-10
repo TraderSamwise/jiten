@@ -25,6 +25,7 @@ base.use(
 
 base.get("/api/health", (c) => c.json({ ok: true }));
 
+base.notFound((c) => c.json({ error: "Not found" }, 404));
 base.onError((err, c) => apiErrorResponse(err, c));
 
 export const app = base

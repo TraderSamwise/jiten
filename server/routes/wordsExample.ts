@@ -14,7 +14,9 @@ import type { AppVariables } from "../types";
 
 const MODEL =
   process.env.OPENAI_WORD_EXAMPLES_MODEL || process.env.OPENAI_EXPLAIN_MODEL || "gpt-5.4-mini";
-const MAX_BODY_CHARS = 4096;
+// Coarse pre-parse DoS guard (BYTES) — see readerExplain; sized above the summed
+// zod char caps to fit max-length UTF-8 (Japanese ~3 bytes/char) fields.
+const MAX_BODY_BYTES = 16 * 1024;
 
 const requestSchema = z.object({
   word: reqTrimmed(80, "word is required"),
@@ -48,7 +50,7 @@ const WORD_EXAMPLES_SCHEMA = {
 export const wordsExampleRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/words/example-sentences",
   bodyLimit({
-    maxSize: MAX_BODY_CHARS,
+    maxSize: MAX_BODY_BYTES,
     onError: (c) => c.json({ error: "Request body is too large" }, 413),
   }),
   authMiddleware,
