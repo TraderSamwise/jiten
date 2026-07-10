@@ -22,7 +22,7 @@
     "build:preprocessing": "npx tsx lib/share-extension/build-preprocessing.ts",
     "prestart": "yarn build:reader && yarn build:preprocessing",
     "prebuild": "yarn build:reader && yarn build:preprocessing",
-    "serve:dev": "npx tsx scripts/serve-dev.ts",
+    "serve:dev": "npx tsx server/dev.ts",
     "publish:dict": "./scripts/publish-dict.sh",
     "check:dict": "./scripts/check-dict-version.sh",
     "test": "yarn build:reader && vitest run",

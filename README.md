@@ -1006,11 +1006,13 @@ yarn serve:dev   # Start dev server on localhost:3001
 yarn web         # Start Expo web dev server (separate terminal)
 ```
 
-The dev server (`scripts/serve-dev.ts`) provides two services on port 3001:
+The dev server (`server/dev.ts`) runs the **same Hono app** as production (see `server/`) on port 3001, mirroring the prod topology (one origin for API + proxy + data). It provides three services:
 
-1. **Dictionary file server** — serves files directly from `assets/` (`dictionary.db`, `dictionary-extended.db`, `dict-manifest.json`, etc.) with CORS headers. The `.env` file points `EXPO_PUBLIC_DICT_MANIFEST_URL` to `http://localhost:3001/dict-manifest.json`. **Important**: since the dev server serves `assets/` live, corrupting or deleting any DB file there immediately breaks your local dev environment and simulator.
+1. **API** (`/api/*`) — the real backend routes (`server/routes/*`), run locally through the Hono app. Web dev talks to this automatically: `lib/env.ts` points `API_BASE_URL` at `http://localhost:3001` when `Platform.OS === "web"` and `__DEV__`, so the web app never hits the deployed API. **Requires `yarn serve:dev` to be running**, plus the API's env vars (`CLERK_SECRET_KEY`, `OPENAI_API_KEY`, `TURSO_*`, …) in your `.env` for the routes that use them.
 
-2. **API proxy** — proxies external APIs to avoid CORS issues on web. Same routes as the Vercel rewrites in `vercel.json`:
+2. **Dictionary file server** — serves files directly from `assets/` (`dictionary.db`, `dictionary-extended.db`, `dict-manifest.json`, etc.) with CORS headers and Range support. The `.env` file points `EXPO_PUBLIC_DICT_MANIFEST_URL` to `http://localhost:3001/dict-manifest.json`. **Important**: since the dev server serves `assets/` live, corrupting or deleting any DB file there immediately breaks your local dev environment and simulator.
+
+3. **External-API proxy** (`/proxy/*`) — proxies external APIs to avoid CORS issues on web. Same routes as the Vercel rewrites in `vercel.json`:
 
 | Dev URL                              | Proxied to                    |
 | ------------------------------------ | ----------------------------- |
@@ -1020,7 +1022,7 @@ The dev server (`scripts/serve-dev.ts`) provides two services on port 3001:
 
 In dev mode (`__DEV__`), `lib/proxy.ts` automatically routes proxy URLs to `localhost:3001`. In production, it uses relative paths handled by Vercel rewrites.
 
-Native (iOS/Android) doesn't need the proxy — it calls external APIs directly.
+The API is deployed to Vercel as a single catch-all function (`api/[[...route]].ts` → `handle(app)`). Native (iOS/Android) doesn't use the local proxy — it calls external APIs directly — and uses the configured `EXPO_PUBLIC_API_BASE_URL` for the backend.
 
 ## SRS and Day Boundary
 
