@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import { ApiError } from "../../api/_shared/auth";
@@ -17,10 +18,11 @@ export function apiErrorResponse(err: unknown, c: Context) {
   if (err instanceof ApiError) {
     return c.json({ error: err.message }, err.status as ContentfulStatusCode);
   }
-  // A malformed JSON body surfaces here (zValidator calls c.req.json() before the
-  // schema hook runs) — answer 400 with the app's error shape, not a 500.
-  if (err instanceof SyntaxError) {
-    return c.json({ error: "Invalid JSON body" }, 400);
+  // Hono surfaces bad input (e.g. a malformed JSON body, which zValidator rejects
+  // via c.req.json()) as an HTTPException — answer with the app's error shape and
+  // its status (400) instead of a generic 500.
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.message }, err.status);
   }
   console.error("[api] Unhandled error:", err);
   return c.json({ error: "Internal error" }, 500);
