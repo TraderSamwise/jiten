@@ -1,4 +1,3 @@
-import type { VercelRequest } from "@vercel/node";
 import { verifyToken } from "@clerk/backend";
 
 export class ApiError extends Error {
@@ -31,12 +30,4 @@ export async function verifyClerkToken(token: string): Promise<VerifiedApiUser> 
     console.error("[api-auth] Token verification failed:", err);
     throw new ApiError(401, "Invalid session token");
   }
-}
-
-export async function verifyApiUser(req: VercelRequest): Promise<VerifiedApiUser> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new ApiError(401, "Missing authorization header");
-  }
-  return verifyClerkToken(authHeader.slice(7));
 }
