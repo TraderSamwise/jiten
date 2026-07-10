@@ -1,3 +1,4 @@
+import { createApiClient } from "./api-client";
 import { getApiErrorMessage } from "./api-error";
 
 export interface WordExampleSentencesRequest {
@@ -40,26 +41,25 @@ export async function requestWordExampleSentences({
     throw new Error("Sign in to generate example sentences.");
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/words/example-sentences`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      ...input,
+  const client = createApiClient(apiBaseUrl, token);
+  const response = await client.api.words["example-sentences"].$post({
+    json: {
       word,
-    }),
+      reading: input.reading ?? undefined,
+      glosses: input.glosses ?? undefined,
+      partOfSpeech: input.partOfSpeech ?? undefined,
+    },
   });
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
     throw new Error(getApiErrorMessage(body, "Could not generate example sentences."));
   }
-  if (!isWordExampleSentences(body?.result)) {
+  const result = (body as { result?: unknown } | null)?.result;
+  if (!isWordExampleSentences(result)) {
     throw new Error("Example sentence response was malformed.");
   }
-  return body.result;
+  return result;
 }
 
 export function isWordExampleSentences(value: unknown): value is WordExampleSentences {

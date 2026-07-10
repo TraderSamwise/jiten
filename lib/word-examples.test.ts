@@ -51,22 +51,20 @@ describe("word example sentence client", () => {
       }),
     ).resolves.toEqual(examples);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/words/example-sentences",
-      expect.objectContaining({
-        method: "POST",
-        headers: {
-          Authorization: "Bearer token",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          word: "会う",
-          reading: "あう",
-          glosses: ["to meet"],
-          partOfSpeech: ["v5u"],
-        }),
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.com/api/words/example-sentences");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(
+      JSON.stringify({
+        word: "会う",
+        reading: "あう",
+        glosses: ["to meet"],
+        partOfSpeech: ["v5u"],
       }),
     );
+    const headers = new Headers(init.headers);
+    expect(headers.get("authorization")).toBe("Bearer token");
+    expect(headers.get("content-type")).toBe("application/json");
   });
 
   test("requires a signed-in API token", async () => {
