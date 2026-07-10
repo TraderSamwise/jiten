@@ -30,8 +30,9 @@ async function handleProxy(c: Context, route: string | undefined, path: string |
 
   try {
     const upstream = await fetch(targetUrl, {
+      // No explicit Host header: undici treats it as a forbidden header and sets
+      // it from targetUrl's host anyway, which is already the correct upstream.
       headers: {
-        host: parsed.hostname,
         referer: `https://${parsed.hostname}/`,
         "user-agent": c.req.header("user-agent") ?? "Mozilla/5.0 (compatible)",
         accept: c.req.header("accept") ?? "*/*",

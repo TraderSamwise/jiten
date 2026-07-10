@@ -40,6 +40,10 @@ if (missing.length) {
   );
 }
 
-serve({ fetch: dev.fetch, port: PORT }, (info) => {
-  console.log(`jiten dev server (API + data) on http://localhost:${info.port}`);
+// Bind to loopback by default — this server loads real API secrets, so it must
+// not be exposed to the LAN. Set DEV_HOST=0.0.0.0 to opt into LAN access (e.g.
+// to reach it from a device on the same network).
+const HOST = process.env.DEV_HOST ?? "127.0.0.1";
+serve({ fetch: dev.fetch, port: PORT, hostname: HOST }, (info) => {
+  console.log(`jiten dev server (API + data) on http://${HOST}:${info.port}`);
 });
