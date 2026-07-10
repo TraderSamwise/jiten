@@ -1,15 +1,14 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { z } from "zod";
 
 import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
+import { readerExplainRequestSchema } from "../../lib/api-contract";
 import { isReaderSentenceExplanation } from "../../lib/reader-explain";
 import { authMiddleware } from "../middleware/auth";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
-import { optTrimmed, reqTrimmed } from "../lib/zodFields";
 import type { AppVariables } from "../types";
 
 const MODEL = process.env.OPENAI_EXPLAIN_MODEL || "gpt-5.4-mini";
@@ -17,12 +16,6 @@ const MODEL = process.env.OPENAI_EXPLAIN_MODEL || "gpt-5.4-mini";
 // limit; this only needs to comfortably fit max-length fields in UTF-8 (Japanese
 // is ~3 bytes/char), so it's sized well above the summed char caps.
 const MAX_BODY_BYTES = 16 * 1024;
-
-const requestSchema = z.object({
-  selectedText: reqTrimmed(500, "selectedText is required"),
-  bookTitle: optTrimmed(160),
-  surroundingText: optTrimmed(1200),
-});
 
 const EXPLANATION_SCHEMA = {
   type: "object",
@@ -72,7 +65,7 @@ export const readerExplainRoute = new Hono<{ Variables: AppVariables }>().post(
   }),
   authMiddleware,
   entitlement("reader_sentence_explain"),
-  jsonBody(requestSchema),
+  jsonBody(readerExplainRequestSchema),
   rateLimit("reader_sentence_explain"),
   async (c) => {
     const input = c.req.valid("json");
