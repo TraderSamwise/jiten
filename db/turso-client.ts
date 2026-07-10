@@ -3,8 +3,8 @@ import { env } from "../lib/env";
 
 /**
  * Hash a Clerk user ID to a short alphanumeric string for Turso DB names.
- * Duplicated from api/provision-db.ts intentionally — that file runs in
- * Vercel serverless (different build context).
+ * Duplicated from server/lib/hashUserId.ts intentionally — the server runs in a
+ * different build context (Node/Vercel) and can't share this RN client module.
  */
 function hashUserId(userId: string): string {
   let hash = 0;
