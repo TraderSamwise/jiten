@@ -17,6 +17,11 @@ export function apiErrorResponse(err: unknown, c: Context) {
   if (err instanceof ApiError) {
     return c.json({ error: err.message }, err.status as ContentfulStatusCode);
   }
+  // A malformed JSON body surfaces here (zValidator calls c.req.json() before the
+  // schema hook runs) — answer 400 with the app's error shape, not a 500.
+  if (err instanceof SyntaxError) {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
   console.error("[api] Unhandled error:", err);
   return c.json({ error: "Internal error" }, 500);
 }

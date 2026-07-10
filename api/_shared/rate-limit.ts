@@ -164,18 +164,7 @@ export async function consumeDailyUserQuota(
   }
 }
 
-export function setRateLimitHeaders(
-  res: { setHeader(name: string, value: string | number): void },
-  quota: DailyQuotaResult,
-): void {
-  res.setHeader("X-RateLimit-Limit", quota.limit);
-  res.setHeader("X-RateLimit-Remaining", quota.remaining);
-  res.setHeader("X-RateLimit-Reset", quota.resetAt);
-  res.setHeader("X-RateLimit-Cost", quota.cost);
-}
-
-// Transport-free variant for the Hono middleware: the same four headers as
-// string values to hand to c.header().
+// The four X-RateLimit-* headers as strings, for the Hono middleware (c.header()).
 export function rateLimitHeaders(quota: DailyQuotaResult): Record<string, string> {
   return {
     "X-RateLimit-Limit": String(quota.limit),
