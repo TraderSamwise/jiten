@@ -1,3 +1,4 @@
+import { createApiClient } from "./api-client";
 import { getApiErrorMessage } from "./api-error";
 
 export interface ReaderExplainRequest {
@@ -54,26 +55,24 @@ export async function requestReaderSentenceExplanation({
     throw new Error("Sign in to use sentence explanations.");
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/reader/explain-sentence`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      ...input,
+  const client = createApiClient(apiBaseUrl, token);
+  const response = await client.api.reader["explain-sentence"].$post({
+    json: {
       selectedText,
-    }),
+      bookTitle: input.bookTitle ?? undefined,
+      surroundingText: input.surroundingText ?? undefined,
+    },
   });
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
     throw new Error(getApiErrorMessage(body, "Could not explain selection."));
   }
-  if (!isReaderSentenceExplanation(body?.explanation)) {
+  const explanation = (body as { explanation?: unknown } | null)?.explanation;
+  if (!isReaderSentenceExplanation(explanation)) {
     throw new Error("Explanation response was malformed.");
   }
-  return body.explanation;
+  return explanation;
 }
 
 export function isReaderSentenceExplanation(value: unknown): value is ReaderSentenceExplanation {
