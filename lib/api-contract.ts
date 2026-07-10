@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-// Replicate the old api/_shared/request helpers as zod schemas: trim, then HARD
-// TRUNCATE to a cap (not reject), matching trimOptional/trimStringArray.
+// Shared request contract for the API. Lives in lib/ (not a packages/* workspace)
+// so both the RN client and the server bundle it via the same proven relative
+// imports — server/routes already import lib/ modules into the Vercel function.
+// The zod schemas trim, then HARD TRUNCATE to a cap (not reject), matching the
+// old api/_shared/request helpers (trimOptional/trimStringArray).
 
 // Required string: missing/empty (after trim) fails with `message`; otherwise
 // trimmed and truncated to `max`.
@@ -33,3 +36,16 @@ export const trimmedArray = (maxItems: number, maxLen: number) =>
         .filter(Boolean)
         .slice(0, maxItems),
     );
+
+export const readerExplainRequestSchema = z.object({
+  selectedText: reqTrimmed(500, "selectedText is required"),
+  bookTitle: optTrimmed(160),
+  surroundingText: optTrimmed(1200),
+});
+
+export const wordsExampleRequestSchema = z.object({
+  word: reqTrimmed(80, "word is required"),
+  reading: optTrimmed(80),
+  glosses: trimmedArray(6, 120),
+  partOfSpeech: trimmedArray(8, 60),
+});

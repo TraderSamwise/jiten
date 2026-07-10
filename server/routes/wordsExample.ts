@@ -1,15 +1,14 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { z } from "zod";
 
 import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
+import { wordsExampleRequestSchema } from "../../lib/api-contract";
 import { isWordExampleSentences } from "../../lib/word-examples";
 import { authMiddleware } from "../middleware/auth";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
-import { reqTrimmed, optTrimmed, trimmedArray } from "../lib/zodFields";
 import type { AppVariables } from "../types";
 
 const MODEL =
@@ -17,13 +16,6 @@ const MODEL =
 // Coarse pre-parse DoS guard (BYTES) — see readerExplain; sized above the summed
 // zod char caps to fit max-length UTF-8 (Japanese ~3 bytes/char) fields.
 const MAX_BODY_BYTES = 16 * 1024;
-
-const requestSchema = z.object({
-  word: reqTrimmed(80, "word is required"),
-  reading: optTrimmed(80),
-  glosses: trimmedArray(6, 120),
-  partOfSpeech: trimmedArray(8, 60),
-});
 
 const WORD_EXAMPLES_SCHEMA = {
   type: "object",
@@ -55,7 +47,7 @@ export const wordsExampleRoute = new Hono<{ Variables: AppVariables }>().post(
   }),
   authMiddleware,
   entitlement("word_example_sentences"),
-  jsonBody(requestSchema),
+  jsonBody(wordsExampleRequestSchema),
   rateLimit("word_example_sentences"),
   async (c) => {
     const input = c.req.valid("json");
