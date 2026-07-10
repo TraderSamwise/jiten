@@ -173,3 +173,14 @@ export function setRateLimitHeaders(
   res.setHeader("X-RateLimit-Reset", quota.resetAt);
   res.setHeader("X-RateLimit-Cost", quota.cost);
 }
+
+// Transport-free variant for the Hono middleware: the same four headers as
+// string values to hand to c.header().
+export function rateLimitHeaders(quota: DailyQuotaResult): Record<string, string> {
+  return {
+    "X-RateLimit-Limit": String(quota.limit),
+    "X-RateLimit-Remaining": String(quota.remaining),
+    "X-RateLimit-Reset": String(quota.resetAt),
+    "X-RateLimit-Cost": String(quota.cost),
+  };
+}
