@@ -1,10 +1,8 @@
-import { handle } from "hono/vercel";
+import { getRequestListener } from "@hono/node-server";
 
 import { app } from "../server/app";
 
-// Edge runtime: hono/vercel's handle is fetch-style ((req) => app.fetch(req)),
-// which Edge invokes with a real Web Request (raw body intact for svix). On the
-// Node runtime Vercel calls (req, res), discards the Response, and hangs.
-export const config = { runtime: "edge" };
-
-export default handle(app);
+// Node runtime (Clerk backend isn't Edge-compatible). getRequestListener adapts
+// Vercel's Node (req, res) call to app.fetch and writes the response — whereas
+// hono/vercel's handle returns a Response Node discards, hanging every request.
+export default getRequestListener(app.fetch);
