@@ -966,6 +966,8 @@ export default class DungeonScene extends Phaser.Scene {
     const flash = keenFlash ?? mindFlash ?? echoFlash;
     this.game.events.emit("focusStart", {
       kanji: target.entry.kanji,
+      keyword: target.entry.keyword,
+      answer: target.entry.verb,
       primitives: showHints ? target.entry.primitives.map((p) => p.keyword) : [],
       rusty: showHints,
       flash,
