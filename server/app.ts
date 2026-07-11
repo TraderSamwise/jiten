@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { apiErrorResponse } from "./middleware/error";
+import { kanjiMnemonicRoute } from "./routes/kanjiMnemonic";
 import { provisionDbRoute } from "./routes/provisionDb";
 import { proxyRoute } from "./routes/proxy";
 import { readerExplainRoute } from "./routes/readerExplain";
@@ -31,6 +32,7 @@ base.onError((err, c) => apiErrorResponse(err, c));
 export const app = base
   .route("/", readerExplainRoute)
   .route("/", wordsExampleRoute)
+  .route("/", kanjiMnemonicRoute)
   .route("/", tursoTokenRoute)
   .route("/", provisionDbRoute)
   .route("/", proxyRoute);

@@ -1,0 +1,23 @@
+{
+  "name": "@jiten/kanji-arena-webview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/protocol.ts",
+  "exports": {
+    "./bundle": "./bundle.ts",
+    "./html": "./src/arena-html.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "build": "tsx build.ts"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.2"
+  }
+}
