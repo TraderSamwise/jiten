@@ -427,8 +427,16 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             setIsReady(true);
             return;
           }
-        } catch {
-          // Offline — proceed with existing DB
+        } catch (e) {
+          // A failed manifest fetch silently strands the app on its cached DBs —
+          // no background tier upgrades (strokes/extended). Name the usual dev
+          // cause loudly so this isn't rediscovered from scratch (see README
+          // "Dev Server": web dev needs `yarn serve:dev` on :3001).
+          console.warn(
+            "[DB] Manifest fetch failed — using cached DBs, skipping background data upgrades. " +
+              "On web dev this usually means `yarn serve:dev` (localhost:3001) isn't running.",
+            e,
+          );
         }
 
         const db = await openDictDb();

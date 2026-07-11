@@ -49,3 +49,9 @@ export const wordsExampleRequestSchema = z.object({
   glosses: trimmedArray(6, 120),
   partOfSpeech: trimmedArray(8, 60),
 });
+
+export const kanjiMnemonicRequestSchema = z.object({
+  kanji: reqTrimmed(8, "kanji is required"),
+  keyword: reqTrimmed(120, "keyword is required"),
+  primitives: trimmedArray(12, 120),
+});
