@@ -1,7 +1,8 @@
-import { handle } from "hono/vercel";
+import { getRequestListener } from "@hono/node-server";
 
 import { app } from "../server/app";
 
-// Vercel catch-all: every /api/* request runs through the single Hono app
-// (fetch-style handler, so the raw body reaches the svix webhook untouched).
-export default handle(app);
+// Node runtime (Clerk backend isn't Edge-compatible). getRequestListener adapts
+// Vercel's Node (req, res) call to app.fetch and writes the response — whereas
+// hono/vercel's handle returns a Response Node discards, hanging every request.
+export default getRequestListener(app.fetch);
