@@ -1022,7 +1022,7 @@ The dev server (`server/dev.ts`) runs the **same Hono app** as production (see `
 
 In dev mode (`__DEV__`), `lib/proxy.ts` automatically routes proxy URLs to `localhost:3001`. In production, it uses relative paths handled by Vercel rewrites.
 
-The API is deployed to Vercel as a single catch-all function (`api/[[...route]].ts` → `handle(app)`). Native (iOS/Android) doesn't use the local proxy — it calls external APIs directly — and uses the configured `EXPO_PUBLIC_API_BASE_URL` for the backend.
+The API is deployed to Vercel as a single catch-all function (`api/[...route].ts` → `getRequestListener(app.fetch)` on the Node runtime; a `vercel.json` rewrite routes nested `/api/*` paths to it). Native (iOS/Android) doesn't use the local proxy — it calls external APIs directly — and uses the configured `EXPO_PUBLIC_API_BASE_URL` for the backend.
 
 ## SRS and Day Boundary
 
