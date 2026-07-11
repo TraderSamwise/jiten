@@ -123,7 +123,7 @@ export default class HudScene extends Phaser.Scene {
       color: "#2fbfa8",
     });
     this.hint = this.add
-      .text(0, 0, "Sealed — read the spirits  (hold SPACE / right-click, aim, release)", {
+      .text(0, 0, "Sealed — read the spirits  (hold SPACE, aim, release · Q switches target)", {
         fontFamily: "monospace",
         fontSize: "14px",
         color: "#f4e7c0",

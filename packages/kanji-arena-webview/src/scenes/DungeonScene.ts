@@ -82,6 +82,7 @@ export default class DungeonScene extends Phaser.Scene {
   private spirits!: Phaser.Physics.Arcade.Group;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
+  private cycleKey!: Phaser.Input.Keyboard.Key;
   private facingBack = false;
   private transitioning = false;
   private combatActive = false;
@@ -233,6 +234,7 @@ export default class DungeonScene extends Phaser.Scene {
       right: kb.addKey("D"),
     };
     this.focusKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.cycleKey = kb.addKey("Q"); // switch the locked spirit while a read is open
     this.revealKey = kb.addKey("R");
     this.input.mouse?.disableContextMenu();
     kb.addCapture("TAB"); // stop TAB from moving browser focus off the canvas
@@ -939,6 +941,32 @@ export default class DungeonScene extends Phaser.Scene {
     this.focusTarget = target;
     target.setTargeted(true);
     sfx.focus();
+    this.emitFocus(target);
+  }
+
+  // Switch the locked spirit mid-read (Q) — cycles by distance so you can pick a
+  // specific twin in an ordeal instead of whatever's nearest. The pointer keeps
+  // aiming; the wheel re-reveals the new target's keyword.
+  private cycleTarget() {
+    if (!this.focusing || !this.focusTarget) return;
+    const list = this.aliveSpirits()
+      .filter((s) => s.targetable)
+      .sort(
+        (a, b) =>
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, a.x, a.y) -
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y),
+      );
+    if (list.length < 2) return;
+    const next = list[(list.indexOf(this.focusTarget) + 1) % list.length];
+    if (next === this.focusTarget) return;
+    this.focusTarget.setTargeted(false);
+    this.focusTarget = next;
+    next.setTargeted(true);
+    sfx.focus();
+    this.emitFocus(next);
+  }
+
+  private emitFocus(target: Spirit) {
     // Fluency: rusty cards expose their components (the retrieval aid) — never
     // the keyword, which stays the thing you must produce. Known cards get none.
     const rusty = isRusty(stateOf(this.srs, target.entry.kanji));
@@ -1357,6 +1385,7 @@ export default class DungeonScene extends Phaser.Scene {
     const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
     if (wantFocus && !this.focusing) this.startFocus();
     else if (!wantFocus && this.focusing) this.resolveFocus();
+    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
 
     const k = this.keys;
     let vx = 0;
