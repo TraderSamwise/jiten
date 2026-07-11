@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { BG } from "./config";
-import { initBridge } from "./bridge";
+import { hasHostSession, initBridge } from "./bridge";
 import { CORPUS, loadStubCorpus } from "./rtk/corpus";
 import BootScene from "./scenes/BootScene";
 import DungeonScene from "./scenes/DungeonScene";
@@ -47,10 +47,12 @@ if (typeof document !== "undefined" && document.fonts?.load) {
 // read results. The game imports nothing host-side.
 initBridge(game);
 
-// Standalone-dev fallback: if no host session arrives, play the stub corpus so
-// the Vite build stays usable on its own.
+// Standalone-dev fallback: if no host session ever arrives, play the stub corpus
+// so the Vite build stays usable on its own. Keyed on hasHostSession(), not corpus
+// size — an embedded host with an empty cohort must NOT get the demo stub (that
+// would show kanji outside the user's selected list).
 setTimeout(() => {
-  if (CORPUS.length === 0) {
+  if (!hasHostSession() && CORPUS.length === 0) {
     loadStubCorpus();
     game.events.emit("corpusReady", { count: CORPUS.length });
   }

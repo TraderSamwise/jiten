@@ -18,6 +18,14 @@ function send(msg: GameMessage): void {
 // receive them and map reads back so both bridge directions are exercised.
 let sessionByKanji = new Map<string, ArenaCard>();
 
+// True once the host has sent a session — even an empty one. The standalone-dev
+// fallback keys off this (not corpus size) so an empty host cohort never falls
+// back to the demo stub, which would show kanji outside the user's list.
+let hostSessionReceived = false;
+export function hasHostSession(): boolean {
+  return hostSessionReceived;
+}
+
 // The run's config (cohort mode / practice), captured from the session message.
 // Data-only for now — scenes read it in later phases to shape scaffolding.
 export const runConfig: ArenaConfig = {};
@@ -31,6 +39,7 @@ export function initBridge(game: Phaser.Game): void {
       return;
     }
     if (msg?.type === "session" && Array.isArray(msg.cards)) {
+      hostSessionReceived = true;
       sessionByKanji = new Map(msg.cards.map((c) => [c.kanji, c]));
       for (const k of Object.keys(runConfig)) delete (runConfig as Record<string, unknown>)[k];
       Object.assign(runConfig, msg.config ?? {});
