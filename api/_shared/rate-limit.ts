@@ -2,7 +2,10 @@ import { createClerkClient } from "@clerk/backend";
 
 import { ApiError } from "./auth";
 
-export type ApiQuotaEndpoint = "reader_sentence_explain" | "word_example_sentences";
+export type ApiQuotaEndpoint =
+  | "reader_sentence_explain"
+  | "word_example_sentences"
+  | "kanji_mnemonic";
 export type ApiQuotaBucket = "ai";
 
 const METADATA_KEY = "jitenApiUsage";
@@ -12,6 +15,7 @@ const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
 const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
   reader_sentence_explain: 2,
   word_example_sentences: 1,
+  kanji_mnemonic: 1,
 };
 
 interface StoredFeatureUsage {
@@ -60,6 +64,7 @@ export function getQuotaBucket(endpoint: ApiQuotaEndpoint): ApiQuotaBucket {
   switch (endpoint) {
     case "reader_sentence_explain":
     case "word_example_sentences":
+    case "kanji_mnemonic":
       return "ai";
   }
 }
