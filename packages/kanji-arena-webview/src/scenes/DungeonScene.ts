@@ -1027,17 +1027,21 @@ export default class DungeonScene extends Phaser.Scene {
       story: target.entry.story,
     });
     // Log the outcome per glyph so the death recap can reveal what you missed.
-    const logged = run.readLog.get(target.entry.kanji);
-    if (logged) {
-      if (ok) logged.hits += 1;
-      else logged.misses += 1;
-    } else {
-      run.readLog.set(target.entry.kanji, {
-        keyword: target.entry.keyword,
-        story: target.entry.story,
-        hits: ok ? 1 : 0,
-        misses: ok ? 0 : 1,
-      });
+    // Gate on onNamedGlyph like recordResult — an off-target twin read isn't a
+    // miss of a card you never tried to read.
+    if (onNamedGlyph) {
+      const logged = run.readLog.get(target.entry.kanji);
+      if (logged) {
+        if (ok) logged.hits += 1;
+        else logged.misses += 1;
+      } else {
+        run.readLog.set(target.entry.kanji, {
+          keyword: target.entry.keyword,
+          story: target.entry.story,
+          hits: ok ? 1 : 0,
+          misses: ok ? 0 : 1,
+        });
+      }
     }
     if (ok) {
       const prevVerb = run.lastVerb; // before applyCorrectRead overwrites it (Echo Glyph)
@@ -1414,13 +1418,15 @@ export default class DungeonScene extends Phaser.Scene {
     }
 
     // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
-    // so a charge is never wasted).
+    // so a charge is never wasted). Consume the key edge unconditionally — gating
+    // JustDown behind other conditions would leave a stale press to fire later.
+    const revealPressed = Phaser.Input.Keyboard.JustDown(this.revealKey);
     if (
+      revealPressed &&
       this.focusing &&
       run.reveals > 0 &&
       run.hp < run.maxHp &&
-      run.relics.has("oracles-tokens") &&
-      Phaser.Input.Keyboard.JustDown(this.revealKey)
+      run.relics.has("oracles-tokens")
     ) {
       run.reveals -= 1;
       run.hp += 1;
