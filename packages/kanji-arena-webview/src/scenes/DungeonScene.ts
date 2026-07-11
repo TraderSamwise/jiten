@@ -107,7 +107,7 @@ export default class DungeonScene extends Phaser.Scene {
   private ordealTotal = 0;
   private needDeadline = 0;
   private firstReadUsed = false; // First Word relic: one free misread per room
-  private roomRevealUsed = false; // Mind's Eye relic: one verb reveal per room
+  private firstBindUsed = false; // Mind's Eye (First Sight): one bonus bind per room
   private blessed = new Set<string>(); // shrine rooms already claimed this floor
   private shopped = new Set<string>(); // shop rooms already visited this floor
   private introduced = new Set<string>(); // spirit kinds already field-guided this run
@@ -510,7 +510,9 @@ export default class DungeonScene extends Phaser.Scene {
 
   // The boss's per-need countdown tightens one second per floor descended.
   private ordealSeconds(): number {
-    return Math.max(ORDEAL_SECONDS_MIN, ORDEAL_SECONDS - run.depth);
+    // Keen Eye grants every elite/boss need a calmer +2s.
+    const keen = run.relics.has("keen-eye") ? 2 : 0;
+    return Math.max(ORDEAL_SECONDS_MIN, ORDEAL_SECONDS - run.depth) + keen;
   }
 
   private dominantState(list: KanjiEntry[]): SrsState {
@@ -524,7 +526,7 @@ export default class DungeonScene extends Phaser.Scene {
     (this.player.body as Phaser.Physics.Arcade.Body).enable = true;
     this.transitioning = false;
     this.firstReadUsed = false;
-    this.roomRevealUsed = false;
+    this.firstBindUsed = false;
     const k = key(room.gx, room.gy);
     this.ordealNeeds = null;
     this.game.events.emit("ordealEnd");
@@ -973,32 +975,12 @@ export default class DungeonScene extends Phaser.Scene {
     // Kotodama Chorus: a hot streak reveals every card's components, not just rusty.
     const chorus = run.relics.has("kotodama-chorus") && run.streak >= 4;
     const showHints = rusty || chorus;
-    // Echo Glyph: the next spirit sharing the last-read verb flashes its answer.
-    // Keen Eye: during an elite, focusing the exact named twin reveals its verb.
-    const need = this.ordealNeeds?.[0];
-    const keenFlash =
-      run.relics.has("keen-eye") &&
-      this.ordealNeeds &&
-      run.current?.type !== "boss" &&
-      target.entry.keyword === need
-        ? target.entry.verb
-        : null;
-    const echoFlash =
-      run.relics.has("echo-glyph") && target.entry.verb === run.lastVerb ? target.entry.verb : null;
-    // Mind's Eye: the first read in each room reveals its verb.
-    let mindFlash: typeof target.entry.verb | null = null;
-    if (run.relics.has("minds-eye") && !this.roomRevealUsed) {
-      this.roomRevealUsed = true;
-      mindFlash = target.entry.verb;
-    }
-    const flash = keenFlash ?? mindFlash ?? echoFlash;
     this.game.events.emit("focusStart", {
       kanji: target.entry.kanji,
       keyword: target.entry.keyword,
       answer: target.entry.verb,
       primitives: showHints ? target.entry.primitives.map((p) => p.keyword) : [],
       rusty: showHints,
-      flash,
     });
   }
 
@@ -1058,6 +1040,7 @@ export default class DungeonScene extends Phaser.Scene {
       });
     }
     if (ok) {
+      const prevVerb = run.lastVerb; // before applyCorrectRead overwrites it (Echo Glyph)
       const { healed } = applyCorrectRead(run, target.entry, wasRusty, wasKnown);
       // Reprisal: the first correct read after a hit mends a heart.
       let reprisalHealed = false;
@@ -1078,6 +1061,13 @@ export default class DungeonScene extends Phaser.Scene {
       run.bound += 1;
       // each bind mints a kotodama to spend in shops; Toll Ledger adds one more.
       run.kotodama += run.relics.has("toll-ledger") ? 2 : 1;
+      // Echo Glyph: chaining the same verb twice in a row mints +2 kotodama.
+      if (run.relics.has("echo-glyph") && target.entry.verb === prevVerb) run.kotodama += 2;
+      // Mind's Eye (First Sight): the first bind in each room mints +3 kotodama.
+      if (run.relics.has("minds-eye") && !this.firstBindUsed) {
+        this.firstBindUsed = true;
+        run.kotodama += 3;
+      }
       // A caught Wisp mends a heart — the reward for chasing it down.
       let wispHealed = false;
       if (target.wisp && run.hp < run.maxHp) {
@@ -1423,16 +1413,19 @@ export default class DungeonScene extends Phaser.Scene {
       s.steer(this.player.x, this.player.y, speed, this.focusing);
     }
 
-    // Oracle's Tokens: spend a charge mid-read to flash the true verb.
+    // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
+    // so a charge is never wasted).
     if (
       this.focusing &&
-      this.focusTarget &&
       run.reveals > 0 &&
+      run.hp < run.maxHp &&
       run.relics.has("oracles-tokens") &&
       Phaser.Input.Keyboard.JustDown(this.revealKey)
     ) {
       run.reveals -= 1;
-      this.game.events.emit("flashVerb", this.focusTarget.entry.verb);
+      run.hp += 1;
+      sfx.ward();
+      this.game.events.emit("hpChanged");
       this.game.events.emit("relicsChanged");
     }
 
