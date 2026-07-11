@@ -15,7 +15,6 @@ interface FocusInfo {
   answer: VerbId; // the correct verb — its spoke reveals the keyword
   primitives: string[];
   rusty: boolean;
-  flash?: VerbId | null;
 }
 interface ReadInfo {
   kanji: string;
@@ -72,7 +71,6 @@ export default class HudScene extends Phaser.Scene {
   private answerVerb: VerbId | null = null;
   private answerKeyword = "";
   private focusing = false;
-  private flashVerb: VerbId | null = null;
   private relicShelf!: Phaser.GameObjects.Text;
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
@@ -181,7 +179,6 @@ export default class HudScene extends Phaser.Scene {
     this.game.events.on("magpieSteal", this.onMagpieSteal, this);
     this.game.events.on("magpieCaught", this.onMagpieCaught, this);
     this.game.events.on("relicsChanged", this.drawRelics, this);
-    this.game.events.on("flashVerb", this.onFlashVerb, this);
     this.game.events.on("pauseMenu", this.toggleCodex, this);
     this.scale.on("resize", this.layout, this);
     this.events.once("shutdown", () => {
@@ -210,7 +207,6 @@ export default class HudScene extends Phaser.Scene {
       this.game.events.off("magpieSteal", this.onMagpieSteal, this);
       this.game.events.off("magpieCaught", this.onMagpieCaught, this);
       this.game.events.off("relicsChanged", this.drawRelics, this);
-      this.game.events.off("flashVerb", this.onFlashVerb, this);
       this.game.events.off("pauseMenu", this.toggleCodex, this);
       this.scale.off("resize", this.layout, this);
     });
@@ -693,7 +689,6 @@ export default class HudScene extends Phaser.Scene {
 
   private onFocusStart(info: FocusInfo) {
     this.focusing = true;
-    this.flashVerb = info.flash ?? null; // Echo Glyph pre-flashes the answer
     this.answerVerb = info.answer;
     this.answerKeyword = info.keyword;
     this.hubGlyph.setText(info.kanji);
@@ -708,16 +703,9 @@ export default class HudScene extends Phaser.Scene {
 
   private onFocusEnd() {
     this.focusing = false;
-    this.flashVerb = null;
     this.answerVerb = null;
     this.setWheelVisible(false);
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
-  }
-
-  // Oracle's Tokens reveal, fired mid-read.
-  private onFlashVerb(verb: VerbId) {
-    this.flashVerb = verb;
-    if (this.focusing) this.drawWheel();
   }
 
   private drawRelics() {
@@ -758,16 +746,11 @@ export default class HudScene extends Phaser.Scene {
     WHEEL_ORDER.forEach((id, i) => {
       const { start, end, mid } = segmentAngles(i);
       const on = id === picked;
-      const flash = id === this.flashVerb;
-      const dimmed = easy && !on && !flash && this.dimmedVerbs.has(id);
-      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : flash ? 0.6 : dimmed ? 0.04 : 0.34);
+      const dimmed = easy && !on && this.dimmedVerbs.has(id);
+      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : dimmed ? 0.04 : 0.34);
       g.slice(cx, cy, radius, start, end, false);
       g.fillPath();
-      g.lineStyle(
-        flash && !on ? 3 : 1,
-        flash && !on ? 0xffe27a : 0x0b0912,
-        flash && !on ? 0.95 : 0.6,
-      );
+      g.lineStyle(1, 0x0b0912, 0.6);
       g.beginPath();
       g.arc(cx, cy, radius, start, end, false);
       g.strokePath();
