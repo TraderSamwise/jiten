@@ -12,6 +12,12 @@ config.resolver.assetExts.push("wasm");
 // Force jotai to resolve to CJS files on web by rewriting .mjs → .js paths.
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // hono/client is exposed only via package "exports" (import/require/types, no
+  // browser/default/react-native condition), which Metro's resolver misses.
+  // Resolve it to a concrete file so the typed RPC client bundles.
+  if (moduleName === "hono/client") {
+    return { type: "sourceFile", filePath: require.resolve("hono/client") };
+  }
   const resolve = originalResolveRequest || context.resolveRequest;
   const result = resolve(context, moduleName, platform);
   if (
