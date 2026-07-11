@@ -41,11 +41,22 @@ dev.use("*", async (c, next) => {
   headers.delete("host");
   const method = c.req.method;
   const body = method === "GET" || method === "HEAD" ? undefined : await c.req.arrayBuffer();
+  const target = `${PROD_API_BASE}${pathname}${search}`;
 
-  const upstream = await fetch(`${PROD_API_BASE}${pathname}${search}`, { method, headers, body });
-  const resBody = await upstream.arrayBuffer();
-  const ct = upstream.headers.get("content-type");
-  return c.body(resBody, upstream.status as ContentfulStatusCode, ct ? { "content-type": ct } : {});
+  try {
+    const upstream = await fetch(target, { method, headers, body });
+    const resBody = await upstream.arrayBuffer();
+    const ct = upstream.headers.get("content-type");
+    return c.body(
+      resBody,
+      upstream.status as ContentfulStatusCode,
+      ct ? { "content-type": ct } : {},
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Forward to ${target} failed:`, msg);
+    return c.json({ error: `Failed to forward to prod API (${PROD_API_BASE}): ${msg}` }, 502);
+  }
 });
 
 // Static dict files first: serveStatic calls next() on a miss, so /api and
