@@ -6,13 +6,13 @@ import { z } from "zod";
 // The zod schemas trim, then HARD TRUNCATE to a cap (not reject), matching the
 // old api/_shared/request helpers (trimOptional/trimStringArray).
 
-// Required string: missing/empty (after trim) fails with `message`; otherwise
-// trimmed and truncated to `max`.
+// Required string: empty (after trim) fails with `message`; otherwise trimmed
+// and truncated to `max`. Not `.optional()` — the field is required, so the RPC
+// client types (hc<AppType>) also require it rather than only failing at runtime.
 export const reqTrimmed = (max: number, message: string) =>
   z
     .string()
-    .optional()
-    .transform((s) => (s ?? "").trim().slice(0, max))
+    .transform((s) => s.trim().slice(0, max))
     .refine((s) => s.length > 0, { message });
 
 // Optional string: undefined when missing/empty, else trimmed + truncated.
