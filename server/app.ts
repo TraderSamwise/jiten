@@ -9,7 +9,7 @@ import { tursoTokenRoute } from "./routes/tursoToken";
 import { wordsExampleRoute } from "./routes/wordsExample";
 import type { AppVariables } from "./types";
 
-// The single Hono app: mounted as the Vercel catch-all in prod (api/[[...route]].ts)
+// The single Hono app: mounted as the Vercel catch-all in prod (api/[...route].ts)
 // and served directly by the local dev server (server/dev.ts). Sub-routers are
 // chained with .route() so their types accumulate onto AppType (for the RPC client).
 const base = new Hono<{ Variables: AppVariables }>();
