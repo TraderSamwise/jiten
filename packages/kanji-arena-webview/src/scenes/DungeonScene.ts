@@ -159,6 +159,7 @@ export default class DungeonScene extends Phaser.Scene {
       run.kotodama = 0;
       run.reads = 0;
       run.hits = 0;
+      run.readLog.clear();
       resetRun(); // clear the reviewed-this-run set for a fresh run
       this.introduced = new Set(); // re-teach the field guide on a fresh run
     }
@@ -1013,6 +1014,19 @@ export default class DungeonScene extends Phaser.Scene {
       ok,
       story: target.entry.story,
     });
+    // Log the outcome per glyph so the death recap can reveal what you missed.
+    const logged = run.readLog.get(target.entry.kanji);
+    if (logged) {
+      if (ok) logged.hits += 1;
+      else logged.misses += 1;
+    } else {
+      run.readLog.set(target.entry.kanji, {
+        keyword: target.entry.keyword,
+        story: target.entry.story,
+        hits: ok ? 1 : 0,
+        misses: ok ? 0 : 1,
+      });
+    }
     if (ok) {
       const { healed } = applyCorrectRead(run, target.entry, wasRusty, wasKnown);
       // Reprisal: the first correct read after a hit mends a heart.
