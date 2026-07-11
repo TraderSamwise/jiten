@@ -1,6 +1,9 @@
 import { ApiError } from "./auth";
 
-export type PremiumFeature = "reader_sentence_explain" | "word_example_sentences";
+export type PremiumFeature =
+  | "reader_sentence_explain"
+  | "word_example_sentences"
+  | "kanji_mnemonic";
 
 export interface FeatureAccess {
   allowed: boolean;

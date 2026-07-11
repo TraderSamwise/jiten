@@ -12,7 +12,7 @@ interface GamesModalProps {
 
 export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState<"typing" | "connect" | null>(null);
+  const [loading, setLoading] = useState<"typing" | "connect" | "arena" | null>(null);
 
   function handleTypingGame() {
     setLoading("typing");
@@ -27,6 +27,14 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
     setTimeout(() => {
       onClose();
       router.push(`/lists/connect-game?listId=${listId}`);
+    }, 100);
+  }
+
+  function handleArenaGame() {
+    setLoading("arena");
+    setTimeout(() => {
+      onClose();
+      router.push(`/lists/kanji-arena?listId=${listId}`);
     }, 100);
   }
 
@@ -86,6 +94,25 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                   </Text>
                 </View>
                 {loading === "connect" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={handleArenaGame}
+                disabled={loading !== null}
+                className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+                style={loading !== null ? { opacity: 0.5 } : undefined}
+              >
+                <View>
+                  <Text className="text-base font-medium text-foreground">Kanji Arena</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Learn and review your kanji as a roguelite
+                  </Text>
+                </View>
+                {loading === "arena" ? (
                   <ActivityIndicator size="small" />
                 ) : (
                   <ChevronRight size={20} className="text-muted-foreground" />
