@@ -40,17 +40,13 @@ describe("reader explanation client", () => {
       }),
     ).resolves.toEqual(explanation);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/reader/explain-sentence",
-      expect.objectContaining({
-        method: "POST",
-        headers: {
-          Authorization: "Bearer token",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ selectedText: "もう食べた", bookTitle: "Test Book" }),
-      }),
-    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.com/api/reader/explain-sentence");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ selectedText: "もう食べた", bookTitle: "Test Book" }));
+    const headers = new Headers(init.headers);
+    expect(headers.get("authorization")).toBe("Bearer token");
+    expect(headers.get("content-type")).toBe("application/json");
   });
 
   test("requires a signed-in API token", async () => {
