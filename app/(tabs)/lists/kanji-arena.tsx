@@ -174,7 +174,10 @@ export default function KanjiArenaScreen() {
   const saveEdit = useCallback(() => {
     if (!editing) return;
     const { token } = editing;
-    if (userDb && draft.trim()) {
+    // No draft.trim() guard: saveArenaStory soft-deletes the note on empty text,
+    // so clearing a mnemonic must reach it — otherwise the game shows it removed
+    // while the persisted note lingers.
+    if (userDb) {
       saveArenaStory(userDb, strokesDb, token, draft)
         .then(() => markDirty())
         .catch(() => {});

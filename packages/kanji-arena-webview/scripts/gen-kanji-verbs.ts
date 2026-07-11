@@ -6,6 +6,9 @@ import { fileURLToPath } from "url";
 // classification from the POC corpus: verb bucket + anonymized cluster id +
 // stroke count ONLY. Heisig keywords/stories are deliberately NOT emitted — the
 // game gets keywords at runtime from the host's session (jiten's own DB).
+// One-off: SRC lives in the gitignored rtk-game/ POC (not tracked here), so this
+// only reruns on a local checkout that still has that POC. The committed output
+// (src/rtk/kanji-verbs.ts) is the source of truth the app ships.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(__dirname, "../../../rtk-game/web/src/rtk/corpus-data.json");
 const OUT = resolve(__dirname, "../src/rtk/kanji-verbs.ts");
