@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/(.+/.+)",
+      "destination": "/api/[...route]"
+    },
+    {
       "source": "/proxy/aozora/:path*",
       "destination": "/api/proxy?route=aozora&path=:path*"
     },
