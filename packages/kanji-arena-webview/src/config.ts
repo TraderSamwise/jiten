@@ -45,13 +45,13 @@ export const ATMOSPHERE = {
   floorGrade: 0x5a4f92, // multiply tint recolouring the icy floor into deep violet
   wallGrade: 0x4a4276, // multiply tint darkening the walls to match
   vignette: { radius: 0.7, strength: 0.6 },
-  bloom: { blur: 1.1, strength: 0.5 },
+  bloom: { blur: 1.0, strength: 0.34 },
   haze: { color: 0x7a58d8, alpha: 0.13, scale: 13 }, // faint ambient violet fog
   playerLight: { color: 0x9a6bff, alpha: 0.12, scale: 3.0 },
   spirit: {
-    haze: { color: 0x9a6bff, alpha: 0.2, scale: 1.55 }, // wide shared violet
-    core: { alpha: 0.28, scale: 0.8 }, // tight verb-coloured centre
-    pulse: { scale: 1.16, ms: 1300 }, // breathing glow
+    haze: { color: 0x9a6bff, alpha: 0.09, scale: 1.4 }, // wide shared violet
+    core: { alpha: 0.3, scale: 0.72 }, // tight verb-coloured centre
+    pulse: { alpha: 0.28, ms: 1150 }, // breathing glow — pulses the haze's intensity
   },
 };
 

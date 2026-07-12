@@ -96,7 +96,8 @@ export default class Spirit extends Phaser.GameObjects.Container {
       .setScale(A.core.scale)
       .setBlendMode(Phaser.BlendModes.ADD);
     // The gold reticle rides only the focused target (shown/spun in setTargeted).
-    this.reticle = scene.add.image(0, 0, "reticle").setVisible(false);
+    // Scaled down so the ring hugs the glyph instead of ballooning around it.
+    this.reticle = scene.add.image(0, 0, "reticle").setScale(0.46).setVisible(false);
     this.glyph = scene.add
       .text(0, 0, entry.kanji, { fontFamily: GLYPH_FONT, fontSize: "22px", color: "#f4ecd6" })
       .setOrigin(0.5)
@@ -141,12 +142,11 @@ export default class Spirit extends Phaser.GameObjects.Container {
       repeat: -1,
       ease: "Sine.easeInOut",
     });
-    // The haze breathes — a slow scale pulse. Alpha is left for setTargeted to own,
-    // so the pulse and the focus-brighten never fight over the same property.
+    // The haze breathes — a visible intensity pulse. It owns hazeAura's alpha, so
+    // setTargeted brightens the CORE instead (they never fight over one property).
     this.pulse = scene.tweens.add({
       targets: this.hazeAura,
-      scaleX: A.haze.scale * A.pulse.scale,
-      scaleY: A.haze.scale * A.pulse.scale,
+      alpha: { from: this.hazeBase, to: Math.min(1, A.pulse.alpha * mult) },
       duration: A.pulse.ms,
       yoyo: true,
       repeat: -1,
@@ -182,8 +182,8 @@ export default class Spirit extends Phaser.GameObjects.Container {
   }
 
   setTargeted(on: boolean) {
-    this.hazeAura.setAlpha(this.hazeBase * (on ? 1.9 : 1));
-    this.coreAura.setAlpha(this.coreBase * (on ? 1.9 : 1));
+    // Leave hazeAura's alpha to the pulse tween; brighten the core + glyph instead.
+    this.coreAura.setAlpha(Math.min(1, this.coreBase * (on ? 1.9 : 1)));
     this.glyph.setColor(on ? "#ffffff" : "#f4ecd6");
     // A spinning gold reticle plus a gentle scale-and-depth pop so the target
     // reads clearly among overlapping spirits and through the focus dim.
