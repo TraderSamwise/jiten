@@ -25,6 +25,17 @@ describe("buildPrimitiveChoices", () => {
     // With a corpus this size the decoys should come from it, not the fallback.
     expect(c.filter((x) => !x.correct).every((x) => pool.includes(x.keyword))).toBe(true);
   });
+
+  it("is deterministic for a given rng — same layout across reads", () => {
+    // A non-identity but deterministic shuffle, so this pins that shuffle is
+    // actually applied AND that the result is stable across calls (the property
+    // the per-primitive seed relies on for a fixed layout).
+    const revRng: ShuffleRng = { shuffle: <T>(a: T[]): T[] => [...a].reverse() };
+    const a = buildPrimitiveChoices("sun", 5, revRng).map((x) => x.keyword);
+    const b = buildPrimitiveChoices("sun", 5, revRng).map((x) => x.keyword);
+    expect(a).toEqual(b);
+    expect(a[0]).not.toBe("sun"); // shuffle moved the correct off the insertion slot
+  });
 });
 
 describe("radialIndexAt", () => {

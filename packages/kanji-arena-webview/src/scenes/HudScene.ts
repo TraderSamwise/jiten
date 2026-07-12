@@ -1,19 +1,20 @@
 import Phaser from "phaser";
 import { sfx } from "../audio/sfx";
-import { EASY_DIM_FRACTION, settings, WHEEL_DEADZONE, WHEEL_RADIUS_FRAC } from "../config";
+import { settings, WHEEL_DEADZONE, WHEEL_RADIUS_FRAC } from "../config";
 import { run } from "../core/run";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_MAP } from "../rtk/relics";
-import { FORGE_CHOICES } from "../rtk/forge";
+import { MAX_RING_CHOICES } from "../rtk/forge";
 import { sigilKey } from "../rtk/sigils";
 import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
 import { radialIndexAt, segmentAngles, slotMid, wheelVerbAt } from "../rtk/wheel";
 
 interface FocusInfo {
-  kanji: string;
-  keyword: string; // the targeted spirit's realised keyword (shown on its spoke)
-  answer: VerbId; // the correct verb — its spoke reveals the keyword
+  kanji: string; // shown in the hub while reading
+}
+interface ForgeWheelInfo {
+  words: { verb: VerbId; word: string }[]; // the selectable spokes and their labels
 }
 interface ForgeRingInfo {
   stage: number; // 0-based index of the primitive being named
@@ -75,9 +76,11 @@ export default class HudScene extends Phaser.Scene {
   private hub!: Phaser.GameObjects.Arc;
   private hubGlyph!: Phaser.GameObjects.Text;
   private sigils: Phaser.GameObjects.Image[] = [];
-  private answerKw!: Phaser.GameObjects.Text; // realised keyword on the correct spoke
-  private answerVerb: VerbId | null = null;
-  private answerKeyword = "";
+  // The verb wheel is a multiple-choice: only wheelWords spokes carry a keyword
+  // (correct + wrong deck-word distractors) and are selectable; the rest are
+  // greyed. wheelLabels is one reusable label per spoke position.
+  private wheelWords = new Map<VerbId, string>();
+  private wheelLabels: Phaser.GameObjects.Text[] = [];
   private focusing = false;
   // Forge: while naming primitives the overlay is a recognition ring (forgeMode
   // true) instead of the verb wheel. candTexts are the ring's keyword candidates.
@@ -92,8 +95,6 @@ export default class HudScene extends Phaser.Scene {
   private relicShelf!: Phaser.GameObjects.Text;
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
-  // Verbs no spirit in the current room uses; a subset is dimmed in easy mode.
-  private dimmedVerbs = new Set<VerbId>();
 
   private hubHint!: Phaser.GameObjects.Text;
   private ringCue!: Phaser.GameObjects.Text; // "name this part" on a primitive ring
@@ -180,7 +181,6 @@ export default class HudScene extends Phaser.Scene {
 
     this.game.events.on("roomChanged", this.draw, this);
     this.game.events.on("roomChanged", this.hideStudy, this);
-    this.game.events.on("roomChanged", this.computeDimmed, this);
     this.game.events.on("difficultyChanged", this.onDifficulty, this);
     this.game.events.on("muteChanged", this.onMute, this);
     this.game.events.on("lockState", this.onLock, this);
@@ -210,7 +210,6 @@ export default class HudScene extends Phaser.Scene {
     this.events.once("shutdown", () => {
       this.game.events.off("roomChanged", this.draw, this);
       this.game.events.off("roomChanged", this.hideStudy, this);
-      this.game.events.off("roomChanged", this.computeDimmed, this);
       this.game.events.off("difficultyChanged", this.onDifficulty, this);
       this.game.events.off("muteChanged", this.onMute, this);
       this.game.events.off("lockState", this.onLock, this);
@@ -244,7 +243,6 @@ export default class HudScene extends Phaser.Scene {
     this.drawHearts();
     this.drawPurse();
     this.drawRelics();
-    this.computeDimmed();
   }
 
   private buildWheel() {
@@ -268,14 +266,18 @@ export default class HudScene extends Phaser.Scene {
       const img = this.add.image(0, 0, sigilKey(id)).setOrigin(0.5).setDepth(13).setVisible(false);
       this.sigils.push(img);
     }
-    this.answerKw = this.add
-      .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "15px", color: "#f7ecc9" })
-      .setOrigin(0.5)
-      .setDepth(14)
-      .setVisible(false);
-    // Reusable keyword candidates for the Forge's primitive rings — sized to
-    // FORGE_CHOICES so the pool can never be indexed past by a ring.
-    for (let i = 0; i < FORGE_CHOICES; i++) {
+    // One reusable keyword label per wheel spoke (worded spokes fill them).
+    for (let i = 0; i < WHEEL_ORDER.length; i++) {
+      const t = this.add
+        .text(0, 0, "", { fontFamily: "Georgia, serif", fontSize: "15px", color: "#f7ecc9" })
+        .setOrigin(0.5)
+        .setDepth(14)
+        .setVisible(false);
+      this.wheelLabels.push(t);
+    }
+    // Reusable keyword candidates for the Forge's primitive rings — sized to the
+    // max so the pool can never be indexed past however the count is tuned.
+    for (let i = 0; i < MAX_RING_CHOICES; i++) {
       const t = this.add
         .text(0, 0, "", { fontFamily: "Georgia, serif", fontSize: "15px", color: "#cfc8e0" })
         .setOrigin(0.5)
@@ -743,8 +745,6 @@ export default class HudScene extends Phaser.Scene {
 
   private onFocusStart(info: FocusInfo) {
     this.focusing = true;
-    this.answerVerb = info.answer;
-    this.answerKeyword = info.keyword;
     this.focusKanji = info.kanji;
     this.hubGlyph.setText(info.kanji);
     // The boss clock drains at half-rate during a read, so slow the bar to match.
@@ -765,8 +765,9 @@ export default class HudScene extends Phaser.Scene {
   }
 
   // Every primitive named — hand off to the verb wheel (also the atomic-kanji path).
-  private onForgeWheel() {
+  private onForgeWheel(info: ForgeWheelInfo) {
     this.forgeMode = false;
+    this.wheelWords = new Map(info.words.map((w) => [w.verb, w.word]));
     this.applyOverlayMode();
     this.drawWheel();
   }
@@ -774,7 +775,7 @@ export default class HudScene extends Phaser.Scene {
   private onFocusEnd() {
     this.focusing = false;
     this.forgeMode = false;
-    this.answerVerb = null;
+    this.wheelWords.clear();
     this.applyOverlayMode();
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
   }
@@ -797,7 +798,8 @@ export default class HudScene extends Phaser.Scene {
     this.hubHint.setVisible(on);
     this.wheelG.setVisible(wheel);
     for (const s of this.sigils) s.setVisible(wheel);
-    this.answerKw.setVisible(wheel && this.answerVerb != null);
+    // Only worded spokes show a label; drawWheel toggles which as it renders.
+    this.wheelLabels.forEach((t, i) => t.setVisible(wheel && this.wheelWords.has(WHEEL_ORDER[i])));
     this.ringCue.setVisible(ring);
     this.candTexts.forEach((t, i) => t.setVisible(ring && i < this.ringChoices.length));
   }
@@ -811,7 +813,7 @@ export default class HudScene extends Phaser.Scene {
     const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
     const inner = radius * dzFrac;
     const p = this.input.activePointer;
-    const picked = wheelVerbAt(cx, cy, p.x, p.y, radius, dzFrac);
+    const aimed = wheelVerbAt(cx, cy, p.x, p.y, radius, dzFrac);
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
     this.hub.setPosition(cx, cy).setRadius(inner);
@@ -819,14 +821,15 @@ export default class HudScene extends Phaser.Scene {
     this.hubGlyph.setFontFamily(GLYPH_FONT).setText(this.focusKanji).setPosition(cx, cy);
     this.hubHint.setText("").setPosition(cx, cy + inner + 6);
 
-    const easy = settings.difficulty === "easy";
     const g = this.wheelG;
     g.clear();
     WHEEL_ORDER.forEach((id, i) => {
       const { start, end, mid } = segmentAngles(i);
-      const on = id === picked;
-      const dimmed = easy && !on && this.dimmedVerbs.has(id);
-      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : dimmed ? 0.04 : 0.34);
+      const word = this.wheelWords.get(id);
+      const worded = word != null;
+      // Only worded spokes are selectable; a wordless spoke never highlights.
+      const on = worded && id === aimed;
+      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : worded ? 0.34 : 0.04);
       g.slice(cx, cy, radius, start, end, false);
       g.fillPath();
       g.lineStyle(1, 0x0b0912, 0.6);
@@ -840,16 +843,17 @@ export default class HudScene extends Phaser.Scene {
       const sz = radius * (on ? 0.2 : 0.16);
       const s = this.sigils[i];
       s.setPosition(sx, sy).setDisplaySize(sz, sz);
-      // Dark on the bright picked slice, else the verb's own colour.
+      // Dark on the bright picked slice, else the verb's own colour; greyed if wordless.
       s.setTint(on ? 0x0b0912 : VERB_MAP[id].color);
-      s.setAlpha(dimmed ? 0.15 : 1);
+      s.setAlpha(worded ? 1 : 0.12);
 
-      // Always-reveal: the targeted spirit's keyword rides its correct spoke, out
-      // toward the rim so it reads "sigil → keyword".
-      if (id === this.answerVerb) {
+      // Worded spokes carry a keyword out toward the rim — one is the true reading,
+      // the rest are real-but-wrong deck words. The player picks the right one.
+      const label = this.wheelLabels[i];
+      if (worded) {
         const kr = radius - 8;
-        this.answerKw
-          .setText(this.answerKeyword)
+        label
+          .setText(word)
           .setPosition(cx + Math.cos(mid) * kr, cy + Math.sin(mid) * kr)
           .setColor(on ? "#0b0912" : "#f7ecc9");
       }
@@ -912,23 +916,6 @@ export default class HudScene extends Phaser.Scene {
       .setText(easy ? "◐ easy — H" : "● hard — H")
       .setColor(easy ? "#7ad6a0" : "#e0a35a");
     if (this.focusing) this.drawWheel();
-  }
-
-  // Pick the room's "false" verbs (used by no spirit here) and dim a stable
-  // subset of them — seeded per room so the choice holds while the wheel is open
-  // and stays consistent on re-reads. Only applied to the draw in easy mode.
-  private computeDimmed() {
-    this.dimmedVerbs = new Set();
-    const room = run.current;
-    if (!room) return;
-    const entries = run.content.get(key(room.gx, room.gy));
-    if (!entries || entries.length === 0) return;
-    const active = new Set(entries.map((e) => e.verb));
-    const falseVerbs = WHEEL_ORDER.filter((id) => !active.has(id));
-    const rng = new Phaser.Math.RandomDataGenerator([run.seed, key(room.gx, room.gy), "dim"]);
-    const shuffled = rng.shuffle(falseVerbs.slice());
-    const n = Math.floor(falseVerbs.length * EASY_DIM_FRACTION);
-    for (let i = 0; i < n; i++) this.dimmedVerbs.add(shuffled[i]);
   }
 
   private drawHearts() {
