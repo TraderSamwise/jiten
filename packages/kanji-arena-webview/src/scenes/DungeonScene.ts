@@ -1140,6 +1140,8 @@ export default class DungeonScene extends Phaser.Scene {
         faceText: face.text,
         faceRtk: face.rtk,
         choices: this.forgeChoices.map((c) => c.keyword),
+        faces: this.forgePlan.map((p) => primitiveFace(p)),
+        kanji: this.focusTarget?.entry.kanji ?? "",
       });
     } else {
       this.forgeChoices = [];
