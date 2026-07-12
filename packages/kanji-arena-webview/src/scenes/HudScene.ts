@@ -263,7 +263,7 @@ export default class HudScene extends Phaser.Scene {
 
   private buildWheel() {
     this.veil = this.add
-      .rectangle(0, 0, 10, 10, 0x0b0912, 0.5)
+      .rectangle(0, 0, 10, 10, 0x0b0912, 0.6)
       .setOrigin(0, 0)
       .setVisible(false)
       .setDepth(10);
