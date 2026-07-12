@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { sfx } from "../audio/sfx";
 import { settings, WHEEL_DEADZONE, WHEEL_RADIUS_FRAC } from "../config";
 import { run } from "../core/run";
+import { JOY_RADIUS, touch } from "../core/touchControls";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_MAP } from "../rtk/relics";
@@ -66,6 +67,7 @@ const RTK_FONT = "RtkPrimitives";
 // verb is computed from the shared pointer, matching what DungeonScene resolves.
 export default class HudScene extends Phaser.Scene {
   private g!: Phaser.GameObjects.Graphics;
+  private joyG!: Phaser.GameObjects.Graphics;
   private label!: Phaser.GameObjects.Text;
   private hint!: Phaser.GameObjects.Text;
   private hearts!: Phaser.GameObjects.Text;
@@ -125,6 +127,7 @@ export default class HudScene extends Phaser.Scene {
 
   create() {
     this.g = this.add.graphics();
+    this.joyG = this.add.graphics().setDepth(9);
     this.label = this.add.text(0, 0, "", {
       fontFamily: "monospace",
       fontSize: "12px",
@@ -897,9 +900,24 @@ export default class HudScene extends Phaser.Scene {
   }
 
   update() {
+    this.drawJoystick();
     if (!this.focusing) return;
     if (this.forgeMode) this.drawRing();
     else this.drawWheel();
+  }
+
+  // The floating move-stick: a faint ring where the thumb landed and a knob at
+  // the clamped thumb position. Drawn only while a touch drives it.
+  private drawJoystick() {
+    const g = this.joyG;
+    g.clear();
+    if (!touch.joyActive) return;
+    g.lineStyle(2, 0xf4e7c0, 0.28);
+    g.strokeCircle(touch.joyOrigin.x, touch.joyOrigin.y, JOY_RADIUS);
+    g.fillStyle(0xf4e7c0, 0.22);
+    g.fillCircle(touch.joyKnob.x, touch.joyKnob.y, 18);
+    g.lineStyle(1.5, 0xf4e7c0, 0.5);
+    g.strokeCircle(touch.joyKnob.x, touch.joyKnob.y, 18);
   }
 
   private onLock(locked: boolean) {
