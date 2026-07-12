@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { sfx } from "../audio/sfx";
-import { SPIRIT_BODY } from "../config";
+import { ATMOSPHERE, SPIRIT_BODY } from "../config";
 import type { KanjiEntry } from "../rtk/corpus";
 import { burstProfile, VERB_MAP } from "../rtk/verbs";
 
@@ -32,8 +32,13 @@ export default class Spirit extends Phaser.GameObjects.Container {
   private phasedOut = false;
   private phaseEvent?: Phaser.Time.TimerEvent;
   private wanderPhase = Math.random() * Math.PI * 2;
-  private aura: Phaser.GameObjects.Image;
-  private ring: Phaser.GameObjects.Arc;
+  private hazeAura: Phaser.GameObjects.Image; // wide shared violet glow (pulses)
+  private coreAura: Phaser.GameObjects.Image; // tight verb-coloured centre
+  private reticle: Phaser.GameObjects.Image;
+  private spin!: Phaser.Tweens.Tween;
+  private pulse!: Phaser.Tweens.Tween;
+  private hazeBase: number;
+  private coreBase: number;
   private eliteRing?: Phaser.GameObjects.Arc;
   private glyph: Phaser.GameObjects.Text;
   private baseScale: number;
@@ -72,13 +77,27 @@ export default class Spirit extends Phaser.GameObjects.Container {
             ? 0x4fc76a
             : VERB_MAP[entry.verb].color;
 
-    this.aura = scene.add
+    // Two additive discs: a wide shared violet haze (the mood, pulsing) and a
+    // tight verb/type-coloured core so what a spirit IS still reads at a glance.
+    const A = ATMOSPHERE.spirit;
+    const mult = warden ? 1.3 : elite ? 1.15 : 1;
+    this.hazeBase = A.haze.alpha * mult;
+    this.coreBase = A.core.alpha * mult;
+    this.hazeAura = scene.add
+      .image(0, 0, "aura")
+      .setTint(A.haze.color)
+      .setAlpha(this.hazeBase)
+      .setScale(A.haze.scale)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.coreAura = scene.add
       .image(0, 0, "aura")
       .setTint(color)
-      .setAlpha(warden ? 0.8 : elite ? 0.7 : 0.5);
-    this.ring = scene.add
-      .circle(0, 0, 15)
-      .setStrokeStyle(warden ? 2.5 : 1.5, color, warden ? 0.85 : 0.6);
+      .setAlpha(this.coreBase)
+      .setScale(A.core.scale)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    // The gold reticle rides only the focused target (shown/spun in setTargeted).
+    // Scaled down so the ring hugs the glyph instead of ballooning around it.
+    this.reticle = scene.add.image(0, 0, "reticle").setScale(0.46).setVisible(false);
     this.glyph = scene.add
       .text(0, 0, entry.kanji, { fontFamily: GLYPH_FONT, fontSize: "22px", color: "#f4ecd6" })
       .setOrigin(0.5)
@@ -86,10 +105,15 @@ export default class Spirit extends Phaser.GameObjects.Container {
     // Global pixelArt forces NEAREST; kanji aren't pixel art, so force LINEAR.
     (this.glyph.texture as Phaser.Textures.Texture).setFilter(Phaser.Textures.FilterMode.LINEAR);
 
-    const parts: Phaser.GameObjects.GameObject[] = [this.aura, this.ring, this.glyph];
+    const parts: Phaser.GameObjects.GameObject[] = [
+      this.hazeAura,
+      this.coreAura,
+      this.reticle,
+      this.glyph,
+    ];
     if (elite) {
       // A gold outer ring marks confusable/boss spirits — read the exact keyword.
-      this.eliteRing = scene.add.circle(0, 0, 20).setStrokeStyle(2, 0xf2c14e, 0.85);
+      this.eliteRing = scene.add.circle(0, 0, 20).setStrokeStyle(1.5, 0xf2c14e, 0.7);
       parts.splice(2, 0, this.eliteRing);
     }
     this.add(parts);
@@ -101,20 +125,29 @@ export default class Spirit extends Phaser.GameObjects.Container {
     b.setSize(size, size);
     b.setOffset(-size / 2, -size / 2);
 
-    scene.tweens.add({
-      targets: this.ring,
-      alpha: { from: 0.3, to: 0.7 },
-      scaleX: { from: 0.9, to: 1.2 },
-      scaleY: { from: 0.9, to: 1.2 },
-      duration: 900,
-      yoyo: true,
+    // The targeting reticle slowly spins while it's shown; paused until targeted.
+    this.spin = scene.tweens.add({
+      targets: this.reticle,
+      angle: 360,
+      duration: 3200,
       repeat: -1,
+      paused: true,
     });
     // A gentle float so idle spirits feel alive (glyph only — physics untouched).
     scene.tweens.add({
       targets: this.glyph,
       y: { from: -2, to: 2 },
       duration: 1400,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+    // The haze breathes — a visible intensity pulse. It owns hazeAura's alpha, so
+    // setTargeted brightens the CORE instead (they never fight over one property).
+    this.pulse = scene.tweens.add({
+      targets: this.hazeAura,
+      alpha: { from: this.hazeBase, to: Math.min(1, A.pulse.alpha * mult) },
+      duration: A.pulse.ms,
       yoyo: true,
       repeat: -1,
       ease: "Sine.easeInOut",
@@ -149,10 +182,16 @@ export default class Spirit extends Phaser.GameObjects.Container {
   }
 
   setTargeted(on: boolean) {
-    const color = VERB_MAP[this.entry.verb].color;
-    this.aura.setAlpha(on ? 0.9 : 0.5);
-    this.glyph.setColor(on ? "#fff4d6" : "#f4ecd6");
-    this.ring.setStrokeStyle(on ? 2.5 : 1.5, on ? 0xffe27a : color, on ? 0.95 : 0.6);
+    // Leave hazeAura's alpha to the pulse tween; brighten the core + glyph instead.
+    this.coreAura.setAlpha(Math.min(1, this.coreBase * (on ? 1.9 : 1)));
+    this.glyph.setColor(on ? "#ffffff" : "#f4ecd6");
+    // A spinning gold reticle plus a gentle scale-and-depth pop so the target
+    // reads clearly among overlapping spirits and through the focus dim.
+    this.reticle.setVisible(on);
+    if (on) this.spin.play();
+    else this.spin.pause();
+    this.setScale(this.baseScale * (on ? 1.15 : 1));
+    this.setDepth(on ? 10 : 0);
   }
 
   // Drive this frame's velocity toward the player per the spirit's behavior.
@@ -202,13 +241,12 @@ export default class Spirit extends Phaser.GameObjects.Container {
   // Wrong read: the spirit surges (its meaning lashes out). Damage is applied by
   // the scene; this is just the tell.
   surge() {
-    // aura is a container child (resting scale 1); the container already carries
-    // baseScale, so a fixed 1.5 pulses to ~1.5x regardless of spirit size.
+    // The verb-coloured core flares — a bright lash in the spirit's own colour.
     this.scene.tweens.add({
-      targets: this.aura,
-      alpha: 0.95,
-      scaleX: 1.5,
-      scaleY: 1.5,
+      targets: this.coreAura,
+      alpha: Math.min(1, this.coreBase * 2.6),
+      scaleX: ATMOSPHERE.spirit.core.scale * 1.9,
+      scaleY: ATMOSPHERE.spirit.core.scale * 1.9,
       duration: 110,
       yoyo: true,
     });
@@ -240,7 +278,7 @@ export default class Spirit extends Phaser.GameObjects.Container {
   // and keep mutating dead objects every frame for the rest of the run.
   destroy(fromScene?: boolean) {
     this.phaseEvent?.remove();
-    this.scene?.tweens.killTweensOf([this.ring, this.glyph, this.aura, this]);
+    this.scene?.tweens.killTweensOf([this.reticle, this.glyph, this.hazeAura, this.coreAura, this]);
     super.destroy(fromScene);
   }
 

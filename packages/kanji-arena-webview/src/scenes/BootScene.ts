@@ -3,8 +3,9 @@ import { Graphics } from "../graphics";
 import { SIGIL_BOX, SIGILS, sigilKey } from "../rtk/sigils";
 import { WHEEL_ORDER } from "../rtk/verbs";
 
-// Loads assets + registers animations once, generates the spirit-aura texture,
-// then hands off to the dungeon and its HUD overlay.
+// Loads the tileset + player sprite, registers the player animations, then
+// generates the drawn runtime textures (aura, spark, sigils, focus reticle,
+// ordeal timer bar) before handing off to the dungeon and its HUD overlay.
 export default class BootScene extends Phaser.Scene {
   constructor() {
     super("boot");
@@ -42,8 +43,48 @@ export default class BootScene extends Phaser.Scene {
     this.makeAura();
     this.makeSpark();
     this.makeSigils();
+    this.makeReticle();
+    this.makeTimerBar();
 
     this.scene.start("title");
+  }
+
+  // The ordeal clock: a gold→ember horizontal gradient the HUD drains via scaleX.
+  private makeTimerBar() {
+    if (this.textures.exists("timerbar")) return;
+    const w = 220;
+    const h = 8;
+    const tex = this.textures.createCanvas("timerbar", w, h);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, "#f2c14e");
+    g.addColorStop(1, "#ff6b5c");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    tex.refresh();
+  }
+
+  // The gold targeting reticle: four arc segments with gaps, spun on the focus
+  // target (Spirit shows/hides + rotates it). Transparent outside the arcs.
+  private makeReticle() {
+    if (this.textures.exists("reticle")) return;
+    const size = 64;
+    const tex = this.textures.createCanvas("reticle", size, size);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    ctx.strokeStyle = "#f2c14e";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const c = size / 2;
+    const r = 26;
+    const gap = 0.42;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(c, c, r, i * (Math.PI / 2) + gap / 2, (i + 1) * (Math.PI / 2) - gap / 2);
+      ctx.stroke();
+    }
+    tex.refresh();
   }
 
   // Rasterise each verb's sigil to a white canvas texture (tinted per verb on the
