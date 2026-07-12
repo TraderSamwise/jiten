@@ -1,43 +1,65 @@
 import Phaser from "phaser";
-import { Graphics } from "../graphics";
 import { SIGIL_BOX, SIGILS, sigilKey } from "../rtk/sigils";
 import { WHEEL_ORDER } from "../rtk/verbs";
 
-// Loads assets + registers animations once, generates the spirit-aura texture,
-// then hands off to the dungeon and its HUD overlay.
+// Generates every runtime texture procedurally (aura, spark, sigils, collider
+// tile, player peg), then hands off to the dungeon and its HUD overlay. The game
+// ships no image assets — the whole look is drawn.
 export default class BootScene extends Phaser.Scene {
   constructor() {
     super("boot");
   }
 
-  preload() {
-    this.load.spritesheet(Graphics.player.key, Graphics.player.file, {
-      frameWidth: Graphics.player.width,
-      frameHeight: Graphics.player.height,
-    });
-  }
-
   create() {
-    const p = Graphics.player.animations;
-    for (const a of [p.idle, p.idleBack, p.walk, p.walkBack]) {
-      if (this.anims.exists(a.key)) continue;
-      this.anims.create({
-        key: a.key,
-        frames: this.anims.generateFrameNumbers(Graphics.player.key, {
-          start: a.start,
-          end: a.end,
-        }),
-        frameRate: a.frameRate,
-        repeat: a.repeat,
-      });
-    }
-
     this.makeAura();
     this.makeSpark();
     this.makeSigils();
     this.makePx();
+    this.makePeg();
 
     this.scene.start("title");
+  }
+
+  // The player avatar: a soft-shadowed indigo peg with a pale head, drawn into a
+  // 48x48 frame so the dungeon's body offset (14x14 @ 17,30) still lands on its base.
+  private makePeg() {
+    if (this.textures.exists("peg")) return;
+    const s = 48;
+    const tex = this.textures.createCanvas("peg", s, s);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    ctx.beginPath();
+    ctx.ellipse(24, 41, 12, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    this.roundRectPath(ctx, 15, 18, 18, 22, 9);
+    ctx.fillStyle = "#463f73";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(150,138,210,0.55)";
+    ctx.stroke();
+    ctx.fillStyle = "#ece7f6";
+    ctx.beginPath();
+    ctx.ellipse(24, 15, 8, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    tex.refresh();
+  }
+
+  private roundRectPath(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+  ) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   // A plain 16x16 white tile — used as an invisible, TILE-sized collider body for
