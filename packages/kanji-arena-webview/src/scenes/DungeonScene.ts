@@ -33,7 +33,13 @@ import Spirit, { SpiritBehavior } from "../entities/Spirit";
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
 import { Graphics } from "../graphics";
 import { CLUSTERS, KanjiEntry } from "../rtk/corpus";
-import { buildPrimitiveChoices, type Choice, hasShape, primitiveFace } from "../rtk/forge";
+import {
+  buildPrimitiveChoices,
+  type Choice,
+  FORGE_CHOICES,
+  hasShape,
+  primitiveFace,
+} from "../rtk/forge";
 import { absorbBackfire, applyCorrectRead } from "../rtk/relicEffects";
 import { RELIC_IDS, RelicId } from "../rtk/relics";
 import type { ArenaPrimitive } from "../protocol";
@@ -67,7 +73,6 @@ const ORDEAL_SECONDS = 7; // per-need boss timer at floor 1; tightens with depth
 const ORDEAL_SECONDS_MIN = 4;
 const MAX_EXTRA_SPIRITS = 3; // deeper floors pack more spirits per combat room
 const COMBAT_MIN = 1; // review-ready kanji needed to make a room combat; else it teaches
-const FORGE_CHOICES = 5; // keyword candidates per primitive ring (1 correct + 4 decoys)
 
 // Boss-only telegraphed danger patches: keep moving while you read under the clock.
 // Sized to the ~240x144px room interior — small enough to leave dodge room.

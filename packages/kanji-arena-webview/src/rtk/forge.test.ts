@@ -18,10 +18,12 @@ describe("buildPrimitiveChoices", () => {
   it("draws decoys from the loaded corpus when available", () => {
     loadStubCorpus();
     const pool = forgePool();
-    expect(pool.length).toBeGreaterThan(0);
+    expect(pool.length).toBeGreaterThanOrEqual(4);
     const c = buildPrimitiveChoices(pool[0], 4, idRng);
     expect(c).toHaveLength(4);
     expect(c.filter((x) => x.correct)).toHaveLength(1);
+    // With a corpus this size the decoys should come from it, not the fallback.
+    expect(c.filter((x) => !x.correct).every((x) => pool.includes(x.keyword))).toBe(true);
   });
 });
 

@@ -5,6 +5,7 @@ import { run } from "../core/run";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_MAP } from "../rtk/relics";
+import { FORGE_CHOICES } from "../rtk/forge";
 import { sigilKey } from "../rtk/sigils";
 import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
 import { radialIndexAt, segmentAngles, slotMid, wheelVerbAt } from "../rtk/wheel";
@@ -271,8 +272,9 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(14)
       .setVisible(false);
-    // Reusable keyword candidates for the Forge's primitive rings (max 8 slots).
-    for (let i = 0; i < 8; i++) {
+    // Reusable keyword candidates for the Forge's primitive rings — sized to
+    // FORGE_CHOICES so the pool can never be indexed past by a ring.
+    for (let i = 0; i < FORGE_CHOICES; i++) {
       const t = this.add
         .text(0, 0, "", { fontFamily: "Georgia, serif", fontSize: "15px", color: "#cfc8e0" })
         .setOrigin(0.5)
