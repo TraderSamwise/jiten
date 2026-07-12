@@ -417,8 +417,11 @@ export default class DungeonScene extends Phaser.Scene {
     const rng = new Phaser.Math.RandomDataGenerator([run.seed, k, "resolve"]);
     const ready = reviewReady(this.srs, rng);
     if (ready.length >= COMBAT_MIN) {
-      const extra = Math.min(run.depth, MAX_EXTRA_SPIRITS);
-      const n = 2 + rng.between(0, 2) + extra;
+      // Measured buildup: 2 spirits on the first floor, +1 per floor, capped — a
+      // predictable crescendo with depth instead of random room-to-room swings.
+      // Hard mode lifts the cap for a denser crowd deeper in.
+      const cap = settings.difficulty === "hard" ? MAX_EXTRA_SPIRITS + 2 : MAX_EXTRA_SPIRITS;
+      const n = 2 + Math.min(run.depth, cap);
       const list = ready.slice(0, n);
       run.content.set(k, list);
       run.roomState.set(k, this.dominantState(list));
