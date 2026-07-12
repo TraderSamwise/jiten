@@ -11,13 +11,6 @@ export default class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    const env = Graphics.environment;
-    this.load.spritesheet(env.key, env.file, {
-      frameWidth: env.width,
-      frameHeight: env.height,
-      margin: env.margin,
-      spacing: env.spacing,
-    });
     this.load.spritesheet(Graphics.player.key, Graphics.player.file, {
       frameWidth: Graphics.player.width,
       frameHeight: Graphics.player.height,
@@ -42,8 +35,23 @@ export default class BootScene extends Phaser.Scene {
     this.makeAura();
     this.makeSpark();
     this.makeSigils();
+    this.makePx();
 
     this.scene.start("title");
+  }
+
+  // A plain 16x16 white tile — used as an invisible, TILE-sized collider body for
+  // walls and doors now that the environment is drawn procedurally. Sized to TILE
+  // so a static body created from it defaults to the right collision box.
+  private makePx() {
+    if (this.textures.exists("px")) return;
+    const s = 16;
+    const tex = this.textures.createCanvas("px", s, s);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, s, s);
+    tex.refresh();
   }
 
   // Rasterise each verb's sigil to a white canvas texture (tinted per verb on the
