@@ -6,9 +6,10 @@ import { CORPUS } from "./corpus";
 // pieces — decoy generation and shape/font resolution; the gameplay wiring lives
 // in DungeonScene and the rendering in HudScene.
 
-// Keyword candidates per primitive ring (1 correct + decoys). The HUD sizes its
-// candidate-label pool from this, so the two never drift.
-export const FORGE_CHOICES = 5;
+// Upper bound on keyword candidates per primitive ring (1 correct + up to 8
+// decoys at hard difficulty). The HUD sizes its candidate-label pool from this,
+// so the pool can never be indexed past however the count is tuned.
+export const MAX_RING_CHOICES = 9;
 
 export interface Choice {
   keyword: string;
@@ -86,7 +87,10 @@ export function buildPrimitiveChoices(correct: string, count: number, rng: Shuff
     { keyword: correct, correct: true },
     ...decoys.map((keyword) => ({ keyword, correct: false })),
   ];
-  return rng.shuffle(choices);
+  // Stable, consistent placement (not reshuffled each read) — seed the decoy
+  // pick per primitive and the same shape always shows the same options in the
+  // same order, so the ring is a fixed layout you can learn rather than a lottery.
+  return choices.sort((a, b) => a.keyword.localeCompare(b.keyword));
 }
 
 export function hasShape(p: ArenaPrimitive): boolean {

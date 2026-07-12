@@ -22,6 +22,7 @@ import {
   TILE,
   WHEEL_DEADZONE,
   WHEEL_RADIUS_FRAC,
+  wrongOptionCount,
 } from "../config";
 import { sfx } from "../audio/sfx";
 import { run } from "../core/run";
@@ -32,14 +33,9 @@ import Spirit, { SpiritBehavior } from "../entities/Spirit";
 
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
 import { Graphics } from "../graphics";
-import { CLUSTERS, KanjiEntry } from "../rtk/corpus";
-import {
-  buildPrimitiveChoices,
-  type Choice,
-  FORGE_CHOICES,
-  hasShape,
-  primitiveFace,
-} from "../rtk/forge";
+import { CLUSTERS, CORPUS, KanjiEntry } from "../rtk/corpus";
+import { buildPrimitiveChoices, type Choice, hasShape, primitiveFace } from "../rtk/forge";
+import { VerbId, WHEEL_ORDER } from "../rtk/verbs";
 import { absorbBackfire, applyCorrectRead } from "../rtk/relicEffects";
 import { RELIC_IDS, RelicId } from "../rtk/relics";
 import type { ArenaPrimitive } from "../protocol";
@@ -117,6 +113,10 @@ export default class DungeonScene extends Phaser.Scene {
   private forgePlan: ArenaPrimitive[] = [];
   private forgeStage = 0;
   private forgeChoices: Choice[] = [];
+  // The verb spokes that show a word this read: the correct verb → the kanji's
+  // keyword, plus difficulty-many wrong verbs → real (but wrong) deck keywords.
+  // Spokes absent here are greyed and unselectable. Deterministic per kanji.
+  private wheelWords = new Map<VerbId, string>();
   private primePrev = false; // left-button edge latch for committing a forge ring
   private focusConsumed = false; // block re-focus until the focus button is released
   private srs: SrsStore = {};
@@ -996,12 +996,27 @@ export default class DungeonScene extends Phaser.Scene {
   private beginForge(target: Spirit) {
     this.forgePlan = target.entry.primitives.filter(hasShape);
     this.forgeStage = 0;
-    this.game.events.emit("focusStart", {
-      kanji: target.entry.kanji,
-      keyword: target.entry.keyword,
-      answer: target.entry.verb,
-    });
+    this.buildWheelWords(target);
+    this.game.events.emit("focusStart", { kanji: target.entry.kanji });
     this.enterForgeStage();
+  }
+
+  // The verb wheel's word set: the correct verb wears the kanji's keyword, and
+  // difficulty-many wrong verbs wear real-but-wrong keywords drawn from the deck.
+  // Seeded per kanji so the layout is stable across re-reads.
+  private buildWheelWords(target: Spirit) {
+    this.wheelWords.clear();
+    this.wheelWords.set(target.entry.verb, target.entry.keyword);
+    const rng = new Phaser.Math.RandomDataGenerator([target.entry.kanji, "wheel"]);
+    const wrongVerbs = rng
+      .shuffle(WHEEL_ORDER.filter((v) => v !== target.entry.verb))
+      .slice(0, wrongOptionCount());
+    const deckWords = rng.shuffle(
+      [...new Set(CORPUS.map((e) => e.keyword))].filter((kw) => kw && kw !== target.entry.keyword),
+    );
+    wrongVerbs.forEach((v, i) => {
+      if (i < deckWords.length) this.wheelWords.set(v, deckWords[i]);
+    });
   }
 
   // Present the current stage: a primitive recognition ring, or the verb wheel
@@ -1009,7 +1024,10 @@ export default class DungeonScene extends Phaser.Scene {
   private enterForgeStage() {
     if (this.forgeStage < this.forgePlan.length) {
       const prim = this.forgePlan[this.forgeStage];
-      this.forgeChoices = buildPrimitiveChoices(prim.keyword, FORGE_CHOICES, Phaser.Math.RND);
+      // Seed per primitive so the same shape always offers the same options in
+      // the same (sorted) order — a fixed layout, not a reshuffle each read.
+      const rng = new Phaser.Math.RandomDataGenerator([prim.keyword, "forge"]);
+      this.forgeChoices = buildPrimitiveChoices(prim.keyword, wrongOptionCount() + 1, rng);
       const face = primitiveFace(prim);
       this.game.events.emit("forgeRing", {
         stage: this.forgeStage,
@@ -1020,7 +1038,9 @@ export default class DungeonScene extends Phaser.Scene {
       });
     } else {
       this.forgeChoices = [];
-      this.game.events.emit("forgeWheel");
+      this.game.events.emit("forgeWheel", {
+        words: [...this.wheelWords].map(([verb, word]) => ({ verb, word })),
+      });
     }
   }
 
@@ -1066,6 +1086,7 @@ export default class DungeonScene extends Phaser.Scene {
     this.forgePlan = [];
     this.forgeStage = 0;
     this.forgeChoices = [];
+    this.wheelWords.clear();
     this.primePrev = false;
     this.game.events.emit("focusEnd");
   }
@@ -1077,6 +1098,7 @@ export default class DungeonScene extends Phaser.Scene {
     const onWheel = this.forgeStage >= this.forgePlan.length;
     const forged = this.forgePlan.length > 0; // this read named primitives first
     let verb = null as ReturnType<typeof wheelVerbAt>;
+    let selectable = false;
     if (onWheel && target && target.alive) {
       const p = this.input.activePointer;
       const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
@@ -1088,11 +1110,13 @@ export default class DungeonScene extends Phaser.Scene {
         this.wheelRadius(),
         deadzone,
       );
+      selectable = verb != null && this.wheelWords.has(verb);
     }
     this.endFocus();
     if (!target || !target.alive) return;
     if (!onWheel) return; // released mid-forge → cancel, no penalty
-    if (!verb) return; // released in the dead-zone → cancel
+    // Dead-zone, or a wordless (greyed, obviously-wrong) spoke → cancel, no penalty.
+    if (!verb || !selectable) return;
 
     // In an ordeal you must read the EXACT named keyword (right glyph AND verb),
     // not just any member of the confusable cluster.
