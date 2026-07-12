@@ -129,6 +129,7 @@ export default class DungeonScene extends Phaser.Scene {
   private focusConsumed = false; // block re-focus until the focus button is released
   private isTouch = false; // this device drives input by touch, not mouse+keyboard
   private joyId: number | null = null; // pointer id currently owning the move stick
+  private readId: number | null = null; // pointer id currently aiming the read
   private srs: SrsStore = {};
   private ordealNeeds: string[] | null = null;
   private ordealTimed = false;
@@ -215,6 +216,7 @@ export default class DungeonScene extends Phaser.Scene {
     this.primePrev = false;
     this.focusConsumed = false;
     this.joyId = null;
+    this.readId = null;
     resetTouch();
     this.paused = false;
     this.hazards = [];
@@ -362,6 +364,8 @@ export default class DungeonScene extends Phaser.Scene {
       this.focusing = false;
       this.focusTarget?.setTargeted(false);
       this.focusTarget = null;
+      touch.reading = false;
+      this.readId = null;
       this.game.events.emit("focusEnd");
     }
     (this.player.body as Phaser.Physics.Arcade.Body).enable = false;
@@ -977,14 +981,21 @@ export default class DungeonScene extends Phaser.Scene {
     return Math.min(this.scale.width, this.scale.height) * WHEEL_RADIUS_FRAC;
   }
 
-  private startFocus() {
+  private startFocus(byTouch = false) {
     const target = this.nearestSpirit();
     if (!target) return;
     this.focusing = true;
     this.focusTarget = target;
+    touch.reading = byTouch; // a touch read drives aim from touch.aim, not the mouse
     target.setTargeted(true);
     sfx.focus();
     this.beginForge(target);
+  }
+
+  // The point the read is aimed at: the read pointer's last touch (during a touch
+  // read) or the mouse. Lets one radial-commit path serve both input worlds.
+  private aimPoint(): { x: number; y: number } {
+    return touch.reading ? touch.aim : this.input.activePointer;
   }
 
   // Switch the locked spirit mid-read (Q) — cycles by distance so you can pick a
@@ -1083,7 +1094,7 @@ export default class DungeonScene extends Phaser.Scene {
   private commitPrimitive() {
     const target = this.focusTarget;
     if (!target || !target.alive || this.forgeStage >= this.forgePlan.length) return;
-    const p = this.input.activePointer;
+    const p = this.aimPoint();
     const idx = radialIndexAt(
       this.scale.width / 2,
       this.scale.height / 2,
@@ -1118,6 +1129,8 @@ export default class DungeonScene extends Phaser.Scene {
     this.forgeChoices = [];
     this.wheelWords.clear();
     this.primePrev = false;
+    touch.reading = false;
+    this.readId = null;
     this.game.events.emit("focusEnd");
   }
 
@@ -1130,7 +1143,7 @@ export default class DungeonScene extends Phaser.Scene {
     let verb = null as ReturnType<typeof wheelVerbAt>;
     let selectable = false;
     if (onWheel && target && target.alive) {
-      const p = this.input.activePointer;
+      const p = this.aimPoint();
       const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
       verb = wheelVerbAt(
         this.scale.width / 2,
@@ -1361,6 +1374,8 @@ export default class DungeonScene extends Phaser.Scene {
     this.dead = true;
     this.focusing = false;
     this.focusTarget = null;
+    touch.reading = false;
+    this.readId = null;
     this.ordealNeeds = null;
     this.clearHazards();
     this.game.events.emit("focusEnd");
@@ -1524,22 +1539,38 @@ export default class DungeonScene extends Phaser.Scene {
 
   private onTouchDown(p: Phaser.Input.Pointer) {
     if (!p.wasTouch) return;
-    // Left half with no stick owner → this thumb becomes the move-stick.
-    if (p.x < this.scale.width / 2 && this.joyId === null) {
-      this.joyId = p.id;
-      touch.joyActive = true;
-      touch.joyOrigin.x = p.x;
-      touch.joyOrigin.y = p.y;
-      touch.joyKnob.x = p.x;
-      touch.joyKnob.y = p.y;
-      touch.move.x = 0;
-      touch.move.y = 0;
+    // Left half → the move-stick (claimed by the first thumb there).
+    if (p.x < this.scale.width / 2) {
+      if (this.joyId === null) {
+        this.joyId = p.id;
+        touch.joyActive = true;
+        touch.joyOrigin.x = p.x;
+        touch.joyOrigin.y = p.y;
+        touch.joyKnob.x = p.x;
+        touch.joyKnob.y = p.y;
+        touch.move.x = 0;
+        touch.move.y = 0;
+      }
+      return;
     }
-    // Right-half read gestures are wired in phase 2.
+    // Right half → open a read, or aim the next sticky stage of one already open.
+    if (!this.focusing) {
+      this.startFocus(true);
+      if (!this.focusing) return; // no spirit to read
+    } else if (!touch.reading) {
+      return; // a mouse read is open — don't let touch hijack it
+    }
+    this.readId = p.id;
+    touch.aim.x = p.x;
+    touch.aim.y = p.y;
   }
 
   private onTouchMove(p: Phaser.Input.Pointer) {
     if (!p.wasTouch) return;
+    if (p.id === this.readId) {
+      touch.aim.x = p.x;
+      touch.aim.y = p.y;
+    }
     if (p.id === this.joyId) {
       const dx = p.x - touch.joyOrigin.x;
       const dy = p.y - touch.joyOrigin.y;
@@ -1565,6 +1596,24 @@ export default class DungeonScene extends Phaser.Scene {
       touch.move.x = 0;
       touch.move.y = 0;
     }
+    if (p.id === this.readId) {
+      this.readId = null;
+      this.commitTouchStage();
+    }
+  }
+
+  // Lifting the read finger commits the current stage: name a primitive (a
+  // correct pick advances and the read stays open for the next thumb-down), or
+  // cast the verb on the wheel. Lifting over the hub cancels the whole read.
+  private commitTouchStage() {
+    if (!this.focusing) return;
+    const d = Math.hypot(touch.aim.x - this.scale.width / 2, touch.aim.y - this.scale.height / 2);
+    if (d < this.wheelRadius() * this.forgeDeadzone()) {
+      this.endFocus();
+      return;
+    }
+    if (this.forgeStage < this.forgePlan.length) this.commitPrimitive();
+    else this.releaseFocus();
   }
 
   update() {
@@ -1586,17 +1635,29 @@ export default class DungeonScene extends Phaser.Scene {
     // Focus is held via SPACE or right mouse button; release resolves the read.
     // A read that resolves mid-hold (a wrong primitive) latches focus off until
     // the button is released, so it can't instantly re-focus under a held button.
-    const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
-    if (!wantFocus) this.focusConsumed = false;
-    if (wantFocus && !this.focusing && !this.focusConsumed) this.startFocus();
-    else if (!wantFocus && this.focusing) this.releaseFocus();
-    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
-    // A left-click commits the aimed keyword on a primitive ring (edge-triggered).
-    const primeDown = this.input.activePointer.leftButtonDown();
-    if (this.focusing && primeDown && !this.primePrev && this.forgeStage < this.forgePlan.length) {
-      this.commitPrimitive();
+    // Desktop mouse+keyboard read. Skipped entirely while a touch read is open —
+    // on touch, wantFocus/leftButtonDown are meaningless (a finger reads as a held
+    // left button), so running these would fight the touch gesture every frame.
+    if (!touch.reading) {
+      const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
+      if (!wantFocus) this.focusConsumed = false;
+      if (wantFocus && !this.focusing && !this.focusConsumed) this.startFocus();
+      else if (!wantFocus && this.focusing) this.releaseFocus();
     }
-    this.primePrev = primeDown;
+    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
+    if (!touch.reading) {
+      // A left-click commits the aimed keyword on a primitive ring (edge-triggered).
+      const primeDown = this.input.activePointer.leftButtonDown();
+      if (
+        this.focusing &&
+        primeDown &&
+        !this.primePrev &&
+        this.forgeStage < this.forgePlan.length
+      ) {
+        this.commitPrimitive();
+      }
+      this.primePrev = primeDown;
+    }
 
     const k = this.keys;
     let vx = 0;
