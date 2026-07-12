@@ -27,9 +27,14 @@ describe("buildPrimitiveChoices", () => {
   });
 
   it("is deterministic for a given rng — same layout across reads", () => {
-    const a = buildPrimitiveChoices("sun", 5, idRng).map((x) => x.keyword);
-    const b = buildPrimitiveChoices("sun", 5, idRng).map((x) => x.keyword);
+    // A non-identity but deterministic shuffle, so this pins that shuffle is
+    // actually applied AND that the result is stable across calls (the property
+    // the per-primitive seed relies on for a fixed layout).
+    const revRng: ShuffleRng = { shuffle: <T>(a: T[]): T[] => [...a].reverse() };
+    const a = buildPrimitiveChoices("sun", 5, revRng).map((x) => x.keyword);
+    const b = buildPrimitiveChoices("sun", 5, revRng).map((x) => x.keyword);
     expect(a).toEqual(b);
+    expect(a[0]).not.toBe("sun"); // shuffle moved the correct off the insertion slot
   });
 });
 
