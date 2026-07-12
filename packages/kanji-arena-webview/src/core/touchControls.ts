@@ -13,6 +13,7 @@ export const touch = {
   joyKnob: { x: 0, y: 0 }, // clamped current thumb position
   reading: false, // a touch-initiated read is open (the aim source)
   aim: { x: 0, y: 0 }, // the read pointer's last screen point
+  buttons: [] as { x: number; y: number; w: number; h: number }[], // HUD tap-target rects to ignore
 };
 
 export function resetTouch(): void {
@@ -20,4 +21,5 @@ export function resetTouch(): void {
   touch.move.y = 0;
   touch.joyActive = false;
   touch.reading = false;
+  touch.buttons = [];
 }

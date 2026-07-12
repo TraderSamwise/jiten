@@ -289,11 +289,20 @@ export default class DungeonScene extends Phaser.Scene {
     this.game.events.on("relicChosen", this.onRelicChosen, this);
     this.game.events.on("shopDone", this.onShopDone, this);
     this.game.events.on("studyDone", this.onStudyDone, this);
+    // On-screen touch controls emit these; each target guards its own preconditions.
+    this.game.events.on("uiPause", this.togglePause, this);
+    this.game.events.on("uiCycle", this.cycleTarget, this);
+    this.game.events.on("uiDifficulty", this.toggleDifficulty, this);
+    this.game.events.on("uiHeal", this.tryReveal, this);
     this.scale.on("resize", this.onResize, this);
     this.events.once("shutdown", () => {
       this.game.events.off("relicChosen", this.onRelicChosen, this);
       this.game.events.off("shopDone", this.onShopDone, this);
       this.game.events.off("studyDone", this.onStudyDone, this);
+      this.game.events.off("uiPause", this.togglePause, this);
+      this.game.events.off("uiCycle", this.cycleTarget, this);
+      this.game.events.off("uiDifficulty", this.toggleDifficulty, this);
+      this.game.events.off("uiHeal", this.tryReveal, this);
       this.scale.off("resize", this.onResize, this);
     });
   }
@@ -1527,6 +1536,23 @@ export default class DungeonScene extends Phaser.Scene {
     this.game.events.emit("difficultyChanged", settings.difficulty);
   }
 
+  // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
+  // so a charge is never wasted). Driven by the R key and the touch Heal button.
+  private tryReveal() {
+    if (
+      this.focusing &&
+      run.reveals > 0 &&
+      run.hp < run.maxHp &&
+      run.relics.has("oracles-tokens")
+    ) {
+      run.reveals -= 1;
+      run.hp += 1;
+      sfx.ward();
+      this.game.events.emit("hpChanged");
+      this.game.events.emit("relicsChanged");
+    }
+  }
+
   // Touch input: the left half of the screen is a floating move-stick, the right
   // half opens a read (phase 2). Handlers act only on touch pointers, so a mouse
   // on a touch-capable device keeps the desktop keyboard+mouse path untouched.
@@ -1539,6 +1565,11 @@ export default class DungeonScene extends Phaser.Scene {
 
   private onTouchDown(p: Phaser.Input.Pointer) {
     if (!p.wasTouch) return;
+    // A tap on a HUD button is handled by the HUD — never let it also claim the
+    // joystick or a read (the button may sit in either zone).
+    for (const b of touch.buttons) {
+      if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return;
+    }
     // Left half → the move-stick (claimed by the first thumb there).
     if (p.x < this.scale.width / 2) {
       if (this.joyId === null) {
@@ -1697,23 +1728,9 @@ export default class DungeonScene extends Phaser.Scene {
       s.steer(this.player.x, this.player.y, speed, this.focusing);
     }
 
-    // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
-    // so a charge is never wasted). Consume the key edge unconditionally — gating
-    // JustDown behind other conditions would leave a stale press to fire later.
-    const revealPressed = Phaser.Input.Keyboard.JustDown(this.revealKey);
-    if (
-      revealPressed &&
-      this.focusing &&
-      run.reveals > 0 &&
-      run.hp < run.maxHp &&
-      run.relics.has("oracles-tokens")
-    ) {
-      run.reveals -= 1;
-      run.hp += 1;
-      sfx.ward();
-      this.game.events.emit("hpChanged");
-      this.game.events.emit("relicsChanged");
-    }
+    // Consume the reveal-key edge unconditionally — gating JustDown behind other
+    // conditions would leave a stale press to fire later. tryReveal holds the guards.
+    if (Phaser.Input.Keyboard.JustDown(this.revealKey)) this.tryReveal();
 
     this.tickOrdealTimer();
     this.tickHazards();
