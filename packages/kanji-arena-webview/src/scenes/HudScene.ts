@@ -96,6 +96,7 @@ export default class HudScene extends Phaser.Scene {
   private dimmedVerbs = new Set<VerbId>();
 
   private hubHint!: Phaser.GameObjects.Text;
+  private ringCue!: Phaser.GameObjects.Text; // "name this part" on a primitive ring
   private readToast!: Phaser.GameObjects.Text;
   private teachToast!: Phaser.GameObjects.Text;
   private ordealBanner!: Phaser.GameObjects.Text;
@@ -291,6 +292,18 @@ export default class HudScene extends Phaser.Scene {
         fontSize: "13px",
         color: "#cfc8e0",
         align: "center",
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(13)
+      .setVisible(false);
+    // Tells a first-timer the ring is a question, not a menu: pick the keyword
+    // that names the shape in the hub. Shown only during primitive rings.
+    this.ringCue = this.add
+      .text(0, 0, "NAME THIS PART", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#7ad1c4",
+        letterSpacing: 3,
       })
       .setOrigin(0.5, 0)
       .setDepth(13)
@@ -785,6 +798,7 @@ export default class HudScene extends Phaser.Scene {
     this.wheelG.setVisible(wheel);
     for (const s of this.sigils) s.setVisible(wheel);
     this.answerKw.setVisible(wheel && this.answerVerb != null);
+    this.ringCue.setVisible(ring);
     this.candTexts.forEach((t, i) => t.setVisible(ring && i < this.ringChoices.length));
   }
 
@@ -861,9 +875,10 @@ export default class HudScene extends Phaser.Scene {
       .setFontFamily(this.ringRtk ? RTK_FONT : GLYPH_FONT)
       .setText(this.ringFace)
       .setPosition(cx, cy);
+    this.ringCue.setPosition(cx, cy + inner + 6);
     this.hubHint
       .setText(`part ${this.ringStage + 1}/${this.ringTotal}`)
-      .setPosition(cx, cy + inner + 6);
+      .setPosition(cx, cy + inner + 22);
 
     const lr = (radius + inner) / 2;
     this.ringChoices.forEach((kw, i) => {
