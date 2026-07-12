@@ -172,7 +172,7 @@ export default class StudyScene extends Phaser.Scene {
     };
 
     let pending: "ai" | "edit" | null = null;
-    const gen = this.button(cx - 96, height / 2 + 150, "Generate with AI", () => {});
+    const gen = this.button(cx - 96, height / 2 + 150, "Generate", () => {});
     const write = this.button(cx + 96, height / 2 + 150, "Write my own", () => {
       pending = "edit";
       this.game.events.emit("editStory", { kanji: this.card.kanji, current: this.card.story });
