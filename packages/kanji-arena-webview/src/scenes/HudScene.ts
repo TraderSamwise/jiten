@@ -1036,10 +1036,13 @@ export default class HudScene extends Phaser.Scene {
       const label = this.wheelLabels[i];
       if (worded) {
         const kr = radius - 8;
+        // An opposite-tone outline keeps the label readable where it overhangs the
+        // wheel onto the dark room — otherwise the picked slice's dark text vanishes.
         label
           .setText(word)
           .setPosition(cx + Math.cos(mid) * kr, cy + Math.sin(mid) * kr)
-          .setColor(on ? "#0b0912" : "#f7ecc9");
+          .setColor(on ? "#0b0912" : "#f7ecc9")
+          .setStroke(on ? "#f7ecc9" : "#0b0912", 4);
       }
     });
   }
