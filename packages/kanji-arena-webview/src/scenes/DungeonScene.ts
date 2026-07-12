@@ -33,7 +33,6 @@ import { Dir, key, OPPOSITE, Room } from "../dungeon/types";
 import Spirit, { SpiritBehavior } from "../entities/Spirit";
 
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
-import { Graphics } from "../graphics";
 import { CLUSTERS, CORPUS, KanjiEntry } from "../rtk/corpus";
 import {
   buildPrimitiveChoices,
@@ -100,7 +99,6 @@ export default class DungeonScene extends Phaser.Scene {
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
   private cycleKey!: Phaser.Input.Keyboard.Key;
-  private facingBack = false;
   private transitioning = false;
   private combatActive = false;
   private invulnUntil = 0;
@@ -247,10 +245,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(
       start.gx * ROOM_PX_W + ROOM_PX_W / 2,
       start.gy * ROOM_PX_H + ROOM_PX_H / 2,
-      Graphics.player.key,
+      "peg",
     );
     this.player.setSize(14, 14).setOffset(17, 30);
-    this.player.anims.play(Graphics.player.animations.idle.key);
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.player, this.doors);
@@ -1765,16 +1762,6 @@ export default class DungeonScene extends Phaser.Scene {
     const v = new Phaser.Math.Vector2(vx, vy);
     if (v.lengthSq() > 0) v.normalize().scale(pSpeed);
     if (this.time.now >= this.knockbackUntil) this.player.setVelocity(v.x, v.y);
-
-    const p = Graphics.player.animations;
-    if (v.lengthSq() > 0) {
-      if (vx !== 0) this.player.setFlipX(vx < 0);
-      if (vy < 0) this.facingBack = true;
-      else if (vy > 0) this.facingBack = false;
-      this.player.anims.play(this.facingBack ? p.walkBack.key : p.walk.key, true);
-    } else {
-      this.player.anims.play(this.facingBack ? p.idleBack.key : p.idle.key, true);
-    }
 
     // Kotodama Chorus deepens the Focus slow while a streak is hot; Patient Word
     // freezes spirits entirely, but never during a boss fight (that would defang it).
