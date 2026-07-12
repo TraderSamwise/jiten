@@ -150,9 +150,13 @@ export default class Spirit extends Phaser.GameObjects.Container {
 
   setTargeted(on: boolean) {
     const color = VERB_MAP[this.entry.verb].color;
-    this.aura.setAlpha(on ? 0.9 : 0.5);
-    this.glyph.setColor(on ? "#fff4d6" : "#f4ecd6");
-    this.ring.setStrokeStyle(on ? 2.5 : 1.5, on ? 0xffe27a : color, on ? 0.95 : 0.6);
+    this.aura.setAlpha(on ? 0.95 : 0.5);
+    this.glyph.setColor(on ? "#ffffff" : "#f4ecd6");
+    // A bold WHITE selection ring — distinct from the gold elite marker — plus a
+    // scale-and-depth pop so the target reads clearly among overlapping spirits.
+    this.ring.setStrokeStyle(on ? 3.5 : 1.5, on ? 0xffffff : color, on ? 1 : 0.6);
+    this.setScale(this.baseScale * (on ? 1.3 : 1));
+    this.setDepth(on ? 10 : 0);
   }
 
   // Drive this frame's velocity toward the player per the spirit's behavior.
