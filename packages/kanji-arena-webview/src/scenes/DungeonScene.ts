@@ -34,7 +34,13 @@ import Spirit, { SpiritBehavior } from "../entities/Spirit";
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
 import { Graphics } from "../graphics";
 import { CLUSTERS, CORPUS, KanjiEntry } from "../rtk/corpus";
-import { buildPrimitiveChoices, type Choice, hasShape, primitiveFace } from "../rtk/forge";
+import {
+  buildPrimitiveChoices,
+  type Choice,
+  FALLBACK_KEYWORDS,
+  hasShape,
+  primitiveFace,
+} from "../rtk/forge";
 import { VerbId, WHEEL_ORDER } from "../rtk/verbs";
 import { absorbBackfire, applyCorrectRead } from "../rtk/relicEffects";
 import { RELIC_IDS, RelicId } from "../rtk/relics";
@@ -117,6 +123,7 @@ export default class DungeonScene extends Phaser.Scene {
   // keyword, plus difficulty-many wrong verbs → real (but wrong) deck keywords.
   // Spokes absent here are greyed and unselectable. Deterministic per kanji.
   private wheelWords = new Map<VerbId, string>();
+  private forgeWrong = 0; // wrong-option count snapshot for the read (fixed at focus)
   private primePrev = false; // left-button edge latch for committing a forge ring
   private focusConsumed = false; // block re-focus until the focus button is released
   private srs: SrsStore = {};
@@ -996,24 +1003,36 @@ export default class DungeonScene extends Phaser.Scene {
   private beginForge(target: Spirit) {
     this.forgePlan = target.entry.primitives.filter(hasShape);
     this.forgeStage = 0;
+    // Snapshot difficulty at focus so a mid-read H-toggle can't change the option
+    // count between stages of one continuous read.
+    this.forgeWrong = wrongOptionCount();
     this.buildWheelWords(target);
     this.game.events.emit("focusStart", { kanji: target.entry.kanji });
     this.enterForgeStage();
   }
 
   // The verb wheel's word set: the correct verb wears the kanji's keyword, and
-  // difficulty-many wrong verbs wear real-but-wrong keywords drawn from the deck.
-  // Seeded per kanji so the layout is stable across re-reads.
+  // forgeWrong wrong verbs wear real-but-wrong keywords drawn from the deck
+  // (padded with generic fallbacks if the deck is too small). Seeded per kanji so
+  // the layout is stable across re-reads.
   private buildWheelWords(target: Spirit) {
     this.wheelWords.clear();
     this.wheelWords.set(target.entry.verb, target.entry.keyword);
     const rng = new Phaser.Math.RandomDataGenerator([target.entry.kanji, "wheel"]);
     const wrongVerbs = rng
       .shuffle(WHEEL_ORDER.filter((v) => v !== target.entry.verb))
-      .slice(0, wrongOptionCount());
+      .slice(0, this.forgeWrong);
     const deckWords = rng.shuffle(
       [...new Set(CORPUS.map((e) => e.keyword))].filter((kw) => kw && kw !== target.entry.keyword),
     );
+    if (deckWords.length < wrongVerbs.length) {
+      const used = new Set([target.entry.keyword, ...deckWords]);
+      deckWords.push(
+        ...rng
+          .shuffle(FALLBACK_KEYWORDS.filter((k) => !used.has(k)))
+          .slice(0, wrongVerbs.length - deckWords.length),
+      );
+    }
     wrongVerbs.forEach((v, i) => {
       if (i < deckWords.length) this.wheelWords.set(v, deckWords[i]);
     });
@@ -1027,7 +1046,7 @@ export default class DungeonScene extends Phaser.Scene {
       // Seed per primitive so the same shape always offers the same options in
       // the same (sorted) order — a fixed layout, not a reshuffle each read.
       const rng = new Phaser.Math.RandomDataGenerator([prim.keyword, "forge"]);
-      this.forgeChoices = buildPrimitiveChoices(prim.keyword, wrongOptionCount() + 1, rng);
+      this.forgeChoices = buildPrimitiveChoices(prim.keyword, this.forgeWrong + 1, rng);
       const face = primitiveFace(prim);
       this.game.events.emit("forgeRing", {
         stage: this.forgeStage,

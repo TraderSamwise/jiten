@@ -87,10 +87,10 @@ export function buildPrimitiveChoices(correct: string, count: number, rng: Shuff
     { keyword: correct, correct: true },
     ...decoys.map((keyword) => ({ keyword, correct: false })),
   ];
-  // Stable, consistent placement (not reshuffled each read) — seed the decoy
-  // pick per primitive and the same shape always shows the same options in the
-  // same order, so the ring is a fixed layout you can learn rather than a lottery.
-  return choices.sort((a, b) => a.keyword.localeCompare(b.keyword));
+  // Stable placement: the caller seeds the rng per primitive, so the same shape
+  // always shows the same options in the same order across reads — but shuffled,
+  // not sorted, so the correct slot never correlates with the keyword's spelling.
+  return rng.shuffle(choices);
 }
 
 export function hasShape(p: ArenaPrimitive): boolean {
