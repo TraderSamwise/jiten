@@ -142,11 +142,3 @@ export function burstProfile(id: VerbId): BurstProfile {
 export const WHEEL_ORDER: VerbId[] = VERBS.map((v) => v.id).sort((a, b) =>
   VERB_MAP[a].label.localeCompare(VERB_MAP[b].label),
 );
-
-export function toHex(color: number): string {
-  return "#" + color.toString(16).padStart(6, "0");
-}
-
-export function verbColorCss(id: VerbId): string {
-  return toHex(VERB_MAP[id].color);
-}

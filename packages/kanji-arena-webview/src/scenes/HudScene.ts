@@ -5,14 +5,16 @@ import { run } from "../core/run";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_MAP } from "../rtk/relics";
-import { VERB_MAP, VerbId, verbColorCss, WHEEL_ORDER } from "../rtk/verbs";
+import { sigilKey } from "../rtk/sigils";
+import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
 import { segmentAngles, wheelVerbAt } from "../rtk/wheel";
 
 interface FocusInfo {
   kanji: string;
+  keyword: string; // the targeted spirit's realised keyword (shown on its spoke)
+  answer: VerbId; // the correct verb — its spoke reveals the keyword
   primitives: string[];
   rusty: boolean;
-  flash?: VerbId | null;
 }
 interface ReadInfo {
   kanji: string;
@@ -64,9 +66,11 @@ export default class HudScene extends Phaser.Scene {
   private wheelG!: Phaser.GameObjects.Graphics;
   private hub!: Phaser.GameObjects.Arc;
   private hubGlyph!: Phaser.GameObjects.Text;
-  private labels: Phaser.GameObjects.Text[] = [];
+  private sigils: Phaser.GameObjects.Image[] = [];
+  private answerKw!: Phaser.GameObjects.Text; // realised keyword on the correct spoke
+  private answerVerb: VerbId | null = null;
+  private answerKeyword = "";
   private focusing = false;
-  private flashVerb: VerbId | null = null;
   private relicShelf!: Phaser.GameObjects.Text;
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
@@ -117,7 +121,7 @@ export default class HudScene extends Phaser.Scene {
       color: "#2fbfa8",
     });
     this.hint = this.add
-      .text(0, 0, "Sealed — read the spirits  (hold SPACE / right-click, aim, release)", {
+      .text(0, 0, "Sealed — read the spirits  (hold SPACE, aim, release · Q switches target)", {
         fontFamily: "monospace",
         fontSize: "14px",
         color: "#f4e7c0",
@@ -175,7 +179,6 @@ export default class HudScene extends Phaser.Scene {
     this.game.events.on("magpieSteal", this.onMagpieSteal, this);
     this.game.events.on("magpieCaught", this.onMagpieCaught, this);
     this.game.events.on("relicsChanged", this.drawRelics, this);
-    this.game.events.on("flashVerb", this.onFlashVerb, this);
     this.game.events.on("pauseMenu", this.toggleCodex, this);
     this.scale.on("resize", this.layout, this);
     this.events.once("shutdown", () => {
@@ -204,7 +207,6 @@ export default class HudScene extends Phaser.Scene {
       this.game.events.off("magpieSteal", this.onMagpieSteal, this);
       this.game.events.off("magpieCaught", this.onMagpieCaught, this);
       this.game.events.off("relicsChanged", this.drawRelics, this);
-      this.game.events.off("flashVerb", this.onFlashVerb, this);
       this.game.events.off("pauseMenu", this.toggleCodex, this);
       this.scale.off("resize", this.layout, this);
     });
@@ -235,17 +237,14 @@ export default class HudScene extends Phaser.Scene {
       .setDepth(13)
       .setVisible(false);
     for (const id of WHEEL_ORDER) {
-      const t = this.add
-        .text(0, 0, VERB_MAP[id].label, {
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color: "#cfc8e0",
-        })
-        .setOrigin(0.5)
-        .setDepth(13)
-        .setVisible(false);
-      this.labels.push(t);
+      const img = this.add.image(0, 0, sigilKey(id)).setOrigin(0.5).setDepth(13).setVisible(false);
+      this.sigils.push(img);
     }
+    this.answerKw = this.add
+      .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "15px", color: "#f7ecc9" })
+      .setOrigin(0.5)
+      .setDepth(14)
+      .setVisible(false);
   }
 
   private buildOverlays() {
@@ -690,14 +689,12 @@ export default class HudScene extends Phaser.Scene {
 
   private onFocusStart(info: FocusInfo) {
     this.focusing = true;
-    this.flashVerb = info.flash ?? null; // Echo Glyph pre-flashes the answer
+    this.answerVerb = info.answer;
+    this.answerKeyword = info.keyword;
     this.hubGlyph.setText(info.kanji);
-    const hint = info.rusty
-      ? info.primitives.length
-        ? info.primitives.join("  +  ")
-        : "a primitive"
-      : "";
-    this.hubHint.setText(hint);
+    // Rusty cards expose their component breakdown as a retrieval aid; blank when
+    // the glyph has no parts (rather than the old confusing "a primitive").
+    this.hubHint.setText(info.rusty ? info.primitives.join("  +  ") : "");
     this.setWheelVisible(true);
     // The boss clock drains at half-rate during a read, so slow the bar to match.
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 0.5));
@@ -706,15 +703,9 @@ export default class HudScene extends Phaser.Scene {
 
   private onFocusEnd() {
     this.focusing = false;
-    this.flashVerb = null;
+    this.answerVerb = null;
     this.setWheelVisible(false);
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
-  }
-
-  // Oracle's Tokens reveal, fired mid-read.
-  private onFlashVerb(verb: VerbId) {
-    this.flashVerb = verb;
-    if (this.focusing) this.drawWheel();
   }
 
   private drawRelics() {
@@ -729,7 +720,8 @@ export default class HudScene extends Phaser.Scene {
     this.hub.setVisible(v);
     this.hubGlyph.setVisible(v);
     this.hubHint.setVisible(v);
-    for (const t of this.labels) t.setVisible(v);
+    for (const s of this.sigils) s.setVisible(v);
+    this.answerKw.setVisible(v && this.answerVerb != null);
   }
 
   private drawWheel() {
@@ -754,26 +746,34 @@ export default class HudScene extends Phaser.Scene {
     WHEEL_ORDER.forEach((id, i) => {
       const { start, end, mid } = segmentAngles(i);
       const on = id === picked;
-      const flash = id === this.flashVerb;
-      const dimmed = easy && !on && !flash && this.dimmedVerbs.has(id);
-      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : flash ? 0.6 : dimmed ? 0.04 : 0.34);
+      const dimmed = easy && !on && this.dimmedVerbs.has(id);
+      g.fillStyle(VERB_MAP[id].color, on ? 0.92 : dimmed ? 0.04 : 0.34);
       g.slice(cx, cy, radius, start, end, false);
       g.fillPath();
-      g.lineStyle(
-        flash && !on ? 3 : 1,
-        flash && !on ? 0xffe27a : 0x0b0912,
-        flash && !on ? 0.95 : 0.6,
-      );
+      g.lineStyle(1, 0x0b0912, 0.6);
       g.beginPath();
       g.arc(cx, cy, radius, start, end, false);
       g.strokePath();
 
       const lr = (radius + inner) / 2;
-      const t = this.labels[i];
-      t.setPosition(cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr);
-      t.setColor(on ? "#0b0912" : verbColorCss(id));
-      t.setFontStyle(on ? "bold" : "normal");
-      t.setAlpha(dimmed ? 0.15 : 1);
+      const sx = cx + Math.cos(mid) * lr;
+      const sy = cy + Math.sin(mid) * lr;
+      const sz = radius * (on ? 0.2 : 0.16);
+      const s = this.sigils[i];
+      s.setPosition(sx, sy).setDisplaySize(sz, sz);
+      // Dark on the bright picked slice, else the verb's own colour.
+      s.setTint(on ? 0x0b0912 : VERB_MAP[id].color);
+      s.setAlpha(dimmed ? 0.15 : 1);
+
+      // Always-reveal: the targeted spirit's keyword rides its correct spoke, out
+      // toward the rim so it reads "sigil → keyword".
+      if (id === this.answerVerb) {
+        const kr = radius - 8;
+        this.answerKw
+          .setText(this.answerKeyword)
+          .setPosition(cx + Math.cos(mid) * kr, cy + Math.sin(mid) * kr)
+          .setColor(on ? "#0b0912" : "#f7ecc9");
+      }
     });
   }
 

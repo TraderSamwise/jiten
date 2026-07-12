@@ -68,7 +68,7 @@ export const RELICS: Relic[] = [
     name: "Echo Glyph",
     jp: "谺の紋",
     flavor: "A verb spoken once echoes to the next of its kind.",
-    effect: "After a read, the next spirit of that same verb flashes its answer.",
+    effect: "Read the same verb twice in a row and the second bind mints +2 kotodama.",
   },
   {
     id: "lapse-ledger",
@@ -123,8 +123,8 @@ export const RELICS: Relic[] = [
     id: "oracles-tokens",
     name: "Oracle's Tokens",
     jp: "神託の符",
-    flavor: "Three whispered answers, held in reserve.",
-    effect: "3 reveal charges per floor — press R mid-read to glow the true verb.",
+    flavor: "Three whispered mercies, held in reserve.",
+    effect: "3 charges per floor — press R mid-read to mend a heart.",
   },
   {
     id: "descent-draught",
@@ -179,8 +179,8 @@ export const RELICS: Relic[] = [
     id: "keen-eye",
     name: "Keen Eye",
     jp: "慧眼",
-    flavor: "The trained eye names the twin at a glance.",
-    effect: "Each elite need briefly reveals its true verb on the wheel.",
+    flavor: "The trained eye reads without haste.",
+    effect: "Elite and boss needs begin with +2 seconds on the clock.",
   },
   {
     id: "reprisal",
@@ -215,7 +215,7 @@ export const RELICS: Relic[] = [
     name: "Mind's Eye",
     jp: "心眼",
     flavor: "The first name in each room comes clear.",
-    effect: "The first read in each room reveals its verb on the wheel.",
+    effect: "The first bind in each room mints +3 kotodama.",
   },
   {
     id: "toll-ledger",
