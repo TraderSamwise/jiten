@@ -11,5 +11,5 @@ export function generateArenaHtml(): string {
   // Escape any literal </script in the bundle so the HTML parser can't terminate
   // the inline script early (JSON.stringify in build.ts doesn't escape it).
   const inlineBundle = arenaBundle.replace(/<\/script/gi, "<\\/script");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/><style>${fontFace}html,body{margin:0;height:100%;background:#0d0b14;overflow:hidden}#app{width:100vw;height:100vh}canvas{display:block;image-rendering:pixelated}</style></head><body><div id="app"></div><script>${inlineBundle}</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/><style>${fontFace}html,body{margin:0;height:100%;background:#0d0b14;overflow:hidden;touch-action:none;overscroll-behavior:none}#app{width:100vw;height:100vh;touch-action:none}canvas{display:block;image-rendering:pixelated;touch-action:none}</style></head><body><div id="app"></div><script>${inlineBundle}</script></body></html>`;
 }

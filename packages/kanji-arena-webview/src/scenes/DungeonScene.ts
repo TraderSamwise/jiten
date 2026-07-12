@@ -27,6 +27,7 @@ import {
 import { sfx } from "../audio/sfx";
 import { run } from "../core/run";
 import { nextRunSeed } from "../core/seed";
+import { JOY_DEADZONE, JOY_RADIUS, resetTouch, touch } from "../core/touchControls";
 import { generateFloor } from "../dungeon/generate";
 import { Dir, key, OPPOSITE, Room } from "../dungeon/types";
 import Spirit, { SpiritBehavior } from "../entities/Spirit";
@@ -126,6 +127,8 @@ export default class DungeonScene extends Phaser.Scene {
   private forgeWrong = 0; // wrong-option count snapshot for the read (fixed at focus)
   private primePrev = false; // left-button edge latch for committing a forge ring
   private focusConsumed = false; // block re-focus until the focus button is released
+  private isTouch = false; // this device drives input by touch, not mouse+keyboard
+  private joyId: number | null = null; // pointer id currently owning the move stick
   private srs: SrsStore = {};
   private ordealNeeds: string[] | null = null;
   private ordealTimed = false;
@@ -211,6 +214,8 @@ export default class DungeonScene extends Phaser.Scene {
     this.forgeChoices = [];
     this.primePrev = false;
     this.focusConsumed = false;
+    this.joyId = null;
+    resetTouch();
     this.paused = false;
     this.hazards = [];
     this.nextHazardAt = 0;
@@ -267,6 +272,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.cycleKey = kb.addKey("Q"); // switch the locked spirit while a read is open
     this.revealKey = kb.addKey("R");
     this.input.mouse?.disableContextMenu();
+    this.isTouch = this.sys.game.device.input.touch;
+    this.input.addPointer(2); // allow up to 3 concurrent pointers (2 thumbs + mouse)
+    this.setupTouchInput();
     kb.addCapture("TAB"); // stop TAB from moving browser focus off the canvas
     kb.on("keydown-TAB", this.togglePause, this);
     kb.on("keydown-ESC", () => this.paused && this.togglePause(), this);
@@ -1504,6 +1512,61 @@ export default class DungeonScene extends Phaser.Scene {
     this.game.events.emit("difficultyChanged", settings.difficulty);
   }
 
+  // Touch input: the left half of the screen is a floating move-stick, the right
+  // half opens a read (phase 2). Handlers act only on touch pointers, so a mouse
+  // on a touch-capable device keeps the desktop keyboard+mouse path untouched.
+  private setupTouchInput() {
+    this.input.on("pointerdown", this.onTouchDown, this);
+    this.input.on("pointermove", this.onTouchMove, this);
+    this.input.on("pointerup", this.onTouchUp, this);
+    this.input.on("pointerupoutside", this.onTouchUp, this);
+  }
+
+  private onTouchDown(p: Phaser.Input.Pointer) {
+    if (!p.wasTouch) return;
+    // Left half with no stick owner → this thumb becomes the move-stick.
+    if (p.x < this.scale.width / 2 && this.joyId === null) {
+      this.joyId = p.id;
+      touch.joyActive = true;
+      touch.joyOrigin.x = p.x;
+      touch.joyOrigin.y = p.y;
+      touch.joyKnob.x = p.x;
+      touch.joyKnob.y = p.y;
+      touch.move.x = 0;
+      touch.move.y = 0;
+    }
+    // Right-half read gestures are wired in phase 2.
+  }
+
+  private onTouchMove(p: Phaser.Input.Pointer) {
+    if (!p.wasTouch) return;
+    if (p.id === this.joyId) {
+      const dx = p.x - touch.joyOrigin.x;
+      const dy = p.y - touch.joyOrigin.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const clamp = Math.min(len, JOY_RADIUS);
+      touch.joyKnob.x = touch.joyOrigin.x + (dx / len) * clamp;
+      touch.joyKnob.y = touch.joyOrigin.y + (dy / len) * clamp;
+      // A small deadzone so a resting-thumb slip can't lurch the player at full speed.
+      if (len < JOY_DEADZONE) {
+        touch.move.x = 0;
+        touch.move.y = 0;
+      } else {
+        touch.move.x = (dx / len) * (clamp / JOY_RADIUS);
+        touch.move.y = (dy / len) * (clamp / JOY_RADIUS);
+      }
+    }
+  }
+
+  private onTouchUp(p: Phaser.Input.Pointer) {
+    if (p.id === this.joyId) {
+      this.joyId = null;
+      touch.joyActive = false;
+      touch.move.x = 0;
+      touch.move.y = 0;
+    }
+  }
+
   update() {
     if (this.dead) {
       this.player.setVelocity(0, 0);
@@ -1542,6 +1605,8 @@ export default class DungeonScene extends Phaser.Scene {
     if (k.right.isDown) vx += 1;
     if (k.up.isDown) vy -= 1;
     if (k.down.isDown) vy += 1;
+    vx += touch.move.x; // the virtual move-stick (zero unless a thumb drives it)
+    vy += touch.move.y;
 
     // Fleet Tongue lets you read on the move — a boost while a read is open, so
     // you can slip a boss danger patch without dropping the read.
