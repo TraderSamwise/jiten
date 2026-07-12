@@ -5,7 +5,7 @@ import { run } from "../core/run";
 import { JOY_RADIUS, touch } from "../core/touchControls";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
-import { RELIC_MAP } from "../rtk/relics";
+import { RELIC_IDS, RELIC_MAP } from "../rtk/relics";
 import { MAX_RING_CHOICES } from "../rtk/forge";
 import { sigilKey } from "../rtk/sigils";
 import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
@@ -94,7 +94,17 @@ export default class HudScene extends Phaser.Scene {
   private ringStage = 0;
   private ringTotal = 0;
   private candTexts: Phaser.GameObjects.Text[] = [];
-  private relicShelf!: Phaser.GameObjects.Text;
+  // Owned relics as rounded pill chips (glyph badge + name), one pooled chip per
+  // possible relic, shown/laid out on relicsChanged.
+  private relicChips: {
+    c: Phaser.GameObjects.Container;
+    bg: Phaser.GameObjects.Graphics;
+    jp: Phaser.GameObjects.Text;
+    name: Phaser.GameObjects.Text;
+  }[] = [];
+  private streakText!: Phaser.GameObjects.Text;
+  private lastStreak = -1;
+  private frameGfx!: Phaser.GameObjects.Graphics; // faint panel border round the viewport
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
 
@@ -104,7 +114,7 @@ export default class HudScene extends Phaser.Scene {
   private teachToast!: Phaser.GameObjects.Text;
   private ordealBanner!: Phaser.GameObjects.Text;
   private ordealBarBg!: Phaser.GameObjects.Rectangle;
-  private ordealBar!: Phaser.GameObjects.Rectangle;
+  private ordealBar!: Phaser.GameObjects.Image;
   private study!: Phaser.GameObjects.Container;
   private studyBg!: Phaser.GameObjects.Rectangle;
   private studyK!: Phaser.GameObjects.Text;
@@ -181,14 +191,13 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0, 1);
     this.onDifficulty(settings.difficulty);
 
-    this.relicShelf = this.add
-      .text(0, 0, "", {
-        fontFamily: '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif',
-        fontSize: "20px",
-        color: "#f2c14e",
-        align: "right",
-      })
-      .setOrigin(1, 1);
+    this.streakText = this.add.text(PAD, PAD + 44, "", {
+      fontFamily: "monospace",
+      fontSize: "13px",
+      color: "#e0a35a",
+    });
+    this.frameGfx = this.add.graphics().setDepth(1);
+    this.buildRelicChips();
 
     this.buildWheel();
     this.buildOverlays();
@@ -394,8 +403,9 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(14)
       .setVisible(false);
+    // A gold→ember gradient bar that drains via scaleX (gold end lingers last).
     this.ordealBar = this.add
-      .rectangle(0, 0, 220, 5, 0xe2493b, 0.95)
+      .image(0, 0, "timerbar")
       .setOrigin(0, 0)
       .setDepth(15)
       .setVisible(false);
@@ -553,9 +563,8 @@ export default class HudScene extends Phaser.Scene {
         .setVisible(true);
       this.ordealBar
         .setPosition(this.scale.width / 2 - barW / 2, b.bottom + 6)
-        .setSize(barW, 5)
-        .setScale(1)
-        .setVisible(true);
+        .setVisible(true)
+        .setDisplaySize(barW, 5);
       const t = this.tweens.add({
         targets: this.ordealBar,
         scaleX: 0,
@@ -838,10 +847,60 @@ export default class HudScene extends Phaser.Scene {
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
   }
 
+  // One pooled chip per possible relic — a rounded pill: glyph badge + name.
+  private buildRelicChips() {
+    for (let i = 0; i < RELIC_IDS.length; i++) {
+      const bg = this.add.graphics();
+      const jp = this.add
+        .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "14px", color: "#f2c14e" })
+        .setOrigin(0, 0.5);
+      const name = this.add
+        .text(0, 0, "", { fontFamily: "monospace", fontSize: "11px", color: "#e8e2f0" })
+        .setOrigin(0, 0.5);
+      const c = this.add.container(0, 0, [bg, jp, name]).setDepth(2).setVisible(false);
+      this.relicChips.push({ c, bg, jp, name });
+    }
+  }
+
+  // Lay out owned relics as pill chips along the bottom-left, wrapping upward,
+  // above the mute/difficulty indicators. The Oracle's Tokens chip shows charges.
   private drawRelics() {
-    const owned = [...run.relics].map((id) => RELIC_MAP[id].jp).join(" ");
-    const reveals = run.relics.has("oracles-tokens") ? `  ◆${run.reveals}` : "";
-    this.relicShelf.setText(owned ? owned + reveals : "");
+    const owned = [...run.relics];
+    const startX = PAD;
+    const baseY = this.scale.height - PAD - 52;
+    const gap = 7;
+    const padX = 8;
+    const badgeGap = 6;
+    const h = 22;
+    const maxX = this.scale.width * 0.62;
+    let x = startX;
+    let row = 0;
+    this.relicChips.forEach((chip, i) => {
+      if (i >= owned.length) {
+        chip.c.setVisible(false);
+        return;
+      }
+      const id = owned[i];
+      chip.jp.setText(RELIC_MAP[id].jp);
+      chip.name.setText(
+        id === "oracles-tokens" ? `${RELIC_MAP[id].name}  ◆${run.reveals}` : RELIC_MAP[id].name,
+      );
+      const w = padX + chip.jp.width + badgeGap + chip.name.width + padX;
+      if (x + w > maxX && x > startX) {
+        x = startX;
+        row += 1;
+      }
+      const y = baseY - row * (h + 6);
+      chip.bg.clear();
+      chip.bg.fillStyle(0x14111f, 0.9);
+      chip.bg.fillRoundedRect(0, -h / 2, w, h, h / 2);
+      chip.bg.lineStyle(1, 0xffffff, 0.12);
+      chip.bg.strokeRoundedRect(0, -h / 2, w, h, h / 2);
+      chip.jp.setPosition(padX, 0);
+      chip.name.setPosition(padX + chip.jp.width + badgeGap, 0);
+      chip.c.setPosition(x, y).setVisible(true);
+      x += w + gap;
+    });
   }
 
   // Show the overlay pieces for the current state: veil + hub always while
@@ -957,6 +1016,11 @@ export default class HudScene extends Phaser.Scene {
   update() {
     this.drawJoystick();
     this.refreshTouchButtons();
+    // Streak has no single event (shield/miss paths skip it); cheap dirty-check.
+    if (run.streak !== this.lastStreak) {
+      this.lastStreak = run.streak;
+      this.streakText.setText(run.streak >= 2 ? `streak ${run.streak}` : "");
+    }
     if (!this.focusing) return;
     if (this.forgeMode) this.drawRing();
     else this.drawWheel();
@@ -1011,7 +1075,11 @@ export default class HudScene extends Phaser.Scene {
     this.hint.setPosition(this.scale.width / 2, this.scale.height - PAD);
     this.muteInd.setPosition(PAD, this.scale.height - PAD);
     this.difficultyInd.setPosition(PAD, this.scale.height - PAD - 16);
-    this.relicShelf.setPosition(this.scale.width - PAD, this.scale.height - PAD);
+    // A faint rounded hairline frames the play area (the mockup's panel edge).
+    this.frameGfx.clear();
+    this.frameGfx.lineStyle(1, 0xffffff, 0.08);
+    this.frameGfx.strokeRoundedRect(6, 6, this.scale.width - 12, this.scale.height - 12, 14);
+    this.drawRelics();
     if (this.isTouch) {
       const w = this.scale.width;
       const h = this.scale.height;
