@@ -874,7 +874,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.doors.clear(true, true);
     const env = Graphics.environment;
     for (const { tx, ty } of this.openingTiles(room)) {
-      this.doors.create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, env.key, env.indices.wall);
+      this.doors
+        .create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, env.key, env.indices.wall)
+        .setTint(ATMOSPHERE.wallGrade);
     }
   }
 
