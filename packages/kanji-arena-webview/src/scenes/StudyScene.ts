@@ -116,10 +116,24 @@ export default class StudyScene extends Phaser.Scene {
     this.button(cx + 96, height / 2 + 156, "Modify", () => {
       this.game.events.emit("editStory", { kanji: this.card.kanji, current: this.card.story });
     });
+    // Draft a fresh AI story in place of the current one (the host saves it).
+    const regen = this.button(cx, height / 2 + 210, "Regenerate", () => {
+      prompt.setText("conjuring a new story…");
+      regen.setEnabled(false);
+      this.game.events.emit("requestStory", {
+        kanji: this.card.kanji,
+        keyword: this.card.keyword,
+        primitives: this.card.primitives.map((p) => p.keyword),
+      });
+    });
     this.storyHandler = (r) => {
       if (r.kanji !== this.card.kanji) return;
+      regen.setEnabled(true);
       const text = r.text.trim();
-      if (!text) return;
+      if (!text) {
+        prompt.setText("couldn't reach the oracle — recall on");
+        return;
+      }
       this.card.story = text;
       revealed = true;
       const line = primNames(this.card.primitives);

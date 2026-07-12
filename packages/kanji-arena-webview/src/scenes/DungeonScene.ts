@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import {
+  ATMOSPHERE,
   BG,
   DOOR_HALF,
   FOCUS_SLOW,
@@ -27,6 +28,7 @@ import {
 import { sfx } from "../audio/sfx";
 import { run } from "../core/run";
 import { nextRunSeed } from "../core/seed";
+import { aimPoint, JOY_DEADZONE, JOY_RADIUS, resetTouch, touch } from "../core/touchControls";
 import { generateFloor } from "../dungeon/generate";
 import { Dir, key, OPPOSITE, Room } from "../dungeon/types";
 import Spirit, { SpiritBehavior } from "../entities/Spirit";
@@ -68,6 +70,15 @@ const FLOOR_TINT: Partial<Record<Room["type"], number>> = {
   shop: 0xbdf0e6,
 };
 
+// Component-wise multiply of two packed RGB colours (0xRRGGBB) — used to fold a
+// special-room floor tint into the global violet grade.
+function mulHex(a: number, b: number): number {
+  const r = Math.round((((a >> 16) & 255) * ((b >> 16) & 255)) / 255);
+  const g = Math.round((((a >> 8) & 255) * ((b >> 8) & 255)) / 255);
+  const bl = Math.round(((a & 255) * (b & 255)) / 255);
+  return (r << 16) | (g << 8) | bl;
+}
+
 const CCOL = Math.floor(ROOM_W / 2);
 const CROW = Math.floor(ROOM_H / 2);
 const LAND_INSET = 3;
@@ -90,6 +101,8 @@ export default class DungeonScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private doors!: Phaser.Physics.Arcade.StaticGroup;
+  private haze?: Phaser.GameObjects.Image; // ambient violet fog, tracks camera centre
+  private playerLight?: Phaser.GameObjects.Image; // soft light pool under the hero
   private spirits!: Phaser.Physics.Arcade.Group;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
@@ -126,6 +139,9 @@ export default class DungeonScene extends Phaser.Scene {
   private forgeWrong = 0; // wrong-option count snapshot for the read (fixed at focus)
   private primePrev = false; // left-button edge latch for committing a forge ring
   private focusConsumed = false; // block re-focus until the focus button is released
+  private isTouch = false; // this device drives input by touch, not mouse+keyboard
+  private joyId: number | null = null; // pointer id currently owning the move stick
+  private readId: number | null = null; // pointer id currently aiming the read
   private srs: SrsStore = {};
   private ordealNeeds: string[] | null = null;
   private ordealTimed = false;
@@ -211,6 +227,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.forgeChoices = [];
     this.primePrev = false;
     this.focusConsumed = false;
+    this.joyId = null;
+    this.readId = null;
+    resetTouch();
     this.paused = false;
     this.hazards = [];
     this.nextHazardAt = 0;
@@ -239,6 +258,7 @@ export default class DungeonScene extends Phaser.Scene {
     );
     this.player.setSize(14, 14).setOffset(17, 30);
     this.player.anims.play(Graphics.player.animations.idle.key);
+    this.applyAtmosphere();
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.player, this.doors);
@@ -267,6 +287,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.cycleKey = kb.addKey("Q"); // switch the locked spirit while a read is open
     this.revealKey = kb.addKey("R");
     this.input.mouse?.disableContextMenu();
+    this.isTouch = this.sys.game.device.input.touch;
+    this.input.addPointer(2); // allow up to 3 concurrent pointers (2 thumbs + mouse)
+    this.setupTouchInput();
     kb.addCapture("TAB"); // stop TAB from moving browser focus off the canvas
     kb.on("keydown-TAB", this.togglePause, this);
     kb.on("keydown-ESC", () => this.paused && this.togglePause(), this);
@@ -279,11 +302,20 @@ export default class DungeonScene extends Phaser.Scene {
     this.game.events.on("relicChosen", this.onRelicChosen, this);
     this.game.events.on("shopDone", this.onShopDone, this);
     this.game.events.on("studyDone", this.onStudyDone, this);
+    // On-screen touch controls emit these; each target guards its own preconditions.
+    this.game.events.on("uiPause", this.togglePause, this);
+    this.game.events.on("uiCycle", this.cycleTarget, this);
+    this.game.events.on("uiDifficulty", this.toggleDifficulty, this);
+    this.game.events.on("uiHeal", this.tryReveal, this);
     this.scale.on("resize", this.onResize, this);
     this.events.once("shutdown", () => {
       this.game.events.off("relicChosen", this.onRelicChosen, this);
       this.game.events.off("shopDone", this.onShopDone, this);
       this.game.events.off("studyDone", this.onStudyDone, this);
+      this.game.events.off("uiPause", this.togglePause, this);
+      this.game.events.off("uiCycle", this.cycleTarget, this);
+      this.game.events.off("uiDifficulty", this.toggleDifficulty, this);
+      this.game.events.off("uiHeal", this.tryReveal, this);
       this.scale.off("resize", this.onResize, this);
     });
   }
@@ -299,18 +331,53 @@ export default class DungeonScene extends Phaser.Scene {
           const wx = (ox + x) * TILE;
           const wy = (oy + y) * TILE;
           if (this.isWall(x, y, room)) {
-            this.walls.create(wx + TILE / 2, wy + TILE / 2, env.key, env.indices.wall);
+            this.walls
+              .create(wx + TILE / 2, wy + TILE / 2, env.key, env.indices.wall)
+              .setTint(ATMOSPHERE.wallGrade);
           } else {
-            const img = this.add
+            const special = FLOOR_TINT[room.type];
+            // Multiply the special-room hue (if any) into the violet grade so every
+            // floor reads violet while boss/shrine/etc. still shift subtly.
+            const tint =
+              special == null ? ATMOSPHERE.floorGrade : mulHex(special, ATMOSPHERE.floorGrade);
+            this.add
               .image(wx, wy, env.key, env.indices.floor)
               .setOrigin(0, 0)
-              .setDepth(-10);
-            const tint = FLOOR_TINT[room.type];
-            if (tint) img.setTint(tint);
+              .setDepth(-10)
+              .setTint(tint);
           }
         }
       }
     }
+  }
+
+  // The purple-haze look: grade + vignette + bloom on the dungeon camera (the HUD
+  // is a separate scene, so it stays crisp), plus additive violet fog and a soft
+  // light pool under the hero. Re-applied on every create() (scene restart).
+  private applyAtmosphere() {
+    const A = ATMOSPHERE;
+    const cam = this.cameras.main;
+    cam.postFX.clear();
+    const cm = cam.postFX.addColorMatrix();
+    cm.saturate(A.saturate);
+    cm.brightness(A.brightness);
+    cam.postFX.addVignette(0.5, 0.5, A.vignette.radius, A.vignette.strength);
+    cam.postFX.addBloom(0xffffff, 1, 1, A.bloom.blur, A.bloom.strength);
+
+    this.haze = this.add
+      .image(0, 0, "aura")
+      .setTint(A.haze.color)
+      .setAlpha(A.haze.alpha)
+      .setScale(A.haze.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(-2);
+    this.playerLight = this.add
+      .image(this.player.x, this.player.y, "aura")
+      .setTint(A.playerLight.color)
+      .setAlpha(A.playerLight.alpha)
+      .setScale(A.playerLight.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(-1);
   }
 
   private isWall(x: number, y: number, room: Room): boolean {
@@ -354,6 +421,8 @@ export default class DungeonScene extends Phaser.Scene {
       this.focusing = false;
       this.focusTarget?.setTargeted(false);
       this.focusTarget = null;
+      touch.reading = false;
+      this.readId = null;
       this.game.events.emit("focusEnd");
     }
     (this.player.body as Phaser.Physics.Arcade.Body).enable = false;
@@ -417,8 +486,11 @@ export default class DungeonScene extends Phaser.Scene {
     const rng = new Phaser.Math.RandomDataGenerator([run.seed, k, "resolve"]);
     const ready = reviewReady(this.srs, rng);
     if (ready.length >= COMBAT_MIN) {
-      const extra = Math.min(run.depth, MAX_EXTRA_SPIRITS);
-      const n = 2 + rng.between(0, 2) + extra;
+      // Measured buildup: 2 spirits on the first floor, +1 per floor, capped — a
+      // predictable crescendo with depth instead of random room-to-room swings.
+      // Hard mode lifts the cap for a denser crowd deeper in.
+      const cap = settings.difficulty === "hard" ? MAX_EXTRA_SPIRITS + 2 : MAX_EXTRA_SPIRITS;
+      const n = 2 + Math.min(run.depth, cap);
       const list = ready.slice(0, n);
       run.content.set(k, list);
       run.roomState.set(k, this.dominantState(list));
@@ -802,7 +874,9 @@ export default class DungeonScene extends Phaser.Scene {
     this.doors.clear(true, true);
     const env = Graphics.environment;
     for (const { tx, ty } of this.openingTiles(room)) {
-      this.doors.create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, env.key, env.indices.wall);
+      this.doors
+        .create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, env.key, env.indices.wall)
+        .setTint(ATMOSPHERE.wallGrade);
     }
   }
 
@@ -966,11 +1040,12 @@ export default class DungeonScene extends Phaser.Scene {
     return Math.min(this.scale.width, this.scale.height) * WHEEL_RADIUS_FRAC;
   }
 
-  private startFocus() {
+  private startFocus(byTouch = false) {
     const target = this.nearestSpirit();
     if (!target) return;
     this.focusing = true;
     this.focusTarget = target;
+    touch.reading = byTouch; // a touch read drives aim from touch.aim, not the mouse
     target.setTargeted(true);
     sfx.focus();
     this.beginForge(target);
@@ -1054,6 +1129,8 @@ export default class DungeonScene extends Phaser.Scene {
         faceText: face.text,
         faceRtk: face.rtk,
         choices: this.forgeChoices.map((c) => c.keyword),
+        faces: this.forgePlan.map((p) => primitiveFace(p)),
+        kanji: this.focusTarget?.entry.kanji ?? "",
       });
     } else {
       this.forgeChoices = [];
@@ -1072,7 +1149,7 @@ export default class DungeonScene extends Phaser.Scene {
   private commitPrimitive() {
     const target = this.focusTarget;
     if (!target || !target.alive || this.forgeStage >= this.forgePlan.length) return;
-    const p = this.input.activePointer;
+    const p = aimPoint(this);
     const idx = radialIndexAt(
       this.scale.width / 2,
       this.scale.height / 2,
@@ -1107,6 +1184,8 @@ export default class DungeonScene extends Phaser.Scene {
     this.forgeChoices = [];
     this.wheelWords.clear();
     this.primePrev = false;
+    touch.reading = false;
+    this.readId = null;
     this.game.events.emit("focusEnd");
   }
 
@@ -1119,7 +1198,7 @@ export default class DungeonScene extends Phaser.Scene {
     let verb = null as ReturnType<typeof wheelVerbAt>;
     let selectable = false;
     if (onWheel && target && target.alive) {
-      const p = this.input.activePointer;
+      const p = aimPoint(this);
       const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
       verb = wheelVerbAt(
         this.scale.width / 2,
@@ -1350,6 +1429,8 @@ export default class DungeonScene extends Phaser.Scene {
     this.dead = true;
     this.focusing = false;
     this.focusTarget = null;
+    touch.reading = false;
+    this.readId = null;
     this.ordealNeeds = null;
     this.clearHazards();
     this.game.events.emit("focusEnd");
@@ -1501,7 +1582,125 @@ export default class DungeonScene extends Phaser.Scene {
     this.game.events.emit("difficultyChanged", settings.difficulty);
   }
 
+  // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
+  // so a charge is never wasted). Driven by the R key and the touch Heal button.
+  private tryReveal() {
+    if (
+      this.focusing &&
+      run.reveals > 0 &&
+      run.hp < run.maxHp &&
+      run.relics.has("oracles-tokens")
+    ) {
+      run.reveals -= 1;
+      run.hp += 1;
+      sfx.ward();
+      this.game.events.emit("hpChanged");
+      this.game.events.emit("relicsChanged");
+    }
+  }
+
+  // Touch input: the left half of the screen is a floating move-stick, the right
+  // half opens a read (phase 2). Handlers act only on touch pointers, so a mouse
+  // on a touch-capable device keeps the desktop keyboard+mouse path untouched.
+  private setupTouchInput() {
+    this.input.on("pointerdown", this.onTouchDown, this);
+    this.input.on("pointermove", this.onTouchMove, this);
+    this.input.on("pointerup", this.onTouchUp, this);
+    this.input.on("pointerupoutside", this.onTouchUp, this);
+  }
+
+  private onTouchDown(p: Phaser.Input.Pointer) {
+    if (!p.wasTouch) return;
+    // A tap on a HUD button is handled by the HUD — never let it also claim the
+    // joystick or a read (the button may sit in either zone).
+    for (const b of touch.buttons) {
+      if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return;
+    }
+    // Left half → the move-stick (claimed by the first thumb there).
+    if (p.x < this.scale.width / 2) {
+      if (this.joyId === null) {
+        this.joyId = p.id;
+        touch.joyActive = true;
+        touch.joyOrigin.x = p.x;
+        touch.joyOrigin.y = p.y;
+        touch.joyKnob.x = p.x;
+        touch.joyKnob.y = p.y;
+        touch.move.x = 0;
+        touch.move.y = 0;
+      }
+      return;
+    }
+    // Right half → open a read, or aim the next sticky stage of one already open.
+    if (!this.focusing) {
+      this.startFocus(true);
+      if (!this.focusing) return; // no spirit to read
+    } else if (!touch.reading || this.readId !== null) {
+      // A mouse read is open, or a finger already owns this read — don't let a
+      // stray second touch hijack readId (which would orphan the first finger).
+      return;
+    }
+    this.readId = p.id;
+    touch.aim.x = p.x;
+    touch.aim.y = p.y;
+  }
+
+  private onTouchMove(p: Phaser.Input.Pointer) {
+    if (!p.wasTouch) return;
+    if (p.id === this.readId) {
+      touch.aim.x = p.x;
+      touch.aim.y = p.y;
+    }
+    if (p.id === this.joyId) {
+      const dx = p.x - touch.joyOrigin.x;
+      const dy = p.y - touch.joyOrigin.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const clamp = Math.min(len, JOY_RADIUS);
+      touch.joyKnob.x = touch.joyOrigin.x + (dx / len) * clamp;
+      touch.joyKnob.y = touch.joyOrigin.y + (dy / len) * clamp;
+      // A small deadzone so a resting-thumb slip can't lurch the player at full speed.
+      if (len < JOY_DEADZONE) {
+        touch.move.x = 0;
+        touch.move.y = 0;
+      } else {
+        touch.move.x = (dx / len) * (clamp / JOY_RADIUS);
+        touch.move.y = (dy / len) * (clamp / JOY_RADIUS);
+      }
+    }
+  }
+
+  private onTouchUp(p: Phaser.Input.Pointer) {
+    if (p.id === this.joyId) {
+      this.joyId = null;
+      touch.joyActive = false;
+      touch.move.x = 0;
+      touch.move.y = 0;
+    }
+    if (p.id === this.readId) {
+      this.readId = null;
+      this.commitTouchStage();
+    }
+  }
+
+  // Lifting the read finger commits the current stage: name a primitive (a
+  // correct pick advances and the read stays open for the next thumb-down), or
+  // cast the verb on the wheel. Lifting over the hub cancels the whole read.
+  private commitTouchStage() {
+    if (!this.focusing) return;
+    const d = Math.hypot(touch.aim.x - this.scale.width / 2, touch.aim.y - this.scale.height / 2);
+    if (d < this.wheelRadius() * this.forgeDeadzone()) {
+      this.endFocus();
+      return;
+    }
+    if (this.forgeStage < this.forgePlan.length) this.commitPrimitive();
+    else this.releaseFocus();
+  }
+
   update() {
+    if (this.haze) {
+      const mp = this.cameras.main.midPoint;
+      this.haze.setPosition(mp.x, mp.y);
+    }
+    if (this.playerLight) this.playerLight.setPosition(this.player.x, this.player.y);
     if (this.dead) {
       this.player.setVelocity(0, 0);
       return;
@@ -1520,17 +1719,29 @@ export default class DungeonScene extends Phaser.Scene {
     // Focus is held via SPACE or right mouse button; release resolves the read.
     // A read that resolves mid-hold (a wrong primitive) latches focus off until
     // the button is released, so it can't instantly re-focus under a held button.
-    const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
-    if (!wantFocus) this.focusConsumed = false;
-    if (wantFocus && !this.focusing && !this.focusConsumed) this.startFocus();
-    else if (!wantFocus && this.focusing) this.releaseFocus();
-    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
-    // A left-click commits the aimed keyword on a primitive ring (edge-triggered).
-    const primeDown = this.input.activePointer.leftButtonDown();
-    if (this.focusing && primeDown && !this.primePrev && this.forgeStage < this.forgePlan.length) {
-      this.commitPrimitive();
+    // Desktop mouse+keyboard read. Skipped entirely while a touch read is open —
+    // on touch, wantFocus/leftButtonDown are meaningless (a finger reads as a held
+    // left button), so running these would fight the touch gesture every frame.
+    if (!touch.reading) {
+      const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
+      if (!wantFocus) this.focusConsumed = false;
+      if (wantFocus && !this.focusing && !this.focusConsumed) this.startFocus();
+      else if (!wantFocus && this.focusing) this.releaseFocus();
     }
-    this.primePrev = primeDown;
+    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
+    if (!touch.reading) {
+      // A left-click commits the aimed keyword on a primitive ring (edge-triggered).
+      const primeDown = this.input.activePointer.leftButtonDown();
+      if (
+        this.focusing &&
+        primeDown &&
+        !this.primePrev &&
+        this.forgeStage < this.forgePlan.length
+      ) {
+        this.commitPrimitive();
+      }
+      this.primePrev = primeDown;
+    }
 
     const k = this.keys;
     let vx = 0;
@@ -1539,13 +1750,18 @@ export default class DungeonScene extends Phaser.Scene {
     if (k.right.isDown) vx += 1;
     if (k.up.isDown) vy -= 1;
     if (k.down.isDown) vy += 1;
+    vx += touch.move.x; // the virtual move-stick (zero unless a thumb drives it)
+    vy += touch.move.y;
 
     // Fleet Tongue lets you read on the move — a boost while a read is open, so
     // you can slip a boss danger patch without dropping the read.
     const pSpeed =
       this.focusing && run.relics.has("fleet-tongue") ? PLAYER_SPEED * 1.5 : PLAYER_SPEED;
     const v = new Phaser.Math.Vector2(vx, vy);
-    if (v.lengthSq() > 0) v.normalize().scale(pSpeed);
+    // Clamp to unit length (keeps diagonal/keyboard from out-running a single axis)
+    // but preserve a partial virtual-stick throw so analog movement survives.
+    if (v.lengthSq() > 1) v.normalize();
+    v.scale(pSpeed);
     if (this.time.now >= this.knockbackUntil) this.player.setVelocity(v.x, v.y);
 
     const p = Graphics.player.animations;
@@ -1568,23 +1784,9 @@ export default class DungeonScene extends Phaser.Scene {
       s.steer(this.player.x, this.player.y, speed, this.focusing);
     }
 
-    // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
-    // so a charge is never wasted). Consume the key edge unconditionally — gating
-    // JustDown behind other conditions would leave a stale press to fire later.
-    const revealPressed = Phaser.Input.Keyboard.JustDown(this.revealKey);
-    if (
-      revealPressed &&
-      this.focusing &&
-      run.reveals > 0 &&
-      run.hp < run.maxHp &&
-      run.relics.has("oracles-tokens")
-    ) {
-      run.reveals -= 1;
-      run.hp += 1;
-      sfx.ward();
-      this.game.events.emit("hpChanged");
-      this.game.events.emit("relicsChanged");
-    }
+    // Consume the reveal-key edge unconditionally — gating JustDown behind other
+    // conditions would leave a stale press to fire later. tryReveal holds the guards.
+    if (Phaser.Input.Keyboard.JustDown(this.revealKey)) this.tryReveal();
 
     this.tickOrdealTimer();
     this.tickHazards();

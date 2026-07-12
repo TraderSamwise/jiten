@@ -2,9 +2,10 @@ import Phaser from "phaser";
 import { sfx } from "../audio/sfx";
 import { settings, WHEEL_DEADZONE, WHEEL_RADIUS_FRAC } from "../config";
 import { run } from "../core/run";
+import { aimPoint, JOY_RADIUS, touch } from "../core/touchControls";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
-import { RELIC_MAP } from "../rtk/relics";
+import { RELIC_IDS, RELIC_MAP } from "../rtk/relics";
 import { MAX_RING_CHOICES } from "../rtk/forge";
 import { sigilKey } from "../rtk/sigils";
 import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
@@ -22,6 +23,8 @@ interface ForgeRingInfo {
   faceText: string; // the primitive's shape (glyph or RTK substitute char)
   faceRtk: boolean; // draw faceText in the bundled RTK font, not the CJK font
   choices: string[]; // candidate keywords laid out around the ring
+  faces: { text: string; rtk: boolean }[]; // all primitive shapes, for the breadcrumb
+  kanji: string; // the compound being forged (end of the breadcrumb)
 }
 interface ReadInfo {
   kanji: string;
@@ -48,6 +51,7 @@ interface OrdealInfo {
 const CELL = 14;
 const GAP = 3;
 const PAD = 14;
+const CRUMB_SLOTS = 12; // breadcrumb pool cap (primitives + the compound)
 
 const TYPE_COLOR: Record<RoomType, number> = {
   start: 0x4b5bd6,
@@ -66,6 +70,7 @@ const RTK_FONT = "RtkPrimitives";
 // verb is computed from the shared pointer, matching what DungeonScene resolves.
 export default class HudScene extends Phaser.Scene {
   private g!: Phaser.GameObjects.Graphics;
+  private joyG!: Phaser.GameObjects.Graphics;
   private label!: Phaser.GameObjects.Text;
   private hint!: Phaser.GameObjects.Text;
   private hearts!: Phaser.GameObjects.Text;
@@ -92,7 +97,23 @@ export default class HudScene extends Phaser.Scene {
   private ringStage = 0;
   private ringTotal = 0;
   private candTexts: Phaser.GameObjects.Text[] = [];
-  private relicShelf!: Phaser.GameObjects.Text;
+  private ringChipsG!: Phaser.GameObjects.Graphics; // pill backgrounds behind ring candidates
+  private crumbG!: Phaser.GameObjects.Graphics; // breadcrumb box/dashes
+  private crumbTexts: Phaser.GameObjects.Text[] = []; // 日 — 月 — 明 sequence
+  private ringFaces: { text: string; rtk: boolean }[] = [];
+  private ringKanji = "";
+  private ringCrumbCount = 0;
+  // Owned relics as rounded pill chips (glyph badge + name), one pooled chip per
+  // possible relic, shown/laid out on relicsChanged.
+  private relicChips: {
+    c: Phaser.GameObjects.Container;
+    bg: Phaser.GameObjects.Graphics;
+    jp: Phaser.GameObjects.Text;
+    name: Phaser.GameObjects.Text;
+  }[] = [];
+  private streakText!: Phaser.GameObjects.Text;
+  private lastStreak = -1;
+  private frameGfx!: Phaser.GameObjects.Graphics; // faint panel border round the viewport
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
 
@@ -102,7 +123,7 @@ export default class HudScene extends Phaser.Scene {
   private teachToast!: Phaser.GameObjects.Text;
   private ordealBanner!: Phaser.GameObjects.Text;
   private ordealBarBg!: Phaser.GameObjects.Rectangle;
-  private ordealBar!: Phaser.GameObjects.Rectangle;
+  private ordealBar!: Phaser.GameObjects.Image;
   private study!: Phaser.GameObjects.Container;
   private studyBg!: Phaser.GameObjects.Rectangle;
   private studyK!: Phaser.GameObjects.Text;
@@ -119,12 +140,23 @@ export default class HudScene extends Phaser.Scene {
   private codexFoot!: Phaser.GameObjects.Text;
   private codexOpen = false;
 
+  // On-screen controls for touch play: built only on touch devices. Menu is
+  // always up; Cycle/Heal appear during a read. Their screen rects are published
+  // to `touch.buttons` so DungeonScene's joystick/read handler ignores taps on them.
+  private isTouch = false;
+  private menuBtn?: Phaser.GameObjects.Container;
+  private cycleBtn?: Phaser.GameObjects.Container;
+  private healBtn?: Phaser.GameObjects.Container;
+  private tapZones: Phaser.GameObjects.GameObject[] = [];
+
   constructor() {
     super("hud");
   }
 
   create() {
+    this.isTouch = this.sys.game.device.input.touch;
     this.g = this.add.graphics();
+    this.joyG = this.add.graphics().setDepth(9);
     this.label = this.add.text(0, 0, "", {
       fontFamily: "monospace",
       fontSize: "12px",
@@ -144,7 +176,9 @@ export default class HudScene extends Phaser.Scene {
       .text(
         0,
         0,
-        "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
+        this.isTouch
+          ? "Sealed — read the spirits  (tap right to read · drag to aim · lift to name each part · ⇄ switches)"
+          : "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
         {
           fontFamily: "monospace",
           fontSize: "14px",
@@ -166,18 +200,18 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0, 1);
     this.onDifficulty(settings.difficulty);
 
-    this.relicShelf = this.add
-      .text(0, 0, "", {
-        fontFamily: '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif',
-        fontSize: "20px",
-        color: "#f2c14e",
-        align: "right",
-      })
-      .setOrigin(1, 1);
+    this.streakText = this.add.text(PAD, PAD + 44, "", {
+      fontFamily: "monospace",
+      fontSize: "13px",
+      color: "#e0a35a",
+    });
+    this.frameGfx = this.add.graphics().setDepth(1);
+    this.buildRelicChips();
 
     this.buildWheel();
     this.buildOverlays();
     this.buildCodex();
+    if (this.isTouch) this.buildTouchControls();
 
     this.game.events.on("roomChanged", this.draw, this);
     this.game.events.on("roomChanged", this.hideStudy, this);
@@ -247,7 +281,7 @@ export default class HudScene extends Phaser.Scene {
 
   private buildWheel() {
     this.veil = this.add
-      .rectangle(0, 0, 10, 10, 0x0b0912, 0.5)
+      .rectangle(0, 0, 10, 10, 0x0b0912, 0.6)
       .setOrigin(0, 0)
       .setVisible(false)
       .setDepth(10);
@@ -285,15 +319,26 @@ export default class HudScene extends Phaser.Scene {
         .setVisible(false);
       this.candTexts.push(t);
     }
+    this.ringChipsG = this.add.graphics().setDepth(13);
+    this.crumbG = this.add.graphics().setDepth(13);
+    for (let i = 0; i < CRUMB_SLOTS; i++) {
+      const t = this.add
+        .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "22px", color: "#6a6480" })
+        .setOrigin(0.5)
+        .setDepth(14)
+        .setVisible(false);
+      this.crumbTexts.push(t);
+    }
   }
 
   private buildOverlays() {
     this.hubHint = this.add
       .text(0, 0, "", {
         fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#cfc8e0",
+        fontSize: "12px",
+        color: "#f2c14e",
         align: "center",
+        letterSpacing: 2,
       })
       .setOrigin(0.5, 0)
       .setDepth(13)
@@ -378,8 +423,9 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(14)
       .setVisible(false);
+    // A gold→ember gradient bar that drains via scaleX (gold end lingers last).
     this.ordealBar = this.add
-      .rectangle(0, 0, 220, 5, 0xe2493b, 0.95)
+      .image(0, 0, "timerbar")
       .setOrigin(0, 0)
       .setDepth(15)
       .setVisible(false);
@@ -433,6 +479,48 @@ export default class HudScene extends Phaser.Scene {
       ])
       .setDepth(31)
       .setVisible(false);
+  }
+
+  // Build the touch-only on-screen buttons and make the corner indicators tappable.
+  private buildTouchControls() {
+    this.menuBtn = this.makeIconButton("≡", "uiPause");
+    this.cycleBtn = this.makeIconButton("⇄", "uiCycle").setVisible(false);
+    this.healBtn = this.makeIconButton("＋", "uiHeal").setVisible(false);
+    this.difficultyInd.setInteractive({ useHandCursor: true });
+    this.difficultyInd.on("pointerdown", () => this.game.events.emit("uiDifficulty"));
+    this.muteInd.setInteractive({ useHandCursor: true });
+    this.muteInd.on("pointerdown", () => this.game.events.emit("muteChanged", sfx.toggleMute()));
+    this.tapZones = [this.menuBtn, this.cycleBtn, this.healBtn, this.difficultyInd, this.muteInd];
+  }
+
+  // A round icon button: a filled disc + glyph, emitting `event` on tap. Container
+  // needs an explicit circular hit area (it has no intrinsic size).
+  private makeIconButton(icon: string, event: string): Phaser.GameObjects.Container {
+    const R = 22;
+    const disc = this.add.circle(0, 0, R, 0x14111f, 0.9).setStrokeStyle(1.5, 0xf2c14e, 0.7);
+    const glyph = this.add
+      .text(0, 0, icon, { fontFamily: "monospace", fontSize: "22px", color: "#f4e7c0" })
+      .setOrigin(0.5);
+    const c = this.add.container(0, 0, [disc, glyph]).setDepth(22);
+    c.setInteractive(new Phaser.Geom.Circle(0, 0, R), Phaser.Geom.Circle.Contains);
+    c.on("pointerdown", () => this.game.events.emit(event));
+    return c;
+  }
+
+  // Per-frame: set which touch buttons are showing, then publish the visible
+  // tap-targets' screen rects so DungeonScene ignores taps that land on them.
+  private refreshTouchButtons() {
+    if (!this.isTouch) return;
+    this.cycleBtn?.setVisible(this.focusing);
+    const canHeal =
+      this.focusing && run.relics.has("oracles-tokens") && run.reveals > 0 && run.hp < run.maxHp;
+    this.healBtn?.setVisible(canHeal);
+    touch.buttons = this.tapZones
+      .filter((o) => (o as unknown as Phaser.GameObjects.Components.Visible).visible)
+      .map((o) => {
+        const b = (o as unknown as Phaser.GameObjects.Components.GetBounds).getBounds();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
   }
 
   private toggleCodex(open: boolean) {
@@ -495,9 +583,8 @@ export default class HudScene extends Phaser.Scene {
         .setVisible(true);
       this.ordealBar
         .setPosition(this.scale.width / 2 - barW / 2, b.bottom + 6)
-        .setSize(barW, 5)
-        .setScale(1)
-        .setVisible(true);
+        .setVisible(true)
+        .setDisplaySize(barW, 5);
       const t = this.tweens.add({
         targets: this.ordealBar,
         scaleX: 0,
@@ -760,8 +847,52 @@ export default class HudScene extends Phaser.Scene {
     this.ringFace = info.faceText;
     this.ringRtk = info.faceRtk;
     this.ringChoices = info.choices;
+    this.ringFaces = info.faces;
+    this.ringKanji = info.kanji;
+    this.drawBreadcrumb();
     this.applyOverlayMode();
     this.drawRing();
+  }
+
+  // The forge trail: each primitive shape then the compound kanji, in a centered
+  // row above the ring; the current stage is boxed gold, the rest faint.
+  private drawBreadcrumb() {
+    const cx = this.scale.width / 2;
+    const radius = Math.min(this.scale.width, this.scale.height) * WHEEL_RADIUS_FRAC;
+    const y = this.scale.height / 2 - radius - 42;
+    const seq = [...this.ringFaces, { text: this.ringKanji, rtk: false }];
+    const count = Math.min(seq.length, this.crumbTexts.length);
+    this.ringCrumbCount = count;
+    const gap = 24;
+    const widths: number[] = [];
+    let total = 0;
+    for (let i = 0; i < count; i++) {
+      const t = this.crumbTexts[i];
+      t.setFontFamily(seq[i].rtk ? RTK_FONT : GLYPH_FONT).setText(seq[i].text);
+      widths.push(t.width);
+      total += t.width;
+    }
+    total += gap * Math.max(0, count - 1);
+    let x = cx - total / 2;
+    this.crumbG.clear();
+    for (let i = 0; i < count; i++) {
+      const w = widths[i];
+      const gx = x + w / 2;
+      const isKanji = i === count - 1;
+      const current = i === this.ringStage;
+      this.crumbTexts[i]
+        .setPosition(gx, y)
+        .setColor(current ? "#f2c14e" : isKanji ? "#f4ecd6" : "#6a6480");
+      if (current) {
+        this.crumbG.lineStyle(1.5, 0xf2c14e, 0.9);
+        this.crumbG.strokeRoundedRect(gx - w / 2 - 6, y - 18, w + 12, 36, 8);
+      }
+      if (i < count - 1) {
+        this.crumbG.lineStyle(1, 0xffffff, 0.2);
+        this.crumbG.lineBetween(x + w + 6, y, x + w + gap - 6, y);
+      }
+      x += w + gap;
+    }
   }
 
   // Every primitive named — hand off to the verb wheel (also the atomic-kanji path).
@@ -780,10 +911,60 @@ export default class HudScene extends Phaser.Scene {
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
   }
 
+  // One pooled chip per possible relic — a rounded pill: glyph badge + name.
+  private buildRelicChips() {
+    for (let i = 0; i < RELIC_IDS.length; i++) {
+      const bg = this.add.graphics();
+      const jp = this.add
+        .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "14px", color: "#f2c14e" })
+        .setOrigin(0, 0.5);
+      const name = this.add
+        .text(0, 0, "", { fontFamily: "monospace", fontSize: "11px", color: "#e8e2f0" })
+        .setOrigin(0, 0.5);
+      const c = this.add.container(0, 0, [bg, jp, name]).setDepth(2).setVisible(false);
+      this.relicChips.push({ c, bg, jp, name });
+    }
+  }
+
+  // Lay out owned relics as pill chips along the bottom-left, wrapping upward,
+  // above the mute/difficulty indicators. The Oracle's Tokens chip shows charges.
   private drawRelics() {
-    const owned = [...run.relics].map((id) => RELIC_MAP[id].jp).join(" ");
-    const reveals = run.relics.has("oracles-tokens") ? `  ◆${run.reveals}` : "";
-    this.relicShelf.setText(owned ? owned + reveals : "");
+    const owned = [...run.relics];
+    const startX = PAD;
+    const baseY = this.scale.height - PAD - 52;
+    const gap = 7;
+    const padX = 8;
+    const badgeGap = 6;
+    const h = 22;
+    const maxX = this.scale.width * 0.62;
+    let x = startX;
+    let row = 0;
+    this.relicChips.forEach((chip, i) => {
+      if (i >= owned.length) {
+        chip.c.setVisible(false);
+        return;
+      }
+      const id = owned[i];
+      chip.jp.setText(RELIC_MAP[id].jp);
+      chip.name.setText(
+        id === "oracles-tokens" ? `${RELIC_MAP[id].name}  ◆${run.reveals}` : RELIC_MAP[id].name,
+      );
+      const w = padX + chip.jp.width + badgeGap + chip.name.width + padX;
+      if (x + w > maxX && x > startX) {
+        x = startX;
+        row += 1;
+      }
+      const y = baseY - row * (h + 6);
+      chip.bg.clear();
+      chip.bg.fillStyle(0x14111f, 0.9);
+      chip.bg.fillRoundedRect(0, -h / 2, w, h, h / 2);
+      chip.bg.lineStyle(1, 0xffffff, 0.12);
+      chip.bg.strokeRoundedRect(0, -h / 2, w, h, h / 2);
+      chip.jp.setPosition(padX, 0);
+      chip.name.setPosition(padX + chip.jp.width + badgeGap, 0);
+      chip.c.setPosition(x, y).setVisible(true);
+      x += w + gap;
+    });
   }
 
   // Show the overlay pieces for the current state: veil + hub always while
@@ -802,6 +983,9 @@ export default class HudScene extends Phaser.Scene {
     this.wheelLabels.forEach((t, i) => t.setVisible(wheel && this.wheelWords.has(WHEEL_ORDER[i])));
     this.ringCue.setVisible(ring);
     this.candTexts.forEach((t, i) => t.setVisible(ring && i < this.ringChoices.length));
+    this.ringChipsG.setVisible(ring);
+    this.crumbG.setVisible(ring);
+    this.crumbTexts.forEach((t, i) => t.setVisible(ring && i < this.ringCrumbCount));
   }
 
   private drawWheel() {
@@ -812,7 +996,7 @@ export default class HudScene extends Phaser.Scene {
     // so what looks like "release to cancel" actually cancels.
     const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
     const inner = radius * dzFrac;
-    const p = this.input.activePointer;
+    const p = aimPoint(this);
     const aimed = wheelVerbAt(cx, cy, p.x, p.y, radius, dzFrac);
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
@@ -852,10 +1036,13 @@ export default class HudScene extends Phaser.Scene {
       const label = this.wheelLabels[i];
       if (worded) {
         const kr = radius - 8;
+        // An opposite-tone outline keeps the label readable where it overhangs the
+        // wheel onto the dark room — otherwise the picked slice's dark text vanishes.
         label
           .setText(word)
           .setPosition(cx + Math.cos(mid) * kr, cy + Math.sin(mid) * kr)
-          .setColor(on ? "#0b0912" : "#f7ecc9");
+          .setColor(on ? "#0b0912" : "#f7ecc9")
+          .setStroke(on ? "#f7ecc9" : "#0b0912", 4);
       }
     });
   }
@@ -870,7 +1057,7 @@ export default class HudScene extends Phaser.Scene {
     const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
     const inner = radius * dzFrac;
     const n = this.ringChoices.length;
-    const p = this.input.activePointer;
+    const p = aimPoint(this);
     const picked = n > 0 ? radialIndexAt(cx, cy, p.x, p.y, radius, dzFrac, n) : null;
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
@@ -881,25 +1068,55 @@ export default class HudScene extends Phaser.Scene {
       .setPosition(cx, cy);
     this.ringCue.setPosition(cx, cy + inner + 6);
     this.hubHint
-      .setText(`part ${this.ringStage + 1}/${this.ringTotal}`)
+      .setText(`PRIMITIVE ${this.ringStage + 1} / ${this.ringTotal}`)
       .setPosition(cx, cy + inner + 22);
 
+    const g = this.ringChipsG;
+    g.clear();
     const lr = (radius + inner) / 2;
     this.ringChoices.forEach((kw, i) => {
       const mid = slotMid(i, n);
       const on = i === picked;
-      this.candTexts[i]
-        .setText(kw)
+      const t = this.candTexts[i];
+      t.setText(kw)
         .setPosition(cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr)
-        .setColor(on ? "#ffe9a8" : "#cfc8e0")
-        .setScale(on ? 1.16 : 1);
+        .setColor(on ? "#7ad1c4" : "#cfc8e0")
+        .setScale(on ? 1.12 : 1);
+      // A rounded pill behind each candidate — jade outline on the aimed one.
+      const w = t.width * (on ? 1.12 : 1) + 18;
+      const h = 24;
+      g.fillStyle(0x14111f, on ? 0.95 : 0.85);
+      g.fillRoundedRect(t.x - w / 2, t.y - h / 2, w, h, h / 2);
+      g.lineStyle(on ? 2 : 1, on ? 0x7ad1c4 : 0xffffff, on ? 0.9 : 0.12);
+      g.strokeRoundedRect(t.x - w / 2, t.y - h / 2, w, h, h / 2);
     });
   }
 
   update() {
+    this.drawJoystick();
+    this.refreshTouchButtons();
+    // Streak has no single event (shield/miss paths skip it); cheap dirty-check.
+    if (run.streak !== this.lastStreak) {
+      this.lastStreak = run.streak;
+      this.streakText.setText(run.streak >= 2 ? `streak ${run.streak}` : "");
+    }
     if (!this.focusing) return;
     if (this.forgeMode) this.drawRing();
     else this.drawWheel();
+  }
+
+  // The floating move-stick: a faint ring where the thumb landed and a knob at
+  // the clamped thumb position. Drawn only while a touch drives it.
+  private drawJoystick() {
+    const g = this.joyG;
+    g.clear();
+    if (!touch.joyActive) return;
+    g.lineStyle(2, 0xf4e7c0, 0.28);
+    g.strokeCircle(touch.joyOrigin.x, touch.joyOrigin.y, JOY_RADIUS);
+    g.fillStyle(0xf4e7c0, 0.22);
+    g.fillCircle(touch.joyKnob.x, touch.joyKnob.y, 18);
+    g.lineStyle(1.5, 0xf4e7c0, 0.5);
+    g.strokeCircle(touch.joyKnob.x, touch.joyKnob.y, 18);
   }
 
   private onLock(locked: boolean) {
@@ -932,7 +1149,18 @@ export default class HudScene extends Phaser.Scene {
     this.hint.setPosition(this.scale.width / 2, this.scale.height - PAD);
     this.muteInd.setPosition(PAD, this.scale.height - PAD);
     this.difficultyInd.setPosition(PAD, this.scale.height - PAD - 16);
-    this.relicShelf.setPosition(this.scale.width - PAD, this.scale.height - PAD);
+    // A faint rounded hairline frames the play area (the mockup's panel edge).
+    this.frameGfx.clear();
+    this.frameGfx.lineStyle(1, 0xffffff, 0.08);
+    this.frameGfx.strokeRoundedRect(6, 6, this.scale.width - 12, this.scale.height - 12, 14);
+    this.drawRelics();
+    if (this.isTouch) {
+      const w = this.scale.width;
+      const h = this.scale.height;
+      this.menuBtn?.setPosition(PAD + 24, PAD + 76); // top-left, clear of the joystick rest zone
+      this.cycleBtn?.setPosition(w - PAD - 24, h / 2 - 30); // right edge, outside the centered wheel
+      this.healBtn?.setPosition(w - PAD - 24, h / 2 + 30);
+    }
     // Re-anchor any visible transient overlays so a resize doesn't strand them.
     for (const o of [this.ordealBanner, this.ordealBarBg, this.readToast, this.teachToast]) {
       if (o.visible) o.x = this.scale.width / 2;
