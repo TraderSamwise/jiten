@@ -28,7 +28,7 @@ import {
 import { sfx } from "../audio/sfx";
 import { run } from "../core/run";
 import { nextRunSeed } from "../core/seed";
-import { JOY_DEADZONE, JOY_RADIUS, resetTouch, touch } from "../core/touchControls";
+import { aimPoint, JOY_DEADZONE, JOY_RADIUS, resetTouch, touch } from "../core/touchControls";
 import { generateFloor } from "../dungeon/generate";
 import { Dir, key, OPPOSITE, Room } from "../dungeon/types";
 import Spirit, { SpiritBehavior } from "../entities/Spirit";
@@ -1051,12 +1051,6 @@ export default class DungeonScene extends Phaser.Scene {
     this.beginForge(target);
   }
 
-  // The point the read is aimed at: the read pointer's last touch (during a touch
-  // read) or the mouse. Lets one radial-commit path serve both input worlds.
-  private aimPoint(): { x: number; y: number } {
-    return touch.reading ? touch.aim : this.input.activePointer;
-  }
-
   // Switch the locked spirit mid-read (Q) — cycles by distance so you can pick a
   // specific twin in an ordeal instead of whatever's nearest. The pointer keeps
   // aiming; the read restarts on the new target from its first primitive.
@@ -1155,7 +1149,7 @@ export default class DungeonScene extends Phaser.Scene {
   private commitPrimitive() {
     const target = this.focusTarget;
     if (!target || !target.alive || this.forgeStage >= this.forgePlan.length) return;
-    const p = this.aimPoint();
+    const p = aimPoint(this);
     const idx = radialIndexAt(
       this.scale.width / 2,
       this.scale.height / 2,
@@ -1204,7 +1198,7 @@ export default class DungeonScene extends Phaser.Scene {
     let verb = null as ReturnType<typeof wheelVerbAt>;
     let selectable = false;
     if (onWheel && target && target.alive) {
-      const p = this.aimPoint();
+      const p = aimPoint(this);
       const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
       verb = wheelVerbAt(
         this.scale.width / 2,
@@ -1640,8 +1634,10 @@ export default class DungeonScene extends Phaser.Scene {
     if (!this.focusing) {
       this.startFocus(true);
       if (!this.focusing) return; // no spirit to read
-    } else if (!touch.reading) {
-      return; // a mouse read is open — don't let touch hijack it
+    } else if (!touch.reading || this.readId !== null) {
+      // A mouse read is open, or a finger already owns this read — don't let a
+      // stray second touch hijack readId (which would orphan the first finger).
+      return;
     }
     this.readId = p.id;
     touch.aim.x = p.x;
@@ -1762,7 +1758,10 @@ export default class DungeonScene extends Phaser.Scene {
     const pSpeed =
       this.focusing && run.relics.has("fleet-tongue") ? PLAYER_SPEED * 1.5 : PLAYER_SPEED;
     const v = new Phaser.Math.Vector2(vx, vy);
-    if (v.lengthSq() > 0) v.normalize().scale(pSpeed);
+    // Clamp to unit length (keeps diagonal/keyboard from out-running a single axis)
+    // but preserve a partial virtual-stick throw so analog movement survives.
+    if (v.lengthSq() > 1) v.normalize();
+    v.scale(pSpeed);
     if (this.time.now >= this.knockbackUntil) this.player.setVelocity(v.x, v.y);
 
     const p = Graphics.player.animations;

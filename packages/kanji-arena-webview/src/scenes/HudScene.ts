@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { sfx } from "../audio/sfx";
 import { settings, WHEEL_DEADZONE, WHEEL_RADIUS_FRAC } from "../config";
 import { run } from "../core/run";
-import { JOY_RADIUS, touch } from "../core/touchControls";
+import { aimPoint, JOY_RADIUS, touch } from "../core/touchControls";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_IDS, RELIC_MAP } from "../rtk/relics";
@@ -996,7 +996,7 @@ export default class HudScene extends Phaser.Scene {
     // so what looks like "release to cancel" actually cancels.
     const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
     const inner = radius * dzFrac;
-    const p = this.aimPoint();
+    const p = aimPoint(this);
     const aimed = wheelVerbAt(cx, cy, p.x, p.y, radius, dzFrac);
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
@@ -1057,7 +1057,7 @@ export default class HudScene extends Phaser.Scene {
     const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
     const inner = radius * dzFrac;
     const n = this.ringChoices.length;
-    const p = this.aimPoint();
+    const p = aimPoint(this);
     const picked = n > 0 ? radialIndexAt(cx, cy, p.x, p.y, radius, dzFrac, n) : null;
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
@@ -1103,11 +1103,6 @@ export default class HudScene extends Phaser.Scene {
     if (!this.focusing) return;
     if (this.forgeMode) this.drawRing();
     else this.drawWheel();
-  }
-
-  // The read is aimed by the read pointer's touch (a touch read) or the mouse.
-  private aimPoint(): { x: number; y: number } {
-    return touch.reading ? touch.aim : this.input.activePointer;
   }
 
   // The floating move-stick: a faint ring where the thumb landed and a knob at
