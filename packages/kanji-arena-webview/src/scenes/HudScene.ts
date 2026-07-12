@@ -121,11 +121,21 @@ export default class HudScene extends Phaser.Scene {
   private codexFoot!: Phaser.GameObjects.Text;
   private codexOpen = false;
 
+  // On-screen controls for touch play: built only on touch devices. Menu is
+  // always up; Cycle/Heal appear during a read. Their screen rects are published
+  // to `touch.buttons` so DungeonScene's joystick/read handler ignores taps on them.
+  private isTouch = false;
+  private menuBtn?: Phaser.GameObjects.Container;
+  private cycleBtn?: Phaser.GameObjects.Container;
+  private healBtn?: Phaser.GameObjects.Container;
+  private tapZones: Phaser.GameObjects.GameObject[] = [];
+
   constructor() {
     super("hud");
   }
 
   create() {
+    this.isTouch = this.sys.game.device.input.touch;
     this.g = this.add.graphics();
     this.joyG = this.add.graphics().setDepth(9);
     this.label = this.add.text(0, 0, "", {
@@ -147,7 +157,9 @@ export default class HudScene extends Phaser.Scene {
       .text(
         0,
         0,
-        "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
+        this.isTouch
+          ? "Sealed — read the spirits  (tap right to read · drag to aim · lift to name each part · ⇄ switches)"
+          : "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
         {
           fontFamily: "monospace",
           fontSize: "14px",
@@ -181,6 +193,7 @@ export default class HudScene extends Phaser.Scene {
     this.buildWheel();
     this.buildOverlays();
     this.buildCodex();
+    if (this.isTouch) this.buildTouchControls();
 
     this.game.events.on("roomChanged", this.draw, this);
     this.game.events.on("roomChanged", this.hideStudy, this);
@@ -436,6 +449,48 @@ export default class HudScene extends Phaser.Scene {
       ])
       .setDepth(31)
       .setVisible(false);
+  }
+
+  // Build the touch-only on-screen buttons and make the corner indicators tappable.
+  private buildTouchControls() {
+    this.menuBtn = this.makeIconButton("≡", "uiPause");
+    this.cycleBtn = this.makeIconButton("⇄", "uiCycle").setVisible(false);
+    this.healBtn = this.makeIconButton("＋", "uiHeal").setVisible(false);
+    this.difficultyInd.setInteractive({ useHandCursor: true });
+    this.difficultyInd.on("pointerdown", () => this.game.events.emit("uiDifficulty"));
+    this.muteInd.setInteractive({ useHandCursor: true });
+    this.muteInd.on("pointerdown", () => this.game.events.emit("muteChanged", sfx.toggleMute()));
+    this.tapZones = [this.menuBtn, this.cycleBtn, this.healBtn, this.difficultyInd, this.muteInd];
+  }
+
+  // A round icon button: a filled disc + glyph, emitting `event` on tap. Container
+  // needs an explicit circular hit area (it has no intrinsic size).
+  private makeIconButton(icon: string, event: string): Phaser.GameObjects.Container {
+    const R = 22;
+    const disc = this.add.circle(0, 0, R, 0x14111f, 0.9).setStrokeStyle(1.5, 0xf2c14e, 0.7);
+    const glyph = this.add
+      .text(0, 0, icon, { fontFamily: "monospace", fontSize: "22px", color: "#f4e7c0" })
+      .setOrigin(0.5);
+    const c = this.add.container(0, 0, [disc, glyph]).setDepth(22);
+    c.setInteractive(new Phaser.Geom.Circle(0, 0, R), Phaser.Geom.Circle.Contains);
+    c.on("pointerdown", () => this.game.events.emit(event));
+    return c;
+  }
+
+  // Per-frame: set which touch buttons are showing, then publish the visible
+  // tap-targets' screen rects so DungeonScene ignores taps that land on them.
+  private refreshTouchButtons() {
+    if (!this.isTouch) return;
+    this.cycleBtn?.setVisible(this.focusing);
+    const canHeal =
+      this.focusing && run.relics.has("oracles-tokens") && run.reveals > 0 && run.hp < run.maxHp;
+    this.healBtn?.setVisible(canHeal);
+    touch.buttons = this.tapZones
+      .filter((o) => (o as unknown as Phaser.GameObjects.Components.Visible).visible)
+      .map((o) => {
+        const b = (o as unknown as Phaser.GameObjects.Components.GetBounds).getBounds();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
   }
 
   private toggleCodex(open: boolean) {
@@ -901,6 +956,7 @@ export default class HudScene extends Phaser.Scene {
 
   update() {
     this.drawJoystick();
+    this.refreshTouchButtons();
     if (!this.focusing) return;
     if (this.forgeMode) this.drawRing();
     else this.drawWheel();
@@ -956,6 +1012,13 @@ export default class HudScene extends Phaser.Scene {
     this.muteInd.setPosition(PAD, this.scale.height - PAD);
     this.difficultyInd.setPosition(PAD, this.scale.height - PAD - 16);
     this.relicShelf.setPosition(this.scale.width - PAD, this.scale.height - PAD);
+    if (this.isTouch) {
+      const w = this.scale.width;
+      const h = this.scale.height;
+      this.menuBtn?.setPosition(PAD + 24, PAD + 76); // top-left, clear of the joystick rest zone
+      this.cycleBtn?.setPosition(w - PAD - 24, h / 2 - 30); // right edge, outside the centered wheel
+      this.healBtn?.setPosition(w - PAD - 24, h / 2 + 30);
+    }
     // Re-anchor any visible transient overlays so a resize doesn't strand them.
     for (const o of [this.ordealBanner, this.ordealBarBg, this.readToast, this.teachToast]) {
       if (o.visible) o.x = this.scale.width / 2;
