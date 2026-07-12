@@ -23,3 +23,12 @@ export function resetTouch(): void {
   touch.reading = false;
   touch.buttons = [];
 }
+
+// The point a read is aimed at: the read pointer's last touch (a touch read) or
+// the mouse. One shared helper so DungeonScene and HudScene can never drift.
+export function aimPoint(scene: { input: { activePointer: { x: number; y: number } } }): {
+  x: number;
+  y: number;
+} {
+  return touch.reading ? touch.aim : scene.input.activePointer;
+}
