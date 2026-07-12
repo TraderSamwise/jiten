@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import {
+  ATMOSPHERE,
   BG,
   DOOR_HALF,
   FOCUS_SLOW,
@@ -69,6 +70,15 @@ const FLOOR_TINT: Partial<Record<Room["type"], number>> = {
   shop: 0xbdf0e6,
 };
 
+// Component-wise multiply of two packed RGB colours (0xRRGGBB) — used to fold a
+// special-room floor tint into the global violet grade.
+function mulHex(a: number, b: number): number {
+  const r = Math.round((((a >> 16) & 255) * ((b >> 16) & 255)) / 255);
+  const g = Math.round((((a >> 8) & 255) * ((b >> 8) & 255)) / 255);
+  const bl = Math.round(((a & 255) * (b & 255)) / 255);
+  return (r << 16) | (g << 8) | bl;
+}
+
 const CCOL = Math.floor(ROOM_W / 2);
 const CROW = Math.floor(ROOM_H / 2);
 const LAND_INSET = 3;
@@ -91,6 +101,8 @@ export default class DungeonScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private doors!: Phaser.Physics.Arcade.StaticGroup;
+  private haze?: Phaser.GameObjects.Image; // ambient violet fog, tracks camera centre
+  private playerLight?: Phaser.GameObjects.Image; // soft light pool under the hero
   private spirits!: Phaser.Physics.Arcade.Group;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
@@ -246,6 +258,7 @@ export default class DungeonScene extends Phaser.Scene {
     );
     this.player.setSize(14, 14).setOffset(17, 30);
     this.player.anims.play(Graphics.player.animations.idle.key);
+    this.applyAtmosphere();
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.player, this.doors);
@@ -318,18 +331,53 @@ export default class DungeonScene extends Phaser.Scene {
           const wx = (ox + x) * TILE;
           const wy = (oy + y) * TILE;
           if (this.isWall(x, y, room)) {
-            this.walls.create(wx + TILE / 2, wy + TILE / 2, env.key, env.indices.wall);
+            this.walls
+              .create(wx + TILE / 2, wy + TILE / 2, env.key, env.indices.wall)
+              .setTint(ATMOSPHERE.wallGrade);
           } else {
-            const img = this.add
+            const special = FLOOR_TINT[room.type];
+            // Multiply the special-room hue (if any) into the violet grade so every
+            // floor reads violet while boss/shrine/etc. still shift subtly.
+            const tint =
+              special == null ? ATMOSPHERE.floorGrade : mulHex(special, ATMOSPHERE.floorGrade);
+            this.add
               .image(wx, wy, env.key, env.indices.floor)
               .setOrigin(0, 0)
-              .setDepth(-10);
-            const tint = FLOOR_TINT[room.type];
-            if (tint) img.setTint(tint);
+              .setDepth(-10)
+              .setTint(tint);
           }
         }
       }
     }
+  }
+
+  // The purple-haze look: grade + vignette + bloom on the dungeon camera (the HUD
+  // is a separate scene, so it stays crisp), plus additive violet fog and a soft
+  // light pool under the hero. Re-applied on every create() (scene restart).
+  private applyAtmosphere() {
+    const A = ATMOSPHERE;
+    const cam = this.cameras.main;
+    cam.postFX.clear();
+    const cm = cam.postFX.addColorMatrix();
+    cm.saturate(A.saturate);
+    cm.brightness(A.brightness);
+    cam.postFX.addVignette(0.5, 0.5, A.vignette.radius, A.vignette.strength);
+    cam.postFX.addBloom(0xffffff, 1, 1, A.bloom.blur, A.bloom.strength);
+
+    this.haze = this.add
+      .image(0, 0, "aura")
+      .setTint(A.haze.color)
+      .setAlpha(A.haze.alpha)
+      .setScale(A.haze.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(-2);
+    this.playerLight = this.add
+      .image(this.player.x, this.player.y, "aura")
+      .setTint(A.playerLight.color)
+      .setAlpha(A.playerLight.alpha)
+      .setScale(A.playerLight.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(-1);
   }
 
   private isWall(x: number, y: number, room: Room): boolean {
@@ -1650,6 +1698,11 @@ export default class DungeonScene extends Phaser.Scene {
   }
 
   update() {
+    if (this.haze) {
+      const mp = this.cameras.main.midPoint;
+      this.haze.setPosition(mp.x, mp.y);
+    }
+    if (this.playerLight) this.playerLight.setPosition(this.player.x, this.player.y);
     if (this.dead) {
       this.player.setVelocity(0, 0);
       return;

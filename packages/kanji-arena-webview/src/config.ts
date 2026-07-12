@@ -36,6 +36,25 @@ export const TARGET_ROOMS = 12;
 
 export const BG = "#0d0b14";
 
+// Purple-haze atmosphere: camera post-FX (colour grade + vignette + bloom) plus
+// additive violet light layers. Dims the icy tileset into a violet-lit dungeon
+// without touching the art. All values here are tuning knobs.
+export const ATMOSPHERE = {
+  saturate: -0.08,
+  brightness: 0.86, // gently dim walls + hero for cohesion (floor is tinted below)
+  floorGrade: 0x5a4f92, // multiply tint recolouring the icy floor into deep violet
+  wallGrade: 0x4a4276, // multiply tint darkening the walls to match
+  vignette: { radius: 0.7, strength: 0.6 },
+  bloom: { blur: 1.1, strength: 0.5 },
+  haze: { color: 0x7a58d8, alpha: 0.13, scale: 13 }, // faint ambient violet fog
+  playerLight: { color: 0x9a6bff, alpha: 0.12, scale: 3.0 },
+  spirit: {
+    haze: { color: 0x9a6bff, alpha: 0.2, scale: 1.55 }, // wide shared violet
+    core: { alpha: 0.28, scale: 0.8 }, // tight verb-coloured centre
+    pulse: { scale: 1.16, ms: 1300 }, // breathing glow
+  },
+};
+
 // Difficulty controls how many WRONG options a read presents: the primitive
 // ring's decoy count and the verb wheel's distractor count. Fewer in easy, more
 // in hard; the rest of the wheel's spokes are greyed out and unselectable.
