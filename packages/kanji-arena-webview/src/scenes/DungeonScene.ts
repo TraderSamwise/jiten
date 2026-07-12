@@ -82,6 +82,7 @@ export default class DungeonScene extends Phaser.Scene {
   private spirits!: Phaser.Physics.Arcade.Group;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
+  private cycleKey!: Phaser.Input.Keyboard.Key;
   private facingBack = false;
   private transitioning = false;
   private combatActive = false;
@@ -106,7 +107,7 @@ export default class DungeonScene extends Phaser.Scene {
   private ordealTotal = 0;
   private needDeadline = 0;
   private firstReadUsed = false; // First Word relic: one free misread per room
-  private roomRevealUsed = false; // Mind's Eye relic: one verb reveal per room
+  private firstBindUsed = false; // Mind's Eye (First Sight): one bonus bind per room
   private blessed = new Set<string>(); // shrine rooms already claimed this floor
   private shopped = new Set<string>(); // shop rooms already visited this floor
   private introduced = new Set<string>(); // spirit kinds already field-guided this run
@@ -159,6 +160,7 @@ export default class DungeonScene extends Phaser.Scene {
       run.kotodama = 0;
       run.reads = 0;
       run.hits = 0;
+      run.readLog.clear();
       resetRun(); // clear the reviewed-this-run set for a fresh run
       this.introduced = new Set(); // re-teach the field guide on a fresh run
     }
@@ -232,6 +234,7 @@ export default class DungeonScene extends Phaser.Scene {
       right: kb.addKey("D"),
     };
     this.focusKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.cycleKey = kb.addKey("Q"); // switch the locked spirit while a read is open
     this.revealKey = kb.addKey("R");
     this.input.mouse?.disableContextMenu();
     kb.addCapture("TAB"); // stop TAB from moving browser focus off the canvas
@@ -507,7 +510,9 @@ export default class DungeonScene extends Phaser.Scene {
 
   // The boss's per-need countdown tightens one second per floor descended.
   private ordealSeconds(): number {
-    return Math.max(ORDEAL_SECONDS_MIN, ORDEAL_SECONDS - run.depth);
+    // Keen Eye grants every elite/boss need a calmer +2s.
+    const keen = run.relics.has("keen-eye") ? 2 : 0;
+    return Math.max(ORDEAL_SECONDS_MIN, ORDEAL_SECONDS - run.depth) + keen;
   }
 
   private dominantState(list: KanjiEntry[]): SrsState {
@@ -521,7 +526,7 @@ export default class DungeonScene extends Phaser.Scene {
     (this.player.body as Phaser.Physics.Arcade.Body).enable = true;
     this.transitioning = false;
     this.firstReadUsed = false;
-    this.roomRevealUsed = false;
+    this.firstBindUsed = false;
     const k = key(room.gx, room.gy);
     this.ordealNeeds = null;
     this.game.events.emit("ordealEnd");
@@ -938,36 +943,44 @@ export default class DungeonScene extends Phaser.Scene {
     this.focusTarget = target;
     target.setTargeted(true);
     sfx.focus();
+    this.emitFocus(target);
+  }
+
+  // Switch the locked spirit mid-read (Q) — cycles by distance so you can pick a
+  // specific twin in an ordeal instead of whatever's nearest. The pointer keeps
+  // aiming; the wheel re-reveals the new target's keyword.
+  private cycleTarget() {
+    if (!this.focusing || !this.focusTarget) return;
+    const list = this.aliveSpirits()
+      .filter((s) => s.targetable)
+      .sort(
+        (a, b) =>
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, a.x, a.y) -
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y),
+      );
+    if (list.length < 2) return;
+    const next = list[(list.indexOf(this.focusTarget) + 1) % list.length];
+    if (next === this.focusTarget) return;
+    this.focusTarget.setTargeted(false);
+    this.focusTarget = next;
+    next.setTargeted(true);
+    sfx.focus();
+    this.emitFocus(next);
+  }
+
+  private emitFocus(target: Spirit) {
     // Fluency: rusty cards expose their components (the retrieval aid) — never
     // the keyword, which stays the thing you must produce. Known cards get none.
     const rusty = isRusty(stateOf(this.srs, target.entry.kanji));
     // Kotodama Chorus: a hot streak reveals every card's components, not just rusty.
     const chorus = run.relics.has("kotodama-chorus") && run.streak >= 4;
     const showHints = rusty || chorus;
-    // Echo Glyph: the next spirit sharing the last-read verb flashes its answer.
-    // Keen Eye: during an elite, focusing the exact named twin reveals its verb.
-    const need = this.ordealNeeds?.[0];
-    const keenFlash =
-      run.relics.has("keen-eye") &&
-      this.ordealNeeds &&
-      run.current?.type !== "boss" &&
-      target.entry.keyword === need
-        ? target.entry.verb
-        : null;
-    const echoFlash =
-      run.relics.has("echo-glyph") && target.entry.verb === run.lastVerb ? target.entry.verb : null;
-    // Mind's Eye: the first read in each room reveals its verb.
-    let mindFlash: typeof target.entry.verb | null = null;
-    if (run.relics.has("minds-eye") && !this.roomRevealUsed) {
-      this.roomRevealUsed = true;
-      mindFlash = target.entry.verb;
-    }
-    const flash = keenFlash ?? mindFlash ?? echoFlash;
     this.game.events.emit("focusStart", {
       kanji: target.entry.kanji,
+      keyword: target.entry.keyword,
+      answer: target.entry.verb,
       primitives: showHints ? target.entry.primitives.map((p) => p.keyword) : [],
       rusty: showHints,
-      flash,
     });
   }
 
@@ -1013,7 +1026,25 @@ export default class DungeonScene extends Phaser.Scene {
       ok,
       story: target.entry.story,
     });
+    // Log the outcome per glyph so the death recap can reveal what you missed.
+    // Gate on onNamedGlyph like recordResult — an off-target twin read isn't a
+    // miss of a card you never tried to read.
+    if (onNamedGlyph) {
+      const logged = run.readLog.get(target.entry.kanji);
+      if (logged) {
+        if (ok) logged.hits += 1;
+        else logged.misses += 1;
+      } else {
+        run.readLog.set(target.entry.kanji, {
+          keyword: target.entry.keyword,
+          story: target.entry.story,
+          hits: ok ? 1 : 0,
+          misses: ok ? 0 : 1,
+        });
+      }
+    }
     if (ok) {
+      const prevVerb = run.lastVerb; // before applyCorrectRead overwrites it (Echo Glyph)
       const { healed } = applyCorrectRead(run, target.entry, wasRusty, wasKnown);
       // Reprisal: the first correct read after a hit mends a heart.
       let reprisalHealed = false;
@@ -1034,6 +1065,13 @@ export default class DungeonScene extends Phaser.Scene {
       run.bound += 1;
       // each bind mints a kotodama to spend in shops; Toll Ledger adds one more.
       run.kotodama += run.relics.has("toll-ledger") ? 2 : 1;
+      // Echo Glyph: chaining the same verb twice in a row mints +2 kotodama.
+      if (run.relics.has("echo-glyph") && target.entry.verb === prevVerb) run.kotodama += 2;
+      // Mind's Eye (First Sight): the first bind in each room mints +3 kotodama.
+      if (run.relics.has("minds-eye") && !this.firstBindUsed) {
+        this.firstBindUsed = true;
+        run.kotodama += 3;
+      }
       // A caught Wisp mends a heart — the reward for chasing it down.
       let wispHealed = false;
       if (target.wisp && run.hp < run.maxHp) {
@@ -1341,6 +1379,7 @@ export default class DungeonScene extends Phaser.Scene {
     const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
     if (wantFocus && !this.focusing) this.startFocus();
     else if (!wantFocus && this.focusing) this.resolveFocus();
+    if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
 
     const k = this.keys;
     let vx = 0;
@@ -1378,16 +1417,21 @@ export default class DungeonScene extends Phaser.Scene {
       s.steer(this.player.x, this.player.y, speed, this.focusing);
     }
 
-    // Oracle's Tokens: spend a charge mid-read to flash the true verb.
+    // Oracle's Tokens: spend a charge mid-read to mend a heart (no-op at full HP,
+    // so a charge is never wasted). Consume the key edge unconditionally — gating
+    // JustDown behind other conditions would leave a stale press to fire later.
+    const revealPressed = Phaser.Input.Keyboard.JustDown(this.revealKey);
     if (
+      revealPressed &&
       this.focusing &&
-      this.focusTarget &&
       run.reveals > 0 &&
-      run.relics.has("oracles-tokens") &&
-      Phaser.Input.Keyboard.JustDown(this.revealKey)
+      run.hp < run.maxHp &&
+      run.relics.has("oracles-tokens")
     ) {
       run.reveals -= 1;
-      this.game.events.emit("flashVerb", this.focusTarget.entry.verb);
+      run.hp += 1;
+      sfx.ward();
+      this.game.events.emit("hpChanged");
       this.game.events.emit("relicsChanged");
     }
 

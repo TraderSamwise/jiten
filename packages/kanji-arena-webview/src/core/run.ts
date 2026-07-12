@@ -18,6 +18,9 @@ export interface RunState {
   kotodama: number; // currency earned per bind, spent in shop rooms
   reads: number; // total committed reads this run (recall attempts)
   hits: number; // correct reads this run — reads/hits give run recall accuracy
+  // Per-kanji recall outcomes this run, keyed by kanji — powers the death recap's
+  // answer reveal (the glyphs you missed, with their keywords).
+  readLog: Map<string, { keyword: string; story: string; hits: number; misses: number }>;
   // SRS-driven floor content: which kanji live in each room, which rooms are
   // study alcoves, and a gen-time snapshot of each room's dominant card state
   // (for minimap colour).
@@ -62,6 +65,7 @@ export const run: RunState = {
   kotodama: 0,
   reads: 0,
   hits: 0,
+  readLog: new Map(),
   content: new Map(),
   study: new Set(),
   resolved: new Set(),

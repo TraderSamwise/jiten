@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { Graphics } from "../graphics";
+import { SIGIL_BOX, SIGILS, sigilKey } from "../rtk/sigils";
+import { WHEEL_ORDER } from "../rtk/verbs";
 
 // Loads assets + registers animations once, generates the spirit-aura texture,
 // then hands off to the dungeon and its HUD overlay.
@@ -39,8 +41,45 @@ export default class BootScene extends Phaser.Scene {
 
     this.makeAura();
     this.makeSpark();
+    this.makeSigils();
 
     this.scene.start("title");
+  }
+
+  // Rasterise each verb's sigil to a white canvas texture (tinted per verb on the
+  // wheel). Rendered at 2x the authoring box for crisp scaling. Path2D draws the
+  // authored sub-paths; evenodd cuts the hide mask's eye holes.
+  private makeSigils() {
+    const scale = 2;
+    const size = SIGIL_BOX * scale;
+    for (const verb of WHEEL_ORDER) {
+      const key = sigilKey(verb);
+      if (this.textures.exists(key)) continue;
+      const tex = this.textures.createCanvas(key, size, size);
+      if (!tex) continue;
+      const ctx = tex.getContext();
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#fff";
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      // Never let a malformed path white-screen the game at boot — a failed sigil
+      // just yields an empty texture (the spoke still works, sans icon).
+      try {
+        for (const part of SIGILS[verb]) {
+          const path = new Path2D(part.d);
+          if (part.w != null) {
+            ctx.lineWidth = part.w;
+            ctx.stroke(path);
+          } else {
+            ctx.fill(path, part.evenodd ? "evenodd" : "nonzero");
+          }
+        }
+      } catch (e) {
+        console.warn(`[arena] sigil "${verb}" failed to render`, e);
+      }
+      tex.refresh();
+    }
   }
 
   // A soft radial disc used as the tintable glow behind each kanji spirit.
