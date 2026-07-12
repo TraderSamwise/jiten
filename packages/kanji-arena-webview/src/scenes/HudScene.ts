@@ -23,6 +23,8 @@ interface ForgeRingInfo {
   faceText: string; // the primitive's shape (glyph or RTK substitute char)
   faceRtk: boolean; // draw faceText in the bundled RTK font, not the CJK font
   choices: string[]; // candidate keywords laid out around the ring
+  faces: { text: string; rtk: boolean }[]; // all primitive shapes, for the breadcrumb
+  kanji: string; // the compound being forged (end of the breadcrumb)
 }
 interface ReadInfo {
   kanji: string;
@@ -49,6 +51,7 @@ interface OrdealInfo {
 const CELL = 14;
 const GAP = 3;
 const PAD = 14;
+const CRUMB_SLOTS = 12; // breadcrumb pool cap (primitives + the compound)
 
 const TYPE_COLOR: Record<RoomType, number> = {
   start: 0x4b5bd6,
@@ -94,6 +97,12 @@ export default class HudScene extends Phaser.Scene {
   private ringStage = 0;
   private ringTotal = 0;
   private candTexts: Phaser.GameObjects.Text[] = [];
+  private ringChipsG!: Phaser.GameObjects.Graphics; // pill backgrounds behind ring candidates
+  private crumbG!: Phaser.GameObjects.Graphics; // breadcrumb box/dashes
+  private crumbTexts: Phaser.GameObjects.Text[] = []; // 日 — 月 — 明 sequence
+  private ringFaces: { text: string; rtk: boolean }[] = [];
+  private ringKanji = "";
+  private ringCrumbCount = 0;
   // Owned relics as rounded pill chips (glyph badge + name), one pooled chip per
   // possible relic, shown/laid out on relicsChanged.
   private relicChips: {
@@ -310,15 +319,26 @@ export default class HudScene extends Phaser.Scene {
         .setVisible(false);
       this.candTexts.push(t);
     }
+    this.ringChipsG = this.add.graphics().setDepth(13);
+    this.crumbG = this.add.graphics().setDepth(13);
+    for (let i = 0; i < CRUMB_SLOTS; i++) {
+      const t = this.add
+        .text(0, 0, "", { fontFamily: GLYPH_FONT, fontSize: "22px", color: "#6a6480" })
+        .setOrigin(0.5)
+        .setDepth(14)
+        .setVisible(false);
+      this.crumbTexts.push(t);
+    }
   }
 
   private buildOverlays() {
     this.hubHint = this.add
       .text(0, 0, "", {
         fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#cfc8e0",
+        fontSize: "12px",
+        color: "#f2c14e",
         align: "center",
+        letterSpacing: 2,
       })
       .setOrigin(0.5, 0)
       .setDepth(13)
@@ -827,8 +847,52 @@ export default class HudScene extends Phaser.Scene {
     this.ringFace = info.faceText;
     this.ringRtk = info.faceRtk;
     this.ringChoices = info.choices;
+    this.ringFaces = info.faces;
+    this.ringKanji = info.kanji;
+    this.drawBreadcrumb();
     this.applyOverlayMode();
     this.drawRing();
+  }
+
+  // The forge trail: each primitive shape then the compound kanji, in a centered
+  // row above the ring; the current stage is boxed gold, the rest faint.
+  private drawBreadcrumb() {
+    const cx = this.scale.width / 2;
+    const radius = Math.min(this.scale.width, this.scale.height) * WHEEL_RADIUS_FRAC;
+    const y = this.scale.height / 2 - radius - 42;
+    const seq = [...this.ringFaces, { text: this.ringKanji, rtk: false }];
+    const count = Math.min(seq.length, this.crumbTexts.length);
+    this.ringCrumbCount = count;
+    const gap = 24;
+    const widths: number[] = [];
+    let total = 0;
+    for (let i = 0; i < count; i++) {
+      const t = this.crumbTexts[i];
+      t.setFontFamily(seq[i].rtk ? RTK_FONT : GLYPH_FONT).setText(seq[i].text);
+      widths.push(t.width);
+      total += t.width;
+    }
+    total += gap * Math.max(0, count - 1);
+    let x = cx - total / 2;
+    this.crumbG.clear();
+    for (let i = 0; i < count; i++) {
+      const w = widths[i];
+      const gx = x + w / 2;
+      const isKanji = i === count - 1;
+      const current = i === this.ringStage;
+      this.crumbTexts[i]
+        .setPosition(gx, y)
+        .setColor(current ? "#f2c14e" : isKanji ? "#f4ecd6" : "#6a6480");
+      if (current) {
+        this.crumbG.lineStyle(1.5, 0xf2c14e, 0.9);
+        this.crumbG.strokeRoundedRect(gx - w / 2 - 6, y - 18, w + 12, 36, 8);
+      }
+      if (i < count - 1) {
+        this.crumbG.lineStyle(1, 0xffffff, 0.2);
+        this.crumbG.lineBetween(x + w + 6, y, x + w + gap - 6, y);
+      }
+      x += w + gap;
+    }
   }
 
   // Every primitive named — hand off to the verb wheel (also the atomic-kanji path).
@@ -919,6 +983,9 @@ export default class HudScene extends Phaser.Scene {
     this.wheelLabels.forEach((t, i) => t.setVisible(wheel && this.wheelWords.has(WHEEL_ORDER[i])));
     this.ringCue.setVisible(ring);
     this.candTexts.forEach((t, i) => t.setVisible(ring && i < this.ringChoices.length));
+    this.ringChipsG.setVisible(ring);
+    this.crumbG.setVisible(ring);
+    this.crumbTexts.forEach((t, i) => t.setVisible(ring && i < this.ringCrumbCount));
   }
 
   private drawWheel() {
@@ -998,18 +1065,27 @@ export default class HudScene extends Phaser.Scene {
       .setPosition(cx, cy);
     this.ringCue.setPosition(cx, cy + inner + 6);
     this.hubHint
-      .setText(`part ${this.ringStage + 1}/${this.ringTotal}`)
+      .setText(`PRIMITIVE ${this.ringStage + 1} / ${this.ringTotal}`)
       .setPosition(cx, cy + inner + 22);
 
+    const g = this.ringChipsG;
+    g.clear();
     const lr = (radius + inner) / 2;
     this.ringChoices.forEach((kw, i) => {
       const mid = slotMid(i, n);
       const on = i === picked;
-      this.candTexts[i]
-        .setText(kw)
+      const t = this.candTexts[i];
+      t.setText(kw)
         .setPosition(cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr)
-        .setColor(on ? "#ffe9a8" : "#cfc8e0")
-        .setScale(on ? 1.16 : 1);
+        .setColor(on ? "#7ad1c4" : "#cfc8e0")
+        .setScale(on ? 1.12 : 1);
+      // A rounded pill behind each candidate — jade outline on the aimed one.
+      const w = t.width * (on ? 1.12 : 1) + 18;
+      const h = 24;
+      g.fillStyle(0x14111f, on ? 0.95 : 0.85);
+      g.fillRoundedRect(t.x - w / 2, t.y - h / 2, w, h, h / 2);
+      g.lineStyle(on ? 2 : 1, on ? 0x7ad1c4 : 0xffffff, on ? 0.9 : 0.12);
+      g.strokeRoundedRect(t.x - w / 2, t.y - h / 2, w, h, h / 2);
     });
   }
 
