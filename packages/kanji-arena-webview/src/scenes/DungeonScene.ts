@@ -1044,7 +1044,7 @@ export default class DungeonScene extends Phaser.Scene {
     if (this.forgeStage < this.forgePlan.length) {
       const prim = this.forgePlan[this.forgeStage];
       // Seed per primitive so the same shape always offers the same options in
-      // the same (sorted) order — a fixed layout, not a reshuffle each read.
+      // the same order — a stable layout, not a fresh random draw each read.
       const rng = new Phaser.Math.RandomDataGenerator([prim.keyword, "forge"]);
       this.forgeChoices = buildPrimitiveChoices(prim.keyword, this.forgeWrong + 1, rng);
       const face = primitiveFace(prim);
