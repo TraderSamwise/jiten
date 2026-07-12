@@ -33,7 +33,9 @@ export default class Spirit extends Phaser.GameObjects.Container {
   private phaseEvent?: Phaser.Time.TimerEvent;
   private wanderPhase = Math.random() * Math.PI * 2;
   private aura: Phaser.GameObjects.Image;
-  private ring: Phaser.GameObjects.Arc;
+  private reticle: Phaser.GameObjects.Image;
+  private spin!: Phaser.Tweens.Tween;
+  private baseAuraAlpha: number;
   private eliteRing?: Phaser.GameObjects.Arc;
   private glyph: Phaser.GameObjects.Text;
   private baseScale: number;
@@ -72,13 +74,11 @@ export default class Spirit extends Phaser.GameObjects.Container {
             ? 0x4fc76a
             : VERB_MAP[entry.verb].color;
 
-    this.aura = scene.add
-      .image(0, 0, "aura")
-      .setTint(color)
-      .setAlpha(warden ? 0.8 : elite ? 0.7 : 0.5);
-    this.ring = scene.add
-      .circle(0, 0, 15)
-      .setStrokeStyle(warden ? 2.5 : 1.5, color, warden ? 0.85 : 0.6);
+    this.baseAuraAlpha = warden ? 0.8 : elite ? 0.7 : 0.5;
+    this.aura = scene.add.image(0, 0, "aura").setTint(color).setAlpha(this.baseAuraAlpha);
+    // A soft verb-glow + floating glyph is the whole spirit now; the gold reticle
+    // rides only the focused target (shown/spun in setTargeted).
+    this.reticle = scene.add.image(0, 0, "reticle").setVisible(false);
     this.glyph = scene.add
       .text(0, 0, entry.kanji, { fontFamily: GLYPH_FONT, fontSize: "22px", color: "#f4ecd6" })
       .setOrigin(0.5)
@@ -86,10 +86,10 @@ export default class Spirit extends Phaser.GameObjects.Container {
     // Global pixelArt forces NEAREST; kanji aren't pixel art, so force LINEAR.
     (this.glyph.texture as Phaser.Textures.Texture).setFilter(Phaser.Textures.FilterMode.LINEAR);
 
-    const parts: Phaser.GameObjects.GameObject[] = [this.aura, this.ring, this.glyph];
+    const parts: Phaser.GameObjects.GameObject[] = [this.aura, this.reticle, this.glyph];
     if (elite) {
       // A gold outer ring marks confusable/boss spirits — read the exact keyword.
-      this.eliteRing = scene.add.circle(0, 0, 20).setStrokeStyle(2, 0xf2c14e, 0.85);
+      this.eliteRing = scene.add.circle(0, 0, 20).setStrokeStyle(1.5, 0xf2c14e, 0.7);
       parts.splice(2, 0, this.eliteRing);
     }
     this.add(parts);
@@ -101,14 +101,13 @@ export default class Spirit extends Phaser.GameObjects.Container {
     b.setSize(size, size);
     b.setOffset(-size / 2, -size / 2);
 
-    scene.tweens.add({
-      targets: this.ring,
-      alpha: { from: 0.3, to: 0.7 },
-      scaleX: { from: 0.9, to: 1.2 },
-      scaleY: { from: 0.9, to: 1.2 },
-      duration: 900,
-      yoyo: true,
+    // The targeting reticle slowly spins while it's shown; paused until targeted.
+    this.spin = scene.tweens.add({
+      targets: this.reticle,
+      angle: 360,
+      duration: 3200,
       repeat: -1,
+      paused: true,
     });
     // A gentle float so idle spirits feel alive (glyph only — physics untouched).
     scene.tweens.add({
@@ -149,13 +148,14 @@ export default class Spirit extends Phaser.GameObjects.Container {
   }
 
   setTargeted(on: boolean) {
-    const color = VERB_MAP[this.entry.verb].color;
-    this.aura.setAlpha(on ? 0.95 : 0.5);
+    this.aura.setAlpha(on ? 0.95 : this.baseAuraAlpha);
     this.glyph.setColor(on ? "#ffffff" : "#f4ecd6");
-    // A bold WHITE selection ring — distinct from the gold elite marker — plus a
-    // scale-and-depth pop so the target reads clearly among overlapping spirits.
-    this.ring.setStrokeStyle(on ? 3.5 : 1.5, on ? 0xffffff : color, on ? 1 : 0.6);
-    this.setScale(this.baseScale * (on ? 1.3 : 1));
+    // A spinning gold reticle plus a gentle scale-and-depth pop so the target
+    // reads clearly among overlapping spirits and through the focus dim.
+    this.reticle.setVisible(on);
+    if (on) this.spin.play();
+    else this.spin.pause();
+    this.setScale(this.baseScale * (on ? 1.15 : 1));
     this.setDepth(on ? 10 : 0);
   }
 
@@ -244,7 +244,7 @@ export default class Spirit extends Phaser.GameObjects.Container {
   // and keep mutating dead objects every frame for the rest of the run.
   destroy(fromScene?: boolean) {
     this.phaseEvent?.remove();
-    this.scene?.tweens.killTweensOf([this.ring, this.glyph, this.aura, this]);
+    this.scene?.tweens.killTweensOf([this.reticle, this.glyph, this.aura, this]);
     super.destroy(fromScene);
   }
 

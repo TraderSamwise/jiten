@@ -16,8 +16,31 @@ export default class BootScene extends Phaser.Scene {
     this.makeSigils();
     this.makePx();
     this.makePeg();
+    this.makeReticle();
 
     this.scene.start("title");
+  }
+
+  // The gold targeting reticle: four arc segments with gaps, spun on the focus
+  // target (Spirit shows/hides + rotates it). Transparent outside the arcs.
+  private makeReticle() {
+    if (this.textures.exists("reticle")) return;
+    const size = 64;
+    const tex = this.textures.createCanvas("reticle", size, size);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    ctx.strokeStyle = "#f2c14e";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const c = size / 2;
+    const r = 26;
+    const gap = 0.42;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(c, c, r, i * (Math.PI / 2) + gap / 2, (i + 1) * (Math.PI / 2) - gap / 2);
+      ctx.stroke();
+    }
+    tex.refresh();
   }
 
   // The player avatar: a soft-shadowed indigo peg with a pale head, drawn into a
