@@ -50,7 +50,7 @@ export default class TitleScene extends Phaser.Scene {
       .text(
         cx,
         cy + 78,
-        "WASD move   ·   hold SPACE / right-click, aim the wheel, release to read",
+        "WASD move   ·   hold SPACE / right-click, click each part, release on the wheel to read",
         { fontFamily: "monospace", fontSize: "13px", color: "#8f88a6" },
       )
       .setOrigin(0.5);

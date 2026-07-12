@@ -5,22 +5,29 @@ import { run } from "../core/run";
 import { key, RoomType } from "../dungeon/types";
 import { STATE_COLOR } from "../rtk/srs";
 import { RELIC_MAP } from "../rtk/relics";
+import { FORGE_CHOICES } from "../rtk/forge";
 import { sigilKey } from "../rtk/sigils";
 import { VERB_MAP, VerbId, WHEEL_ORDER } from "../rtk/verbs";
-import { segmentAngles, wheelVerbAt } from "../rtk/wheel";
+import { radialIndexAt, segmentAngles, slotMid, wheelVerbAt } from "../rtk/wheel";
 
 interface FocusInfo {
   kanji: string;
   keyword: string; // the targeted spirit's realised keyword (shown on its spoke)
   answer: VerbId; // the correct verb — its spoke reveals the keyword
-  primitives: string[];
-  rusty: boolean;
+}
+interface ForgeRingInfo {
+  stage: number; // 0-based index of the primitive being named
+  total: number; // how many primitives in this read
+  faceText: string; // the primitive's shape (glyph or RTK substitute char)
+  faceRtk: boolean; // draw faceText in the bundled RTK font, not the CJK font
+  choices: string[]; // candidate keywords laid out around the ring
 }
 interface ReadInfo {
   kanji: string;
   keyword: string;
   ok: boolean;
   story?: string;
+  forged?: boolean; // the read named primitives first — cement the story on a hit
 }
 interface StudyInfo {
   kanji: string;
@@ -51,6 +58,7 @@ const TYPE_COLOR: Record<RoomType, number> = {
 };
 
 const GLYPH_FONT = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Songti SC",serif';
+const RTK_FONT = "RtkPrimitives";
 
 // Minimap + hearts + the read-wheel overlay. Fixed to the screen (unzoomed), so
 // it lives above the dungeon. The wheel is drawn in screen space; the highlighted
@@ -71,6 +79,16 @@ export default class HudScene extends Phaser.Scene {
   private answerVerb: VerbId | null = null;
   private answerKeyword = "";
   private focusing = false;
+  // Forge: while naming primitives the overlay is a recognition ring (forgeMode
+  // true) instead of the verb wheel. candTexts are the ring's keyword candidates.
+  private forgeMode = false;
+  private focusKanji = "";
+  private ringChoices: string[] = [];
+  private ringFace = "";
+  private ringRtk = false;
+  private ringStage = 0;
+  private ringTotal = 0;
+  private candTexts: Phaser.GameObjects.Text[] = [];
   private relicShelf!: Phaser.GameObjects.Text;
   private muteInd!: Phaser.GameObjects.Text;
   private difficultyInd!: Phaser.GameObjects.Text;
@@ -121,13 +139,18 @@ export default class HudScene extends Phaser.Scene {
       color: "#2fbfa8",
     });
     this.hint = this.add
-      .text(0, 0, "Sealed — read the spirits  (hold SPACE, aim, release · Q switches target)", {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#f4e7c0",
-        backgroundColor: "#00000088",
-        padding: { x: 10, y: 6 },
-      })
+      .text(
+        0,
+        0,
+        "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
+        {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#f4e7c0",
+          backgroundColor: "#00000088",
+          padding: { x: 10, y: 6 },
+        },
+      )
       .setOrigin(0.5, 1)
       .setVisible(false);
 
@@ -164,6 +187,8 @@ export default class HudScene extends Phaser.Scene {
     this.game.events.on("kotodamaChanged", this.drawPurse, this);
     this.game.events.on("roomChanged", this.drawPurse, this);
     this.game.events.on("focusStart", this.onFocusStart, this);
+    this.game.events.on("forgeRing", this.onForgeRing, this);
+    this.game.events.on("forgeWheel", this.onForgeWheel, this);
     this.game.events.on("focusEnd", this.onFocusEnd, this);
     this.game.events.on("read", this.onRead, this);
     this.game.events.on("studyShow", this.onStudyShow, this);
@@ -192,6 +217,8 @@ export default class HudScene extends Phaser.Scene {
       this.game.events.off("kotodamaChanged", this.drawPurse, this);
       this.game.events.off("roomChanged", this.drawPurse, this);
       this.game.events.off("focusStart", this.onFocusStart, this);
+      this.game.events.off("forgeRing", this.onForgeRing, this);
+      this.game.events.off("forgeWheel", this.onForgeWheel, this);
       this.game.events.off("focusEnd", this.onFocusEnd, this);
       this.game.events.off("read", this.onRead, this);
       this.game.events.off("studyShow", this.onStudyShow, this);
@@ -245,6 +272,16 @@ export default class HudScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(14)
       .setVisible(false);
+    // Reusable keyword candidates for the Forge's primitive rings — sized to
+    // FORGE_CHOICES so the pool can never be indexed past by a ring.
+    for (let i = 0; i < FORGE_CHOICES; i++) {
+      const t = this.add
+        .text(0, 0, "", { fontFamily: "Georgia, serif", fontSize: "15px", color: "#cfc8e0" })
+        .setOrigin(0.5)
+        .setDepth(14)
+        .setVisible(false);
+      this.candTexts.push(t);
+    }
   }
 
   private buildOverlays() {
@@ -645,7 +682,11 @@ export default class HudScene extends Phaser.Scene {
       onComplete: () => this.readToast.setVisible(false),
     });
 
-    if (!info.ok && info.story) {
+    // Surface the mnemonic: always on a miss (the failure teaches best), and on a
+    // forged hit too — you just built it from its parts, so cement the story.
+    const teach = info.story && (!info.ok || info.forged);
+    if (teach) {
+      const hold = info.ok ? 1500 : 2600;
       this.teachToast
         .setText(`${info.kanji}  ${info.keyword}\n${info.story}`)
         .setPosition(this.scale.width / 2, this.scale.height * 0.8)
@@ -656,7 +697,7 @@ export default class HudScene extends Phaser.Scene {
       this.tweens.add({
         targets: this.teachToast,
         alpha: 0,
-        delay: 2600,
+        delay: hold,
         duration: 500,
         onComplete: () => this.teachToast.setVisible(false),
       });
@@ -691,20 +732,37 @@ export default class HudScene extends Phaser.Scene {
     this.focusing = true;
     this.answerVerb = info.answer;
     this.answerKeyword = info.keyword;
+    this.focusKanji = info.kanji;
     this.hubGlyph.setText(info.kanji);
-    // Rusty cards expose their component breakdown as a retrieval aid; blank when
-    // the glyph has no parts (rather than the old confusing "a primitive").
-    this.hubHint.setText(info.rusty ? info.primitives.join("  +  ") : "");
-    this.setWheelVisible(true);
     // The boss clock drains at half-rate during a read, so slow the bar to match.
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 0.5));
+    // Mode + first draw arrive with forgeRing / forgeWheel, emitted right after.
+  }
+
+  // A primitive recognition ring: the shape in the hub, candidate keywords around.
+  private onForgeRing(info: ForgeRingInfo) {
+    this.forgeMode = true;
+    this.ringStage = info.stage;
+    this.ringTotal = info.total;
+    this.ringFace = info.faceText;
+    this.ringRtk = info.faceRtk;
+    this.ringChoices = info.choices;
+    this.applyOverlayMode();
+    this.drawRing();
+  }
+
+  // Every primitive named — hand off to the verb wheel (also the atomic-kanji path).
+  private onForgeWheel() {
+    this.forgeMode = false;
+    this.applyOverlayMode();
     this.drawWheel();
   }
 
   private onFocusEnd() {
     this.focusing = false;
+    this.forgeMode = false;
     this.answerVerb = null;
-    this.setWheelVisible(false);
+    this.applyOverlayMode();
     this.tweens.getTweensOf(this.ordealBar).forEach((t) => (t.timeScale = 1));
   }
 
@@ -714,14 +772,20 @@ export default class HudScene extends Phaser.Scene {
     this.relicShelf.setText(owned ? owned + reveals : "");
   }
 
-  private setWheelVisible(v: boolean) {
-    this.veil.setVisible(v);
-    this.wheelG.setVisible(v);
-    this.hub.setVisible(v);
-    this.hubGlyph.setVisible(v);
-    this.hubHint.setVisible(v);
-    for (const s of this.sigils) s.setVisible(v);
-    this.answerKw.setVisible(v && this.answerVerb != null);
+  // Show the overlay pieces for the current state: veil + hub always while
+  // focusing; wheel-only pieces in wheel mode; candidate labels in ring mode.
+  private applyOverlayMode() {
+    const on = this.focusing;
+    const wheel = on && !this.forgeMode;
+    const ring = on && this.forgeMode;
+    this.veil.setVisible(on);
+    this.hub.setVisible(on);
+    this.hubGlyph.setVisible(on);
+    this.hubHint.setVisible(on);
+    this.wheelG.setVisible(wheel);
+    for (const s of this.sigils) s.setVisible(wheel);
+    this.answerKw.setVisible(wheel && this.answerVerb != null);
+    this.candTexts.forEach((t, i) => t.setVisible(ring && i < this.ringChoices.length));
   }
 
   private drawWheel() {
@@ -737,8 +801,9 @@ export default class HudScene extends Phaser.Scene {
 
     this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
     this.hub.setPosition(cx, cy).setRadius(inner);
-    this.hubGlyph.setPosition(cx, cy);
-    this.hubHint.setPosition(cx, cy + inner + 6);
+    // Restore the kanji in the hub (a preceding primitive ring left its shape here).
+    this.hubGlyph.setFontFamily(GLYPH_FONT).setText(this.focusKanji).setPosition(cx, cy);
+    this.hubHint.setText("").setPosition(cx, cy + inner + 6);
 
     const easy = settings.difficulty === "easy";
     const g = this.wheelG;
@@ -777,8 +842,45 @@ export default class HudScene extends Phaser.Scene {
     });
   }
 
+  // A primitive recognition ring: the shape sits in the hub, candidate keywords
+  // ride the rim. The aimed candidate (shared pointer math) is highlighted; a
+  // left-click commits it in DungeonScene.
+  private drawRing() {
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2;
+    const radius = Math.min(this.scale.width, this.scale.height) * WHEEL_RADIUS_FRAC;
+    const dzFrac = run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
+    const inner = radius * dzFrac;
+    const n = this.ringChoices.length;
+    const p = this.input.activePointer;
+    const picked = n > 0 ? radialIndexAt(cx, cy, p.x, p.y, radius, dzFrac, n) : null;
+
+    this.veil.setPosition(0, 0).setSize(this.scale.width, this.scale.height);
+    this.hub.setPosition(cx, cy).setRadius(inner);
+    this.hubGlyph
+      .setFontFamily(this.ringRtk ? RTK_FONT : GLYPH_FONT)
+      .setText(this.ringFace)
+      .setPosition(cx, cy);
+    this.hubHint
+      .setText(`part ${this.ringStage + 1}/${this.ringTotal}`)
+      .setPosition(cx, cy + inner + 6);
+
+    const lr = (radius + inner) / 2;
+    this.ringChoices.forEach((kw, i) => {
+      const mid = slotMid(i, n);
+      const on = i === picked;
+      this.candTexts[i]
+        .setText(kw)
+        .setPosition(cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr)
+        .setColor(on ? "#ffe9a8" : "#cfc8e0")
+        .setScale(on ? 1.16 : 1);
+    });
+  }
+
   update() {
-    if (this.focusing) this.drawWheel();
+    if (!this.focusing) return;
+    if (this.forgeMode) this.drawRing();
+    else this.drawWheel();
   }
 
   private onLock(locked: boolean) {
