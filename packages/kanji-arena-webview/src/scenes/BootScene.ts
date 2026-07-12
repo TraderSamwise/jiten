@@ -17,8 +17,25 @@ export default class BootScene extends Phaser.Scene {
     this.makePx();
     this.makePeg();
     this.makeReticle();
+    this.makeTimerBar();
 
     this.scene.start("title");
+  }
+
+  // The ordeal clock: a gold→ember horizontal gradient the HUD drains via scaleX.
+  private makeTimerBar() {
+    if (this.textures.exists("timerbar")) return;
+    const w = 220;
+    const h = 8;
+    const tex = this.textures.createCanvas("timerbar", w, h);
+    if (!tex) return;
+    const ctx = tex.getContext();
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, "#f2c14e");
+    g.addColorStop(1, "#ff6b5c");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    tex.refresh();
   }
 
   // The gold targeting reticle: four arc segments with gaps, spun on the focus
