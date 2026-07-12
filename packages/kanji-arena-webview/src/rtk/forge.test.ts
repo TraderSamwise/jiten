@@ -25,6 +25,12 @@ describe("buildPrimitiveChoices", () => {
     // With a corpus this size the decoys should come from it, not the fallback.
     expect(c.filter((x) => !x.correct).every((x) => pool.includes(x.keyword))).toBe(true);
   });
+
+  it("returns options in a stable (alphabetical) order, not reshuffled", () => {
+    const c = buildPrimitiveChoices("sun", 5, idRng);
+    const words = c.map((x) => x.keyword);
+    expect(words).toEqual([...words].sort((a, b) => a.localeCompare(b)));
+  });
 });
 
 describe("radialIndexAt", () => {

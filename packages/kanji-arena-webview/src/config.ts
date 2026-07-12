@@ -36,9 +36,10 @@ export const TARGET_ROOMS = 12;
 
 export const BG = "#0d0b14";
 
-// Difficulty. Easy mode dims a fraction of the wheel's verbs that no spirit in
-// the current room uses — thinning the field toward the real answers. Hard mode
-// dims nothing. Mutable singleton toggled at runtime (H); default easy.
+// Difficulty controls how many WRONG options a read presents: the primitive
+// ring's decoy count and the verb wheel's distractor count. Fewer in easy, more
+// in hard; the rest of the wheel's spokes are greyed out and unselectable.
+// Mutable singleton toggled at runtime (H); default easy.
 export type Difficulty = "easy" | "hard";
 export const settings: { difficulty: Difficulty } = { difficulty: "easy" };
-export const EASY_DIM_FRACTION = 0.9;
+export const wrongOptionCount = (): number => (settings.difficulty === "hard" ? 8 : 2);
