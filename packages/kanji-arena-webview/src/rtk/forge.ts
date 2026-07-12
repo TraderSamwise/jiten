@@ -6,6 +6,10 @@ import { CORPUS } from "./corpus";
 // pieces — decoy generation and shape/font resolution; the gameplay wiring lives
 // in DungeonScene and the rendering in HudScene.
 
+// Keyword candidates per primitive ring (1 correct + decoys). The HUD sizes its
+// candidate-label pool from this, so the two never drift.
+export const FORGE_CHOICES = 5;
+
 export interface Choice {
   keyword: string;
   correct: boolean;
