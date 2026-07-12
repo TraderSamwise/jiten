@@ -136,7 +136,57 @@ export function reviewReady(store: SrsStore, rng: Rng): KanjiEntry[] {
 }
 
 export function freshOnes(store: SrsStore, rng: Rng): KanjiEntry[] {
-  return rng.shuffle(CORPUS.filter((e) => stateOf(store, e.kanji) === "new"));
+  const news = rng.shuffle(CORPUS.filter((e) => stateOf(store, e.kanji) === "new"));
+  return dependencyOrder(news);
+}
+
+// Introduce a new kanji only after any of its primitives that are ALSO new cards
+// in the deck — so you learn 兄 before 克, not after. A stable topological sort:
+// a real-kanji primitive present in this new set is a dependency; invented
+// primitives, primitives not in the deck, and already-learned primitives impose
+// nothing (the last are, by definition, already introduced). Ties keep the
+// incoming shuffle for variety. Purely a runtime read order — nothing persists.
+export function dependencyOrder(entries: KanjiEntry[]): KanjiEntry[] {
+  const inSet = new Set(entries.map((e) => e.kanji));
+  const unmet = new Map<string, Set<string>>();
+  for (const e of entries) {
+    const deps = new Set<string>();
+    for (const p of e.primitives) {
+      if (p.glyph && p.glyph !== e.kanji && inSet.has(p.glyph)) deps.add(p.glyph);
+    }
+    unmet.set(e.kanji, deps);
+  }
+  const done = new Set<string>();
+  const out: KanjiEntry[] = [];
+  const remaining = [...entries];
+  while (remaining.length) {
+    // Emit, in the incoming order, every entry whose new-primitive deps are all
+    // already out. A pass that emits nothing means a cycle — break it by forcing
+    // the first remaining entry, then continue.
+    let progressed = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const e = remaining[i];
+      let ready = true;
+      for (const g of unmet.get(e.kanji)!) {
+        if (!done.has(g)) {
+          ready = false;
+          break;
+        }
+      }
+      if (!ready) continue;
+      out.push(e);
+      done.add(e.kanji);
+      remaining.splice(i, 1);
+      i--;
+      progressed = true;
+    }
+    if (!progressed) {
+      const e = remaining.shift()!;
+      out.push(e);
+      done.add(e.kanji);
+    }
+  }
+  return out;
 }
 
 // Distinct confusable clusters for precise-keyword encounters. The first is the
