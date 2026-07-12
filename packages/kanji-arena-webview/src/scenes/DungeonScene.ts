@@ -20,6 +20,7 @@ import {
   SPIRIT_SPEED,
   TARGET_ROOMS,
   TILE,
+  WHEEL_DEADZONE,
   WHEEL_RADIUS_FRAC,
 } from "../config";
 import { sfx } from "../audio/sfx";
@@ -32,8 +33,10 @@ import Spirit, { SpiritBehavior } from "../entities/Spirit";
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
 import { Graphics } from "../graphics";
 import { CLUSTERS, KanjiEntry } from "../rtk/corpus";
+import { buildPrimitiveChoices, type Choice, hasShape, primitiveFace } from "../rtk/forge";
 import { absorbBackfire, applyCorrectRead } from "../rtk/relicEffects";
 import { RELIC_IDS, RelicId } from "../rtk/relics";
+import type { ArenaPrimitive } from "../protocol";
 import {
   combatOrder,
   freshOnes,
@@ -48,7 +51,7 @@ import {
   SrsStore,
   stateOf,
 } from "../rtk/srs";
-import { wheelVerbAt } from "../rtk/wheel";
+import { radialIndexAt, wheelVerbAt } from "../rtk/wheel";
 
 const FLOOR_TINT: Partial<Record<Room["type"], number>> = {
   boss: 0xffb3b3,
@@ -64,6 +67,7 @@ const ORDEAL_SECONDS = 7; // per-need boss timer at floor 1; tightens with depth
 const ORDEAL_SECONDS_MIN = 4;
 const MAX_EXTRA_SPIRITS = 3; // deeper floors pack more spirits per combat room
 const COMBAT_MIN = 1; // review-ready kanji needed to make a room combat; else it teaches
+const FORGE_CHOICES = 5; // keyword candidates per primitive ring (1 correct + 4 decoys)
 
 // Boss-only telegraphed danger patches: keep moving while you read under the clock.
 // Sized to the ~240x144px room interior — small enough to leave dodge room.
@@ -101,6 +105,15 @@ export default class DungeonScene extends Phaser.Scene {
   }[] = [];
   private nextHazardAt = 0;
   private focusTarget: Spirit | null = null;
+  // The Forge: reading a spirit names each of its primitives (a recognition ring)
+  // before the verb wheel. forgeStage indexes forgePlan; at forgeStage ===
+  // forgePlan.length the read is on the wheel. Atomic kanji have an empty plan and
+  // go straight to the wheel — identical to the pre-Forge read.
+  private forgePlan: ArenaPrimitive[] = [];
+  private forgeStage = 0;
+  private forgeChoices: Choice[] = [];
+  private primePrev = false; // left-button edge latch for committing a forge ring
+  private focusConsumed = false; // block re-focus until the focus button is released
   private srs: SrsStore = {};
   private ordealNeeds: string[] | null = null;
   private ordealTimed = false;
@@ -181,6 +194,11 @@ export default class DungeonScene extends Phaser.Scene {
     this.knockbackUntil = 0;
     this.invulnUntil = 0;
     this.focusing = false;
+    this.forgePlan = [];
+    this.forgeStage = 0;
+    this.forgeChoices = [];
+    this.primePrev = false;
+    this.focusConsumed = false;
     this.paused = false;
     this.hazards = [];
     this.nextHazardAt = 0;
@@ -943,12 +961,12 @@ export default class DungeonScene extends Phaser.Scene {
     this.focusTarget = target;
     target.setTargeted(true);
     sfx.focus();
-    this.emitFocus(target);
+    this.beginForge(target);
   }
 
   // Switch the locked spirit mid-read (Q) — cycles by distance so you can pick a
   // specific twin in an ordeal instead of whatever's nearest. The pointer keeps
-  // aiming; the wheel re-reveals the new target's keyword.
+  // aiming; the read restarts on the new target from its first primitive.
   private cycleTarget() {
     if (!this.focusing || !this.focusTarget) return;
     const list = this.aliveSpirits()
@@ -965,43 +983,109 @@ export default class DungeonScene extends Phaser.Scene {
     this.focusTarget = next;
     next.setTargeted(true);
     sfx.focus();
-    this.emitFocus(next);
+    this.beginForge(next);
   }
 
-  private emitFocus(target: Spirit) {
-    // Fluency: rusty cards expose their components (the retrieval aid) — never
-    // the keyword, which stays the thing you must produce. Known cards get none.
-    const rusty = isRusty(stateOf(this.srs, target.entry.kanji));
-    // Kotodama Chorus: a hot streak reveals every card's components, not just rusty.
-    const chorus = run.relics.has("kotodama-chorus") && run.streak >= 4;
-    const showHints = rusty || chorus;
+  // Open the read: announce the target, build the primitive plan (showable parts
+  // only), and present the first ring — or go straight to the wheel if atomic.
+  private beginForge(target: Spirit) {
+    this.forgePlan = target.entry.primitives.filter(hasShape);
+    this.forgeStage = 0;
     this.game.events.emit("focusStart", {
       kanji: target.entry.kanji,
       keyword: target.entry.keyword,
       answer: target.entry.verb,
-      primitives: showHints ? target.entry.primitives.map((p) => p.keyword) : [],
-      rusty: showHints,
     });
+    this.enterForgeStage();
   }
 
-  private resolveFocus() {
-    this.focusing = false;
-    const target = this.focusTarget;
-    this.focusTarget = null;
-    this.game.events.emit("focusEnd");
-    if (!target || !target.alive) return;
-    target.setTargeted(false);
+  // Present the current stage: a primitive recognition ring, or the verb wheel
+  // once every primitive is named.
+  private enterForgeStage() {
+    if (this.forgeStage < this.forgePlan.length) {
+      const prim = this.forgePlan[this.forgeStage];
+      this.forgeChoices = buildPrimitiveChoices(prim.keyword, FORGE_CHOICES, Phaser.Math.RND);
+      const face = primitiveFace(prim);
+      this.game.events.emit("forgeRing", {
+        stage: this.forgeStage,
+        total: this.forgePlan.length,
+        faceText: face.text,
+        faceRtk: face.rtk,
+        choices: this.forgeChoices.map((c) => c.keyword),
+      });
+    } else {
+      this.forgeChoices = [];
+      this.game.events.emit("forgeWheel");
+    }
+  }
 
+  private forgeDeadzone(): number {
+    return run.relics.has("steady-tongue") ? 0.18 : WHEEL_DEADZONE;
+  }
+
+  // A left-click commits the currently-aimed keyword on a primitive ring. Right
+  // advances to the next ring; wrong backfires the whole read (a genuine miss).
+  private commitPrimitive() {
+    const target = this.focusTarget;
+    if (!target || !target.alive || this.forgeStage >= this.forgePlan.length) return;
     const p = this.input.activePointer;
-    const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
-    const verb = wheelVerbAt(
+    const idx = radialIndexAt(
       this.scale.width / 2,
       this.scale.height / 2,
       p.x,
       p.y,
       this.wheelRadius(),
-      deadzone,
+      this.forgeDeadzone(),
+      this.forgeChoices.length,
     );
+    if (idx == null) return; // aimed at the hub — re-aim, no commit
+    if (this.forgeChoices[idx].correct) {
+      sfx.focus();
+      this.forgeStage += 1;
+      this.enterForgeStage();
+      return;
+    }
+    const need = this.ordealNeeds?.[0];
+    const onNamedGlyph = !need || target.entry.keyword === need;
+    this.focusConsumed = true; // don't re-focus while the button is still held
+    this.endFocus();
+    this.resolveRead(target, false, onNamedGlyph);
+  }
+
+  // Tear down the read overlay without scoring — used on cancel and as the first
+  // step of any resolution (the scoring runs after, on the captured target).
+  private endFocus() {
+    this.focusing = false;
+    this.focusTarget?.setTargeted(false);
+    this.focusTarget = null;
+    this.forgePlan = [];
+    this.forgeStage = 0;
+    this.forgeChoices = [];
+    this.primePrev = false;
+    this.game.events.emit("focusEnd");
+  }
+
+  // Releasing focus resolves the read only when it's on the wheel; releasing
+  // mid-forge (still naming primitives) just cancels, with no penalty.
+  private releaseFocus() {
+    const target = this.focusTarget;
+    const onWheel = this.forgeStage >= this.forgePlan.length;
+    let verb = null as ReturnType<typeof wheelVerbAt>;
+    if (onWheel && target && target.alive) {
+      const p = this.input.activePointer;
+      const deadzone = run.relics.has("steady-tongue") ? 0.18 : undefined;
+      verb = wheelVerbAt(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        p.x,
+        p.y,
+        this.wheelRadius(),
+        deadzone,
+      );
+    }
+    this.endFocus();
+    if (!target || !target.alive) return;
+    if (!onWheel) return; // released mid-forge → cancel, no penalty
     if (!verb) return; // released in the dead-zone → cancel
 
     // In an ordeal you must read the EXACT named keyword (right glyph AND verb),
@@ -1009,7 +1093,14 @@ export default class DungeonScene extends Phaser.Scene {
     const need = this.ordealNeeds?.[0];
     const onNamedGlyph = !need || target.entry.keyword === need;
     const ok = onNamedGlyph && verb === target.entry.verb;
-    run.reads += 1; // a committed recall attempt (dead-zone cancels returned above)
+    this.resolveRead(target, ok, onNamedGlyph);
+  }
+
+  // Score a committed read (wheel verb, or a wrong primitive from the forge).
+  // Focus is already torn down by the caller; this only updates run/SRS state and
+  // fires the bind/backfire effects.
+  private resolveRead(target: Spirit, ok: boolean, onNamedGlyph: boolean) {
+    run.reads += 1; // a committed recall attempt (cancels never reach here)
     if (ok) run.hits += 1;
 
     // Capture SRS state BEFORE recording — relics reward reading rusty/known cards.
@@ -1376,10 +1467,19 @@ export default class DungeonScene extends Phaser.Scene {
     if (run.current) this.clampSpirits(run.current);
 
     // Focus is held via SPACE or right mouse button; release resolves the read.
+    // A read that resolves mid-hold (a wrong primitive) latches focus off until
+    // the button is released, so it can't instantly re-focus under a held button.
     const wantFocus = this.focusKey.isDown || this.input.activePointer.rightButtonDown();
-    if (wantFocus && !this.focusing) this.startFocus();
-    else if (!wantFocus && this.focusing) this.resolveFocus();
+    if (!wantFocus) this.focusConsumed = false;
+    if (wantFocus && !this.focusing && !this.focusConsumed) this.startFocus();
+    else if (!wantFocus && this.focusing) this.releaseFocus();
     if (this.focusing && Phaser.Input.Keyboard.JustDown(this.cycleKey)) this.cycleTarget();
+    // A left-click commits the aimed keyword on a primitive ring (edge-triggered).
+    const primeDown = this.input.activePointer.leftButtonDown();
+    if (this.focusing && primeDown && !this.primePrev && this.forgeStage < this.forgePlan.length) {
+      this.commitPrimitive();
+    }
+    this.primePrev = primeDown;
 
     const k = this.keys;
     let vx = 0;
