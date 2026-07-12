@@ -26,6 +26,7 @@ interface ReadInfo {
   keyword: string;
   ok: boolean;
   story?: string;
+  forged?: boolean; // the read named primitives first — cement the story on a hit
 }
 interface StudyInfo {
   kanji: string;
@@ -137,13 +138,18 @@ export default class HudScene extends Phaser.Scene {
       color: "#2fbfa8",
     });
     this.hint = this.add
-      .text(0, 0, "Sealed — read the spirits  (hold SPACE, aim, release · Q switches target)", {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#f4e7c0",
-        backgroundColor: "#00000088",
-        padding: { x: 10, y: 6 },
-      })
+      .text(
+        0,
+        0,
+        "Sealed — read the spirits  (hold SPACE · click each part · release on the wheel · Q switches)",
+        {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#f4e7c0",
+          backgroundColor: "#00000088",
+          padding: { x: 10, y: 6 },
+        },
+      )
       .setOrigin(0.5, 1)
       .setVisible(false);
 
@@ -674,7 +680,11 @@ export default class HudScene extends Phaser.Scene {
       onComplete: () => this.readToast.setVisible(false),
     });
 
-    if (!info.ok && info.story) {
+    // Surface the mnemonic: always on a miss (the failure teaches best), and on a
+    // forged hit too — you just built it from its parts, so cement the story.
+    const teach = info.story && (!info.ok || info.forged);
+    if (teach) {
+      const hold = info.ok ? 1500 : 2600;
       this.teachToast
         .setText(`${info.kanji}  ${info.keyword}\n${info.story}`)
         .setPosition(this.scale.width / 2, this.scale.height * 0.8)
@@ -685,7 +695,7 @@ export default class HudScene extends Phaser.Scene {
       this.tweens.add({
         targets: this.teachToast,
         alpha: 0,
-        delay: 2600,
+        delay: hold,
         duration: 500,
         onComplete: () => this.teachToast.setVisible(false),
       });

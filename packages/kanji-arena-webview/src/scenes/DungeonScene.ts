@@ -1049,7 +1049,7 @@ export default class DungeonScene extends Phaser.Scene {
     const onNamedGlyph = !need || target.entry.keyword === need;
     this.focusConsumed = true; // don't re-focus while the button is still held
     this.endFocus();
-    this.resolveRead(target, false, onNamedGlyph);
+    this.resolveRead(target, false, onNamedGlyph, true);
   }
 
   // Tear down the read overlay without scoring — used on cancel and as the first
@@ -1070,6 +1070,7 @@ export default class DungeonScene extends Phaser.Scene {
   private releaseFocus() {
     const target = this.focusTarget;
     const onWheel = this.forgeStage >= this.forgePlan.length;
+    const forged = this.forgePlan.length > 0; // this read named primitives first
     let verb = null as ReturnType<typeof wheelVerbAt>;
     if (onWheel && target && target.alive) {
       const p = this.input.activePointer;
@@ -1093,13 +1094,13 @@ export default class DungeonScene extends Phaser.Scene {
     const need = this.ordealNeeds?.[0];
     const onNamedGlyph = !need || target.entry.keyword === need;
     const ok = onNamedGlyph && verb === target.entry.verb;
-    this.resolveRead(target, ok, onNamedGlyph);
+    this.resolveRead(target, ok, onNamedGlyph, forged);
   }
 
   // Score a committed read (wheel verb, or a wrong primitive from the forge).
   // Focus is already torn down by the caller; this only updates run/SRS state and
   // fires the bind/backfire effects.
-  private resolveRead(target: Spirit, ok: boolean, onNamedGlyph: boolean) {
+  private resolveRead(target: Spirit, ok: boolean, onNamedGlyph: boolean, forged: boolean) {
     run.reads += 1; // a committed recall attempt (cancels never reach here)
     if (ok) run.hits += 1;
 
@@ -1110,12 +1111,14 @@ export default class DungeonScene extends Phaser.Scene {
     // Only score the card when the read was actually about THIS glyph — targeting
     // the wrong twin in an ordeal shouldn't lapse a card you never tried to read.
     if (onNamedGlyph) recordResult(this.srs, target.entry.kanji, ok);
-    // Reveal the answer after committing — teaches on a hit and (especially) a miss.
+    // Reveal the answer after committing — teaches on a miss and, when the read
+    // forged its primitives, cements the story on a hit too (forged).
     this.game.events.emit("read", {
       kanji: target.entry.kanji,
       keyword: target.entry.keyword,
       ok,
       story: target.entry.story,
+      forged,
     });
     // Log the outcome per glyph so the death recap can reveal what you missed.
     // Gate on onNamedGlyph like recordResult — an off-target twin read isn't a

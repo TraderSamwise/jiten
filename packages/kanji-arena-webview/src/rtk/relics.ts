@@ -54,7 +54,7 @@ export const RELICS: Relic[] = [
     name: "Kotodama Chorus",
     jp: "言霊の合唱",
     flavor: "On a hot streak the word-spirits sing with you.",
-    effect: "Streak ≥4: stronger Focus slow, and every card shows its components.",
+    effect: "Streak ≥4: the Focus slow deepens, buying more time to forge a read.",
   },
   {
     id: "backfire-sink",
