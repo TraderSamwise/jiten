@@ -41,7 +41,7 @@ export const kanjiMnemonicRoute = new Hono<{ Variables: AppVariables }>().post(
       userId,
       model: MODEL,
       instructions:
-        "Write a vivid, concrete mnemonic story (1-2 sentences) for a Heisig-style kanji learner. Weave the given primitive keywords together as the imagery and land on the kanji's keyword as the punchline. Use the primitive keywords verbatim where natural. Return only the structured JSON requested by the schema.",
+        "Write a concrete mnemonic story for a Heisig-style kanji learner. Prefer the shortest, cleverest phrasing that sticks — ideally one punchy sentence, never more than two; concise and vivid beats elaborate. Weave the given primitive keywords together as the imagery and land on the kanji's keyword as the punchline. Use the primitive keywords verbatim where natural. Return only the structured JSON requested by the schema.",
       input: { kanji: input.kanji, keyword: input.keyword, primitives: input.primitives },
       schemaName: "kanji_mnemonic",
       schema: STORY_SCHEMA,
