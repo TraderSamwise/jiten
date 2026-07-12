@@ -33,6 +33,7 @@ import { Dir, key, OPPOSITE, Room } from "../dungeon/types";
 import Spirit, { SpiritBehavior } from "../entities/Spirit";
 
 const BEHAVIORS: SpiritBehavior[] = ["chase", "chase", "orbit", "drift", "skittish", "lurker"];
+import { Graphics } from "../graphics";
 import { CLUSTERS, CORPUS, KanjiEntry } from "../rtk/corpus";
 import {
   buildPrimitiveChoices,
@@ -61,15 +62,12 @@ import {
 } from "../rtk/srs";
 import { radialIndexAt, wheelVerbAt } from "../rtk/wheel";
 
-const FLOOR_BASE = 0x141020; // dark ink floor, a shade above the room BG
-// A faint colour wash over special rooms so their type reads at a glance.
-const FLOOR_WASH: Partial<Record<Room["type"], number>> = {
-  boss: 0x3a1420,
-  treasure: 0x2e2410,
-  shrine: 0x122636,
-  shop: 0x123230,
+const FLOOR_TINT: Partial<Record<Room["type"], number>> = {
+  boss: 0xffb3b3,
+  treasure: 0xffe6a0,
+  shrine: 0xbfe6ff,
+  shop: 0xbdf0e6,
 };
-const DOOR_GOLD = 0xf2c14e;
 
 const CCOL = Math.floor(ROOM_W / 2);
 const CROW = Math.floor(ROOM_H / 2);
@@ -93,12 +91,11 @@ export default class DungeonScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private doors!: Phaser.Physics.Arcade.StaticGroup;
-  private floorGfx!: Phaser.GameObjects.Graphics; // procedural room art (floor+grid+border)
-  private doorGfx!: Phaser.GameObjects.Graphics; // gold bars over a locked room's exits
   private spirits!: Phaser.Physics.Arcade.Group;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private focusKey!: Phaser.Input.Keyboard.Key;
   private cycleKey!: Phaser.Input.Keyboard.Key;
+  private facingBack = false;
   private transitioning = false;
   private combatActive = false;
   private invulnUntil = 0;
@@ -245,9 +242,10 @@ export default class DungeonScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(
       start.gx * ROOM_PX_W + ROOM_PX_W / 2,
       start.gy * ROOM_PX_H + ROOM_PX_H / 2,
-      "peg",
+      Graphics.player.key,
     );
     this.player.setSize(14, 14).setOffset(17, 30);
+    this.player.anims.play(Graphics.player.animations.idle.key);
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.player, this.doors);
@@ -311,56 +309,27 @@ export default class DungeonScene extends Phaser.Scene {
 
   private buildFloor() {
     this.walls = this.physics.add.staticGroup();
-    this.floorGfx = this.add.graphics().setDepth(-10);
-    this.doorGfx = this.add.graphics().setDepth(-9);
+    const env = Graphics.environment;
     for (const room of run.floor!.rooms.values()) {
       const ox = room.gx * ROOM_W;
       const oy = room.gy * ROOM_H;
-      this.drawRoomFloor(room, ox, oy);
       for (let y = 0; y < ROOM_H; y++) {
         for (let x = 0; x < ROOM_W; x++) {
-          if (!this.isWall(x, y, room)) continue;
-          // An invisible TILE-sized collider (the wall art is drawn, not tiled).
-          this.walls
-            .create((ox + x) * TILE + TILE / 2, (oy + y) * TILE + TILE / 2, "px")
-            .setVisible(false);
+          const wx = (ox + x) * TILE;
+          const wy = (oy + y) * TILE;
+          if (this.isWall(x, y, room)) {
+            this.walls.create(wx + TILE / 2, wy + TILE / 2, env.key, env.indices.wall);
+          } else {
+            const img = this.add
+              .image(wx, wy, env.key, env.indices.floor)
+              .setOrigin(0, 0)
+              .setDepth(-10);
+            const tint = FLOOR_TINT[room.type];
+            if (tint) img.setTint(tint);
+          }
         }
       }
     }
-  }
-
-  // Draw one room: a dark floor (+ faint type wash), a subtle grid, a hairline
-  // inner border, and open passages carved where its doors are.
-  private drawRoomFloor(room: Room, ox: number, oy: number) {
-    const g = this.floorGfx;
-    const x0 = (ox + 1) * TILE;
-    const y0 = (oy + 1) * TILE;
-    const w = ROOM_INNER_W * TILE;
-    const h = ROOM_INNER_H * TILE;
-    g.fillStyle(FLOOR_BASE, 1);
-    g.fillRect(x0, y0, w, h);
-    const wash = FLOOR_WASH[room.type];
-    if (wash) {
-      g.fillStyle(wash, 0.5);
-      g.fillRect(x0, y0, w, h);
-    }
-    // Fill the door-opening tiles so exits read as open passages, not walls.
-    for (let ty = 0; ty < ROOM_H; ty++) {
-      for (let tx = 0; tx < ROOM_W; tx++) {
-        const border = tx === 0 || ty === 0 || tx === ROOM_W - 1 || ty === ROOM_H - 1;
-        if (border && !this.isWall(tx, ty, room)) {
-          g.fillStyle(FLOOR_BASE, 1);
-          g.fillRect((ox + tx) * TILE, (oy + ty) * TILE, TILE, TILE);
-        }
-      }
-    }
-    g.lineStyle(1, 0xffffff, 0.03);
-    for (let gx = 1; gx < ROOM_INNER_W; gx++)
-      g.lineBetween(x0 + gx * TILE, y0, x0 + gx * TILE, y0 + h);
-    for (let gy = 1; gy < ROOM_INNER_H; gy++)
-      g.lineBetween(x0, y0 + gy * TILE, x0 + w, y0 + gy * TILE);
-    g.lineStyle(1, 0xffffff, 0.08);
-    g.strokeRect(x0, y0, w, h);
   }
 
   private isWall(x: number, y: number, room: Room): boolean {
@@ -855,32 +824,9 @@ export default class DungeonScene extends Phaser.Scene {
 
   private lockRoom(room: Room) {
     this.doors.clear(true, true);
+    const env = Graphics.environment;
     for (const { tx, ty } of this.openingTiles(room)) {
-      this.doors.create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, "px").setVisible(false);
-    }
-    this.drawDoorBars(room);
-  }
-
-  // Gold bars across a locked room's exits — the visual "sealed" tell that rides
-  // with the (invisible) door colliders, cleared when the room clears.
-  private drawDoorBars(room: Room) {
-    const g = this.doorGfx;
-    g.clear();
-    g.fillStyle(DOOR_GOLD, 0.6);
-    const ox = room.gx * ROOM_W;
-    const oy = room.gy * ROOM_H;
-    const span = (2 * DOOR_HALF + 1) * TILE;
-    const th = 5;
-    for (const d of room.doors) {
-      if (d === "N" || d === "S") {
-        const bx = (ox + CCOL - DOOR_HALF) * TILE;
-        const by = (d === "N" ? oy : oy + ROOM_H - 1) * TILE;
-        g.fillRoundedRect(bx + 2, by + TILE / 2 - th / 2, span - 4, th, th / 2);
-      } else {
-        const bx = (d === "W" ? ox : ox + ROOM_W - 1) * TILE;
-        const by = (oy + CROW - DOOR_HALF) * TILE;
-        g.fillRoundedRect(bx + TILE / 2 - th / 2, by + 2, th, span - 4, th / 2);
-      }
+      this.doors.create(tx * TILE + TILE / 2, ty * TILE + TILE / 2, env.key, env.indices.wall);
     }
   }
 
@@ -894,7 +840,6 @@ export default class DungeonScene extends Phaser.Scene {
     this.clearHazards();
     for (const s of this.aliveSpirits()) if (s.wisp || s.thief) s.destroy(); // uncaught flit away
     this.doors.clear(true, true);
-    this.doorGfx.clear();
     sfx.roomClear();
     this.game.events.emit("ordealEnd");
     this.game.events.emit("lockState", false);
@@ -1764,6 +1709,16 @@ export default class DungeonScene extends Phaser.Scene {
     const v = new Phaser.Math.Vector2(vx, vy);
     if (v.lengthSq() > 0) v.normalize().scale(pSpeed);
     if (this.time.now >= this.knockbackUntil) this.player.setVelocity(v.x, v.y);
+
+    const p = Graphics.player.animations;
+    if (v.lengthSq() > 0) {
+      if (vx !== 0) this.player.setFlipX(vx < 0);
+      if (vy < 0) this.facingBack = true;
+      else if (vy > 0) this.facingBack = false;
+      this.player.anims.play(this.facingBack ? p.walkBack.key : p.walk.key, true);
+    } else {
+      this.player.anims.play(this.facingBack ? p.idleBack.key : p.idle.key, true);
+    }
 
     // Kotodama Chorus deepens the Focus slow while a streak is hot; Patient Word
     // freezes spirits entirely, but never during a boss fight (that would defang it).
