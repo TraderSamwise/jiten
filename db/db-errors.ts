@@ -21,6 +21,8 @@ export function classifyOpenError(err: unknown): OpenFailure {
   ) {
     return "lock";
   }
-  if (msg.includes("disk I/O error") || msg.includes("code 10")) return "io";
+  // Match code 10 as a whole token so "code 100"/"code 101" (unrelated) don't
+  // get mistaken for the code-10 disk-I/O error.
+  if (msg.includes("disk I/O error") || /\bcode\s+10\b/.test(msg)) return "io";
   return "fatal";
 }

@@ -9,6 +9,13 @@ describe("classifyOpenError", () => {
     expect(classifyOpenError("disk I/O error")).toBe("io");
   });
 
+  it("matches code 10 as a whole token, not a substring", () => {
+    // "code 100"/"code 101" are unrelated — must stay fatal, not be retried as io.
+    expect(classifyOpenError(new Error("failed with code 100"))).toBe("fatal");
+    expect(classifyOpenError(new Error("code 101 something"))).toBe("fatal");
+    expect(classifyOpenError(new Error("Error code 10: disk I/O error"))).toBe("io");
+  });
+
   it("classifies recognised OPFS lock messages as lock", () => {
     for (const msg of [
       "createSyncAccessHandle failed",
