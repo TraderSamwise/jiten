@@ -8,16 +8,12 @@ import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
 import { setRecoveryDb, DbRecoveryScreen } from "@/components/DbRecoveryScreen";
 import { notifyDbError } from "@/components/GlobalErrorHandler";
 import { captureException } from "@/lib/sentry";
+import { classifyOpenError } from "./db-errors";
 
-function isOpfsLockError(err: unknown): boolean {
-  const msg = String(err);
-  return (
-    msg.includes("createSyncAccessHandle") ||
-    msg.includes("NoModificationAllowedError") ||
-    msg.includes("Access Handles cannot be created") ||
-    msg.includes("Invalid VFS state")
-  );
-}
+// Retries re-run the whole open, and openAndMigrateUserDb() re-calls
+// ensureLockAvailable() each time — so every attempt re-asks the holder to
+// release, giving a busy tab (mid heavy work) more chances to hand off.
+const OPEN_RETRY_LIMIT = 6;
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
@@ -172,8 +168,9 @@ export function UserDatabaseProvider({
     isReady: false,
   });
   const rawDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const runInit = useCallback(async () => {
+  const runInit = useCallback(async (attempt = 0) => {
     try {
       const { raw, wrapped } = await openAndMigrateUserDb();
       rawDbRef.current = raw;
@@ -192,12 +189,28 @@ export function UserDatabaseProvider({
       setState({ userDb: wrapped, isReady: true });
       console.log("[UserDB Web] Initialized successfully");
     } catch (err) {
+      const kind = classifyOpenError(err);
+      // Transient OPFS contention — retry with backoff (each attempt re-asks the
+      // holder to release) before surfacing anything. Suppress the recovery
+      // screen meanwhile by parking in the benign "opfs-lock" state.
+      if ((kind === "lock" || kind === "io") && attempt < OPEN_RETRY_LIMIT) {
+        const delay = Math.min(2000, 250 * 2 ** attempt);
+        console.warn(
+          `[UserDB Web] OPFS ${kind} on open — retry ${attempt + 1}/${OPEN_RETRY_LIMIT} in ${delay}ms:`,
+          String(err),
+        );
+        setState({ userDb: null, isReady: true, error: "opfs-lock" });
+        retryTimer.current = setTimeout(() => runInit(attempt + 1), delay);
+        return;
+      }
       console.error("[UserDB Web] Init error:", err);
       captureException(err, { tags: { type: "database", source: "web_init" } });
       setState({
         userDb: null,
         isReady: true,
-        error: isOpfsLockError(err) ? "opfs-lock" : String(err),
+        // A lock that never released stays silent (waits for release/visibility);
+        // a persistent I/O or fatal error surfaces the recovery screen.
+        error: kind === "lock" ? "opfs-lock" : String(err),
       });
     }
   }, []);
@@ -228,6 +241,7 @@ export function UserDatabaseProvider({
 
     return () => {
       unsubscribe?.();
+      if (retryTimer.current) clearTimeout(retryTimer.current);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [userId, runInit]);
