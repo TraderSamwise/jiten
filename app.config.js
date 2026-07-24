@@ -35,7 +35,7 @@ module.exports = {
       package: "tokyo.jiten.mobile",
       adaptiveIcon: {
         foregroundImage: "./assets/images/adaptive-icon.png",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#4c3aa8",
       },
       versionCode: APP_VERSION.buildNumber,
       edgeToEdgeEnabled: true,
@@ -63,10 +63,10 @@ module.exports = {
           image: "./assets/images/splash-icon.png",
           imageWidth: 200,
           resizeMode: "contain",
-          backgroundColor: "#ffffff",
+          backgroundColor: "#f4efe4",
           dark: {
             image: "./assets/images/splash-icon-dark.png",
-            backgroundColor: "#09090b",
+            backgroundColor: "#14110c",
           },
         },
       ],
