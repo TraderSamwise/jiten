@@ -1,1 +1,1 @@
-Read [README.md](/Users/sam/cs/jiten/README.md) first. It is the canonical source of truth for repo guidance.
+Read [README.md](README.md) for a project overview, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the canonical deep-dive reference for repo architecture and conventions — before changing files.

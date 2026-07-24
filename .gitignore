@@ -72,6 +72,11 @@ assets/synonyms.jsonl.gz
 assets/names.jsonl.gz
 .vercel
 
+# Generated WebView bundles (built by `yarn build:webviews`; also built on postinstall)
+packages/reader-webview/bundle.ts
+packages/kanji-arena-webview/bundle.ts
+lib/reader/bundle.ts
+
 # Standalone Phaser roguelite POC — local scaffolding only; its game source is
 # vendored into packages/kanji-arena-webview, which IS tracked and linted.
 rtk-game/
