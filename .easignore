@@ -6,15 +6,11 @@
 .git
 .env*.local
 
-# Ignore iOS build artifacts
-ios/build/
-ios/Pods/
-ios/.xcode.env.local
-
-# Ignore Android build artifacts
-android/build/
-android/app/build/
-android/.gradle/
+# Ignore native projects entirely — EAS regenerates them from app.config.js via
+# prebuild (CNG). Uploading a local ios/android makes EAS SKIP prebuild and build
+# a STALE native project, so icon/splash/app.config changes silently don't apply.
+/ios
+/android
 
 # Ignore node_modules (will be installed fresh)
 node_modules/
