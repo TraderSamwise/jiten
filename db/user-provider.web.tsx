@@ -14,6 +14,7 @@ import { classifyOpenError } from "./db-errors";
 // ensureLockAvailable() each time — so every attempt re-asks the holder to
 // release, giving a busy tab (mid heavy work) more chances to hand off.
 const OPEN_RETRY_LIMIT = 6;
+const WEB_REACQUIRE_AFTER_RELEASE_MS = 1000;
 
 interface UserDbContextType {
   userDb: WrappedUserDb | null;
@@ -169,6 +170,7 @@ export function UserDatabaseProvider({
   });
   const rawDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reacquireTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Bumped whenever a fresh init lifecycle starts (mount, userId change,
   // visibility reacquire, release) or on unmount. Every runInit attempt captures
   // its generation and no-ops after an await if a newer lifecycle superseded it,
@@ -179,6 +181,13 @@ export function UserDatabaseProvider({
     if (retryTimer.current) {
       clearTimeout(retryTimer.current);
       retryTimer.current = null;
+    }
+  }, []);
+
+  const cancelReacquire = useCallback(() => {
+    if (reacquireTimer.current) {
+      clearTimeout(reacquireTimer.current);
+      reacquireTimer.current = null;
     }
   }, []);
 
@@ -231,6 +240,19 @@ export function UserDatabaseProvider({
     }
   }, []);
 
+  const scheduleReacquire = useCallback(() => {
+    cancelReacquire();
+    reacquireTimer.current = setTimeout(() => {
+      reacquireTimer.current = null;
+      if (document.visibilityState !== "visible" || rawDbRef.current) return;
+
+      console.log("[UserDB Web] Reacquiring user DB after release...");
+      generation.current += 1;
+      cancelRetry();
+      runInit(0, generation.current);
+    }, WEB_REACQUIRE_AFTER_RELEASE_MS);
+  }, [cancelReacquire, cancelRetry, runInit]);
+
   useEffect(() => {
     generation.current += 1;
     cancelRetry();
@@ -248,6 +270,7 @@ export function UserDatabaseProvider({
         rawDbRef.current = null;
         setRecoveryDb(null);
         setState({ userDb: null, isReady: true });
+        scheduleReacquire();
       });
     });
 
@@ -258,6 +281,7 @@ export function UserDatabaseProvider({
         console.log("[UserDB Web] Tab visible, reacquiring user DB...");
         generation.current += 1;
         cancelRetry();
+        cancelReacquire();
         runInit(0, generation.current);
       }
     };
@@ -267,9 +291,10 @@ export function UserDatabaseProvider({
       generation.current += 1; // invalidate any in-flight/scheduled work
       unsubscribe?.();
       cancelRetry();
+      cancelReacquire();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [userId, runInit, cancelRetry]);
+  }, [userId, runInit, cancelRetry, scheduleReacquire, cancelReacquire]);
 
   if (state.error && state.error !== "opfs-lock") {
     return (

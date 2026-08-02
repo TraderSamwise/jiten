@@ -189,6 +189,22 @@ function TypingInput({
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+
+    function handleClearWord(e: KeyboardEvent) {
+      if (done || e.key !== "Backspace" || (!e.metaKey && !e.ctrlKey)) return;
+      if (document.activeElement !== (inputRef.current as unknown as HTMLElement | null)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      setTypedRomaji("");
+    }
+
+    document.addEventListener("keydown", handleClearWord, true);
+    return () => document.removeEventListener("keydown", handleClearWord, true);
+  }, [done]);
+
   // Compute char statuses from current typed kana
   const converted = romajiToKana(typedRomaji);
   const flickPending = isKanaInput && hasFlickPending(converted, targetReading);

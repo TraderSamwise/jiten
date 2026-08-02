@@ -30,6 +30,7 @@ import {
 } from "./dict-download";
 import { DICT_VERSION } from "./dict-version";
 import { runClientDictMigrations } from "./dict-client-migrations";
+import { classifyOpenError } from "./db-errors";
 import { openExtendedDb } from "./extended-db";
 import {
   isExtendedReady,
@@ -86,6 +87,9 @@ const DatabaseContext = createContext<DatabaseContextType>({
   retryManifest: async () => {},
   triggerBackgroundDownloads: () => {},
 });
+
+const DICT_OPEN_RETRY_LIMIT = 6;
+const WEB_REACQUIRE_AFTER_RELEASE_MS = 1000;
 
 export function useDatabase() {
   return useContext(DatabaseContext);
@@ -158,6 +162,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const audioDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const strokesDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
   const extendedDbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const reacquireTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openRetryAttempt = useRef(0);
 
   // Helper to update a single background item
   const updateBgItem = useCallback((key: string, updates: Partial<BackgroundDownloadItem>) => {
@@ -407,6 +414,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     maybeStartBackgroundDownloads();
   }, [maybeStartBackgroundDownloads]);
 
+  const cancelOpenRetry = useCallback(() => {
+    if (openRetryTimer.current) {
+      clearTimeout(openRetryTimer.current);
+      openRetryTimer.current = null;
+    }
+    openRetryAttempt.current = 0;
+  }, []);
+
   // Full init sequence — used on mount and on visibility reacquire
   const runInit = useCallback(async () => {
     try {
@@ -440,6 +455,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         }
 
         const db = await openDictDb();
+        openRetryAttempt.current = 0;
         dictDbRef.current = db;
         setDictDb(db);
         setIsDownloaded(true);
@@ -510,6 +526,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
           await setLocalVersion(finalVersion);
 
+          openRetryAttempt.current = 0;
           dictDbRef.current = db;
           setDictDb(db);
           setIsDownloaded(true);
@@ -528,6 +545,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           // action.type === "none" — should not normally reach here,
           // but handle gracefully by opening the DB
           const db = await openDictDb();
+          openRetryAttempt.current = 0;
           dictDbRef.current = db;
           setDictDb(db);
           setIsDownloaded(true);
@@ -539,18 +557,64 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (err) {
+      const attempt = openRetryAttempt.current;
+      const kind = classifyOpenError(err);
+      if (
+        Platform.OS === "web" &&
+        (kind === "lock" || kind === "io") &&
+        attempt < DICT_OPEN_RETRY_LIMIT
+      ) {
+        const delay = Math.min(2000, 250 * 2 ** attempt);
+        console.warn(
+          `[DB] OPFS ${kind} on dict open — retry ${attempt + 1}/${DICT_OPEN_RETRY_LIMIT} in ${delay}ms:`,
+          String(err),
+        );
+        setIsReady(true);
+        if (openRetryTimer.current) {
+          clearTimeout(openRetryTimer.current);
+          openRetryTimer.current = null;
+        }
+        openRetryAttempt.current = attempt + 1;
+        openRetryTimer.current = setTimeout(() => {
+          openRetryTimer.current = null;
+          runInit();
+        }, delay);
+        return;
+      }
+
       console.error("[DB] Init error:", err);
       setIsReady(true);
       setDownloadStatus({
         state: "error",
-        message: isOpfsLockError(err)
-          ? "opfs-lock"
-          : err instanceof Error
-            ? err.message
-            : "Failed to initialize",
+        message:
+          kind === "lock" || kind === "io"
+            ? "opfs-lock"
+            : err instanceof Error
+              ? err.message
+              : "Failed to initialize",
       });
     }
   }, [initInstalledOptionalData, maybeStartBackgroundDownloads]);
+
+  const cancelReacquire = useCallback(() => {
+    if (reacquireTimer.current) {
+      clearTimeout(reacquireTimer.current);
+      reacquireTimer.current = null;
+    }
+  }, []);
+
+  const scheduleWebReacquire = useCallback(() => {
+    if (Platform.OS !== "web") return;
+
+    cancelReacquire();
+    reacquireTimer.current = setTimeout(() => {
+      reacquireTimer.current = null;
+      if (document.visibilityState !== "visible" || dictDbRef.current) return;
+
+      console.log("[DB] Reacquiring dict DB after release...");
+      runInit();
+    }, WEB_REACQUIRE_AFTER_RELEASE_MS);
+  }, [cancelReacquire, runInit]);
 
   useEffect(() => {
     runInit();
@@ -560,6 +624,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         if (next !== "active") return;
         if (!dictDbRef.current) {
           console.log("[DB] App active, reacquiring dict DB...");
+          cancelOpenRetry();
           runInit();
         }
         triggerBackgroundDownloads();
@@ -581,6 +646,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         setStrokesDb(null);
         extendedDbRef.current = null;
         setExtendedDb(null);
+        cancelOpenRetry();
+        scheduleWebReacquire();
       });
     });
 
@@ -589,6 +656,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === "visible") {
         if (!dictDbRef.current) {
           console.log("[DB] Tab visible, reacquiring dict DB...");
+          cancelReacquire();
+          cancelOpenRetry();
           runInit();
         }
         // Retry any incomplete background downloads on visibility reacquire
@@ -599,9 +668,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       unsubscribe?.();
+      cancelReacquire();
+      cancelOpenRetry();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [runInit, triggerBackgroundDownloads]);
+  }, [runInit, triggerBackgroundDownloads, scheduleWebReacquire, cancelReacquire, cancelOpenRetry]);
 
   const retryManifest = useCallback(async () => {
     setDownloadStatus({ state: "checking" });
@@ -636,6 +707,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
       setDownloadStatus({ state: "preparing" });
       const db = await openDictDb();
+      openRetryAttempt.current = 0;
 
       // After a fresh download, run client migrations if DICT_VERSION > base
       if (m.version < DICT_VERSION) {

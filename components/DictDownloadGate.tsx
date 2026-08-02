@@ -76,8 +76,10 @@ export function DictDownloadGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // DB was released to another tab — will reacquire on visibility change
-  if (isDownloaded && !dictDb) {
+  const hasInitError = downloadStatus.state === "error";
+
+  // DB was released to another tab — will reacquire after release or visibility.
+  if (isDownloaded && !dictDb && !hasInitError) {
     return (
       <FullScreenGate>
         <ActivityIndicator size="large" />
