@@ -83,6 +83,33 @@ interface WordState {
   assisted: boolean;
 }
 
+interface TypingGameSnapshot {
+  phase: Phase;
+  settingsOpen: boolean;
+  autoFuriganaRevealed: boolean;
+  words: WordState[];
+  currentWordIndex: number;
+  typedRomaji: string;
+  typedKana: string;
+  startTime: number;
+  endTime: number;
+  completedTotal: number;
+  totalWordCount: number;
+  correctCount: number;
+  assistedCount: number;
+  incorrectCount: number;
+  flickPendingState: boolean;
+  shuffledQueue: number[];
+  answers: string[];
+  isKanaInput: boolean;
+  wordStartTime: number;
+  sessionId: string;
+  correctCountRef: number;
+  sessionDirty: boolean;
+}
+
+const activeTypingGames = new Map<string, TypingGameSnapshot>();
+
 // ─── WordBlock Component ───
 
 interface FloatingCoin {
@@ -337,6 +364,8 @@ function GlowOverlay() {
 
 export default function TypingGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
+  const listKey = typeof listId === "string" ? listId : "";
+  const initialSnapshot = listKey ? activeTypingGames.get(listKey) : undefined;
   const goBack = useSafeGoBack("/lists");
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
@@ -346,48 +375,54 @@ export default function TypingGameScreen() {
   const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   const { dictDb, audioDb } = useDatabase();
   const { markDirty } = useSync();
-  const sessionDirtyRef = useRef(false);
+  const sessionDirtyRef = useRef(initialSnapshot?.sessionDirty ?? false);
 
   const [navigating, setNavigating] = useState(false);
-  const [phase, setPhase] = useState<Phase>("select");
+  const [phase, setPhase] = useState<Phase>(() => initialSnapshot?.phase ?? "select");
   const [furiganaMode, setFuriganaMode] = useAtom(typingFuriganaModeAtom);
   const [showPitchOpt, setShowPitchOpt] = useAtom(typingShowPitchAtom);
   const [playAudioOpt, setPlayAudioOpt] = useAtom(typingPlayAudioAtom);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [autoFuriganaRevealed, setAutoFuriganaRevealed] = useState(false);
-  const [words, setWords] = useState<WordState[]>([]);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const [typedRomaji, setTypedRomaji] = useState("");
-  const [typedKana, setTypedKana] = useState("");
-  const [startTime, setStartTime] = useState(0);
-  const [endTime, setEndTime] = useState(0);
-  const [completedTotal, setCompletedTotal] = useState(0);
-  const [totalWordCount, setTotalWordCount] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [assistedCount, setAssistedCount] = useState(0);
-  const [incorrectCount, setIncorrectCount] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(() => initialSnapshot?.settingsOpen ?? false);
+  const [autoFuriganaRevealed, setAutoFuriganaRevealed] = useState(
+    () => initialSnapshot?.autoFuriganaRevealed ?? false,
+  );
+  const [words, setWords] = useState<WordState[]>(() => initialSnapshot?.words ?? []);
+  const [currentWordIndex, setCurrentWordIndex] = useState(
+    () => initialSnapshot?.currentWordIndex ?? 0,
+  );
+  const [typedRomaji, setTypedRomaji] = useState(() => initialSnapshot?.typedRomaji ?? "");
+  const [typedKana, setTypedKana] = useState(() => initialSnapshot?.typedKana ?? "");
+  const [startTime, setStartTime] = useState(() => initialSnapshot?.startTime ?? 0);
+  const [endTime, setEndTime] = useState(() => initialSnapshot?.endTime ?? 0);
+  const [completedTotal, setCompletedTotal] = useState(() => initialSnapshot?.completedTotal ?? 0);
+  const [totalWordCount, setTotalWordCount] = useState(() => initialSnapshot?.totalWordCount ?? 0);
+  const [correctCount, setCorrectCount] = useState(() => initialSnapshot?.correctCount ?? 0);
+  const [assistedCount, setAssistedCount] = useState(() => initialSnapshot?.assistedCount ?? 0);
+  const [incorrectCount, setIncorrectCount] = useState(() => initialSnapshot?.incorrectCount ?? 0);
 
   // Word filter (SRS-based counts + filtering)
   const wordFilter = useWordFilter(listId);
   const [selectedFilter, setSelectedFilter] = useAtom(typingWordFilterAtom);
 
   // Full shuffled queue (entry IDs) — batches are pulled from front
-  const shuffledQueue = useRef<number[]>([]);
+  const shuffledQueue = useRef<number[]>(initialSnapshot?.shuffledQueue ?? []);
 
   // Per-word romaji answers for backspace-to-previous (reset each batch)
-  const answers = useRef<string[]>([]);
+  const answers = useRef<string[]>(initialSnapshot?.answers ?? []);
   // Flick keyboard detection: true when user is typing kana directly (not romaji)
-  const isKanaInput = useRef(false);
-  const [flickPendingState, setFlickPendingState] = useState(false);
+  const isKanaInput = useRef(initialSnapshot?.isKanaInput ?? false);
+  const [flickPendingState, setFlickPendingState] = useState(
+    () => initialSnapshot?.flickPendingState ?? false,
+  );
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const gameRef = useRef<View>(null);
   const wordYPositions = useRef<Map<number, number>>(new Map());
   const scrollOffset = useRef(0);
   const scrollViewHeight = useRef(0);
-  const wordStartTime = useRef(0);
-  const sessionIdRef = useRef("");
-  const correctCountRef = useRef(0);
+  const wordStartTime = useRef(initialSnapshot?.wordStartTime ?? 0);
+  const sessionIdRef = useRef(initialSnapshot?.sessionId ?? "");
+  const correctCountRef = useRef(initialSnapshot?.correctCountRef ?? 0);
 
   // Floating coins rendered outside ScrollView to avoid clipping
   const [floatingCoins, setFloatingCoins] = useState<FloatingCoin[]>([]);
@@ -399,6 +434,61 @@ export default function TypingGameScreen() {
   const removeCoin = useCallback((key: number) => {
     setFloatingCoins((prev) => prev.filter((c) => c.key !== key));
   }, []);
+
+  const clearSavedGame = useCallback(() => {
+    if (listKey) activeTypingGames.delete(listKey);
+  }, [listKey]);
+
+  useEffect(() => {
+    if (!listKey) return;
+
+    if (phase !== "playing") {
+      activeTypingGames.delete(listKey);
+      return;
+    }
+
+    activeTypingGames.set(listKey, {
+      phase,
+      settingsOpen,
+      autoFuriganaRevealed,
+      words,
+      currentWordIndex,
+      typedRomaji,
+      typedKana,
+      startTime,
+      endTime,
+      completedTotal,
+      totalWordCount,
+      correctCount,
+      assistedCount,
+      incorrectCount,
+      flickPendingState,
+      shuffledQueue: [...shuffledQueue.current],
+      answers: [...answers.current],
+      isKanaInput: isKanaInput.current,
+      wordStartTime: wordStartTime.current,
+      sessionId: sessionIdRef.current,
+      correctCountRef: correctCountRef.current,
+      sessionDirty: sessionDirtyRef.current,
+    });
+  }, [
+    listKey,
+    phase,
+    settingsOpen,
+    autoFuriganaRevealed,
+    words,
+    currentWordIndex,
+    typedRomaji,
+    typedKana,
+    startTime,
+    endTime,
+    completedTotal,
+    totalWordCount,
+    correctCount,
+    assistedCount,
+    incorrectCount,
+    flickPendingState,
+  ]);
 
   // ─── Dynamic batch size from screen dimensions ───
 
@@ -764,6 +854,7 @@ export default function TypingGameScreen() {
       <View className="flex-row items-center px-4 py-3 border-b border-border" style={webBgStyle}>
         <Pressable
           onPress={() => {
+            clearSavedGame();
             setNavigating(true);
             setTimeout(() => goBack(), 100);
           }}
@@ -982,6 +1073,7 @@ export default function TypingGameScreen() {
             <Button
               label="Play Again"
               onPress={() => {
+                clearSavedGame();
                 setPhase("select");
                 setWords([]);
                 setCurrentWordIndex(0);
@@ -992,6 +1084,7 @@ export default function TypingGameScreen() {
               label="Return to List"
               variant="outline"
               onPress={() => {
+                clearSavedGame();
                 setNavigating(true);
                 setTimeout(() => goBack(), 100);
               }}
