@@ -1,6 +1,6 @@
-import React, { useCallback } from "react";
-import { View, Pressable, Platform } from "react-native";
-import { useRouter, useNavigation } from "expo-router";
+import React, { useCallback, useRef } from "react";
+import { View, Pressable, Platform, TextInput } from "react-native";
+import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { CommonActions } from "@react-navigation/native";
 import { useSafeGoBack, headerBgClass } from "@/lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,6 +53,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
   const { extendedDb } = useDatabase();
   const router = useRouter();
   const navigation = useNavigation();
+  const inputRef = useRef<TextInput>(null);
   const isIndex = route.name === "index";
 
   const popToRoot = useCallback(() => {
@@ -84,6 +85,15 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
 
   const showInput = searchMode !== "radical";
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!isIndex || !showInput) return;
+
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
+    }, [isIndex, showInput]),
+  );
+
   return (
     <View
       style={{ paddingTop: Platform.OS === "web" ? 3 : insets.top }}
@@ -98,6 +108,7 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
 
         {showInput ? (
           <Input
+            ref={inputRef}
             className="flex-1"
             placeholder={MODE_PLACEHOLDERS[searchMode]}
             value={query}
