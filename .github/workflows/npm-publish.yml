@@ -1,0 +1,66 @@
+name: Publish npm packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - reader-webview
+          - japanese-reader-core
+          - japanese-reader
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  HUSKY: "0"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build packages
+        run: yarn build:packages
+
+      - name: Publish selected package
+        run: |
+          set -euo pipefail
+
+          publish_one() {
+            package_dir="$1"
+            (cd "$package_dir" && npm publish --access public --provenance)
+          }
+
+          case "${{ inputs.package }}" in
+            all)
+              publish_one packages/reader-webview
+              publish_one packages/japanese-reader-core
+              publish_one packages/japanese-reader
+              ;;
+            reader-webview)
+              publish_one packages/reader-webview
+              ;;
+            japanese-reader-core)
+              publish_one packages/japanese-reader-core
+              ;;
+            japanese-reader)
+              publish_one packages/japanese-reader
+              ;;
+          esac
