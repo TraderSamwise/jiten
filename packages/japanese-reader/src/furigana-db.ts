@@ -1,4 +1,4 @@
-import type { ReaderKanjiCharacter } from "@jiten/japanese-reader-core";
+import type { ReaderKanjiCharacter } from "@tradersamwise/japanese-reader-core";
 import type { ReaderSqlDb } from "./backend";
 
 interface KanjiReadingRow {

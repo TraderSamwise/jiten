@@ -39,19 +39,23 @@ export default defineConfig({
       // is platform-specific (.native.tsx / .web.tsx) — resolve to web for tests.
       "@/db/user-provider": path.resolve(__dirname, "db/user-provider.web.tsx"),
       "@/": path.resolve(__dirname, "") + "/",
-      "@jiten/japanese-reader": path.resolve(__dirname, "packages/japanese-reader/src/index.ts"),
-      "@jiten/japanese-reader/furigana-types": path.resolve(
+      "@tradersamwise/japanese-reader": path.resolve(
+        __dirname,
+        "packages/japanese-reader/src/index.ts",
+      ),
+      "@tradersamwise/japanese-reader/furigana-types": path.resolve(
         __dirname,
         "packages/japanese-reader/src/furigana-types.ts",
       ),
-      "@jiten/japanese-reader/": path.resolve(__dirname, "packages/japanese-reader/src") + "/",
-      "@jiten/japanese-reader-core": path.resolve(
+      "@tradersamwise/japanese-reader/":
+        path.resolve(__dirname, "packages/japanese-reader/src") + "/",
+      "@tradersamwise/japanese-reader-core": path.resolve(
         __dirname,
         "packages/japanese-reader-core/src/index.ts",
       ),
-      "@jiten/japanese-reader-core/":
+      "@tradersamwise/japanese-reader-core/":
         path.resolve(__dirname, "packages/japanese-reader-core/src") + "/",
-      "@jiten/reader-webview/": path.resolve(__dirname, "packages/reader-webview") + "/",
+      "@tradersamwise/reader-webview/": path.resolve(__dirname, "packages/reader-webview") + "/",
       "react-native": path.resolve(__dirname, "test/__mocks__/react-native.ts"),
       "@react-native-async-storage/async-storage": path.resolve(
         __dirname,

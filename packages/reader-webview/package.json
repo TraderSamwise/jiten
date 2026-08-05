@@ -1,11 +1,40 @@
 {
-  "name": "@jiten/reader-webview",
+  "name": "@tradersamwise/reader-webview",
   "version": "0.1.0",
-  "private": true,
+  "description": "Vanilla TypeScript WebView pagination and bridge runtime for Jiten's Japanese ebook reader.",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "AGPL-3.0-only",
   "exports": {
-    "./bundle": "./bundle.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./bundle": {
+      "types": "./dist/bundle.d.ts",
+      "import": "./dist/bundle.js",
+      "default": "./dist/bundle.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TraderSamwise/jiten.git",
+    "directory": "packages/reader-webview"
+  },
+  "bugs": {
+    "url": "https://github.com/TraderSamwise/jiten/issues"
+  },
+  "homepage": "https://github.com/TraderSamwise/jiten/tree/master/packages/reader-webview#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsx build.ts"

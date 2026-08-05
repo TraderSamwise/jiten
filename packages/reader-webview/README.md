@@ -1,4 +1,19 @@
-# Reader Rendering Engine
+# @tradersamwise/reader-webview
+
+Low-level WebView runtime for Jiten's vertical Japanese ebook reader.
+
+This package ships the JavaScript and CSS that run inside a React Native WebView
+or a web iframe. It owns pagination, gestures, text hit testing, highlighting,
+bookmark paint state, and the JSON bridge protocol. It does not own React Native
+screen UI, dictionary data, book storage, lookup, furigana resolution, sync, or
+auth.
+
+License: AGPL-3.0-only. See `LICENSE` and `NOTICE.md`.
+
+## Runtime Model
+
+The package builds `src/index.ts` into a single embedded runtime bundle exported
+from `@tradersamwise/reader-webview/bundle`.
 
 Developer documentation for the ebook reader's WebView rendering system. The reader displays Japanese vertical text with JS-driven pagination, virtualized content loading, and character-level position tracking.
 

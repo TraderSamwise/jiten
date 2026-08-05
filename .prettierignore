@@ -1,7 +1,15 @@
 node_modules/
 .expo/
+.aimux/
 dist/
+packages/*/dist/
 android/
 ios/
 *.lock
 data/rtk-primitives.json
+metro.config.js
+packages/reader-webview/bundle.ts
+packages/kanji-arena-webview/bundle.ts
+packages/kanji-arena-webview/src/font-data.ts
+packages/kanji-arena-webview/src/rtk/kanji-verbs.ts
+lib/share-extension/preprocessing.js

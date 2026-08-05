@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { renderHook, waitFor, act } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook, waitFor, act, cleanup } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KanjiPrimitive } from "@/db/types";
 
 const resolverMocks = vi.hoisted(() => ({ resolveKanjiWordCandidates: vi.fn() }));
@@ -39,6 +39,10 @@ const HOUSE = { target: "p51", keyword: "house", confidence: 1, source: "keyword
 beforeEach(() => {
   resolverMocks.resolveKanjiWordCandidates.mockReset();
   resolverMocks.resolveKanjiWordCandidates.mockResolvedValue(new Map([["house", [HOUSE]]]));
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe("useMnemonicSuggestor", () => {

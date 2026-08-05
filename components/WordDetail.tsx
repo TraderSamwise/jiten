@@ -30,7 +30,7 @@ import { BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { DictEntry } from "@/db/types";
-import { decomposeWord, type LookupResult } from "@jiten/japanese-reader";
+import { decomposeWord, type LookupResult } from "@tradersamwise/japanese-reader";
 import { useAuth } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { requestWordExampleSentences, type WordExampleSentences } from "@/lib/word-examples";

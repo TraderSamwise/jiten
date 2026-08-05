@@ -12,7 +12,7 @@ import {
   sliceContent,
   stripAozoraBoilerplate,
   type TextModel,
-} from "@jiten/japanese-reader-core";
+} from "@tradersamwise/japanese-reader-core";
 import type { JapaneseReaderBackend, ReaderBookSource } from "./backend";
 import { resolveBookmarkedWordSurfacesInHtml } from "./bookmarks";
 import {

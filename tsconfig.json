@@ -4,11 +4,11 @@
     "strict": true,
     "paths": {
       "@/*": ["./*"],
-      "@jiten/japanese-reader": ["./packages/japanese-reader/src/index.ts"],
-      "@jiten/japanese-reader/*": ["./packages/japanese-reader/src/*"],
-      "@jiten/reader-webview/*": ["./packages/reader-webview/*"],
-      "@jiten/japanese-reader-core": ["./packages/japanese-reader-core/src/index.ts"],
-      "@jiten/japanese-reader-core/*": ["./packages/japanese-reader-core/src/*"],
+      "@tradersamwise/japanese-reader": ["./packages/japanese-reader/src/index.ts"],
+      "@tradersamwise/japanese-reader/*": ["./packages/japanese-reader/src/*"],
+      "@tradersamwise/reader-webview/*": ["./packages/reader-webview/*"],
+      "@tradersamwise/japanese-reader-core": ["./packages/japanese-reader-core/src/index.ts"],
+      "@tradersamwise/japanese-reader-core/*": ["./packages/japanese-reader-core/src/*"],
       "@jiten/kanji-arena-webview/bundle": ["./packages/kanji-arena-webview/bundle.ts"],
       "@jiten/kanji-arena-webview/html": ["./packages/kanji-arena-webview/src/arena-html.ts"],
       "@jiten/kanji-arena-webview/protocol": ["./packages/kanji-arena-webview/src/protocol.ts"]

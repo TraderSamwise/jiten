@@ -5,7 +5,7 @@
  * so we duplicate the logic here for unit testing.
  */
 import { describe, it, expect } from "vitest";
-import { hasAozoraMarkup } from "@jiten/japanese-reader-core";
+import { hasAozoraMarkup } from "@tradersamwise/japanese-reader-core";
 import type {
   FuriganaMatchLevel,
   ReaderFuriganaRule,

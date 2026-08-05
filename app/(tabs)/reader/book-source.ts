@@ -1,4 +1,4 @@
-import type { ReaderBookRecord, ReaderBookSource } from "@jiten/japanese-reader";
+import type { ReaderBookRecord, ReaderBookSource } from "@tradersamwise/japanese-reader";
 
 function parseReaderBookRow(row: any): ReaderBookRecord {
   return {

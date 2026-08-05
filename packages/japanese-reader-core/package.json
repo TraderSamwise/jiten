@@ -1,15 +1,46 @@
 {
-  "name": "@jiten/japanese-reader-core",
+  "name": "@tradersamwise/japanese-reader-core",
   "version": "0.1.0",
-  "private": true,
+  "description": "Japanese ebook reader parsing, slicing, HTML generation, and progress helpers.",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "AGPL-3.0-only",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TraderSamwise/jiten.git",
+    "directory": "packages/japanese-reader-core"
+  },
+  "bugs": {
+    "url": "https://github.com/TraderSamwise/jiten/issues"
+  },
+  "homepage": "https://github.com/TraderSamwise/jiten/tree/master/packages/japanese-reader-core#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsx build.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@jiten/reader-webview": "0.1.0",
+    "@tradersamwise/reader-webview": "0.1.0",
     "wanakana": "^5.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.2"
   }
 }

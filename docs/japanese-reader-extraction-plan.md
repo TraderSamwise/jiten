@@ -41,12 +41,12 @@ This extraction should **not**:
 
 The extracted reader should be a high-level package:
 
-- `@jiten/japanese-reader`
+- `@tradersamwise/japanese-reader`
 
 It should sit on top of:
 
-- `@jiten/japanese-reader-core`
-- `@jiten/reader-webview`
+- `@tradersamwise/japanese-reader-core`
+- `@tradersamwise/reader-webview`
 
 ### What stays built in
 
@@ -156,7 +156,7 @@ We should **not** defer this API decision until later.
 
 ## Architecture Target
 
-### 1. `@jiten/japanese-reader-core`
+### 1. `@tradersamwise/japanese-reader-core`
 
 Already exists.
 
@@ -170,7 +170,7 @@ Owns:
 
 Must remain free of app stores, Expo screens, and concrete DB modules.
 
-### 2. `@jiten/reader-webview`
+### 2. `@tradersamwise/reader-webview`
 
 Already exists.
 
@@ -184,9 +184,9 @@ Owns:
 
 Must remain free of app stores, Expo screens, and concrete DB modules.
 
-### 3. `@jiten/japanese-reader`
+### 3. `@tradersamwise/japanese-reader`
 
-Missing package. This is the actual reusable product.
+Implemented package. This is the reusable Jiten-compatible reader product.
 
 Should own:
 
@@ -717,11 +717,11 @@ This package should remain strongly opinionated.
 
 ### Risk 4: wrong package naming / layering
 
-`@jiten/japanese-reader-core` and `@jiten/reader-webview` are siblings, not a stack.
+`@tradersamwise/japanese-reader-core` and `@tradersamwise/reader-webview` are siblings, not a stack.
 
 The current names are acceptable for now, but we should keep in mind:
 
-- `@jiten/japanese-reader` should likely be the public re-export surface
+- `@tradersamwise/japanese-reader` should likely be the public re-export surface
 - `-core` may later deserve a narrower name if it causes confusion about layering
 
 Do not rename packages in the first extraction pass. That is secondary to getting the seam right.

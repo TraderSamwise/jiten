@@ -4,8 +4,7 @@ Thanks for your interest in improving Jiten! This guide covers local setup, the
 development workflow, and the conventions the codebase follows.
 
 By contributing, you agree that your contributions are licensed under the project's
-license — **AGPL-3.0** for the app, and **MIT** for the reusable reader packages under
-`packages/reader-webview` and `packages/japanese-reader-core`.
+license — **AGPL-3.0** for the app and all published packages in this repository.
 
 ## Prerequisites
 

@@ -9,6 +9,7 @@ export default tseslint.config(
       ".expo/",
       ".vercel/",
       "dist/",
+      "packages/*/dist/",
       // Standalone Vite POC sub-project with its own tooling; its game source is
       // vendored into packages/kanji-arena-webview (which IS linted).
       "rtk-game/",

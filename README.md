@@ -96,8 +96,9 @@ db/             SQLite access, migrations, sync engine, providers
 lib/            Reader model, furigana, lookup, navigation, env, helpers
 stores/         Jotai / Zustand state
 packages/       Yarn workspaces:
-  reader-webview/         Vanilla-TS WebView pagination + bridge
-  japanese-reader-core/   Pure reader HTML / parsing / slicing
+  reader-webview/         @tradersamwise/reader-webview WebView runtime + bridge
+  japanese-reader-core/   @tradersamwise/japanese-reader-core HTML/parsing/slicing
+  japanese-reader/        @tradersamwise/japanese-reader reader controller + adapters
   kanji-arena-webview/    Phaser kanji-arena mini-game
 api/ , server/  Reference backend (Vercel functions / Hono server)
 scripts/        Dictionary + kanji + audio build pipeline
