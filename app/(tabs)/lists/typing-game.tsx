@@ -166,7 +166,11 @@ function WordBlock({
   const displayChars = [...displayText];
 
   let charStatuses: CharStatus[] = [];
-  if (isCurrent) {
+  if (completed && correct) {
+    charStatuses = targetChars.map(() => "correct" as CharStatus);
+  } else if (completed) {
+    charStatuses = targetChars.map(() => "wrong" as CharStatus);
+  } else if (isCurrent) {
     charStatuses = compareChars(typedKana, targetReading);
     // Flick keyboard: show last char as "pending" instead of "wrong"
     if (flickPending && charStatuses.length > 0) {
@@ -176,10 +180,6 @@ function WordBlock({
         charStatuses[lastIdx] = "pending";
       }
     }
-  } else if (completed && correct) {
-    charStatuses = targetChars.map(() => "correct" as CharStatus);
-  } else if (completed) {
-    charStatuses = targetChars.map(() => "wrong" as CharStatus);
   } else {
     charStatuses = targetChars.map(() => "untyped" as CharStatus);
   }
@@ -297,7 +297,7 @@ function WordBlock({
       {/* Display text — with glow on correct completion */}
       <View>
         {completed && correct && <GlowOverlay />}
-        {isCurrent ? (
+        {isCurrent && !completed ? (
           <View className="flex-row">
             {displayChars.map((char, i) => {
               const color = getKanjiColor(displayChars, charStatuses, targetChars.length, i);
