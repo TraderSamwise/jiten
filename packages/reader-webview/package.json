@@ -1,5 +1,5 @@
 {
-  "name": "@tradersamwise/reader-webview",
+  "name": "@tradersamwise/jiten-reader-webview",
   "version": "0.1.0",
   "description": "Vanilla TypeScript WebView pagination and bridge runtime for Jiten's Japanese ebook reader.",
   "type": "module",

@@ -19,7 +19,7 @@
     "build:rtk": "node scripts/kanji/extract-rtk-app-db.mjs",
     "build:strokes-primitives": "node scripts/kanji/build-strokes-primitives.mjs",
     "build:keyword-synonyms": "node scripts/kanji/build-keyword-synonyms.mjs",
-    "build:packages": "yarn workspace @tradersamwise/reader-webview build && yarn workspace @tradersamwise/japanese-reader-core build && yarn workspace @tradersamwise/japanese-reader build",
+    "build:packages": "yarn workspace @tradersamwise/jiten-reader-webview build && yarn workspace @tradersamwise/jiten-reader-core build && yarn workspace @tradersamwise/jiten-reader-react-native build",
     "build:reader": "npx tsx packages/reader-webview/build.ts",
     "build:arena": "npx tsx packages/kanji-arena-webview/build.ts",
     "build:preprocessing": "npx tsx lib/share-extension/build-preprocessing.ts",
@@ -58,8 +58,8 @@
     "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs"
   },
   "dependencies": {
-    "@tradersamwise/japanese-reader": "0.1.0",
-    "@tradersamwise/japanese-reader-core": "0.1.0",
+    "@tradersamwise/jiten-reader-react-native": "0.1.0",
+    "@tradersamwise/jiten-reader-core": "0.1.0",
     "@clerk/clerk-expo": "^2.19.22",
     "@expo/vector-icons": "^15.0.3",
     "@hono/node-server": "^2.0.8",

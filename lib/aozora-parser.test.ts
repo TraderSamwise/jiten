@@ -10,7 +10,7 @@ import {
   hasAozoraMarkup,
   parseAozoraToHtml,
   plainTextToHtml,
-} from "@tradersamwise/japanese-reader-core";
+} from "@tradersamwise/jiten-reader-core";
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. RUBY ANNOTATIONS (FURIGANA)

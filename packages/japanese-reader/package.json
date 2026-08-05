@@ -1,5 +1,5 @@
 {
-  "name": "@tradersamwise/japanese-reader",
+  "name": "@tradersamwise/jiten-reader-react-native",
   "version": "0.1.0",
   "description": "Reusable Jiten-compatible Japanese ebook reader controller, lookup, furigana, and reader view components.",
   "type": "module",
@@ -61,8 +61,8 @@
     "build": "tsx build.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@tradersamwise/japanese-reader-core": "0.1.0",
-    "@tradersamwise/reader-webview": "0.1.0",
+    "@tradersamwise/jiten-reader-core": "0.1.0",
+    "@tradersamwise/jiten-reader-webview": "0.1.0",
     "wanakana": "^5.3.1"
   },
   "peerDependencies": {

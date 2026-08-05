@@ -1,4 +1,4 @@
-# @tradersamwise/japanese-reader-core
+# @tradersamwise/jiten-reader-core
 
 Japanese reader helpers shared by the Jiten app and standalone Jiten-compatible
 reader integrations.
@@ -14,7 +14,7 @@ app stores, sync, auth, or concrete SQLite modules:
 - Kanji reading-pattern classification
 
 `generateReaderHtml` embeds the runtime bundle from
-`@tradersamwise/reader-webview`. Dictionary, name, kanji, and furigana data access
+`@tradersamwise/jiten-reader-webview`. Dictionary, name, kanji, and furigana data access
 stay outside this package. Add adapter interfaces in the high-level reader package
 when reusable code needs data, then let the host app provide concrete
 implementations.

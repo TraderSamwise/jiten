@@ -10,5 +10,5 @@ await build({
   format: "esm",
   platform: "neutral",
   target: "es2020",
-  external: ["@tradersamwise/reader-webview/bundle", "wanakana"],
+  external: ["@tradersamwise/jiten-reader-webview/bundle", "wanakana"],
 });

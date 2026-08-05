@@ -11,7 +11,7 @@
     "noEmit": false,
     "outDir": "dist",
     "paths": {
-      "@tradersamwise/reader-webview/bundle": ["../reader-webview/dist/bundle.d.ts"]
+      "@tradersamwise/jiten-reader-webview/bundle": ["../reader-webview/dist/bundle.d.ts"]
     },
     "rootDir": "src",
     "skipLibCheck": true,

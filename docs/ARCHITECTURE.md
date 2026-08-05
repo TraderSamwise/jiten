@@ -63,11 +63,11 @@ Current personal-account identifiers:
 
 The Expo app remains at the repository root. Reusable reader code lives in Yarn workspace packages:
 
-| Package                               | Path                            | Purpose                                                                 |
-| ------------------------------------- | ------------------------------- | ----------------------------------------------------------------------- |
-| `@tradersamwise/reader-webview`       | `packages/reader-webview`       | Vanilla TypeScript WebView pagination, selection, highlight, and bridge |
-| `@tradersamwise/japanese-reader-core` | `packages/japanese-reader-core` | Reader HTML, text slicing, progress, toolbar, and reading helpers       |
-| `@tradersamwise/japanese-reader`      | `packages/japanese-reader`      | Jiten-compatible reader controller, lookup, furigana, and ReaderView    |
+| Package                                    | Path                            | Purpose                                                                 |
+| ------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------- |
+| `@tradersamwise/jiten-reader-webview`      | `packages/reader-webview`       | Vanilla TypeScript WebView pagination, selection, highlight, and bridge |
+| `@tradersamwise/jiten-reader-core`         | `packages/japanese-reader-core` | Reader HTML, text slicing, progress, toolbar, and reading helpers       |
+| `@tradersamwise/jiten-reader-react-native` | `packages/japanese-reader`      | Jiten-compatible reader controller, lookup, furigana, and ReaderView    |
 
 Packages must not import app stores, Expo Router screens, or concrete app
 database modules. The high-level reader package owns a SQL-shaped

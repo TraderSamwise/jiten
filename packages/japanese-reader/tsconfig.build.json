@@ -11,9 +11,9 @@
     "noEmit": false,
     "outDir": "dist",
     "paths": {
-      "@tradersamwise/japanese-reader-core": ["../japanese-reader-core/dist/index.d.ts"],
-      "@tradersamwise/reader-webview": ["../reader-webview/dist/index.d.ts"],
-      "@tradersamwise/reader-webview/bundle": ["../reader-webview/dist/bundle.d.ts"]
+      "@tradersamwise/jiten-reader-core": ["../japanese-reader-core/dist/index.d.ts"],
+      "@tradersamwise/jiten-reader-webview": ["../reader-webview/dist/index.d.ts"],
+      "@tradersamwise/jiten-reader-webview/bundle": ["../reader-webview/dist/bundle.d.ts"]
     },
     "rootDir": "src",
     "skipLibCheck": true,

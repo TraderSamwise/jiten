@@ -1,5 +1,5 @@
 {
-  "name": "@tradersamwise/japanese-reader-core",
+  "name": "@tradersamwise/jiten-reader-core",
   "version": "0.1.0",
   "description": "Japanese ebook reader parsing, slicing, HTML generation, and progress helpers.",
   "type": "module",
@@ -35,7 +35,7 @@
     "build": "tsx build.ts && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@tradersamwise/reader-webview": "0.1.0",
+    "@tradersamwise/jiten-reader-webview": "0.1.0",
     "wanakana": "^5.3.1"
   },
   "devDependencies": {

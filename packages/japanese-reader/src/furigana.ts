@@ -11,7 +11,7 @@ import type { ReaderSqlDb } from "./backend";
 import {
   classifyReaderReadingPattern,
   type ReaderReadingPattern,
-} from "@tradersamwise/japanese-reader-core";
+} from "@tradersamwise/jiten-reader-core";
 import {
   defaultReaderFuriganaSettings,
   type FuriganaEntry,

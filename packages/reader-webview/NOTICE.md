@@ -1,6 +1,6 @@
 # Notices
 
-`@tradersamwise/reader-webview` is part of Jiten and is licensed under
+`@tradersamwise/jiten-reader-webview` is part of Jiten and is licensed under
 AGPL-3.0-only.
 
 This package does not include dictionary data, book content, user data, or

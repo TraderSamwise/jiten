@@ -1,9 +1,9 @@
 # Notices
 
-`@tradersamwise/japanese-reader-core` is part of Jiten and is licensed under
+`@tradersamwise/jiten-reader-core` is part of Jiten and is licensed under
 AGPL-3.0-only.
 
-This package depends on `@tradersamwise/reader-webview` for reader HTML runtime
+This package depends on `@tradersamwise/jiten-reader-webview` for reader HTML runtime
 embedding. It does not include dictionary databases, book content, user data, or
 network services.
 

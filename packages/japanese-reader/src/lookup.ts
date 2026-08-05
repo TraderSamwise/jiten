@@ -1,4 +1,4 @@
-import { classifyReaderReadingPattern } from "@tradersamwise/japanese-reader-core";
+import { classifyReaderReadingPattern } from "@tradersamwise/jiten-reader-core";
 import { toHiragana } from "wanakana";
 import {
   AUTO_DUAL_MIN_MATCH_LENGTH,

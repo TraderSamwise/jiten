@@ -57,8 +57,8 @@ import {
   type ReaderBookmarkMembership,
   getSelectionToolbarPosition,
   useJapaneseReader,
-} from "@tradersamwise/japanese-reader";
-import { ReaderView } from "@tradersamwise/japanese-reader/reader-view";
+} from "@tradersamwise/jiten-reader-react-native";
+import { ReaderView } from "@tradersamwise/jiten-reader-react-native/reader-view";
 import { createJitenReaderBookSource } from "./book-source";
 
 const TOOLBAR_GAP = 24;

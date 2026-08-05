@@ -1,4 +1,4 @@
-# @tradersamwise/reader-webview
+# @tradersamwise/jiten-reader-webview
 
 Low-level WebView runtime for Jiten's vertical Japanese ebook reader.
 
@@ -13,7 +13,7 @@ License: AGPL-3.0-only. See `LICENSE` and `NOTICE.md`.
 ## Runtime Model
 
 The package builds `src/index.ts` into a single embedded runtime bundle exported
-from `@tradersamwise/reader-webview/bundle`.
+from `@tradersamwise/jiten-reader-webview/bundle`.
 
 Developer documentation for the ebook reader's WebView rendering system. The reader displays Japanese vertical text with JS-driven pagination, virtualized content loading, and character-level position tracking.
 

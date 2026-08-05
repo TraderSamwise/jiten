@@ -1,4 +1,4 @@
-import type { ReaderBookRecord, ReaderBookSource } from "@tradersamwise/japanese-reader";
+import type { ReaderBookRecord, ReaderBookSource } from "@tradersamwise/jiten-reader-react-native";
 
 function parseReaderBookRow(row: any): ReaderBookRecord {
   return {

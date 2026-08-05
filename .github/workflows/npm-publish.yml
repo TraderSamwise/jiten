@@ -10,9 +10,9 @@ on:
         type: choice
         options:
           - all
-          - reader-webview
-          - japanese-reader-core
-          - japanese-reader
+          - jiten-reader-webview
+          - jiten-reader-core
+          - jiten-reader-react-native
 
 permissions:
   contents: read
@@ -54,13 +54,13 @@ jobs:
               publish_one packages/japanese-reader-core
               publish_one packages/japanese-reader
               ;;
-            reader-webview)
+            jiten-reader-webview)
               publish_one packages/reader-webview
               ;;
-            japanese-reader-core)
+            jiten-reader-core)
               publish_one packages/japanese-reader-core
               ;;
-            japanese-reader)
+            jiten-reader-react-native)
               publish_one packages/japanese-reader
               ;;
           esac

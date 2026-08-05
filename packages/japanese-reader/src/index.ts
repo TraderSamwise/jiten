@@ -17,7 +17,7 @@ export {
   defaultReaderFuriganaRuleLevels,
   defaultReaderFuriganaSettings,
 } from "./furigana-types";
-export { getSelectionToolbarPosition } from "@tradersamwise/japanese-reader-core";
+export { getSelectionToolbarPosition } from "@tradersamwise/jiten-reader-core";
 export {
   autoLookup,
   autoLookupWithOffset,

@@ -2,8 +2,8 @@ import { copyFile, rm } from "fs/promises";
 import { build } from "esbuild";
 
 const external = [
-  "@tradersamwise/japanese-reader-core",
-  "@tradersamwise/reader-webview",
+  "@tradersamwise/jiten-reader-core",
+  "@tradersamwise/jiten-reader-webview",
   "react",
   "react-native",
   "react-native-webview",

@@ -1,6 +1,6 @@
 # Notices
 
-`@tradersamwise/japanese-reader` is part of Jiten and is licensed under
+`@tradersamwise/jiten-reader-react-native` is part of Jiten and is licensed under
 AGPL-3.0-only.
 
 The deinflection rule engine in this package is modeled on the deinflection

@@ -18,7 +18,7 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { NameEntry } from "@/db/types";
 import type { ReaderSentenceExplanationState } from "@/lib/reader-explain";
-import type { LookupResult } from "@tradersamwise/japanese-reader";
+import type { LookupResult } from "@tradersamwise/jiten-reader-react-native";
 
 const NAME_TYPE_LABELS: Record<string, string> = {
   surname: "Surname",

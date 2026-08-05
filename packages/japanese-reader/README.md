@@ -1,4 +1,4 @@
-# @tradersamwise/japanese-reader
+# @tradersamwise/jiten-reader-react-native
 
 Reusable Jiten-compatible Japanese ebook reader controller.
 
@@ -24,7 +24,7 @@ to provide a compatible React Native / React Native Web runtime.
 
 ## Platform Host
 
-Import `ReaderView` from `@tradersamwise/japanese-reader/reader-view`.
+Import `ReaderView` from `@tradersamwise/jiten-reader-react-native/reader-view`.
 
 - React Native resolves the `react-native` export to `react-native-webview`.
 - Web resolves the default export to a sandboxed iframe host with the same bridge.
