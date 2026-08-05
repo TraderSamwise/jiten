@@ -142,8 +142,8 @@ function WordBlock({
 }) {
   const router = useRouter();
   const blockRef = useRef<View>(null);
-  const hasFired = useRef(false);
   const { entry, completed, correct } = word;
+  const previousCompleted = useRef(completed);
   const displayText = getDisplayText(entry);
   const targetReading = getTargetReading(entry);
 
@@ -227,12 +227,14 @@ function WordBlock({
 
   // Measure position and spawn floating coin when word completes
   useEffect(() => {
+    const wasCompleted = previousCompleted.current;
+    previousCompleted.current = completed;
+
     if (!completed) {
-      hasFired.current = false;
       return;
     }
-    if (!hasFired.current && onCoinSpawn) {
-      hasFired.current = true;
+
+    if (!wasCompleted && onCoinSpawn) {
       blockRef.current?.measureInWindow((x, y, w) => {
         onCoinSpawn({
           key: entry.id,
