@@ -43,12 +43,12 @@ import {
   getTargetReading,
   getDisplayText,
   getEnglishGloss,
+  getAcceptedReadings,
   compareChars,
-  isReadingComplete,
   getKanjiColor,
-  hasFlickPending,
   type CharStatus,
 } from "@/lib/typing-utils";
+import { applyFlickPendingOverride, evaluateTypingInput } from "@/lib/typing-core";
 import { useAtom } from "jotai";
 import {
   typingFuriganaModeAtom,
@@ -171,15 +171,11 @@ function WordBlock({
   } else if (completed) {
     charStatuses = targetChars.map(() => "wrong" as CharStatus);
   } else if (isCurrent) {
-    charStatuses = compareChars(typedKana, targetReading);
-    // Flick keyboard: show last char as "pending" instead of "wrong"
-    if (flickPending && charStatuses.length > 0) {
-      const lastIdx = [...typedKana].length - 1;
-      if (lastIdx >= 0 && lastIdx < charStatuses.length && charStatuses[lastIdx] === "wrong") {
-        charStatuses = [...charStatuses];
-        charStatuses[lastIdx] = "pending";
-      }
-    }
+    charStatuses = applyFlickPendingOverride(
+      compareChars(typedKana, targetReading),
+      typedKana,
+      !!flickPending,
+    );
   } else {
     charStatuses = targetChars.map(() => "untyped" as CharStatus);
   }
@@ -748,48 +744,38 @@ export default function TypingGameScreen() {
     }
 
     setTypedRomaji(raw);
-    const converted = romajiToKana(raw);
-    setTypedKana(converted);
 
     const currentEntry = words[currentWordIndex].entry;
     const target = getTargetReading(currentEntry);
+    const { converted, statuses, flickPending, isCorrect, overrun } = evaluateTypingInput({
+      raw,
+      target,
+      acceptedReadings: getAcceptedReadings(currentEntry),
+      isKanaInput: isKanaInput.current,
+    });
 
-    // Check if last character is in a flick-pending state (e.g. か composing to が)
-    const flickPending = isKanaInput.current && hasFlickPending(converted, target);
+    setTypedKana(converted);
     setFlickPendingState(flickPending);
 
     // Auto-furigana: reveal on mistype (but not if flick-pending)
     if (furiganaMode === "auto" && !autoFuriganaRevealed) {
-      const statuses = compareChars(converted, target);
       if (statuses.some((s) => s === "wrong") && !flickPending) {
         setAutoFuriganaRevealed(true);
       }
     }
-
-    const isCorrect =
-      isReadingComplete(converted, currentEntry) || isReadingComplete(raw, currentEntry);
 
     if (isCorrect) {
       advanceWord(raw, true);
       return;
     }
 
-    // If fully-converted kana count >= target reading length, move on even if wrong.
-    // Only count actual kana chars — exclude unconverted ASCII romaji (e.g. trailing "d" in "いd")
-    const targetLen = [...target].length;
-    const kanaCount = [...converted].filter((ch) => {
-      const code = ch.charCodeAt(0);
-      return code >= 0x3040 && code <= 0x30ff;
-    }).length;
-    if (kanaCount >= targetLen && targetLen > 0) {
-      // Don't auto-advance if the last char is a flick intermediate (e.g. か → が)
-      if (flickPending) return;
+    if (overrun) {
       advanceWord(raw, false);
       return;
     }
 
     // Diagnostic: log when input isn't matching so we can debug the rare stuck state
-    if (__DEV__ && converted.length >= 3) {
+    if (__DEV__ && !flickPending && converted.length >= 3) {
       console.warn("[TypingGame] no match", {
         typed: converted,
         target: getTargetReading(currentEntry),

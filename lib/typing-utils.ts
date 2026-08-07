@@ -80,14 +80,19 @@ export function compareChars(typedKana: string, target: string): CharStatus[] {
   return result;
 }
 
-export function isReadingComplete(typedKana: string, entry: DictEntry): boolean {
+/** Accepted-answer check against plain strings — the entry-free core of `isReadingComplete`. */
+export function isReadingCompleteFor(typedKana: string, acceptedReadings: string[]): boolean {
   const normalizedTyped = toHira(norm(typedKana));
-  const readings = entry.kana.map((k) => k.text);
-  const kanjiTexts = entry.kanji.map((k) => k.text);
-  return (
-    readings.some((r) => toHira(norm(r)) === normalizedTyped) ||
-    kanjiTexts.some((k) => toHira(norm(k)) === normalizedTyped)
-  );
+  return acceptedReadings.some((r) => toHira(norm(r)) === normalizedTyped);
+}
+
+export function isReadingComplete(typedKana: string, entry: DictEntry): boolean {
+  return isReadingCompleteFor(typedKana, getAcceptedReadings(entry));
+}
+
+/** Every string that counts as a correct answer for an entry: its readings and its kanji forms. */
+export function getAcceptedReadings(entry: DictEntry): string[] {
+  return [...entry.kana.map((k) => k.text), ...entry.kanji.map((k) => k.text)];
 }
 
 export function isValidPrefix(typedKana: string, entry: DictEntry): boolean {

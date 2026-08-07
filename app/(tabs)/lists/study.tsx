@@ -48,12 +48,13 @@ import {
   romajiToKana,
   getTargetReading,
   getDisplayText,
+  getAcceptedReadings,
   compareChars,
-  isReadingComplete,
   getKanjiColor,
   hasFlickPending,
   type CharStatus,
 } from "@/lib/typing-utils";
+import { applyFlickPendingOverride, evaluateTypingInput } from "@/lib/typing-core";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { getUserDrizzle } from "@/db/drizzle";
@@ -208,15 +209,11 @@ function TypingInput({
   // Compute char statuses from current typed kana
   const converted = romajiToKana(typedRomaji);
   const flickPending = isKanaInput && hasFlickPending(converted, targetReading);
-
-  let charStatuses: CharStatus[] = compareChars(converted, targetReading);
-  if (flickPending && charStatuses.length > 0) {
-    const lastIdx = [...converted].length - 1;
-    if (lastIdx >= 0 && lastIdx < charStatuses.length && charStatuses[lastIdx] === "wrong") {
-      charStatuses = [...charStatuses];
-      charStatuses[lastIdx] = "pending";
-    }
-  }
+  const charStatuses: CharStatus[] = applyFlickPendingOverride(
+    compareChars(converted, targetReading),
+    converted,
+    flickPending,
+  );
 
   // Pitch accent data
   const pitch = entry.pitchAccents.find((pa) => pa.reading === targetReading);
@@ -269,34 +266,34 @@ function TypingInput({
     }
 
     setTypedRomaji(raw);
-    const conv = romajiToKana(raw);
 
-    const isFlickPending = kanaInput && hasFlickPending(conv, targetReading);
+    const {
+      statuses,
+      flickPending: isFlickPending,
+      isCorrect,
+      overrun,
+    } = evaluateTypingInput({
+      raw,
+      target: targetReading,
+      acceptedReadings: getAcceptedReadings(entry),
+      isKanaInput: kanaInput,
+    });
 
     // Auto-furigana: reveal on mistype (but not if flick-pending)
     if (frontFaceIsKanji && !furiganaRevealed) {
-      const statuses = compareChars(conv, targetReading);
       if (statuses.some((s) => s === "wrong") && !isFlickPending) {
         setFuriganaRevealed(true);
       }
     }
 
-    // Check complete
-    if (isReadingComplete(conv, entry) || isReadingComplete(raw, entry)) {
+    if (isCorrect) {
       setDone(true);
       inputRef.current?.blur();
       onComplete(true);
       return;
     }
 
-    // Over-length check: kana count >= target length -> fail
-    const targetLen = targetChars.length;
-    const kanaCount = [...conv].filter((ch) => {
-      const code = ch.charCodeAt(0);
-      return code >= 0x3040 && code <= 0x30ff;
-    }).length;
-    if (kanaCount >= targetLen && targetLen > 0) {
-      if (isFlickPending) return;
+    if (overrun) {
       setDone(true);
       inputRef.current?.blur();
       onComplete(false);
