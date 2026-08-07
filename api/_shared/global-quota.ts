@@ -49,10 +49,22 @@ function getClient(): Client {
   return client;
 }
 
+function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`global quota ${label} timed out`)), TIMEOUT_MS),
+    ),
+  ]);
+}
+
 async function ensureTable(db: Client): Promise<void> {
   if (tableReady) return;
-  await db.execute(
-    `CREATE TABLE IF NOT EXISTS ${TABLE} (day TEXT PRIMARY KEY, count INTEGER NOT NULL)`,
+  await withTimeout(
+    db.execute(
+      `CREATE TABLE IF NOT EXISTS ${TABLE} (day TEXT PRIMARY KEY, count INTEGER NOT NULL)`,
+    ),
+    "schema check",
   );
   tableReady = true;
 }
@@ -96,24 +108,22 @@ export async function consumeGlobalDailyQuota(units: number): Promise<GlobalQuot
   try {
     const db = getClient();
     await ensureTable(db);
-    const result = await Promise.race([
+    const result = await withTimeout(
       db.execute({
         sql: `INSERT INTO ${TABLE} (day, count) VALUES (:day, :cost)
               ON CONFLICT(day) DO UPDATE SET count = count + :cost
               WHERE count + :cost <= :limit`,
         args: { day, cost, limit },
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("global quota timeout")), TIMEOUT_MS),
-      ),
-    ]);
+      "write",
+    );
     rowsAffected = result.rowsAffected;
 
     if (rowsAffected > 0) {
-      const row = await db.execute({
-        sql: `SELECT count FROM ${TABLE} WHERE day = :day`,
-        args: { day },
-      });
+      const row = await withTimeout(
+        db.execute({ sql: `SELECT count FROM ${TABLE} WHERE day = :day`, args: { day } }),
+        "read-back",
+      );
       used = Number(row.rows[0]?.count ?? 0);
     }
   } catch (err) {

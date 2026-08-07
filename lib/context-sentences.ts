@@ -145,6 +145,9 @@ export function filterPlayableSentences(
 // against are the same strings the server echoed back.
 const MAX_WORDS_PER_REQUEST = 5;
 const MAX_WORD_LENGTH = 80;
+// Past the server's own 35s model timeout and its 60s function ceiling, so a
+// request that never answers surfaces as an error instead of an endless spinner.
+const REQUEST_TIMEOUT_MS = 70_000;
 
 export interface ContextSentenceRequestWord {
   word: string;
@@ -207,18 +210,21 @@ export async function requestContextSentences({
   const perWord = sentencesPerWord == null ? undefined : clamp(sentencesPerWord, 1, 3);
 
   const client = createApiClient(apiBaseUrl, token);
-  const response = await client.api.words["context-sentences"].$post({
-    json: {
-      words: trimmed.map((entry) => ({
-        word: entry.word,
-        reading: entry.reading ?? undefined,
-        glosses: entry.glosses ?? undefined,
-        partOfSpeech: entry.partOfSpeech ?? undefined,
-        jlptLevel: entry.jlptLevel == null ? undefined : clamp(entry.jlptLevel, 1, 5),
-      })),
-      sentencesPerWord: perWord,
+  const response = await client.api.words["context-sentences"].$post(
+    {
+      json: {
+        words: trimmed.map((entry) => ({
+          word: entry.word,
+          reading: entry.reading ?? undefined,
+          glosses: entry.glosses ?? undefined,
+          partOfSpeech: entry.partOfSpeech ?? undefined,
+          jlptLevel: entry.jlptLevel == null ? undefined : clamp(entry.jlptLevel, 1, 5),
+        })),
+        sentencesPerWord: perWord,
+      },
     },
-  });
+    { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+  );
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {

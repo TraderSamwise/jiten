@@ -145,6 +145,21 @@ export function incrementDailyUsage({
   };
 }
 
+// This counter lives in Clerk, so every AI request makes two Clerk round trips
+// before any work starts. Unbounded, a stalled Clerk call holds the whole request
+// until the platform kills it — which is exactly how AI features hung in
+// production: a 60s FUNCTION_INVOCATION_TIMEOUT rather than any error.
+const CLERK_TIMEOUT_MS = 5_000;
+
+function withClerkTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`clerk ${label} timed out`)), CLERK_TIMEOUT_MS),
+    ),
+  ]);
+}
+
 export async function consumeDailyUserQuota(
   userId: string,
   endpoint: ApiQuotaEndpoint,
@@ -156,23 +171,30 @@ export async function consumeDailyUserQuota(
   const cost = getEndpointCost(endpoint);
 
   try {
-    const user = await client.users.getUser(userId);
+    const user = await withClerkTimeout(client.users.getUser(userId), "getUser");
     const currentMetadata = user.privateMetadata ?? {};
     const usage = readStoredApiUsage(currentMetadata);
     const { nextUsage, result } = incrementDailyUsage({ usage, bucket, day, limit, cost });
 
-    await client.users.updateUserMetadata(userId, {
-      privateMetadata: {
-        ...currentMetadata,
-        [METADATA_KEY]: nextUsage,
-      },
-    });
+    await withClerkTimeout(
+      client.users.updateUserMetadata(userId, {
+        privateMetadata: {
+          ...currentMetadata,
+          [METADATA_KEY]: nextUsage,
+        },
+      }),
+      "updateUserMetadata",
+    );
 
     return result;
   } catch (err) {
+    // A real quota rejection still refuses the request.
     if (err instanceof ApiError) throw err;
-    console.error("[api-rate-limit] Could not update quota:", err);
-    throw new ApiError(503, "Could not verify usage quota");
+    // An unreachable counter degrades instead of blocking: the service-wide cap
+    // (api/_shared/global-quota.ts) still bounds spend, so per-user accounting is
+    // the safer thing to lose. Loud, because it means limits aren't being recorded.
+    console.error(`[api-rate-limit] DEGRADED — per-user quota not recorded for ${endpoint}:`, err);
+    return { limit, remaining: limit - cost, resetAt: getDailyResetEpochSeconds(day), cost };
   }
 }
 
