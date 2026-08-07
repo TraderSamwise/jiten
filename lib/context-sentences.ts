@@ -1,3 +1,6 @@
+import { createApiClient } from "./api-client";
+import { getApiErrorMessage } from "./api-error";
+
 export interface ContextSentence {
   /** Full Japanese sentence containing the target word written in kanji. */
   sentence: string;
@@ -136,4 +139,96 @@ export function filterPlayableSentences(
     }
   }
   return { items: cleaned };
+}
+
+// Mirrors the caps in wordsContextRequestSchema so the words the client filters
+// against are the same strings the server echoed back.
+const MAX_WORDS_PER_REQUEST = 5;
+const MAX_WORD_LENGTH = 80;
+
+export interface ContextSentenceRequestWord {
+  word: string;
+  reading?: string | null;
+  glosses?: string[];
+  partOfSpeech?: string[];
+  jlptLevel?: number | null;
+}
+
+/** Thrown when the daily AI quota is spent, so a caller can stop prefetching. */
+export class ContextSentenceQuotaError extends Error {
+  readonly code = "quota_exceeded";
+  readonly name = "ContextSentenceQuotaError";
+}
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(value)));
+
+export async function requestContextSentences({
+  apiBaseUrl,
+  getToken,
+  words,
+  sentencesPerWord,
+}: {
+  apiBaseUrl?: string;
+  getToken: () => Promise<string | null>;
+  words: ContextSentenceRequestWord[];
+  sentencesPerWord?: number;
+}): Promise<ContextSentences> {
+  const trimmed = words
+    .map((entry) => ({ ...entry, word: entry.word.trim().slice(0, MAX_WORD_LENGTH) }))
+    .filter((entry) => entry.word.length > 0);
+
+  if (trimmed.length === 0) {
+    throw new Error("Choose a word to generate sentences.");
+  }
+  if (trimmed.length > MAX_WORDS_PER_REQUEST) {
+    throw new Error(`Request at most ${MAX_WORDS_PER_REQUEST} words at a time.`);
+  }
+  if (!apiBaseUrl) {
+    throw new Error("API base URL is not configured.");
+  }
+
+  const token = await getToken();
+  if (!token) {
+    throw new Error("Sign in to generate sentences.");
+  }
+
+  // Clamped rather than forwarded raw: these are range-validated server-side, so
+  // an out-of-range value would 400 the whole batch.
+  const perWord = sentencesPerWord == null ? undefined : clamp(sentencesPerWord, 1, 3);
+
+  const client = createApiClient(apiBaseUrl, token);
+  const response = await client.api.words["context-sentences"].$post({
+    json: {
+      words: trimmed.map((entry) => ({
+        word: entry.word,
+        reading: entry.reading ?? undefined,
+        glosses: entry.glosses ?? undefined,
+        partOfSpeech: entry.partOfSpeech ?? undefined,
+        jlptLevel: entry.jlptLevel == null ? undefined : clamp(entry.jlptLevel, 1, 5),
+      })),
+      sentencesPerWord: perWord,
+    },
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = getApiErrorMessage(body, "Could not generate sentences.");
+    if ((body as { code?: string } | null)?.code === "quota_exceeded") {
+      throw new ContextSentenceQuotaError(message);
+    }
+    throw new Error(message);
+  }
+
+  // Re-filtered here too: the renderer slices sentences by the target surface, so
+  // an unplayable one must never reach it, whatever the server returned.
+  const result = filterPlayableSentences(
+    (body as { result?: unknown } | null)?.result,
+    trimmed.map((entry) => entry.word),
+    perWord,
+  );
+  if (result.items.length === 0) {
+    throw new Error("Sentence response was malformed.");
+  }
+  return result;
 }

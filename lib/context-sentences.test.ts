@@ -1,10 +1,16 @@
-import { describe, test, expect } from "vitest";
+import { afterEach, describe, test, expect, vi } from "vitest";
 
 import {
+  ContextSentenceQuotaError,
   filterPlayableSentences,
   isPlayableContextSentence,
   matchesHeadword,
+  requestContextSentences,
 } from "./context-sentences";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const valid = {
   sentence: "毎朝パンを食べました。",
@@ -244,5 +250,146 @@ describe("filterPlayableSentences", () => {
     expect(
       filterPlayableSentences({ items: [{ word: "", sentences: [valid] }] }, requested),
     ).toEqual({ items: [] });
+  });
+});
+
+describe("requestContextSentences", () => {
+  const payload = { items: [{ word: "食べる", sentences: [valid] }] };
+
+  function stubFetch(response: { ok: boolean; json: () => Promise<unknown> }) {
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  test("posts the batch with auth and returns playable sentences", async () => {
+    const fetchMock = stubFetch({ ok: true, json: async () => ({ result: payload }) });
+
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: [{ word: "  食べる  ", reading: "たべる", glosses: ["to eat"], jlptLevel: 5 }],
+        sentencesPerWord: 2,
+      }),
+    ).resolves.toEqual(payload);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.com/api/words/context-sentences");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer token");
+    expect(JSON.parse(init.body)).toEqual({
+      words: [{ word: "食べる", reading: "たべる", glosses: ["to eat"], jlptLevel: 5 }],
+      sentencesPerWord: 2,
+    });
+  });
+
+  test("omits sentencesPerWord when unset and clamps it when out of range", async () => {
+    const fetchMock = stubFetch({ ok: true, json: async () => ({ result: payload }) });
+
+    await requestContextSentences({
+      apiBaseUrl: "https://api.example.com",
+      getToken: async () => "token",
+      words: [{ word: "食べる" }],
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      words: [{ word: "食べる" }],
+    });
+
+    await requestContextSentences({
+      apiBaseUrl: "https://api.example.com",
+      getToken: async () => "token",
+      words: [{ word: "食べる", jlptLevel: 9 }],
+      sentencesPerWord: 7,
+    });
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(second.sentencesPerWord).toBe(3);
+    expect(second.words[0].jlptLevel).toBe(5);
+  });
+
+  test("rejects an empty batch before hitting the network", async () => {
+    const fetchMock = stubFetch({ ok: true, json: async () => ({ result: payload }) });
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: [{ word: "   " }],
+      }),
+    ).rejects.toThrow("Choose a word");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("rejects a batch larger than the server accepts", async () => {
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: Array.from({ length: 6 }, (_, i) => ({ word: `語${i}` })),
+      }),
+    ).rejects.toThrow("at most 5 words");
+  });
+
+  test("requires configuration and a token", async () => {
+    await expect(
+      requestContextSentences({ getToken: async () => "token", words: [{ word: "食べる" }] }),
+    ).rejects.toThrow("API base URL");
+
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => null,
+        words: [{ word: "食べる" }],
+      }),
+    ).rejects.toThrow("Sign in");
+  });
+
+  test("surfaces a quota error as ContextSentenceQuotaError", async () => {
+    stubFetch({
+      ok: false,
+      json: async () => ({
+        error: "Daily AI limit reached",
+        code: "quota_exceeded",
+        quota: { limit: 100, remaining: 0, resetAt: 1_800_000_000, cost: 2 },
+      }),
+    });
+
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: [{ word: "食べる" }],
+      }),
+    ).rejects.toBeInstanceOf(ContextSentenceQuotaError);
+  });
+
+  test("propagates other server errors as plain errors", async () => {
+    stubFetch({ ok: false, json: async () => ({ error: "AI request failed." }) });
+
+    const promise = requestContextSentences({
+      apiBaseUrl: "https://api.example.com",
+      getToken: async () => "token",
+      words: [{ word: "食べる" }],
+    });
+    await expect(promise).rejects.toThrow("AI request failed.");
+    await expect(promise).rejects.not.toBeInstanceOf(ContextSentenceQuotaError);
+  });
+
+  test("rejects a response whose sentences are all unplayable", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        result: {
+          items: [{ word: "食べる", sentences: [{ ...valid, targetReading: "tabemashita" }] }],
+        },
+      }),
+    });
+
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: [{ word: "食べる" }],
+      }),
+    ).rejects.toThrow("malformed");
   });
 });
