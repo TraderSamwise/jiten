@@ -11,7 +11,9 @@ export type ApiQuotaBucket = "ai";
 
 const METADATA_KEY = "jitenApiUsage";
 const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
-  ai: 100,
+  // One shared bucket across every AI feature, so it scales with how many of them
+  // a session touches — the context game alone spends a couple of units a round.
+  ai: 500,
 };
 const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
   reader_sentence_explain: 2,

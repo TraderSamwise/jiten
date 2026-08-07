@@ -102,6 +102,6 @@ describe("API rate limits", () => {
     expect(parseDailyLimit("ai")).toBe(7);
 
     vi.stubEnv("AI_DAILY_QUOTA", "invalid");
-    expect(parseDailyLimit("ai")).toBe(100);
+    expect(parseDailyLimit("ai")).toBe(500);
   });
 });

@@ -1028,8 +1028,8 @@ shortens instead of failing the request.
 
 ### Quotas and entitlements
 
-All four endpoints share one daily `ai` bucket (`api/_shared/rate-limit.ts`), default 100
-units/day, overridable with `AI_DAILY_QUOTA`. Cost is **per request**, charged _before_ the
+All four endpoints share one daily `ai` bucket (`api/_shared/rate-limit.ts`), default 500
+units/day, overridable with `AI_DAILY_QUOTA` (capped at 10 000). Cost is **per request**, charged _before_ the
 OpenAI call — so a request whose response turns out to be unusable still costs its units.
 Usage is stored in Clerk `privateMetadata` with a non-atomic read-modify-write, which is why
 the context game's prefetch is sequential rather than parallel.
