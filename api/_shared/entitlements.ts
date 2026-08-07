@@ -3,7 +3,8 @@ import { ApiError } from "./auth";
 export type PremiumFeature =
   | "reader_sentence_explain"
   | "word_example_sentences"
-  | "kanji_mnemonic";
+  | "kanji_mnemonic"
+  | "word_context_sentences";
 
 export interface FeatureAccess {
   allowed: boolean;

@@ -1,0 +1,248 @@
+import { describe, test, expect } from "vitest";
+
+import {
+  filterPlayableSentences,
+  isPlayableContextSentence,
+  matchesHeadword,
+} from "./context-sentences";
+
+const valid = {
+  sentence: "毎朝パンを食べました。",
+  targetSurface: "食べました",
+  targetReading: "たべました",
+  english: "I ate bread every morning.",
+};
+
+describe("isPlayableContextSentence", () => {
+  test("accepts a well-formed conjugated sentence", () => {
+    expect(isPlayableContextSentence(valid)).toBe(true);
+  });
+
+  test("accepts a katakana reading with a long vowel mark", () => {
+    expect(
+      isPlayableContextSentence({
+        sentence: "駅前で珈琲を飲む。",
+        targetSurface: "珈琲",
+        targetReading: "コーヒー",
+        english: "I drink coffee in front of the station.",
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects a target that does not appear in the sentence", () => {
+    expect(isPlayableContextSentence({ ...valid, targetSurface: "飲みました" })).toBe(false);
+  });
+
+  test("rejects a target that appears twice — the red span would be ambiguous", () => {
+    expect(
+      isPlayableContextSentence({
+        sentence: "食べる人が食べる。",
+        targetSurface: "食べる",
+        targetReading: "たべる",
+        english: "The person who eats, eats.",
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a kana-only target — there is nothing to read", () => {
+    expect(
+      isPlayableContextSentence({
+        sentence: "たくさんたべました。",
+        targetSurface: "たべました",
+        targetReading: "たべました",
+        english: "I ate a lot.",
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a reading containing kanji", () => {
+    expect(isPlayableContextSentence({ ...valid, targetReading: "食べました" })).toBe(false);
+  });
+
+  test("rejects a romaji reading", () => {
+    expect(isPlayableContextSentence({ ...valid, targetReading: "tabemashita" })).toBe(false);
+  });
+
+  test("rejects a reading with trailing punctuation", () => {
+    expect(isPlayableContextSentence({ ...valid, targetReading: "たべました。" })).toBe(false);
+  });
+
+  test("rejects empty fields", () => {
+    expect(isPlayableContextSentence({ ...valid, english: "" })).toBe(false);
+    expect(isPlayableContextSentence({ ...valid, sentence: "" })).toBe(false);
+  });
+
+  test("rejects an over-long sentence", () => {
+    expect(isPlayableContextSentence({ ...valid, sentence: "あ".repeat(61) + "食べました" })).toBe(
+      false,
+    );
+  });
+
+  test("rejects non-objects and missing fields", () => {
+    expect(isPlayableContextSentence(null)).toBe(false);
+    expect(isPlayableContextSentence("nope")).toBe(false);
+    expect(isPlayableContextSentence({ sentence: "食べました。" })).toBe(false);
+  });
+});
+
+describe("matchesHeadword", () => {
+  test("accepts conjugated forms that keep the headword kanji", () => {
+    expect(matchesHeadword("食べました", "食べる")).toBe(true);
+    expect(matchesHeadword("新しかった", "新しい")).toBe(true);
+    expect(matchesHeadword("勉強しています", "勉強する")).toBe(true);
+    expect(matchesHeadword("本", "本")).toBe(true);
+  });
+
+  test("rejects a surface belonging to a different word", () => {
+    expect(matchesHeadword("本", "食べる")).toBe(false);
+    expect(matchesHeadword("飲みました", "食べる")).toBe(false);
+  });
+
+  test("accepts an honorific prefix the headword does not carry", () => {
+    expect(matchesHeadword("お待ちください", "待つ")).toBe(true);
+    expect(matchesHeadword("ご飯", "飯")).toBe(true);
+  });
+
+  test("uses shared kanji when the headword starts with kana", () => {
+    expect(matchesHeadword("お茶", "お茶")).toBe(true);
+    expect(matchesHeadword("水", "お茶")).toBe(false);
+  });
+
+  test("accepts anything for a kana-only headword — there is nothing to anchor on", () => {
+    expect(matchesHeadword("食べる", "たべる")).toBe(true);
+  });
+});
+
+describe("filterPlayableSentences", () => {
+  const requested = ["食べる", "飲む"];
+
+  test("keeps good sentences and drops bad ones within a word", () => {
+    const result = filterPlayableSentences(
+      {
+        items: [{ word: "食べる", sentences: [valid, { ...valid, targetReading: "tabemashita" }] }],
+      },
+      requested,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].sentences).toEqual([valid]);
+  });
+
+  test("drops a word entirely when none of its sentences survive", () => {
+    const result = filterPlayableSentences(
+      {
+        items: [
+          { word: "食べる", sentences: [{ ...valid, targetSurface: "飲む" }] },
+          {
+            word: "飲む",
+            sentences: [
+              { ...valid, sentence: "水を飲む。", targetSurface: "飲む", targetReading: "のむ" },
+            ],
+          },
+        ],
+      },
+      requested,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].word).toBe("飲む");
+  });
+
+  test("drops a sentence whose target is unrelated to the requested word", () => {
+    const result = filterPlayableSentences(
+      {
+        items: [
+          {
+            word: "食べる",
+            sentences: [
+              {
+                sentence: "駅で本を読む。",
+                targetSurface: "本",
+                targetReading: "ほん",
+                english: "I read a book.",
+              },
+            ],
+          },
+        ],
+      },
+      requested,
+    );
+    expect(result.items).toEqual([]);
+  });
+
+  test("drops items for words that were never requested", () => {
+    const result = filterPlayableSentences({ items: [{ word: "食べる", sentences: [valid] }] }, [
+      "飲む",
+    ]);
+    expect(result.items).toEqual([]);
+  });
+
+  test("keeps only the first item for a duplicated word", () => {
+    const second = { ...valid, sentence: "夜に食べました。" };
+    const result = filterPlayableSentences(
+      {
+        items: [
+          { word: "食べる", sentences: [valid] },
+          { word: "食べる", sentences: [second] },
+        ],
+      },
+      requested,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].sentences).toEqual([valid]);
+  });
+
+  test("recovers a later duplicate when the first item had no usable sentences", () => {
+    const result = filterPlayableSentences(
+      {
+        items: [
+          { word: "食べる", sentences: [{ ...valid, targetReading: "tabemashita" }] },
+          { word: "食べる", sentences: [valid] },
+        ],
+      },
+      requested,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].sentences).toEqual([valid]);
+  });
+
+  test("tolerates a whitespace-padded echoed word", () => {
+    const result = filterPlayableSentences(
+      { items: [{ word: " 食べる ", sentences: [valid] }] },
+      requested,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].word).toBe("食べる");
+  });
+
+  test("drops invalid sentences before applying the cap", () => {
+    const result = filterPlayableSentences(
+      {
+        items: [{ word: "食べる", sentences: [{ ...valid, targetReading: "tabemashita" }, valid] }],
+      },
+      requested,
+      1,
+    );
+    expect(result.items[0].sentences).toEqual([valid]);
+  });
+
+  test("caps sentences per word", () => {
+    const second = { ...valid, sentence: "夜に食べました。" };
+    const result = filterPlayableSentences(
+      { items: [{ word: "食べる", sentences: [valid, second] }] },
+      requested,
+      1,
+    );
+    expect(result.items[0].sentences).toEqual([valid]);
+  });
+
+  test("survives malformed payloads and junk sentence entries", () => {
+    expect(filterPlayableSentences(null, requested)).toEqual({ items: [] });
+    expect(filterPlayableSentences({}, requested)).toEqual({ items: [] });
+    expect(filterPlayableSentences({ items: "nope" }, requested)).toEqual({ items: [] });
+    expect(
+      filterPlayableSentences({ items: [{ word: "食べる", sentences: [null, 42] }] }, requested),
+    ).toEqual({ items: [] });
+    expect(
+      filterPlayableSentences({ items: [{ word: "", sentences: [valid] }] }, requested),
+    ).toEqual({ items: [] });
+  });
+});

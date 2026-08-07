@@ -50,6 +50,23 @@ export const wordsExampleRequestSchema = z.object({
   partOfSpeech: trimmedArray(8, 60),
 });
 
+// Batched: one call covers several words so a game round isn't a request per word.
+export const wordsContextRequestSchema = z.object({
+  words: z
+    .array(
+      z.object({
+        word: reqTrimmed(80, "word is required"),
+        reading: optTrimmed(80),
+        glosses: trimmedArray(6, 120),
+        partOfSpeech: trimmedArray(8, 60),
+        jlptLevel: z.number().int().min(1).max(5).optional(),
+      }),
+    )
+    .min(1, "words is required")
+    .max(5),
+  sentencesPerWord: z.number().int().min(1).max(3).default(2),
+});
+
 export const kanjiMnemonicRequestSchema = z.object({
   kanji: reqTrimmed(8, "kanji is required"),
   keyword: reqTrimmed(120, "keyword is required"),

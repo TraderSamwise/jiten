@@ -5,7 +5,8 @@ import { ApiError } from "./auth";
 export type ApiQuotaEndpoint =
   | "reader_sentence_explain"
   | "word_example_sentences"
-  | "kanji_mnemonic";
+  | "kanji_mnemonic"
+  | "word_context_sentences";
 export type ApiQuotaBucket = "ai";
 
 const METADATA_KEY = "jitenApiUsage";
@@ -16,6 +17,9 @@ const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
   reader_sentence_explain: 2,
   word_example_sentences: 1,
   kanji_mnemonic: 1,
+  // Charged per batch, not per word: one call covers several words, and a game
+  // round fires many of them back to back.
+  word_context_sentences: 2,
 };
 
 interface StoredFeatureUsage {
@@ -65,6 +69,7 @@ export function getQuotaBucket(endpoint: ApiQuotaEndpoint): ApiQuotaBucket {
     case "reader_sentence_explain":
     case "word_example_sentences":
     case "kanji_mnemonic":
+    case "word_context_sentences":
       return "ai";
   }
 }

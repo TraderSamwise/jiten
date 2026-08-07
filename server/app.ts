@@ -7,6 +7,7 @@ import { provisionDbRoute } from "./routes/provisionDb";
 import { proxyRoute } from "./routes/proxy";
 import { readerExplainRoute } from "./routes/readerExplain";
 import { tursoTokenRoute } from "./routes/tursoToken";
+import { wordsContextRoute } from "./routes/wordsContext";
 import { wordsExampleRoute } from "./routes/wordsExample";
 import type { AppVariables } from "./types";
 
@@ -32,6 +33,7 @@ base.onError((err, c) => apiErrorResponse(err, c));
 export const app = base
   .route("/", readerExplainRoute)
   .route("/", wordsExampleRoute)
+  .route("/", wordsContextRoute)
   .route("/", kanjiMnemonicRoute)
   .route("/", tursoTokenRoute)
   .route("/", provisionDbRoute)
