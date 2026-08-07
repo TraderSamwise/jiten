@@ -3,7 +3,12 @@ import { practiceEvents, practiceSessions, confusionPairs, confusionEvents } fro
 import { generateId } from "@/db/helpers";
 import type { UserDrizzle } from "@/db/drizzle";
 
-export type PracticeMode = "flashcard" | "typing_game" | "typing_flashcard" | "voice";
+export type PracticeMode =
+  | "flashcard"
+  | "typing_game"
+  | "typing_flashcard"
+  | "voice"
+  | "context_game";
 
 interface PracticeEvent {
   entryId: number;

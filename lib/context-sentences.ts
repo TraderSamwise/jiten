@@ -160,6 +160,15 @@ export class ContextSentenceQuotaError extends Error {
   readonly name = "ContextSentenceQuotaError";
 }
 
+/**
+ * The request succeeded but nothing it returned was playable. Quota is charged
+ * per request, so retrying this would pay twice for the same answer.
+ */
+export class ContextSentenceUnusableError extends Error {
+  readonly code = "unusable_response";
+  readonly name = "ContextSentenceUnusableError";
+}
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
 
@@ -228,7 +237,7 @@ export async function requestContextSentences({
     perWord,
   );
   if (result.items.length === 0) {
-    throw new Error("Sentence response was malformed.");
+    throw new ContextSentenceUnusableError("Sentence response was malformed.");
   }
   return result;
 }

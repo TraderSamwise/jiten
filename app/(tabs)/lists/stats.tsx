@@ -71,6 +71,8 @@ function practiceModeLabel(mode: string): string {
   switch (mode) {
     case "typing_game":
       return "Typing";
+    case "context_game":
+      return "Context";
     case "flashcard":
       return "Flashcard";
     case "typing_flashcard":

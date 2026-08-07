@@ -47,6 +47,9 @@ export const defaultSettings = Object.freeze({
   connectSpeedPreset: "normal" as SpeedPreset,
   connectBubbleKinds: { kanji: true, reading: true, meaning: false } as ConnectBubbleKinds,
   typingWordFilter: "all" as WordFilterMode,
+  contextWordFilter: "all" as WordFilterMode,
+  contextShowEnglish: true as boolean,
+  contextPlayAudio: false as boolean,
   showRomaji: false as boolean,
   showPitchAccent: true as boolean,
   showPitchAccentType: false as boolean,
@@ -131,6 +134,9 @@ export const connectTimedDurationAtom = focusAtom(settingsAtom, (o) =>
 export const connectSpeedPresetAtom = focusAtom(settingsAtom, (o) => o.prop("connectSpeedPreset"));
 export const connectBubbleKindsAtom = focusAtom(settingsAtom, (o) => o.prop("connectBubbleKinds"));
 export const typingWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("typingWordFilter"));
+export const contextWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("contextWordFilter"));
+export const contextShowEnglishAtom = focusAtom(settingsAtom, (o) => o.prop("contextShowEnglish"));
+export const contextPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("contextPlayAudio"));
 export const showRomajiAtom = focusAtom(settingsAtom, (o) => o.prop("showRomaji"));
 export const showPitchAccentAtom = focusAtom(settingsAtom, (o) => o.prop("showPitchAccent"));
 export const showPitchAccentTypeAtom = focusAtom(settingsAtom, (o) =>

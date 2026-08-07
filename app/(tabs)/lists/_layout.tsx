@@ -34,6 +34,7 @@ export default function ListsLayout() {
       <Stack.Screen name="primitive/[id]" options={{ title: "Primitive" }} />
       <Stack.Screen name="study" options={{ title: "Study", headerShown: false }} />
       <Stack.Screen name="typing-game" options={{ title: "Typing Game", headerShown: false }} />
+      <Stack.Screen name="context-game" options={{ title: "Context Game", headerShown: false }} />
       <Stack.Screen name="connect-game" options={{ title: "Connect Game", headerShown: false }} />
       <Stack.Screen name="kanji-arena" options={{ title: "Kanji Arena", headerShown: false }} />
       <Stack.Screen name="stats" options={{ title: "Review Statistics", headerShown: false }} />

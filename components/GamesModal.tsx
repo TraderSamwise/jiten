@@ -12,13 +12,21 @@ interface GamesModalProps {
 
 export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState<"typing" | "connect" | "arena" | null>(null);
+  const [loading, setLoading] = useState<"typing" | "context" | "connect" | "arena" | null>(null);
 
   function handleTypingGame() {
     setLoading("typing");
     setTimeout(() => {
       onClose();
       router.push(`/lists/typing-game?listId=${listId}`);
+    }, 100);
+  }
+
+  function handleContextGame() {
+    setLoading("context");
+    setTimeout(() => {
+      onClose();
+      router.push(`/lists/context-game?listId=${listId}`);
     }, 100);
   }
 
@@ -75,6 +83,25 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                   </Text>
                 </View>
                 {loading === "typing" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={handleContextGame}
+                disabled={loading !== null}
+                className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+                style={loading !== null ? { opacity: 0.5 } : undefined}
+              >
+                <View>
+                  <Text className="text-base font-medium text-foreground">Context Game</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Read a word in a sentence and type its reading
+                  </Text>
+                </View>
+                {loading === "context" ? (
                   <ActivityIndicator size="small" />
                 ) : (
                   <ChevronRight size={20} className="text-muted-foreground" />
