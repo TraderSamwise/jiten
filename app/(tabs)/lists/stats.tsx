@@ -73,6 +73,8 @@ function practiceModeLabel(mode: string): string {
       return "Typing";
     case "context_game":
       return "Context";
+    case "fill_blank_game":
+      return "Fill Blank";
     case "flashcard":
       return "Flashcard";
     case "typing_flashcard":

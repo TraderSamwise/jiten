@@ -50,6 +50,11 @@ export const defaultSettings = Object.freeze({
   contextWordFilter: "all" as WordFilterMode,
   contextShowEnglish: true as boolean,
   contextPlayAudio: false as boolean,
+  fillBlankWordFilter: "all" as WordFilterMode,
+  // Off by default: hiding the readings is what makes it a recognition test
+  fillBlankShowFurigana: false as boolean,
+  fillBlankShowEnglish: true as boolean,
+  fillBlankPlayAudio: false as boolean,
   showRomaji: false as boolean,
   showPitchAccent: true as boolean,
   showPitchAccentType: false as boolean,
@@ -137,6 +142,16 @@ export const typingWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("typin
 export const contextWordFilterAtom = focusAtom(settingsAtom, (o) => o.prop("contextWordFilter"));
 export const contextShowEnglishAtom = focusAtom(settingsAtom, (o) => o.prop("contextShowEnglish"));
 export const contextPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("contextPlayAudio"));
+export const fillBlankWordFilterAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("fillBlankWordFilter"),
+);
+export const fillBlankShowFuriganaAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("fillBlankShowFurigana"),
+);
+export const fillBlankShowEnglishAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("fillBlankShowEnglish"),
+);
+export const fillBlankPlayAudioAtom = focusAtom(settingsAtom, (o) => o.prop("fillBlankPlayAudio"));
 export const showRomajiAtom = focusAtom(settingsAtom, (o) => o.prop("showRomaji"));
 export const showPitchAccentAtom = focusAtom(settingsAtom, (o) => o.prop("showPitchAccent"));
 export const showPitchAccentTypeAtom = focusAtom(settingsAtom, (o) =>

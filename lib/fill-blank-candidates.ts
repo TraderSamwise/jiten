@@ -19,22 +19,21 @@ export function getFillBlankHeadword(entry: DictEntry): string | null {
   return entry.kana.find((form) => !shouldHide(form.tags))?.text ?? null;
 }
 
-export function toPlayableFillBlankEntries(entries: DictEntry[]): DictEntry[] {
-  return entries.filter((entry) => getFillBlankHeadword(entry) !== null);
-}
-
 /**
- * How many words the round can actually draw on. Entries sharing a headword
- * collapse to one, so this is what a "do we have enough to play?" check must
- * count — an entry count would promise choices the game can't build.
+ * The words a round can actually be built from: one entry per headword. Entries
+ * spelled the same collapse, because the candidate pool dedups by headword and
+ * two rounds keyed to one headword would repeat the same question.
  */
-export function countDistinctHeadwords(entries: DictEntry[]): number {
-  const headwords = new Set<string>();
+export function toPlayableFillBlankEntries(entries: DictEntry[]): DictEntry[] {
+  const seen = new Set<string>();
+  const playable: DictEntry[] = [];
   for (const entry of entries) {
     const headword = getFillBlankHeadword(entry);
-    if (headword) headwords.add(headword);
+    if (!headword || seen.has(headword)) continue;
+    seen.add(headword);
+    playable.push(entry);
   }
-  return headwords.size;
+  return playable;
 }
 
 /**

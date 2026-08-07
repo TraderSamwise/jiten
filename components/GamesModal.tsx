@@ -12,7 +12,9 @@ interface GamesModalProps {
 
 export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState<"typing" | "context" | "connect" | "arena" | null>(null);
+  const [loading, setLoading] = useState<
+    "typing" | "context" | "fillBlank" | "connect" | "arena" | null
+  >(null);
 
   function handleTypingGame() {
     setLoading("typing");
@@ -27,6 +29,14 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
     setTimeout(() => {
       onClose();
       router.push(`/lists/context-game?listId=${listId}`);
+    }, 100);
+  }
+
+  function handleFillBlankGame() {
+    setLoading("fillBlank");
+    setTimeout(() => {
+      onClose();
+      router.push(`/lists/fill-blank?listId=${listId}`);
     }, 100);
   }
 
@@ -102,6 +112,25 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                   </Text>
                 </View>
                 {loading === "context" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={handleFillBlankGame}
+                disabled={loading !== null}
+                className="flex-row items-center justify-between rounded-lg border border-border px-4 py-3"
+                style={loading !== null ? { opacity: 0.5 } : undefined}
+              >
+                <View>
+                  <Text className="text-base font-medium text-foreground">Fill in the Blank</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Choose the word that completes the sentence
+                  </Text>
+                </View>
+                {loading === "fillBlank" ? (
                   <ActivityIndicator size="small" />
                 ) : (
                   <ChevronRight size={20} className="text-muted-foreground" />

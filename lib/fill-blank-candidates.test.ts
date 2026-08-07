@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  countDistinctHeadwords,
   getFillBlankHeadword,
   MIN_FILL_BLANK_WORDS,
   selectDistractorCandidates,
@@ -49,9 +48,18 @@ describe("getFillBlankHeadword", () => {
     expect(getFillBlankHeadword(hidden)).toBe("ほん");
   });
 
-  test("keeps every entry playable, unlike the reading game", () => {
+  test("keeps kana-only entries playable, unlike the reading game", () => {
     const entries = [entry(1, { kanji: "食べる" }), entry(2, { kana: "たくさん" })];
     expect(toPlayableFillBlankEntries(entries)).toHaveLength(2);
+  });
+
+  test("collapses entries sharing a headword — they can only fill one choice", () => {
+    const entries = [
+      entry(1, { kanji: "食べる", kana: "たべる" }),
+      entry(2, { kanji: "食べる", kana: "たべる" }),
+      entry(3, { kanji: "見る", kana: "みる" }),
+    ];
+    expect(toPlayableFillBlankEntries(entries).map((e) => e.id)).toEqual([1, 3]);
   });
 });
 
@@ -128,21 +136,11 @@ describe("selectDistractorCandidates", () => {
   });
 });
 
-describe("countDistinctHeadwords", () => {
-  test("counts headwords, not entries — homographs can only fill one choice", () => {
-    const entries = [
-      entry(1, { kanji: "食べる", kana: "たべる" }),
-      entry(2, { kanji: "食べる", kana: "たべる" }),
-      entry(3, { kanji: "見る", kana: "みる" }),
-    ];
-    expect(countDistinctHeadwords(entries)).toBe(2);
-  });
-
+describe("round size floor", () => {
   test("at the minimum, every word still has three others to stand beside", () => {
     const entries = Array.from({ length: MIN_FILL_BLANK_WORDS }, (_, i) =>
       entry(i + 1, { kanji: `語${i}` }),
     );
-    expect(countDistinctHeadwords(entries)).toBe(MIN_FILL_BLANK_WORDS);
     for (const target of entries) {
       expect(selectDistractorCandidates(target, entries).length).toBeGreaterThanOrEqual(3);
     }

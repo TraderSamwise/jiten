@@ -8,7 +8,8 @@ export type PracticeMode =
   | "typing_game"
   | "typing_flashcard"
   | "voice"
-  | "context_game";
+  | "context_game"
+  | "fill_blank_game";
 
 interface PracticeEvent {
   entryId: number;
