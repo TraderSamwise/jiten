@@ -7,6 +7,7 @@ import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { webHeaderStyle } from "@/lib/navigation";
+import { markSessionNavigated } from "@/lib/session-navigation";
 import { SyncButton } from "@/components/SyncButton";
 
 export { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -36,6 +37,10 @@ export default function TabLayout() {
         backBehavior="history"
         screenListeners={{
           tabPress: (e) => {
+            // Switching tabs counts as navigating, so a first visit to the
+            // dictionary this way focuses its search (see lib/session-navigation).
+            markSessionNavigated();
+
             // If tapping the already-active tab, pop its stack to root
             const target = e.target;
             const state = navigation.getState();

@@ -3,6 +3,7 @@ import { View, Pressable, Platform, TextInput } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { CommonActions } from "@react-navigation/native";
 import { useSafeGoBack, headerBgClass } from "@/lib/navigation";
+import { hasNavigatedThisSession, markSessionNavigated } from "@/lib/session-navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import { Input } from "@/components/ui/input";
@@ -87,7 +88,14 @@ export function DictionaryHeader({ back, options, route }: NativeStackHeaderProp
 
   useFocusEffect(
     useCallback(() => {
-      if (!isIndex || !showInput) return;
+      // Opening the app onto the dictionary shouldn't raise the keyboard; coming
+      // back to it — from a word, or another tab — should. Marked on every
+      // dictionary focus, so a cold start deep into the stack still counts the
+      // trip back to the index as a return.
+      const isReturnVisit = hasNavigatedThisSession();
+      markSessionNavigated();
+
+      if (!isIndex || !showInput || !isReturnVisit) return;
 
       const timer = setTimeout(() => inputRef.current?.focus(), 100);
       return () => clearTimeout(timer);
