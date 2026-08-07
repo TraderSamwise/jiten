@@ -2,6 +2,7 @@ import { afterEach, describe, test, expect, vi } from "vitest";
 
 import {
   ContextSentenceQuotaError,
+  ContextSentenceUnusableError,
   filterPlayableSentences,
   isPlayableContextSentence,
   matchesHeadword,
@@ -360,6 +361,24 @@ describe("requestContextSentences", () => {
         words: [{ word: "食べる" }],
       }),
     ).rejects.toBeInstanceOf(ContextSentenceQuotaError);
+  });
+
+  test("surfaces an unusable 502 as ContextSentenceUnusableError so it is not retried", async () => {
+    stubFetch({
+      ok: false,
+      json: async () => ({
+        error: "No usable sentences were generated.",
+        code: "unusable_response",
+      }),
+    });
+
+    await expect(
+      requestContextSentences({
+        apiBaseUrl: "https://api.example.com",
+        getToken: async () => "token",
+        words: [{ word: "食べる" }],
+      }),
+    ).rejects.toBeInstanceOf(ContextSentenceUnusableError);
   });
 
   test("propagates other server errors as plain errors", async () => {

@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 
-import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
 import { wordsContextRequestSchema } from "../../lib/api-contract";
 import { filterPlayableSentences } from "../../lib/context-sentences";
@@ -119,7 +118,12 @@ export const wordsContextRoute = new Hono<{ Variables: AppVariables }>().post(
     );
     if (playable.items.length === 0) {
       console.error("[word-context-sentences] No playable sentences in response");
-      throw new ApiError(502, "Example sentence response was malformed.");
+      // Coded so the client can tell this apart from a transient failure: the
+      // quota is already spent, so retrying would pay twice for the same answer.
+      return c.json(
+        { error: "No usable sentences were generated.", code: "unusable_response" },
+        502,
+      );
     }
     return c.json({ result: playable });
   },

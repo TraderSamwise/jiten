@@ -22,7 +22,8 @@ offline, with optional encrypted cloud sync across devices.
 - **Study / SRS** — spaced-repetition flashcards (FSRS algorithm) for vocabulary and kanji,
   with custom lists and review statistics.
 - **Kanji tools** — stroke-order, radical search, and primitive-based mnemonic study.
-- **Mini-games** — typing, connection, and a kanji "arena" for drilling readings.
+- **Mini-games** — typing, connection, a kanji "arena" for drilling readings, and a context
+  game that drills words inside AI-generated example sentences.
 - **Cloud sync (optional)** — offline-first; when signed in, user data (lists, cards, books,
   review history) syncs across devices. Runs identically with sync disabled.
 
@@ -76,12 +77,12 @@ Attribution for all bundled data and assets is in
 Sync and the AI-assisted features are disabled unless you supply your own credentials.
 Nothing is hardcoded — every secret is read from the environment at runtime.
 
-| Feature                       | What you need                                                                                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth + sync                   | A [Clerk](https://clerk.com) app and a [Turso](https://turso.tech) org (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, `EXPO_PUBLIC_TURSO_ORG`, server-side `CLERK_SECRET_KEY` / `TURSO_API_TOKEN`) |
-| AI mnemonics / reader-explain | An OpenAI API key on the backend                                                                                                                                                          |
-| Pronunciation audio (build)   | A Google Cloud TTS key (`GOOGLE_TTS_API_KEY`)                                                                                                                                             |
-| Error reporting               | A Sentry DSN (`EXPO_PUBLIC_SENTRY_DSN`)                                                                                                                                                   |
+| Feature                                                   | What you need                                                                                                                                                                             |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth + sync                                               | A [Clerk](https://clerk.com) app and a [Turso](https://turso.tech) org (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, `EXPO_PUBLIC_TURSO_ORG`, server-side `CLERK_SECRET_KEY` / `TURSO_API_TOKEN`) |
+| AI mnemonics, reader-explain, example + context sentences | An OpenAI API key on the backend                                                                                                                                                          |
+| Pronunciation audio (build)                               | A Google Cloud TTS key (`GOOGLE_TTS_API_KEY`)                                                                                                                                             |
+| Error reporting                                           | A Sentry DSN (`EXPO_PUBLIC_SENTRY_DSN`)                                                                                                                                                   |
 
 See [Cloud Sync](docs/ARCHITECTURE.md#cloud-sync) in the architecture doc for the full
 backend design. The `api/` and `server/` directories contain the reference backend

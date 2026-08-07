@@ -469,7 +469,7 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 
 - **Lists and Reader tabs**: `SafeBackButton` is set as the default `headerLeft` in each tab's `_layout.tsx` via `screenOptions`. All non-index screens get a back button automatically — no per-screen code needed.
 - **Dictionary tab**: Uses a fully custom `DictionaryHeader` component (search bar, mode toggle) which handles its own back button via `useSafeGoBack("/dictionary")`.
-- **Fullscreen screens** (study, typing-game, connect-game, stats): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
+- **Fullscreen screens** (study, typing-game, context-game, connect-game, kanji-arena, stats, marked-for-review): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
 
 ### Web navigation: back button and browser history
 
@@ -604,7 +604,7 @@ The backdrop colors are centralized in `lib/navigation.ts` as `WEB_BACKDROP_COLO
 
 **2. Custom React Nav header** (`DictionaryHeader`) — A custom header component passed to the stack navigator. Manages its own padding and backdrop color.
 
-**3. `headerShown: false` screens** (study, typing-game, connect-game, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
+**3. `headerShown: false` screens** (study, typing-game, context-game, connect-game, kanji-arena, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
 
 ### `CustomHeaderScreen` system (`components/CustomHeaderScreen.tsx`)
 
@@ -1004,6 +1004,88 @@ Mutable tables are soft-deleted (syncs to remote). Append tables are hard-delete
 | `components/HardSyncModal.tsx`            | Full wipe + re-pull from cloud                                              |
 | `app/sign-in.tsx`                         | Email + password sign-in with MFA support                                   |
 | `app/sign-up.tsx`                         | Email + password sign-up with email verification                            |
+
+## AI API
+
+Four routes call OpenAI. They live in `server/routes/`, are mounted on the single Hono app
+(`server/app.ts`), and share one middleware chain:
+
+```
+bodyLimit → authMiddleware → entitlement(feature) → jsonBody(schema) → rateLimit(endpoint)
+```
+
+| Endpoint                       | Route file         | Quota cost | Returns                                               |
+| ------------------------------ | ------------------ | ---------- | ----------------------------------------------------- |
+| `/api/reader/explain-sentence` | `readerExplain.ts` | 2          | Grammar/meaning breakdown of a selected sentence      |
+| `/api/words/example-sentences` | `wordsExample.ts`  | 1          | Three example sentences for a dictionary headword     |
+| `/api/kanji/mnemonic`          | `kanjiMnemonic.ts` | 1          | A mnemonic built from a kanji's primitives            |
+| `/api/words/context-sentences` | `wordsContext.ts`  | 2          | Sentences for **up to 5 words**, for the context game |
+
+Request schemas live in `lib/api-contract.ts` — shared by the routes and, through
+`hc<AppType>`, by the typed RPC client (`lib/api-client.ts`). The zod helpers **truncate**
+rather than reject (`reqTrimmed`, `optTrimmed`, `trimmedArray`), so an over-long field
+shortens instead of failing the request.
+
+### Quotas and entitlements
+
+All four endpoints share one daily `ai` bucket (`api/_shared/rate-limit.ts`), default 100
+units/day, overridable with `AI_DAILY_QUOTA`. Cost is **per request**, charged _before_ the
+OpenAI call — so a request whose response turns out to be unusable still costs its units.
+Usage is stored in Clerk `privateMetadata` with a non-atomic read-modify-write, which is why
+the context game's prefetch is sequential rather than parallel.
+
+`entitlement(feature)` (`api/_shared/entitlements.ts`) is a real seam that currently allows
+everything; billing hooks in there without touching clients.
+
+### Context sentences (`server/routes/wordsContext.ts`)
+
+The context game shows a sentence with one word in red and grades the kana the player types.
+That only works if the response satisfies invariants the model can't be trusted to hold, so
+`lib/context-sentences.ts` filters every sentence — on the server, and again on the client
+before it reaches the renderer:
+
+- `targetSurface` occurs in `sentence` **exactly once** — the red span is found with
+  `indexOf`, so a second occurrence would be ambiguous.
+- `targetSurface` contains kanji — a kana-only target has nothing to read.
+- `targetReading` is kana only — it is compared against what the player types.
+- The surface belongs to the **requested** headword (`matchesHeadword`): it shares a kanji
+  with it and, when the headword starts with kanji, opens with that same kanji (allowing a
+  leading お/ご/御). Without this, a sentence targeting an unrelated word passes every other
+  check.
+
+Sentences that fail are dropped, not repaired. A word that loses all of its sentences simply
+doesn't come back; only an entirely empty result is an error.
+
+### No cache, by design
+
+Nothing about generated sentences is persisted — no table, no sync, no reuse across
+sessions. Consequences worth knowing before changing it:
+
+- The context game requires a connection and a signed-in account. There is no offline path.
+- `sentencesPerWord` is 1: an extra sentence would be paid for and thrown away.
+- Failure classes are distinguished so quota is never spent twice on a settled answer.
+  `ContextSentenceQuotaError` and `ContextSentenceUnusableError` (a 200 whose sentences were
+  all unplayable) are never retried; a transient failure is retried once.
+
+### Prefetch pump (`hooks/useContextSentences.ts`)
+
+Batches of 5 words are fetched **sequentially** (parallel batches would race the quota
+counter above), keeping 10 rounds ahead of the player. The first batch is awaited before
+play starts; the rest arrive during play. A failed first batch keeps the player on the
+select screen with the error; later on, two consecutive failed batches stop generation and
+the round ends early with the reason shown on the done screen.
+
+Model selection falls back through `OPENAI_CONTEXT_SENTENCES_MODEL` →
+`OPENAI_WORD_EXAMPLES_MODEL` → `OPENAI_EXPLAIN_MODEL`. The OpenAI call is capped at 35s,
+under the 60s Vercel function ceiling set by `vercel.json`.
+
+### Shared typing core (`lib/typing-core.ts`)
+
+`evaluateTypingInput()` grades one keystroke of kana typing — IME conversion, per-character
+status, flick-keyboard intermediates, completion, and over-length. It takes a plain string
+target, so it drives the typing game and study screen (target = a `DictEntry` reading) and
+the context game (target = a conjugated surface reading inside a sentence) from one
+implementation.
 
 ## Dev Server
 
