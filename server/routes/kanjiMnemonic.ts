@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 
 import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
 import { kanjiMnemonicRequestSchema } from "../../lib/api-contract";
 import { isKanjiMnemonicStory } from "../../lib/kanji-mnemonic-ai";
 import { authMiddleware } from "../middleware/auth";
+import { maxBodyBytes } from "../middleware/bodySize";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
@@ -25,10 +25,7 @@ const STORY_SCHEMA = {
 
 export const kanjiMnemonicRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/kanji/mnemonic",
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body is too large" }, 413),
-  }),
+  maxBodyBytes(MAX_BODY_BYTES),
   authMiddleware,
   entitlement("kanji_mnemonic"),
   jsonBody(kanjiMnemonicRequestSchema),

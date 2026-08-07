@@ -1,10 +1,10 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 
 import { createStructuredJson } from "../../api/_shared/openai";
 import { wordsContextRequestSchema } from "../../lib/api-contract";
 import { filterPlayableSentences } from "../../lib/context-sentences";
 import { authMiddleware } from "../middleware/auth";
+import { maxBodyBytes } from "../middleware/bodySize";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
@@ -76,10 +76,7 @@ const INSTRUCTIONS = [
 
 export const wordsContextRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/words/context-sentences",
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body is too large" }, 413),
-  }),
+  maxBodyBytes(MAX_BODY_BYTES),
   authMiddleware,
   entitlement("word_context_sentences"),
   jsonBody(wordsContextRequestSchema),

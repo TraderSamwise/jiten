@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 
 import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
 import { wordsExampleRequestSchema } from "../../lib/api-contract";
 import { isWordExampleSentences } from "../../lib/word-examples";
 import { authMiddleware } from "../middleware/auth";
+import { maxBodyBytes } from "../middleware/bodySize";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
@@ -41,10 +41,7 @@ const WORD_EXAMPLES_SCHEMA = {
 
 export const wordsExampleRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/words/example-sentences",
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body is too large" }, 413),
-  }),
+  maxBodyBytes(MAX_BODY_BYTES),
   authMiddleware,
   entitlement("word_example_sentences"),
   jsonBody(wordsExampleRequestSchema),

@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 
 import { ApiError } from "../../api/_shared/auth";
 import { createStructuredJson } from "../../api/_shared/openai";
 import { readerExplainRequestSchema } from "../../lib/api-contract";
 import { isReaderSentenceExplanation } from "../../lib/reader-explain";
 import { authMiddleware } from "../middleware/auth";
+import { maxBodyBytes } from "../middleware/bodySize";
 import { entitlement } from "../middleware/entitlement";
 import { rateLimit } from "../middleware/rateLimit";
 import { jsonBody } from "../middleware/validate";
@@ -59,10 +59,7 @@ const EXPLANATION_SCHEMA = {
 
 export const readerExplainRoute = new Hono<{ Variables: AppVariables }>().post(
   "/api/reader/explain-sentence",
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body is too large" }, 413),
-  }),
+  maxBodyBytes(MAX_BODY_BYTES),
   authMiddleware,
   entitlement("reader_sentence_explain"),
   jsonBody(readerExplainRequestSchema),
