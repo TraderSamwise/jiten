@@ -1,5 +1,7 @@
+import { AiQuotaError, AiUnusableResponseError } from "./ai-errors";
 import { createApiClient } from "./api-client";
 import { getApiErrorMessage } from "./api-error";
+import { HAS_KANJI, KANA_ONLY, matchesHeadword, occurrences } from "./japanese-surface";
 
 export interface ContextSentence {
   /** Full Japanese sentence containing the target word written in kanji. */
@@ -24,42 +26,6 @@ export interface ContextSentences {
 const MAX_SENTENCE_LENGTH = 60;
 const MAX_SURFACE_LENGTH = 24;
 const MAX_ENGLISH_LENGTH = 200;
-
-const KANA_ONLY = /^[ぁ-ゖァ-ヺーヽヾゝゞ]+$/;
-const HAS_KANJI = /[一-鿿々]/;
-
-function occurrences(haystack: string, needle: string): number {
-  let count = 0;
-  let from = 0;
-  for (;;) {
-    const at = haystack.indexOf(needle, from);
-    if (at === -1) return count;
-    count++;
-    from = at + needle.length;
-  }
-}
-
-/**
- * A conjugated surface keeps the headword's kanji: 食べる → 食べました, 新しい →
- * 新しかった. Requiring a shared kanji (and the same opening kanji, when the
- * headword starts with one) rejects a sentence that targets some other word
- * entirely — which passes every intra-sentence check on its own.
- */
-export function matchesHeadword(targetSurface: string, headword: string): boolean {
-  const headwordKanji = [...headword].filter((ch) => HAS_KANJI.test(ch));
-  if (headwordKanji.length === 0) return true;
-
-  if (!headwordKanji.some((ch) => targetSurface.includes(ch))) return false;
-
-  const firstChar = [...headword][0];
-  if (HAS_KANJI.test(firstChar)) {
-    // お待ちください / ご飯 — an honorific prefix is part of the surface, not the headword.
-    const stripped = targetSurface.replace(/^[おご御]/, "");
-    if ([...stripped][0] !== firstChar) return false;
-  }
-
-  return true;
-}
 
 /**
  * The game colors the target red by slicing the sentence around `targetSurface`
@@ -157,21 +123,6 @@ export interface ContextSentenceRequestWord {
   jlptLevel?: number | null;
 }
 
-/** Thrown when the daily AI quota is spent, so a caller can stop prefetching. */
-export class ContextSentenceQuotaError extends Error {
-  readonly code = "quota_exceeded";
-  readonly name = "ContextSentenceQuotaError";
-}
-
-/**
- * The request succeeded but nothing it returned was playable. Quota is charged
- * per request, so retrying this would pay twice for the same answer.
- */
-export class ContextSentenceUnusableError extends Error {
-  readonly code = "unusable_response";
-  readonly name = "ContextSentenceUnusableError";
-}
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
 
@@ -243,9 +194,9 @@ export async function requestContextSentences({
     const code = (body as { code?: string } | null)?.code;
     // Both mean "stop generating for today" — only the message differs.
     if (code === "quota_exceeded" || code === "global_quota_exceeded") {
-      throw new ContextSentenceQuotaError(message);
+      throw new AiQuotaError(message);
     }
-    if (code === "unusable_response") throw new ContextSentenceUnusableError(message);
+    if (code === "unusable_response") throw new AiUnusableResponseError(message);
     throw new Error(message);
   }
 
@@ -257,7 +208,7 @@ export async function requestContextSentences({
     perWord,
   );
   if (result.items.length === 0) {
-    throw new ContextSentenceUnusableError("Sentence response was malformed.");
+    throw new AiUnusableResponseError("Sentence response was malformed.");
   }
   return result;
 }

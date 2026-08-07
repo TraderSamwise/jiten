@@ -14,8 +14,7 @@ vi.mock("@/lib/context-sentences", async () => {
 });
 
 const { useContextSentences, toPlayableEntries } = await import("./useContextSentences");
-const { ContextSentenceQuotaError, ContextSentenceUnusableError } =
-  await import("@/lib/context-sentences");
+const { AiQuotaError, AiUnusableResponseError } = await import("@/lib/ai-errors");
 
 function entry(id: number, kanji: string | null, kana: string): DictEntry {
   return {
@@ -126,7 +125,7 @@ describe("useContextSentences", () => {
   });
 
   it("stops without retrying when the quota is spent", async () => {
-    apiMocks.requestContextSentences.mockRejectedValue(new ContextSentenceQuotaError("no quota"));
+    apiMocks.requestContextSentences.mockRejectedValue(new AiQuotaError("no quota"));
 
     const { result } = renderSentences();
     await act(async () => {
@@ -140,7 +139,7 @@ describe("useContextSentences", () => {
 
   it("does not retry an unusable response — quota is already spent on it", async () => {
     apiMocks.requestContextSentences.mockRejectedValue(
-      new ContextSentenceUnusableError("Sentence response was malformed."),
+      new AiUnusableResponseError("Sentence response was malformed."),
     );
 
     const { result } = renderSentences();
@@ -155,7 +154,7 @@ describe("useContextSentences", () => {
     const many = Array.from({ length: 12 }, (_, i) => entry(i + 1, "本", "ほん"));
     apiMocks.requestContextSentences
       .mockResolvedValueOnce({ items: [{ word: "本", sentences: [sentenceFor("本", "ほん")] }] })
-      .mockRejectedValueOnce(new ContextSentenceUnusableError("nothing usable"))
+      .mockRejectedValueOnce(new AiUnusableResponseError("nothing usable"))
       .mockResolvedValueOnce({ items: [{ word: "本", sentences: [sentenceFor("本", "ほん")] }] });
 
     const { result } = renderSentences();
@@ -175,7 +174,7 @@ describe("useContextSentences", () => {
     const many = Array.from({ length: 20 }, (_, i) => entry(i + 1, "本", "ほん"));
     apiMocks.requestContextSentences
       .mockResolvedValueOnce({ items: [{ word: "本", sentences: [sentenceFor("本", "ほん")] }] })
-      .mockRejectedValue(new ContextSentenceUnusableError("nothing usable"));
+      .mockRejectedValue(new AiUnusableResponseError("nothing usable"));
 
     const { result } = renderSentences();
     await act(async () => {

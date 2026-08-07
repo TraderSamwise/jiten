@@ -1098,10 +1098,13 @@ sessions. Consequences worth knowing before changing it:
 - The context game requires a connection and a signed-in account. There is no offline path.
 - `sentencesPerWord` is 1: an extra sentence would be paid for and thrown away.
 - Failure classes are distinguished so quota is never spent twice on a settled answer.
-  `ContextSentenceQuotaError` and `ContextSentenceUnusableError` (a 200 whose sentences were
-  all unplayable) are never retried; a transient failure is retried once.
+  `AiQuotaError` and `AiUnusableResponseError` (a 200 whose sentences were all unplayable),
+  both in `lib/ai-errors.ts`, are never retried; a transient failure is retried once.
 
-### Prefetch pump (`hooks/useContextSentences.ts`)
+### Prefetch pump (`hooks/useBatchPrefetch.ts`)
+
+Generic over item and round type, so every AI game shares one copy of this logic;
+`hooks/useContextSentences.ts` is a thin wrapper supplying a `fetchBatch`.
 
 Batches of 5 words are fetched **sequentially** (parallel batches would race the quota
 counter above), keeping 10 rounds ahead of the player. The first batch is awaited before

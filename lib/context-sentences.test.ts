@@ -1,11 +1,9 @@
 import { afterEach, describe, test, expect, vi } from "vitest";
 
+import { AiQuotaError, AiUnusableResponseError } from "./ai-errors";
 import {
-  ContextSentenceQuotaError,
-  ContextSentenceUnusableError,
   filterPlayableSentences,
   isPlayableContextSentence,
-  matchesHeadword,
   requestContextSentences,
 } from "./context-sentences";
 
@@ -89,34 +87,6 @@ describe("isPlayableContextSentence", () => {
     expect(isPlayableContextSentence(null)).toBe(false);
     expect(isPlayableContextSentence("nope")).toBe(false);
     expect(isPlayableContextSentence({ sentence: "食べました。" })).toBe(false);
-  });
-});
-
-describe("matchesHeadword", () => {
-  test("accepts conjugated forms that keep the headword kanji", () => {
-    expect(matchesHeadword("食べました", "食べる")).toBe(true);
-    expect(matchesHeadword("新しかった", "新しい")).toBe(true);
-    expect(matchesHeadword("勉強しています", "勉強する")).toBe(true);
-    expect(matchesHeadword("本", "本")).toBe(true);
-  });
-
-  test("rejects a surface belonging to a different word", () => {
-    expect(matchesHeadword("本", "食べる")).toBe(false);
-    expect(matchesHeadword("飲みました", "食べる")).toBe(false);
-  });
-
-  test("accepts an honorific prefix the headword does not carry", () => {
-    expect(matchesHeadword("お待ちください", "待つ")).toBe(true);
-    expect(matchesHeadword("ご飯", "飯")).toBe(true);
-  });
-
-  test("uses shared kanji when the headword starts with kana", () => {
-    expect(matchesHeadword("お茶", "お茶")).toBe(true);
-    expect(matchesHeadword("水", "お茶")).toBe(false);
-  });
-
-  test("accepts anything for a kana-only headword — there is nothing to anchor on", () => {
-    expect(matchesHeadword("食べる", "たべる")).toBe(true);
   });
 });
 
@@ -366,7 +336,7 @@ describe("requestContextSentences", () => {
     ).rejects.toThrow("Sign in");
   });
 
-  test("surfaces a quota error as ContextSentenceQuotaError", async () => {
+  test("surfaces a quota error as AiQuotaError", async () => {
     stubFetch({
       ok: false,
       json: async () => ({
@@ -382,10 +352,10 @@ describe("requestContextSentences", () => {
         getToken: async () => "token",
         words: [{ word: "食べる" }],
       }),
-    ).rejects.toBeInstanceOf(ContextSentenceQuotaError);
+    ).rejects.toBeInstanceOf(AiQuotaError);
   });
 
-  test("surfaces an unusable 502 as ContextSentenceUnusableError so it is not retried", async () => {
+  test("surfaces an unusable 502 as AiUnusableResponseError so it is not retried", async () => {
     stubFetch({
       ok: false,
       json: async () => ({
@@ -400,7 +370,7 @@ describe("requestContextSentences", () => {
         getToken: async () => "token",
         words: [{ word: "食べる" }],
       }),
-    ).rejects.toBeInstanceOf(ContextSentenceUnusableError);
+    ).rejects.toBeInstanceOf(AiUnusableResponseError);
   });
 
   test("propagates other server errors as plain errors", async () => {
@@ -412,7 +382,7 @@ describe("requestContextSentences", () => {
       words: [{ word: "食べる" }],
     });
     await expect(promise).rejects.toThrow("AI request failed.");
-    await expect(promise).rejects.not.toBeInstanceOf(ContextSentenceQuotaError);
+    await expect(promise).rejects.not.toBeInstanceOf(AiQuotaError);
   });
 
   test("rejects a response whose sentences are all unplayable", async () => {
