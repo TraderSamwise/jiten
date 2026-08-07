@@ -296,7 +296,7 @@ export default function ContextGameScreen() {
         >
           <X size={24} className="text-foreground" />
         </Pressable>
-        <Text className="text-lg font-semibold text-foreground flex-1">Context Game</Text>
+        <Text className="text-lg font-semibold text-foreground flex-1">Read in Context</Text>
         {phase === "playing" && (
           <Pressable onPress={() => setSettingsOpen((v) => !v)} className="p-1">
             <Settings size={20} className="text-foreground" />
@@ -329,8 +329,8 @@ export default function ContextGameScreen() {
       {phase === "select" && (
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
           <GameSelectScreen
-            title="Context Game"
-            subtitle="Read the red word in a sentence and type its reading"
+            title="Read in Context"
+            subtitle="Type the reading of the highlighted word"
             wordFilter={wordFilter}
             selectedFilter={selectedFilter}
             onFilterChange={setSelectedFilter}

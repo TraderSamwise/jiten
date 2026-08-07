@@ -674,3 +674,28 @@ export function buildConfusionClusters(pairs: ConfusionPairResult[]): ConfusionC
     })
     .sort((a, b) => b.totalConfusions - a.totalConfusions);
 }
+
+/**
+ * Short name for a practice mode, for the chips in the stats and day-review
+ * screens. Lives here rather than beside the PracticeMode union, which sits in a
+ * module that value-imports drizzle — a label has no business pulling the DB
+ * layer into a component's bundle.
+ */
+export function practiceModeLabel(mode: string): string {
+  switch (mode) {
+    case "typing_game":
+      return "Typing";
+    case "context_game":
+      return "In Context";
+    case "fill_blank_game":
+      return "Fill Blank";
+    case "flashcard":
+      return "Flashcard";
+    case "typing_flashcard":
+      return "Type Flash";
+    case "voice":
+      return "Voice";
+    default:
+      return mode;
+  }
+}

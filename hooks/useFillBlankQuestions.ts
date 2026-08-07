@@ -14,8 +14,6 @@ import type { DictEntry } from "@/db/types";
 const BATCH_SIZE = 4;
 const LOOKAHEAD = 8;
 const CANDIDATES_PER_WORD = 10;
-/** The four choices: the answer plus its distractors. */
-export const OPTION_COUNT = DISTRACTOR_COUNT + 1;
 
 export interface FillBlankRound {
   entry: DictEntry;

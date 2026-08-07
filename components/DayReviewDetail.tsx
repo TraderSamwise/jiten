@@ -4,7 +4,12 @@ import { Text } from "@/components/ui/text";
 import { Check, X, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { EntrySummary } from "@/components/EntrySummary";
 import { ConfusionClusters } from "@/components/ConfusionClusters";
-import type { DaySessionDetail, DayEntryResult, ConfusionCluster } from "@/lib/practice-stats";
+import {
+  practiceModeLabel,
+  type DaySessionDetail,
+  type DayEntryResult,
+  type ConfusionCluster,
+} from "@/lib/practice-stats";
 import type { DictEntry } from "@/db/types";
 
 interface DayReviewDetailProps {
@@ -43,25 +48,6 @@ function formatDuration(ms: number): string {
     return remainMin > 0 ? `${hours}h ${remainMin}m` : `${hours}h`;
   }
   return `${minutes}m`;
-}
-
-function practiceModeLabel(mode: string): string {
-  switch (mode) {
-    case "typing_game":
-      return "Typing";
-    case "context_game":
-      return "Context";
-    case "fill_blank_game":
-      return "Fill Blank";
-    case "flashcard":
-      return "Flashcard";
-    case "typing_flashcard":
-      return "Type Flash";
-    case "voice":
-      return "Voice";
-    default:
-      return mode;
-  }
 }
 
 export function DayReviewDetail({

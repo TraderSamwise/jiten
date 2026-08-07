@@ -106,9 +106,9 @@ export function GamesModal({ visible, onClose, listId }: GamesModalProps) {
                 style={loading !== null ? { opacity: 0.5 } : undefined}
               >
                 <View>
-                  <Text className="text-base font-medium text-foreground">Context Game</Text>
+                  <Text className="text-base font-medium text-foreground">Read in Context</Text>
                   <Text className="text-sm text-muted-foreground">
-                    Read a word in a sentence and type its reading
+                    Type the reading of the highlighted word
                   </Text>
                 </View>
                 {loading === "context" ? (

@@ -34,7 +34,10 @@ export default function ListsLayout() {
       <Stack.Screen name="primitive/[id]" options={{ title: "Primitive" }} />
       <Stack.Screen name="study" options={{ title: "Study", headerShown: false }} />
       <Stack.Screen name="typing-game" options={{ title: "Typing Game", headerShown: false }} />
-      <Stack.Screen name="context-game" options={{ title: "Context Game", headerShown: false }} />
+      <Stack.Screen
+        name="context-game"
+        options={{ title: "Read in Context", headerShown: false }}
+      />
       <Stack.Screen
         name="fill-blank"
         options={{ title: "Fill in the Blank", headerShown: false }}

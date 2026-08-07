@@ -469,7 +469,7 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 
 - **Lists and Reader tabs**: `SafeBackButton` is set as the default `headerLeft` in each tab's `_layout.tsx` via `screenOptions`. All non-index screens get a back button automatically — no per-screen code needed.
 - **Dictionary tab**: Uses a fully custom `DictionaryHeader` component (search bar, mode toggle) which handles its own back button via `useSafeGoBack("/dictionary")`.
-- **Fullscreen screens** (study, typing-game, context-game, connect-game, kanji-arena, stats, marked-for-review): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
+- **Fullscreen screens** (study, typing-game, context-game, fill-blank, connect-game, kanji-arena, stats, marked-for-review): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
 
 ### Web navigation: back button and browser history
 
@@ -604,7 +604,7 @@ The backdrop colors are centralized in `lib/navigation.ts` as `WEB_BACKDROP_COLO
 
 **2. Custom React Nav header** (`DictionaryHeader`) — A custom header component passed to the stack navigator. Manages its own padding and backdrop color.
 
-**3. `headerShown: false` screens** (study, typing-game, context-game, connect-game, kanji-arena, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
+**3. `headerShown: false` screens** (study, typing-game, context-game, fill-blank, connect-game, kanji-arena, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
 
 ### `CustomHeaderScreen` system (`components/CustomHeaderScreen.tsx`)
 
@@ -619,7 +619,7 @@ Reusable components for screens with `headerShown: false`:
 
 **Header height conventions:**
 
-- Games (typing, connect): `py-3` + 32px spacer (matches `py-3` + 24px icon + `p-1` padding)
+- Games (typing, context, fill-blank, connect): `py-3` + 32px spacer (matches `py-3` + 24px icon + `p-1` padding)
 - Study/flashcards: `py-2` + 40px spacer (matches `py-2` + larger header content)
 - Reader: uses `webTop={15}` (unique larger spacing)
 
@@ -1019,7 +1019,7 @@ bodyLimit → authMiddleware → entitlement(feature) → jsonBody(schema) → r
 | `/api/reader/explain-sentence` | `readerExplain.ts`  | 2          | Grammar/meaning breakdown of a selected sentence                                      |
 | `/api/words/example-sentences` | `wordsExample.ts`   | 1          | Three example sentences for a dictionary headword                                     |
 | `/api/kanji/mnemonic`          | `kanjiMnemonic.ts`  | 1          | A mnemonic built from a kanji's primitives                                            |
-| `/api/words/context-sentences` | `wordsContext.ts`   | 2          | Sentences for **up to 5 words**, for the context game                                 |
+| `/api/words/context-sentences` | `wordsContext.ts`   | 2          | Sentences for **up to 5 words**, for Read in Context                                  |
 | `/api/words/fill-blank`        | `wordsFillBlank.ts` | 2          | Cloze questions for **up to 4 words**, each with a candidate pool for its distractors |
 
 Request schemas live in `lib/api-contract.ts` — shared by the routes and, through
@@ -1074,7 +1074,7 @@ everything; billing hooks in there without touching clients.
 
 ### Context sentences (`server/routes/wordsContext.ts`)
 
-The context game shows a sentence with one word in red and grades the kana the player types.
+Read in Context shows a sentence with one word in red and grades the kana the player types.
 That only works if the response satisfies invariants the model can't be trusted to hold, so
 `lib/context-sentences.ts` filters every sentence — on the server, and again on the client
 before it reaches the renderer:
@@ -1091,29 +1091,59 @@ before it reaches the renderer:
 Sentences that fail are dropped, not repaired. A word that loses all of its sentences simply
 doesn't come back; only an entirely empty result is an error.
 
+### Fill-blank questions (`server/routes/wordsFillBlank.ts`)
+
+Fill in the Blank shows a sentence with one word cut out and four choices, **all drawn from
+the player's own list**. Two decisions carry the design:
+
+- **The model returns the sentence with the answer still in it**, plus `answerSurface`. The
+  client cuts the blank by `indexOf`, which `toPlayableQuestion` guarantees matches exactly
+  once. Asking the model to place a placeholder token is the obvious alternative and is far
+  more fragile.
+- **The client picks the candidate pool, the model picks from it.** Sending a whole list is
+  impossible and letting the model invent words breaks the "from your own list" promise, so
+  `lib/fill-blank-candidates.ts` ranks the round's other words by part of speech, JLPT level,
+  shared kanji and length, and offers the ten best. `toPlayableOption` then rejects any
+  distractor whose `word` isn't in that pool.
+
+Every field of a distractor is validated, not just its word: `surface` is free model text
+rendered into a tappable button, so `surfaceBelongsToHeadword` anchors it to the word it
+claims to be a form of. Kana-only headwords need their own rule there — `matchesHeadword`
+has no kanji to anchor on, and a first-mora check would reject irregulars (来る → きます).
+
+A round needs **four distinct headwords** (`MIN_FILL_BLANK_WORDS`); below that no word has
+three others to stand beside it. Entries sharing a headword collapse, so the check counts
+headwords, not entries.
+
 ### No cache, by design
 
 Nothing about generated sentences is persisted — no table, no sync, no reuse across
 sessions. Consequences worth knowing before changing it:
 
-- The context game requires a connection and a signed-in account. There is no offline path.
-- `sentencesPerWord` is 1: an extra sentence would be paid for and thrown away.
+- Both AI games require a connection and a signed-in account. There is no offline path.
+- Read in Context asks for `sentencesPerWord: 1` — an extra sentence would be paid for and
+  thrown away.
 - Failure classes are distinguished so quota is never spent twice on a settled answer.
   `AiQuotaError` and `AiUnusableResponseError` (a 200 whose sentences were all unplayable),
   both in `lib/ai-errors.ts`, are never retried; a transient failure is retried once.
 
 ### Prefetch pump (`hooks/useBatchPrefetch.ts`)
 
-Generic over item and round type, so every AI game shares one copy of this logic;
-`hooks/useContextSentences.ts` is a thin wrapper supplying a `fetchBatch`.
+Generic over item and round type, so every AI game shares one copy of this logic.
+`hooks/useContextSentences.ts` and `hooks/useFillBlankQuestions.ts` are thin wrappers, each
+supplying a `fetchBatch`; a wrapper's `fetchBatch` must return `[]` rather than call through
+when its batch yields nothing askable, since the request helpers throw on an empty word list
+and that is not a settled failure the pump would stop retrying.
 
-Batches of 5 words are fetched **sequentially** (parallel batches would race the quota
-counter above), keeping 10 rounds ahead of the player. The first batch is awaited before
+Batches (5 words for Read in Context, 4 for Fill in the Blank) are fetched **sequentially**
+(parallel batches would race the quota counter above), keeping 10 and 8 rounds respectively
+ahead of the player. The first batch is awaited before
 play starts; the rest arrive during play. A failed first batch keeps the player on the
 select screen with the error; later on, two consecutive failed batches stop generation and
 the round ends early with the reason shown on the done screen.
 
-Model selection falls back through `OPENAI_CONTEXT_SENTENCES_MODEL` →
+Model selection falls back through a chain, most specific first:
+`OPENAI_FILL_BLANK_MODEL` (fill-blank only) → `OPENAI_CONTEXT_SENTENCES_MODEL` →
 `OPENAI_WORD_EXAMPLES_MODEL` → `OPENAI_EXPLAIN_MODEL`. The OpenAI call is capped at 35s,
 under the 60s Vercel function ceiling set by `vercel.json`.
 
@@ -1122,7 +1152,7 @@ under the 60s Vercel function ceiling set by `vercel.json`.
 `evaluateTypingInput()` grades one keystroke of kana typing — IME conversion, per-character
 status, flick-keyboard intermediates, completion, and over-length. It takes a plain string
 target, so it drives the typing game and study screen (target = a `DictEntry` reading) and
-the context game (target = a conjugated surface reading inside a sentence) from one
+Read in Context (target = a conjugated surface reading inside a sentence) from one
 implementation.
 
 ## Dev Server

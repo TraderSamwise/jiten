@@ -35,6 +35,7 @@ import {
   type LeechCard,
   type DaySessionDetail,
   type ConfusionCluster,
+  practiceModeLabel,
 } from "@/lib/practice-stats";
 import { useAtomValue } from "jotai";
 import { dayResetHourAtom } from "@/stores/settings";
@@ -65,25 +66,6 @@ function formatRelativeTime(iso: string): string {
   if (diffDays === 1) return `Yesterday ${time}`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function practiceModeLabel(mode: string): string {
-  switch (mode) {
-    case "typing_game":
-      return "Typing";
-    case "context_game":
-      return "Context";
-    case "fill_blank_game":
-      return "Fill Blank";
-    case "flashcard":
-      return "Flashcard";
-    case "typing_flashcard":
-      return "Type Flash";
-    case "voice":
-      return "Voice";
-    default:
-      return mode;
-  }
 }
 
 export default function StatsScreen() {

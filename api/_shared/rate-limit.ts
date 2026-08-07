@@ -14,7 +14,7 @@ export type ApiQuotaBucket = "ai";
 
 const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
   // One shared bucket across every AI feature, so it scales with how many of them
-  // a session touches — the context game alone spends a couple of units a round.
+  // a session touches — one game round alone spends a couple of units per batch.
   ai: 500,
 };
 const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {

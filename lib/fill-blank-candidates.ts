@@ -10,7 +10,7 @@ import type { DictEntry } from "@/db/types";
 export const MIN_FILL_BLANK_WORDS = 4;
 
 /**
- * The form shown in the choices. Unlike the context game, a kana-only word is
+ * The form shown in the choices. Unlike Read in Context, a kana-only word is
  * perfectly playable here — this game tests which word fits, not how to read it.
  */
 export function getFillBlankHeadword(entry: DictEntry): string | null {
