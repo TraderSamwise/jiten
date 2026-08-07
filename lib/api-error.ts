@@ -26,6 +26,14 @@ export function getApiErrorMessage(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") return fallback;
   const payload = body as Record<string, unknown>;
 
+  if (payload.code === "global_quota_exceeded") {
+    const resetAt = Number(payload.resetAt);
+    if (Number.isFinite(resetAt) && resetAt > 0) {
+      return `Jiten's AI features have hit their shared daily limit. Resets ${formatQuotaReset(resetAt)}.`;
+    }
+    return "Jiten's AI features have hit their shared daily limit. Try again tomorrow.";
+  }
+
   if (payload.code === "quota_exceeded") {
     const quota = payload.quota as ApiQuotaPayload | undefined;
     const resetAt = Number(quota?.resetAt);

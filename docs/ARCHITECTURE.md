@@ -1037,6 +1037,36 @@ the context game's prefetch is sequential rather than parallel.
 `entitlement(feature)` (`api/_shared/entitlements.ts`) is a real seam that currently allows
 everything; billing hooks in there without touching clients.
 
+#### Service-wide cap (`api/_shared/global-quota.ts`)
+
+Per-user counters live in each user's own Clerk metadata and can't see each other, so they
+bound nothing in aggregate — total spend is (accounts × their limit). A second counter caps
+the whole service at `AI_GLOBAL_DAILY_QUOTA` units/day (default 2000), stored in a small
+shared Turso database (`TURSO_QUOTA_DB_URL` + `TURSO_QUOTA_DB_TOKEN`).
+
+The increment and the limit test are a **single conditional statement**:
+
+```sql
+INSERT INTO ai_global_usage (day, count) VALUES (:day, :cost)
+ON CONFLICT(day) DO UPDATE SET count = count + :cost
+WHERE count + :cost <= :limit
+```
+
+`rowsAffected === 0` means the day is full. This matters: the per-user counter is a
+read-modify-write against Clerk and _can_ be raced, so the cap that actually has to hold
+under abuse is the one that can't be.
+
+Two deliberate behaviours:
+
+- **Fails closed.** If the counter can't be reached, AI routes return 503 rather than
+  running uncapped.
+- **Inert when unconfigured.** With the env vars unset (local dev, self-hosters) the check
+  is skipped and logs a warning once per process. Setting them is what arms it in
+  production — worth verifying after any env change.
+
+The per-user quota is consumed first, so a request the caller's own limit already refuses
+never spends from the shared budget.
+
 ### Context sentences (`server/routes/wordsContext.ts`)
 
 The context game shows a sentence with one word in red and grades the kana the player types.

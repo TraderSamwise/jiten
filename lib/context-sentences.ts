@@ -224,7 +224,10 @@ export async function requestContextSentences({
   if (!response.ok) {
     const message = getApiErrorMessage(body, "Could not generate sentences.");
     const code = (body as { code?: string } | null)?.code;
-    if (code === "quota_exceeded") throw new ContextSentenceQuotaError(message);
+    // Both mean "stop generating for today" — only the message differs.
+    if (code === "quota_exceeded" || code === "global_quota_exceeded") {
+      throw new ContextSentenceQuotaError(message);
+    }
     if (code === "unusable_response") throw new ContextSentenceUnusableError(message);
     throw new Error(message);
   }
