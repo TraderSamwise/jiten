@@ -210,21 +210,32 @@ export async function requestContextSentences({
   const perWord = sentencesPerWord == null ? undefined : clamp(sentencesPerWord, 1, 3);
 
   const client = createApiClient(apiBaseUrl, token);
-  const response = await client.api.words["context-sentences"].$post(
-    {
-      json: {
-        words: trimmed.map((entry) => ({
-          word: entry.word,
-          reading: entry.reading ?? undefined,
-          glosses: entry.glosses ?? undefined,
-          partOfSpeech: entry.partOfSpeech ?? undefined,
-          jlptLevel: entry.jlptLevel == null ? undefined : clamp(entry.jlptLevel, 1, 5),
-        })),
-        sentencesPerWord: perWord,
+
+  // AbortController + timer rather than AbortSignal.timeout: React Native
+  // polyfills the controller but not that static factory, so calling it throws
+  // "undefined is not a function" on device while working fine on web.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  // Inferred through the IIFE: the RPC client's response type is a union of every
+  // status the route can return, which a plain `Response` annotation would widen away.
+  const response = await client.api.words["context-sentences"]
+    .$post(
+      {
+        json: {
+          words: trimmed.map((entry) => ({
+            word: entry.word,
+            reading: entry.reading ?? undefined,
+            glosses: entry.glosses ?? undefined,
+            partOfSpeech: entry.partOfSpeech ?? undefined,
+            jlptLevel: entry.jlptLevel == null ? undefined : clamp(entry.jlptLevel, 1, 5),
+          })),
+          sentencesPerWord: perWord,
+        },
       },
-    },
-    { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
-  );
+      { init: { signal: controller.signal } },
+    )
+    .finally(() => clearTimeout(timer));
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {

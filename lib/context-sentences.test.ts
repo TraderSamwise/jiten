@@ -308,6 +308,28 @@ describe("requestContextSentences", () => {
     expect(second.words[0].jlptLevel).toBe(5);
   });
 
+  test("times out via AbortController, not AbortSignal.timeout — RN lacks the factory", async () => {
+    const original = AbortSignal.timeout;
+    // Simulate the React Native runtime, where the static factory is absent
+    (AbortSignal as unknown as { timeout?: unknown }).timeout = undefined;
+    try {
+      const fetchMock = stubFetch({ ok: true, json: async () => ({ result: payload }) });
+      await expect(
+        requestContextSentences({
+          apiBaseUrl: "https://api.example.com",
+          getToken: async () => "token",
+          words: [{ word: "食べる" }],
+        }),
+      ).resolves.toEqual(payload);
+
+      const init = fetchMock.mock.calls[0][1];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(init.signal.aborted).toBe(false);
+    } finally {
+      (AbortSignal as unknown as { timeout?: unknown }).timeout = original;
+    }
+  });
+
   test("rejects an empty batch before hitting the network", async () => {
     const fetchMock = stubFetch({ ok: true, json: async () => ({ result: payload }) });
     await expect(
