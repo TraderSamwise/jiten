@@ -9,6 +9,7 @@ import { readerExplainRoute } from "./routes/readerExplain";
 import { tursoTokenRoute } from "./routes/tursoToken";
 import { wordsContextRoute } from "./routes/wordsContext";
 import { wordsExampleRoute } from "./routes/wordsExample";
+import { wordsFillBlankRoute } from "./routes/wordsFillBlank";
 import type { AppVariables } from "./types";
 
 // The single Hono app: mounted as the Vercel catch-all in prod (api/[...route].ts)
@@ -34,6 +35,7 @@ export const app = base
   .route("/", readerExplainRoute)
   .route("/", wordsExampleRoute)
   .route("/", wordsContextRoute)
+  .route("/", wordsFillBlankRoute)
   .route("/", kanjiMnemonicRoute)
   .route("/", tursoTokenRoute)
   .route("/", provisionDbRoute)

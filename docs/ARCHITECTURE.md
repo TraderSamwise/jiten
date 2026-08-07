@@ -1007,19 +1007,20 @@ Mutable tables are soft-deleted (syncs to remote). Append tables are hard-delete
 
 ## AI API
 
-Four routes call OpenAI. They live in `server/routes/`, are mounted on the single Hono app
+Five routes call OpenAI. They live in `server/routes/`, are mounted on the single Hono app
 (`server/app.ts`), and share one middleware chain:
 
 ```
 bodyLimit → authMiddleware → entitlement(feature) → jsonBody(schema) → rateLimit(endpoint)
 ```
 
-| Endpoint                       | Route file         | Quota cost | Returns                                               |
-| ------------------------------ | ------------------ | ---------- | ----------------------------------------------------- |
-| `/api/reader/explain-sentence` | `readerExplain.ts` | 2          | Grammar/meaning breakdown of a selected sentence      |
-| `/api/words/example-sentences` | `wordsExample.ts`  | 1          | Three example sentences for a dictionary headword     |
-| `/api/kanji/mnemonic`          | `kanjiMnemonic.ts` | 1          | A mnemonic built from a kanji's primitives            |
-| `/api/words/context-sentences` | `wordsContext.ts`  | 2          | Sentences for **up to 5 words**, for the context game |
+| Endpoint                       | Route file          | Quota cost | Returns                                                                               |
+| ------------------------------ | ------------------- | ---------- | ------------------------------------------------------------------------------------- |
+| `/api/reader/explain-sentence` | `readerExplain.ts`  | 2          | Grammar/meaning breakdown of a selected sentence                                      |
+| `/api/words/example-sentences` | `wordsExample.ts`   | 1          | Three example sentences for a dictionary headword                                     |
+| `/api/kanji/mnemonic`          | `kanjiMnemonic.ts`  | 1          | A mnemonic built from a kanji's primitives                                            |
+| `/api/words/context-sentences` | `wordsContext.ts`   | 2          | Sentences for **up to 5 words**, for the context game                                 |
+| `/api/words/fill-blank`        | `wordsFillBlank.ts` | 2          | Cloze questions for **up to 4 words**, each with a candidate pool for its distractors |
 
 Request schemas live in `lib/api-contract.ts` — shared by the routes and, through
 `hc<AppType>`, by the typed RPC client (`lib/api-client.ts`). The zod helpers **truncate**
@@ -1036,7 +1037,7 @@ shared Turso database (`TURSO_QUOTA_DB_URL` + `TURSO_QUOTA_DB_TOKEN`):
 | Per user     | `ai_user_usage`   | `AI_DAILY_QUOTA`, default 500/day (capped at 10 000) | one Clerk user   |
 | Service-wide | `ai_global_usage` | `AI_GLOBAL_DAILY_QUOTA`, default 2000/day            | everyone, summed |
 
-All four endpoints share one weighted `ai` bucket. Cost is **per request**, charged _before_
+All five endpoints share one weighted `ai` bucket. Cost is **per request**, charged _before_
 the OpenAI call — so a request whose response turns out to be unusable still costs its units.
 The service-wide counter exists because per-user limits bound nothing in aggregate: N
 accounts cost N x their limit.

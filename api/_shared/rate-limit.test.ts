@@ -68,8 +68,10 @@ describe("quota configuration", () => {
   test("maps AI endpoints to a shared weighted quota bucket", () => {
     expect(getQuotaBucket("reader_sentence_explain")).toBe("ai");
     expect(getQuotaBucket("word_context_sentences")).toBe("ai");
+    expect(getQuotaBucket("word_fill_blank")).toBe("ai");
     expect(getEndpointCost("reader_sentence_explain")).toBe(2);
     expect(getEndpointCost("word_example_sentences")).toBe(1);
+    expect(getEndpointCost("word_fill_blank")).toBe(2);
   });
 
   test("reads both limits from the environment, falling back on nonsense", () => {

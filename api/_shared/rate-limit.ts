@@ -8,7 +8,8 @@ export type ApiQuotaEndpoint =
   | "reader_sentence_explain"
   | "word_example_sentences"
   | "kanji_mnemonic"
-  | "word_context_sentences";
+  | "word_context_sentences"
+  | "word_fill_blank";
 export type ApiQuotaBucket = "ai";
 
 const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
@@ -23,6 +24,7 @@ const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
   // Charged per batch, not per word: one call covers several words, and a game
   // round fires many of them back to back.
   word_context_sentences: 2,
+  word_fill_blank: 2,
 };
 
 // A service-wide ceiling on top of the per-user limit. Per-user counters bound
@@ -74,6 +76,7 @@ export function getQuotaBucket(endpoint: ApiQuotaEndpoint): ApiQuotaBucket {
     case "word_example_sentences":
     case "kanji_mnemonic":
     case "word_context_sentences":
+    case "word_fill_blank":
       return "ai";
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { matchesHeadword, occurrences } from "./japanese-surface";
+import { matchesHeadword, occurrences, surfaceBelongsToHeadword } from "./japanese-surface";
 
 describe("occurrences", () => {
   test("counts non-overlapping hits", () => {
@@ -39,5 +39,25 @@ describe("matchesHeadword", () => {
 
   test("accepts anything for a kana-only headword — there is nothing to anchor on", () => {
     expect(matchesHeadword("食べる", "たべる")).toBe(true);
+  });
+});
+
+describe("surfaceBelongsToHeadword", () => {
+  test("defers to matchesHeadword when the headword has kanji", () => {
+    expect(surfaceBelongsToHeadword("食べました", "食べる")).toBe(true);
+    expect(surfaceBelongsToHeadword("飲みました", "食べる")).toBe(false);
+  });
+
+  test("holds a kana-only headword to a kana surface", () => {
+    expect(surfaceBelongsToHeadword("します", "する")).toBe(true);
+    expect(surfaceBelongsToHeadword("きれいです", "きれい")).toBe(true);
+    expect(surfaceBelongsToHeadword("たくさん", "たくさん")).toBe(true);
+    // matchesHeadword alone accepts this: a kana headword gives it nothing to anchor on
+    expect(surfaceBelongsToHeadword("食べました", "する")).toBe(false);
+  });
+
+  test("accepts irregular conjugations a first-mora check would reject", () => {
+    expect(surfaceBelongsToHeadword("来ます", "来る")).toBe(true);
+    expect(surfaceBelongsToHeadword("します", "する")).toBe(true);
   });
 });

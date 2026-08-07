@@ -41,3 +41,17 @@ export function matchesHeadword(targetSurface: string, headword: string): boolea
 
   return true;
 }
+
+/**
+ * Anchor a surface to the headword it claims to be a form of.
+ *
+ * A kana-only headword stays kana through every conjugation (する → します,
+ * きれい → きれいです), so a surface that gained kanji belongs to some other word.
+ * That case needs its own rule because `matchesHeadword` has no kanji to anchor
+ * on and accepts anything. A first-mora check would be the obvious alternative
+ * and is wrong — it rejects irregulars like 来る → きます.
+ */
+export function surfaceBelongsToHeadword(surface: string, headword: string): boolean {
+  if (!HAS_KANJI.test(headword)) return KANA_ONLY.test(surface);
+  return matchesHeadword(surface, headword);
+}

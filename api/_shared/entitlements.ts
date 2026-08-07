@@ -4,7 +4,8 @@ export type PremiumFeature =
   | "reader_sentence_explain"
   | "word_example_sentences"
   | "kanji_mnemonic"
-  | "word_context_sentences";
+  | "word_context_sentences"
+  | "word_fill_blank";
 
 export interface FeatureAccess {
   allowed: boolean;

@@ -67,6 +67,33 @@ export const wordsContextRequestSchema = z.object({
   sentencesPerWord: z.number().int().min(1).max(3).default(2),
 });
 
+// Batched like the context sentences, but each word also carries the pool its
+// three distractors must be drawn from, so the batch is smaller.
+export const wordsFillBlankRequestSchema = z.object({
+  words: z
+    .array(
+      z.object({
+        word: reqTrimmed(80, "word is required"),
+        reading: optTrimmed(80),
+        glosses: trimmedArray(4, 120),
+        partOfSpeech: trimmedArray(4, 60),
+        jlptLevel: z.number().int().min(1).max(5).optional(),
+        candidates: z
+          .array(
+            z.object({
+              word: reqTrimmed(80, "candidate word is required"),
+              reading: optTrimmed(80),
+              glosses: trimmedArray(2, 120),
+            }),
+          )
+          .min(3, "at least three candidates are required")
+          .max(10),
+      }),
+    )
+    .min(1, "words is required")
+    .max(4),
+});
+
 export const kanjiMnemonicRequestSchema = z.object({
   kanji: reqTrimmed(8, "kanji is required"),
   keyword: reqTrimmed(120, "keyword is required"),
