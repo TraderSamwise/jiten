@@ -1,4 +1,6 @@
-import { createClerkClient } from "@clerk/backend";
+// The /web entry keeps the Vercel function free of libsql's native bindings —
+// same choice as db/turso-client.ts.
+import { createClient, type Client } from "@libsql/client/web";
 
 import { ApiError } from "./auth";
 
@@ -9,7 +11,6 @@ export type ApiQuotaEndpoint =
   | "word_context_sentences";
 export type ApiQuotaBucket = "ai";
 
-const METADATA_KEY = "jitenApiUsage";
 const DEFAULT_DAILY_LIMITS: Record<ApiQuotaBucket, number> = {
   // One shared bucket across every AI feature, so it scales with how many of them
   // a session touches — the context game alone spends a couple of units a round.
@@ -24,12 +25,14 @@ const AI_ENDPOINT_COSTS: Record<ApiQuotaEndpoint, number> = {
   word_context_sentences: 2,
 };
 
-interface StoredFeatureUsage {
-  day: string;
-  count: number;
-}
+// A service-wide ceiling on top of the per-user limit. Per-user counters bound
+// nothing in aggregate: N accounts cost N x their limit. This bounds the sum.
+const DEFAULT_GLOBAL_DAILY_LIMIT = 2000;
+const MAX_GLOBAL_DAILY_LIMIT = 1_000_000;
 
-type StoredApiUsage = Partial<Record<ApiQuotaBucket, StoredFeatureUsage>>;
+const USER_TABLE = "ai_user_usage";
+const GLOBAL_TABLE = "ai_global_usage";
+const TIMEOUT_MS = 5_000;
 
 export interface DailyQuotaResult {
   limit: number;
@@ -45,16 +48,15 @@ export class QuotaExceededError extends ApiError {
   }
 }
 
-let clerkClient: ReturnType<typeof createClerkClient> | null = null;
+export class GlobalQuotaExceededError extends ApiError {
+  readonly name = "GlobalQuotaExceededError";
 
-function getClerkClient(): ReturnType<typeof createClerkClient> {
-  const secretKey = process.env.CLERK_SECRET_KEY;
-  if (!secretKey) {
-    console.error("[api-rate-limit] Missing CLERK_SECRET_KEY");
-    throw new ApiError(500, "Server misconfigured");
+  constructor(
+    readonly limit: number,
+    readonly resetAt: number,
+  ) {
+    super(429, "Jiten's shared daily AI limit has been reached.");
   }
-  clerkClient ??= createClerkClient({ secretKey });
-  return clerkClient;
 }
 
 export function getUtcDay(now = new Date()): string {
@@ -89,113 +91,173 @@ export function parseDailyLimit(bucket: ApiQuotaBucket): number {
   return Math.min(Math.floor(parsed), 10_000);
 }
 
-export function readStoredApiUsage(metadata: unknown): StoredApiUsage {
-  if (!metadata || typeof metadata !== "object") return {};
-  const raw = (metadata as Record<string, unknown>)[METADATA_KEY];
-  if (!raw || typeof raw !== "object") return {};
-
-  const usage: StoredApiUsage = {};
-  for (const bucket of Object.keys(DEFAULT_DAILY_LIMITS) as ApiQuotaBucket[]) {
-    const value = (raw as Record<string, unknown>)[bucket];
-    if (!value || typeof value !== "object") continue;
-    const day = (value as Record<string, unknown>).day;
-    const count = (value as Record<string, unknown>).count;
-    if (typeof day === "string" && Number.isFinite(count)) {
-      usage[bucket] = { day, count: Math.max(0, Math.floor(Number(count))) };
-    }
-  }
-  return usage;
+export function parseGlobalDailyLimit(): number {
+  const raw = process.env.AI_GLOBAL_DAILY_QUOTA;
+  if (!raw) return DEFAULT_GLOBAL_DAILY_LIMIT;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_GLOBAL_DAILY_LIMIT;
+  return Math.min(Math.floor(parsed), MAX_GLOBAL_DAILY_LIMIT);
 }
 
-export function incrementDailyUsage({
-  usage,
-  bucket,
-  day,
-  limit,
-  cost,
-}: {
-  usage: StoredApiUsage;
-  bucket: ApiQuotaBucket;
-  day: string;
-  limit: number;
-  cost: number;
-}): { nextUsage: StoredApiUsage; result: DailyQuotaResult } {
-  const current = usage[bucket]?.day === day ? usage[bucket]!.count : 0;
-  if (current + cost > limit) {
-    throw new QuotaExceededError({
-      limit,
-      remaining: Math.max(0, limit - current),
-      resetAt: getDailyResetEpochSeconds(day),
-      cost,
-    });
-  }
-
-  const nextCount = current + cost;
-  return {
-    nextUsage: {
-      ...usage,
-      [bucket]: { day, count: nextCount },
-    },
-    result: {
-      limit,
-      remaining: Math.max(0, limit - nextCount),
-      resetAt: getDailyResetEpochSeconds(day),
-      cost,
-    },
-  };
+/** Enforcement is inert until the counter database is configured. */
+export function isQuotaDbConfigured(): boolean {
+  return !!(process.env.TURSO_QUOTA_DB_URL && process.env.TURSO_QUOTA_DB_TOKEN);
 }
 
-// This counter lives in Clerk, so every AI request makes two Clerk round trips
-// before any work starts. Unbounded, a stalled Clerk call holds the whole request
-// until the platform kills it — which is exactly how AI features hung in
-// production: a 60s FUNCTION_INVOCATION_TIMEOUT rather than any error.
-const CLERK_TIMEOUT_MS = 5_000;
+let client: Client | null = null;
+let tablesReady = false;
+let warnedUnconfigured = false;
 
-function withClerkTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+function getClient(): Client {
+  client ??= createClient({
+    url: process.env.TURSO_QUOTA_DB_URL!,
+    authToken: process.env.TURSO_QUOTA_DB_TOKEN!,
+  });
+  return client;
+}
+
+function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
   return Promise.race([
     work,
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`clerk ${label} timed out`)), CLERK_TIMEOUT_MS),
+      setTimeout(() => reject(new Error(`quota ${label} timed out`)), TIMEOUT_MS),
     ),
   ]);
 }
 
+async function ensureTables(db: Client): Promise<void> {
+  if (tablesReady) return;
+  await withTimeout(
+    db.batch(
+      [
+        `CREATE TABLE IF NOT EXISTS ${GLOBAL_TABLE} (day TEXT PRIMARY KEY, count INTEGER NOT NULL)`,
+        `CREATE TABLE IF NOT EXISTS ${USER_TABLE} (
+           user_id TEXT NOT NULL,
+           day TEXT NOT NULL,
+           count INTEGER NOT NULL,
+           PRIMARY KEY (user_id, day)
+         )`,
+      ],
+      "write",
+    ),
+    "schema check",
+  );
+  tablesReady = true;
+
+  // Yesterday's rows are dead weight — counters are per UTC day. Fire and forget
+  // once per process so a slow delete never delays a request.
+  const cutoff = getUtcDay(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
+  db.execute({ sql: `DELETE FROM ${USER_TABLE} WHERE day < :cutoff`, args: { cutoff } }).catch(
+    (err) => console.warn("[quota] Could not prune old usage rows:", err),
+  );
+}
+
+function warnUnconfiguredOnce(): void {
+  if (warnedUnconfigured) return;
+  warnedUnconfigured = true;
+  console.warn(
+    "[quota] TURSO_QUOTA_DB_URL/TURSO_QUOTA_DB_TOKEN unset — AI usage limits are NOT enforced",
+  );
+}
+
+/**
+ * Charge a user for one request.
+ *
+ * The increment and the limit test are ONE conditional statement, and `RETURNING`
+ * hands back the new total in the same round trip. This counter used to live in
+ * Clerk `privateMetadata`, which cost two API calls per request and was a
+ * read-modify-write two concurrent requests could ride straight past.
+ */
 export async function consumeDailyUserQuota(
   userId: string,
   endpoint: ApiQuotaEndpoint,
 ): Promise<DailyQuotaResult> {
-  const client = getClerkClient();
   const day = getUtcDay();
   const bucket = getQuotaBucket(endpoint);
   const limit = parseDailyLimit(bucket);
   const cost = getEndpointCost(endpoint);
+  const resetAt = getDailyResetEpochSeconds(day);
 
-  try {
-    const user = await withClerkTimeout(client.users.getUser(userId), "getUser");
-    const currentMetadata = user.privateMetadata ?? {};
-    const usage = readStoredApiUsage(currentMetadata);
-    const { nextUsage, result } = incrementDailyUsage({ usage, bucket, day, limit, cost });
-
-    await withClerkTimeout(
-      client.users.updateUserMetadata(userId, {
-        privateMetadata: {
-          ...currentMetadata,
-          [METADATA_KEY]: nextUsage,
-        },
-      }),
-      "updateUserMetadata",
-    );
-
-    return result;
-  } catch (err) {
-    // A real quota rejection still refuses the request.
-    if (err instanceof ApiError) throw err;
-    // An unreachable counter degrades instead of blocking: the service-wide cap
-    // (api/_shared/global-quota.ts) still bounds spend, so per-user accounting is
-    // the safer thing to lose. Loud, because it means limits aren't being recorded.
-    console.error(`[api-rate-limit] DEGRADED — per-user quota not recorded for ${endpoint}:`, err);
-    return { limit, remaining: limit - cost, resetAt: getDailyResetEpochSeconds(day), cost };
+  if (!isQuotaDbConfigured()) {
+    warnUnconfiguredOnce();
+    return { limit, remaining: limit - cost, resetAt, cost };
   }
+  if (cost > limit) throw new QuotaExceededError({ limit, remaining: limit, resetAt, cost });
+
+  let applied: number | null;
+  try {
+    const db = getClient();
+    await ensureTables(db);
+    const result = await withTimeout(
+      db.execute({
+        sql: `INSERT INTO ${USER_TABLE} (user_id, day, count) VALUES (:userId, :day, :cost)
+              ON CONFLICT(user_id, day) DO UPDATE SET count = count + :cost
+              WHERE count + :cost <= :limit
+              RETURNING count`,
+        args: { userId, day, cost, limit },
+      }),
+      "user write",
+    );
+    applied = result.rows.length > 0 ? Number(result.rows[0].count) : null;
+  } catch (err) {
+    // Fail closed: an unreachable counter must not become an open tap.
+    console.error("[quota] Could not record per-user usage:", err);
+    throw new ApiError(503, "Could not verify usage quota");
+  }
+
+  if (applied === null) {
+    throw new QuotaExceededError({ limit, remaining: 0, resetAt, cost });
+  }
+  return { limit, remaining: Math.max(0, limit - applied), resetAt, cost };
+}
+
+export interface GlobalQuotaResult {
+  limit: number;
+  used: number;
+  resetAt: number;
+}
+
+/**
+ * Add `units` to today's service-wide total, refusing to exceed the limit.
+ * Same single-statement guarantee as the per-user counter.
+ */
+export async function consumeGlobalDailyQuota(units: number): Promise<GlobalQuotaResult | null> {
+  if (!isQuotaDbConfigured()) {
+    warnUnconfiguredOnce();
+    return null;
+  }
+
+  const day = getUtcDay();
+  const limit = parseGlobalDailyLimit();
+  const resetAt = getDailyResetEpochSeconds(day);
+  const cost = Math.max(1, Math.floor(units));
+
+  // A single request that couldn't fit even in an empty day would otherwise slip
+  // through on the INSERT path, which has no conflict clause to gate it.
+  if (cost > limit) throw new GlobalQuotaExceededError(limit, resetAt);
+
+  let used: number | null;
+  try {
+    const db = getClient();
+    await ensureTables(db);
+    const result = await withTimeout(
+      db.execute({
+        sql: `INSERT INTO ${GLOBAL_TABLE} (day, count) VALUES (:day, :cost)
+              ON CONFLICT(day) DO UPDATE SET count = count + :cost
+              WHERE count + :cost <= :limit
+              RETURNING count`,
+        args: { day, cost, limit },
+      }),
+      "global write",
+    );
+    used = result.rows.length > 0 ? Number(result.rows[0].count) : null;
+  } catch (err) {
+    console.error("[quota] Could not record service-wide usage:", err);
+    throw new ApiError(503, "Could not verify service usage limits");
+  }
+
+  if (used === null) throw new GlobalQuotaExceededError(limit, resetAt);
+  return { limit, used, resetAt };
 }
 
 // The four X-RateLimit-* headers as strings, for the Hono middleware (c.header()).
@@ -206,4 +268,11 @@ export function rateLimitHeaders(quota: DailyQuotaResult): Record<string, string
     "X-RateLimit-Reset": String(quota.resetAt),
     "X-RateLimit-Cost": String(quota.cost),
   };
+}
+
+/** Test seam — module-level client/table state would otherwise leak between cases. */
+export function resetQuotaState(): void {
+  client = null;
+  tablesReady = false;
+  warnedUnconfigured = false;
 }

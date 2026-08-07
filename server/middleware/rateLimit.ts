@@ -1,8 +1,8 @@
 import type { MiddlewareHandler } from "hono";
 
-import { consumeGlobalDailyQuota } from "../../api/_shared/global-quota";
 import {
   consumeDailyUserQuota,
+  consumeGlobalDailyQuota,
   getEndpointCost,
   rateLimitHeaders,
   type ApiQuotaEndpoint,

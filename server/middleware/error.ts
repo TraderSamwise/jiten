@@ -3,8 +3,11 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import { ApiError } from "../../api/_shared/auth";
-import { GlobalQuotaExceededError } from "../../api/_shared/global-quota";
-import { QuotaExceededError, rateLimitHeaders } from "../../api/_shared/rate-limit";
+import {
+  GlobalQuotaExceededError,
+  QuotaExceededError,
+  rateLimitHeaders,
+} from "../../api/_shared/rate-limit";
 
 // Central error → response mapping for app.onError. QuotaExceededError extends
 // ApiError, so it must be checked first (and carries the rate-limit headers).

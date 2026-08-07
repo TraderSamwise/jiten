@@ -1028,44 +1028,48 @@ shortens instead of failing the request.
 
 ### Quotas and entitlements
 
-All four endpoints share one daily `ai` bucket (`api/_shared/rate-limit.ts`), default 500
-units/day, overridable with `AI_DAILY_QUOTA` (capped at 10 000). Cost is **per request**, charged _before_ the
-OpenAI call — so a request whose response turns out to be unusable still costs its units.
-Usage is stored in Clerk `privateMetadata` with a non-atomic read-modify-write, which is why
-the context game's prefetch is sequential rather than parallel.
+Two counters guard AI spend, both in `api/_shared/rate-limit.ts`, both stored in a small
+shared Turso database (`TURSO_QUOTA_DB_URL` + `TURSO_QUOTA_DB_TOKEN`):
+
+| Counter      | Table             | Limit                                                | Scope            |
+| ------------ | ----------------- | ---------------------------------------------------- | ---------------- |
+| Per user     | `ai_user_usage`   | `AI_DAILY_QUOTA`, default 500/day (capped at 10 000) | one Clerk user   |
+| Service-wide | `ai_global_usage` | `AI_GLOBAL_DAILY_QUOTA`, default 2000/day            | everyone, summed |
+
+All four endpoints share one weighted `ai` bucket. Cost is **per request**, charged _before_
+the OpenAI call — so a request whose response turns out to be unusable still costs its units.
+The service-wide counter exists because per-user limits bound nothing in aggregate: N
+accounts cost N x their limit.
+
+Both counters increment and test their limit in a **single conditional statement**, with
+`RETURNING` handing back the new total in the same round trip:
+
+```sql
+INSERT INTO ai_user_usage (user_id, day, count) VALUES (:userId, :day, :cost)
+ON CONFLICT(user_id, day) DO UPDATE SET count = count + :cost
+WHERE count + :cost <= :limit
+RETURNING count
+```
+
+No rows returned means the day is full. This matters: a read-then-write lets two concurrent
+requests read the same total and both pass — exactly what an abusive client would ride. The
+per-user counter used to live in Clerk `privateMetadata`, which cost two Clerk API calls per
+request and was raceable for that reason.
+
+Rows are keyed by UTC day, so counters reset without a job; stale rows are pruned once per
+process. Two deliberate behaviours:
+
+- **Fails closed.** If the counter database can't be reached, AI routes return 503 rather
+  than running uncapped — every AI feature depends on it being up.
+- **Inert when unconfigured.** With the env vars unset (local dev, self-hosters) both checks
+  are skipped and log a warning once per process, meaning **no** limits are enforced. Setting
+  them is what arms this in production — worth verifying after any env change.
+
+The per-user counter is consumed first, so a request the caller's own limit already refuses
+never spends from the shared budget.
 
 `entitlement(feature)` (`api/_shared/entitlements.ts`) is a real seam that currently allows
 everything; billing hooks in there without touching clients.
-
-#### Service-wide cap (`api/_shared/global-quota.ts`)
-
-Per-user counters live in each user's own Clerk metadata and can't see each other, so they
-bound nothing in aggregate — total spend is (accounts × their limit). A second counter caps
-the whole service at `AI_GLOBAL_DAILY_QUOTA` units/day (default 2000), stored in a small
-shared Turso database (`TURSO_QUOTA_DB_URL` + `TURSO_QUOTA_DB_TOKEN`).
-
-The increment and the limit test are a **single conditional statement**:
-
-```sql
-INSERT INTO ai_global_usage (day, count) VALUES (:day, :cost)
-ON CONFLICT(day) DO UPDATE SET count = count + :cost
-WHERE count + :cost <= :limit
-```
-
-`rowsAffected === 0` means the day is full. This matters: the per-user counter is a
-read-modify-write against Clerk and _can_ be raced, so the cap that actually has to hold
-under abuse is the one that can't be.
-
-Two deliberate behaviours:
-
-- **Fails closed.** If the counter can't be reached, AI routes return 503 rather than
-  running uncapped.
-- **Inert when unconfigured.** With the env vars unset (local dev, self-hosters) the check
-  is skipped and logs a warning once per process. Setting them is what arms it in
-  production — worth verifying after any env change.
-
-The per-user quota is consumed first, so a request the caller's own limit already refuses
-never spends from the shared budget.
 
 ### Context sentences (`server/routes/wordsContext.ts`)
 
