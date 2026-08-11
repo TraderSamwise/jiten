@@ -11,8 +11,19 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
+import {
+  Gesture,
+  GestureDetector,
+  ScrollView as GestureScrollView,
+} from "react-native-gesture-handler";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import {
   CustomHeaderScreen,
@@ -35,6 +46,7 @@ import { useAuth } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { X, Settings, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { useSafeGoBack } from "@/lib/navigation";
+import { useContainerWidth } from "@/lib/use-container-width";
 import { logPracticeEvent, logSessionSummary } from "@/lib/practice-logger";
 import { evaluateTypingInput } from "@/lib/typing-core";
 import type { CharStatus } from "@/lib/typing-utils";
@@ -54,8 +66,20 @@ const REVIEW_PAUSE_MS = 1300;
  * this holds the verdict open long enough to fix a slip.
  */
 const WRONG_GRACE_MS = 1500;
-const SWIPE_THRESHOLD = 60;
+
+// Carousel geometry, matching the study screen's flashcards: neighbours peek in
+// at the edges so it reads as a deck you move through rather than a screen that
+// swaps contents.
+const CARD_PEEK = 24;
+const CARD_GAP = 16;
+const SLIDE_DURATION = 250;
+const SLIDE_CONFIG = { duration: SLIDE_DURATION, easing: Easing.out(Easing.ease) };
+/** Fixed, so a short sentence and a long one don't resize the deck between rounds. */
+const DECK_HEIGHT = 280;
+const SWIPE_THRESHOLD = 50;
 const SWIPE_VELOCITY = 500;
+/** Sentences rendered either side of the current one. */
+const WINDOW_RADIUS = 1;
 
 type Phase = "select" | "loading" | "playing" | "done";
 
@@ -104,6 +128,12 @@ export default function ContextGameScreen() {
   const [totalPlayable, setTotalPlayable] = useState(0);
 
   const router = useRouter();
+  const containerWidth = useContainerWidth();
+  const cardWidth = containerWidth - 32 - 2 * CARD_PEEK - 2 * CARD_GAP;
+  const slideDistance = cardWidth + CARD_GAP;
+  const translateX = useSharedValue(0);
+  const gestureStartX = useSharedValue(0);
+
   const inputRef = useRef<TextInput>(null);
   const gameRef = useRef<View>(null);
   const isKanaInput = useRef(false);
@@ -240,6 +270,7 @@ export default function ContextGameScreen() {
     setTotalPlayable(playable.length);
     setCurrentIndex(0);
     setFurthestIndex(0);
+    translateX.value = 0;
     setTypedRomaji("");
     setTypedKana("");
     setStatuses([]);
@@ -279,8 +310,8 @@ export default function ContextGameScreen() {
     }, REVIEW_PAUSE_MS);
   }
 
-  function goToIndex(index: number) {
-    if (index < 0) return;
+  /** State half of a move. The gesture animates the deck itself, so it calls this. */
+  function applyIndex(index: number) {
     clearGrace();
     cancelAdvance();
     // Any deliberate move cancels a pending resume, so a push that never happened
@@ -299,6 +330,12 @@ export default function ContextGameScreen() {
     answeredRef.current = answers[index] != null;
     setCurrentIndex(index);
     setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  function goToIndex(index: number) {
+    if (index < 0) return;
+    applyIndex(index);
+    translateX.value = withTiming(-(index * slideDistance), SLIDE_CONFIG);
   }
 
   const canGoBack = currentIndex > 0;
@@ -405,31 +442,89 @@ export default function ContextGameScreen() {
     clearGrace();
   }
 
-  // Read by the swipe gesture, which is built once but must always call the
-  // current handlers.
-  const navHandlers = useRef({ prev: () => {}, next: () => {} });
-  navHandlers.current = {
-    prev: () => canGoBack && goToIndex(currentIndex - 1),
-    next: () => canGoForward && goToIndex(currentIndex + 1),
+  // Read by the swipe gesture, which is rebuilt only when the values it closes
+  // over change, but commits through the current render's state setters.
+  const commitIndex = useRef((index: number) => applyIndex(index));
+  commitIndex.current = applyIndex;
+
+  function commitFromGesture(index: number) {
+    commitIndex.current(index);
+  }
+
+  /** Stops anything that would move the deck while the player is holding it. */
+  const pauseTimersRef = useRef(() => {});
+  pauseTimersRef.current = () => {
+    clearGrace();
+    cancelAdvance();
   };
+
+  function pauseTimers() {
+    pauseTimersRef.current();
+  }
 
   const swipeGesture = useMemo(
     () =>
       Gesture.Pan()
         .activeOffsetX([-15, 15])
         .failOffsetY([-15, 15])
+        .onStart(() => {
+          // Touching the deck takes control of it: kill the timers that would
+          // otherwise move it, and stop any slide already running so the drag
+          // isn't fighting an animation for the same value.
+          runOnJS(pauseTimers)();
+          cancelAnimation(translateX);
+          gestureStartX.value = translateX.value;
+        })
+        .onUpdate((e) => {
+          // Past either end the deck still follows, but heavily damped, so the
+          // edge is felt rather than hit.
+          const resisted =
+            (e.translationX > 0 && !canGoBack) || (e.translationX < 0 && !canGoForward);
+          translateX.value = gestureStartX.value + e.translationX * (resisted ? 0.3 : 1);
+        })
         .onEnd((e) => {
-          if (e.translationX > SWIPE_THRESHOLD || e.velocityX > SWIPE_VELOCITY) {
-            runOnJS(runNav)("prev");
-          } else if (e.translationX < -SWIPE_THRESHOLD || e.velocityX < -SWIPE_VELOCITY) {
-            runOnJS(runNav)("next");
-          }
+          const back =
+            canGoBack && (e.translationX > SWIPE_THRESHOLD || e.velocityX > SWIPE_VELOCITY);
+          const forward =
+            canGoForward && (e.translationX < -SWIPE_THRESHOLD || e.velocityX < -SWIPE_VELOCITY);
+
+          // Targets are absolute slots, never `gestureStartX ± slideDistance`:
+          // grabbing the deck mid-slide would otherwise anchor to an interpolated
+          // value and leave it permanently off-grid. The index commits here rather
+          // than in the animation callback, which a new grab would cancel — so the
+          // committed index and the slot being animated to can never disagree.
+          const next = back ? currentIndex - 1 : forward ? currentIndex + 1 : currentIndex;
+          translateX.value = withTiming(-(next * slideDistance), SLIDE_CONFIG);
+          if (next !== currentIndex) runOnJS(commitFromGesture)(next);
         }),
-    [],
+    [canGoBack, canGoForward, currentIndex, slideDistance, translateX, gestureStartX],
   );
 
-  function runNav(direction: "prev" | "next") {
-    navHandlers.current[direction]();
+  // Keep the deck aligned when the viewport resizes and slideDistance shifts
+  useEffect(() => {
+    translateX.value = -(currentIndex * slideDistance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideDistance]);
+
+  const deckStyle = useAnimatedStyle(() => ({
+    flexDirection: "row" as const,
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  // The current slot may sit one past the last generated sentence — that's the
+  // "writing the next one" card, so the deck has to extend to cover it.
+  // One slot past the last generated sentence while more are coming, so dragging
+  // toward it reveals the "writing the next one" card instead of blank space.
+  const lastIndex =
+    Math.max(currentIndex, sentences.rounds.length - 1) + (sentences.hasMore ? 1 : 0);
+  const deckWidth = (lastIndex + 1) * slideDistance;
+  const windowIndices: number[] = [];
+  for (
+    let i = Math.max(0, currentIndex - WINDOW_RADIUS);
+    i <= Math.min(lastIndex, currentIndex + WINDOW_RADIUS);
+    i++
+  ) {
+    windowIndices.push(i);
   }
 
   const total = correctCount + assistedCount + incorrectCount;
@@ -568,46 +663,87 @@ export default function ContextGameScreen() {
             </View>
           </View>
 
-          {/* Wrapping a plain View, not the ScrollView itself — matches how the
-              study screen composes its gestures and keeps vertical scroll intact */}
-          <GestureDetector gesture={swipeGesture}>
-            <View className="flex-1">
-              <ScrollView
-                className="flex-1"
-                contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {round ? (
-                  <SentenceView
-                    sentence={round.sentence}
-                    statuses={currentAnswer?.statuses ?? statuses}
-                    revealed={answeredThisRound || revealed}
-                    completed={answeredThisRound}
-                    correct={currentAnswer?.correct ?? false}
-                    showEnglish={showEnglish}
-                    onPressTarget={() => {
-                      // Cancelled so the same sentence is still here on the way back,
-                      // and flagged so focus returning restarts it.
-                      clearGrace();
-                      cancelAdvance();
-                      resumeAdvance.current = true;
-                      // The entry shows the reading, so looking it up mid-question
-                      // counts as assistance, same as revealing it here.
-                      if (!answeredThisRound) setRevealed(true);
-                      router.push(`/lists/word/${round.entry.id}`);
-                    }}
-                  />
-                ) : (
-                  <View className="items-center gap-4">
-                    <ActivityIndicator size="large" />
-                    <Text className="text-base text-muted-foreground">
-                      Writing the next sentence...
-                    </Text>
-                  </View>
-                )}
-              </ScrollView>
-            </View>
-          </GestureDetector>
+          <View className="flex-1 justify-center">
+            <GestureDetector gesture={swipeGesture}>
+              <View style={{ overflow: "hidden", paddingHorizontal: 16, height: DECK_HEIGHT }}>
+                <Animated.View
+                  style={[
+                    deckStyle,
+                    { marginLeft: CARD_PEEK + CARD_GAP, width: deckWidth, flex: 1 },
+                  ]}
+                >
+                  {windowIndices.map((i) => {
+                    const item = sentences.rounds[i];
+                    const answer = answers[i] ?? null;
+                    const isCurrent = i === currentIndex;
+                    return (
+                      <View
+                        key={i}
+                        style={{
+                          position: "absolute",
+                          left: i * slideDistance,
+                          width: cardWidth,
+                          top: 0,
+                          bottom: 0,
+                          // Neighbours recede, so it's obvious which one is live
+                          opacity: isCurrent ? 1 : 0.35,
+                        }}
+                      >
+                        {/* Scrolls inside the card: the deck height is fixed so the
+                            layout never jumps, but a long sentence must not be
+                            cropped by the deck's overflow: hidden. The pan fails on
+                            vertical movement, so this still gets the gesture. */}
+                        <GestureScrollView
+                          className="flex-1 rounded-2xl border border-border bg-card"
+                          contentContainerStyle={{
+                            flexGrow: 1,
+                            justifyContent: "center",
+                            paddingHorizontal: 16,
+                            paddingVertical: 24,
+                          }}
+                          keyboardShouldPersistTaps="handled"
+                          showsVerticalScrollIndicator={false}
+                        >
+                          {item ? (
+                            <SentenceView
+                              sentence={item.sentence}
+                              statuses={answer?.statuses ?? (isCurrent ? statuses : [])}
+                              revealed={answer !== null || (isCurrent && revealed)}
+                              completed={answer !== null}
+                              correct={answer?.correct ?? false}
+                              showEnglish={showEnglish}
+                              onPressTarget={
+                                isCurrent
+                                  ? () => {
+                                      // Cancelled so the same sentence is still here on
+                                      // the way back, and flagged so focus restarts it.
+                                      clearGrace();
+                                      cancelAdvance();
+                                      resumeAdvance.current = true;
+                                      // The entry shows the reading, so looking it up
+                                      // mid-question counts as assistance.
+                                      if (!answeredThisRound) setRevealed(true);
+                                      router.push(`/lists/word/${item.entry.id}`);
+                                    }
+                                  : undefined
+                              }
+                            />
+                          ) : (
+                            <View className="items-center gap-4">
+                              <ActivityIndicator size="large" />
+                              <Text className="text-base text-muted-foreground">
+                                Writing the next sentence...
+                              </Text>
+                            </View>
+                          )}
+                        </GestureScrollView>
+                      </View>
+                    );
+                  })}
+                </Animated.View>
+              </View>
+            </GestureDetector>
+          </View>
 
           <View
             className="border-t border-border bg-background px-4 py-3"
