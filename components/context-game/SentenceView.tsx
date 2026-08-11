@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { Text } from "@/components/ui/text";
 import type { ContextSentence } from "@/lib/context-sentences";
@@ -26,6 +26,7 @@ export function SentenceView({
   completed,
   correct,
   showEnglish,
+  onPressTarget,
 }: {
   sentence: ContextSentence;
   statuses: CharStatus[];
@@ -34,6 +35,8 @@ export function SentenceView({
   completed: boolean;
   correct: boolean;
   showEnglish: boolean;
+  /** Opens the word's dictionary entry. Omitted, the target isn't tappable. */
+  onPressTarget?: () => void;
 }) {
   const { targetSurface, targetReading } = sentence;
   const at = sentence.sentence.indexOf(targetSurface);
@@ -55,7 +58,7 @@ export function SentenceView({
       <View className="flex-row flex-wrap items-end justify-center">
         <Text className="text-2xl text-muted-foreground">{prefix}</Text>
 
-        <View className="items-center">
+        <Pressable className="items-center" onPress={onPressTarget} disabled={!onPressTarget}>
           {/* Reading sits above the target, matching the furigana slot in the typing game */}
           {showReading ? (
             <View className="flex-row">
@@ -89,7 +92,7 @@ export function SentenceView({
               );
             })}
           </View>
-        </View>
+        </Pressable>
 
         <Text className="text-2xl text-muted-foreground">{suffix}</Text>
       </View>

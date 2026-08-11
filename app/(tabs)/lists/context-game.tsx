@@ -9,8 +9,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 
 import {
   CustomHeaderScreen,
@@ -31,11 +33,11 @@ import { useWordFilter } from "@/hooks/useWordFilter";
 import { playEntryAudio } from "@/lib/audio";
 import { useAuth } from "@/lib/auth";
 import { env } from "@/lib/env";
-import { X, Settings } from "@/lib/icons";
+import { X, Settings, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { useSafeGoBack } from "@/lib/navigation";
 import { logPracticeEvent, logSessionSummary } from "@/lib/practice-logger";
 import { evaluateTypingInput } from "@/lib/typing-core";
-import { romajiToKana } from "@/lib/typing-utils";
+import type { CharStatus } from "@/lib/typing-utils";
 import { useAtom } from "jotai";
 import {
   contextPlayAudioAtom,
@@ -46,8 +48,25 @@ import {
 const HEADER_HEIGHT = 52;
 /** How long a finished sentence stays on screen before the next one. */
 const REVIEW_PAUSE_MS = 1300;
+/**
+ * Grace period before a too-long answer is marked wrong. Typing the last kana
+ * wrong used to be graded the instant it landed, with no chance to backspace —
+ * this holds the verdict open long enough to fix a slip.
+ */
+const WRONG_GRACE_MS = 1500;
+const SWIPE_THRESHOLD = 60;
+const SWIPE_VELOCITY = 500;
 
 type Phase = "select" | "loading" | "playing" | "done";
+
+/** Kept per round so a sentence swiped back to still shows how it was answered. */
+interface RoundAnswer {
+  correct: boolean;
+  assisted: boolean;
+  typedRomaji: string;
+  typedKana: string;
+  statuses: CharStatus[];
+}
 
 export default function ContextGameScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
@@ -73,18 +92,18 @@ export default function ContextGameScreen() {
   const sentences = useContextSentences({ apiBaseUrl: env.API_BASE_URL, getToken });
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  /** The furthest sentence reached, so swiping back can find its way forward again. */
+  const [furthestIndex, setFurthestIndex] = useState(0);
   const [typedRomaji, setTypedRomaji] = useState("");
   const [typedKana, setTypedKana] = useState("");
-  const [statuses, setStatuses] = useState<ReturnType<typeof evaluateTypingInput>["statuses"]>([]);
+  const [statuses, setStatuses] = useState<CharStatus[]>([]);
   const [revealed, setRevealed] = useState(false);
-  const [answered, setAnswered] = useState<{ correct: boolean } | null>(null);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [assistedCount, setAssistedCount] = useState(0);
-  const [incorrectCount, setIncorrectCount] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, RoundAnswer>>({});
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
   const [totalPlayable, setTotalPlayable] = useState(0);
 
+  const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   const gameRef = useRef<View>(null);
   const isKanaInput = useRef(false);
@@ -93,13 +112,45 @@ export default function ContextGameScreen() {
   const sessionDirtyRef = useRef(false);
   const answeredRef = useRef(false);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Read by the grace timer, so it commits whatever is on screen when it fires. */
+  const latestRaw = useRef("");
+  /** Set only by opening a word's entry, so only that trip resumes the advance. */
+  const resumeAdvance = useRef(false);
+  /** Mirrors `revealed` for the grace timer, whose closure predates the reveal. */
+  const revealedRef = useRef(false);
+  revealedRef.current = revealed;
 
   const round = sentences.rounds[currentIndex];
   const canPlay = isSignedIn && !!env.API_BASE_URL;
+  const currentAnswer = answers[currentIndex] ?? null;
+  const answeredThisRound = currentAnswer !== null;
+
+  // Derived rather than counted up as answers land: revisiting a sentence can no
+  // longer double-count it, and the totals always match the answers themselves.
+  const { correctCount, assistedCount, incorrectCount } = useMemo(() => {
+    let correct = 0;
+    let assisted = 0;
+    let incorrect = 0;
+    for (const answer of Object.values(answers)) {
+      if (!answer.correct) incorrect++;
+      else if (answer.assisted) assisted++;
+      else correct++;
+    }
+    return { correctCount: correct, assistedCount: assisted, incorrectCount: incorrect };
+  }, [answers]);
+
+  const clearGrace = useCallback(() => {
+    if (graceTimer.current) {
+      clearTimeout(graceTimer.current);
+      graceTimer.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
+      if (graceTimer.current) clearTimeout(graceTimer.current);
     };
   }, []);
 
@@ -117,8 +168,18 @@ export default function ContextGameScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (phase === "playing") setTimeout(() => inputRef.current?.focus(), 100);
-    }, [phase]),
+      if (phase !== "playing") return;
+      setTimeout(() => inputRef.current?.focus(), 100);
+      // Opening a word's entry cancels the advance so the same sentence is still
+      // here on the way back; this restarts it. Gated on a one-shot ref because
+      // this effect also re-runs on every index change — without it, swiping back
+      // to an answered sentence would immediately drag the player forward again.
+      if (!resumeAdvance.current) return;
+      resumeAdvance.current = false;
+      if (answeredThisRound && !advanceTimer.current) scheduleAdvance(currentIndex);
+      // scheduleAdvance is redefined every render; the deps that matter are here
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, answeredThisRound, currentIndex]),
   );
 
   // Keep generation ahead of the player
@@ -128,17 +189,18 @@ export default function ContextGameScreen() {
   }, [phase, currentIndex, ensureAhead]);
 
   // Timed from when the sentence appears, not from when the index moved — a wait
-  // for the next batch shouldn't count as the player's response time.
+  // for the next batch shouldn't count as the player's response time. Skipped for
+  // an answered sentence, which is being reviewed rather than played.
   useEffect(() => {
-    if (round) roundStartTime.current = Date.now();
-  }, [round]);
+    if (round && !answeredThisRound) roundStartTime.current = Date.now();
+  }, [round, answeredThisRound]);
 
   // The queue ran dry and nothing more is coming — that's the end of the round
   useEffect(() => {
-    if (phase !== "playing" || round || sentences.hasMore || answered) return;
+    if (phase !== "playing" || round || sentences.hasMore || answeredThisRound) return;
     setEndTime(Date.now());
     setPhase("done");
-  }, [phase, round, sentences.hasMore, answered]);
+  }, [phase, round, sentences.hasMore, answeredThisRound]);
 
   useEffect(() => {
     if (phase !== "done" || !drizzleDb || !listId || !sessionIdRef.current) return;
@@ -177,15 +239,13 @@ export default function ContextGameScreen() {
 
     setTotalPlayable(playable.length);
     setCurrentIndex(0);
+    setFurthestIndex(0);
     setTypedRomaji("");
     setTypedKana("");
     setStatuses([]);
     setRevealed(false);
-    setAnswered(null);
+    setAnswers({});
     answeredRef.current = false;
-    setCorrectCount(0);
-    setAssistedCount(0);
-    setIncorrectCount(0);
     setEndTime(0);
     sessionIdRef.current = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     setPhase("loading");
@@ -204,16 +264,78 @@ export default function ContextGameScreen() {
     setTimeout(() => inputRef.current?.focus(), 200);
   }
 
+  function cancelAdvance() {
+    if (advanceTimer.current) {
+      clearTimeout(advanceTimer.current);
+      advanceTimer.current = null;
+    }
+  }
+
+  function scheduleAdvance(fromIndex: number) {
+    cancelAdvance();
+    advanceTimer.current = setTimeout(() => {
+      advanceTimer.current = null;
+      goToIndex(fromIndex + 1);
+    }, REVIEW_PAUSE_MS);
+  }
+
+  function goToIndex(index: number) {
+    if (index < 0) return;
+    clearGrace();
+    cancelAdvance();
+    // Any deliberate move cancels a pending resume, so a push that never happened
+    // can't strand the flag and yank the player off a later sentence.
+    resumeAdvance.current = false;
+    // A sentence not reached before starts with a clean input; going back to one
+    // already in progress keeps whatever was typed into it.
+    if (index > furthestIndex) {
+      setFurthestIndex(index);
+      setTypedRomaji("");
+      setTypedKana("");
+      setStatuses([]);
+      setRevealed(false);
+      latestRaw.current = "";
+    }
+    answeredRef.current = answers[index] != null;
+    setCurrentIndex(index);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  const canGoBack = currentIndex > 0;
+  // An answered sentence can always be moved past, even when it's the newest one.
+  const canGoForward = currentIndex < furthestIndex || answeredThisRound;
+
   function finishRound(raw: string, isCorrect: boolean) {
     // Ref, not state: two keystrokes can land in one render pass, and a double
     // fire would double-log the answer and skip the next sentence.
     if (!round || answeredRef.current) return;
     answeredRef.current = true;
-    const wasAssisted = revealed;
+    clearGrace();
 
-    if (isCorrect && !wasAssisted) setCorrectCount((c) => c + 1);
-    else if (isCorrect) setAssistedCount((c) => c + 1);
-    else setIncorrectCount((c) => c + 1);
+    const answerIndex = currentIndex;
+    // Via the ref: the grace timer's closure predates an Enter press that revealed
+    // the answer, and would otherwise log an assisted miss as a plain one.
+    const wasAssisted = revealedRef.current;
+    const target = round.sentence.targetReading;
+    // Re-evaluated rather than read from state: the keystroke that got here set
+    // that state in the same pass, so it hasn't landed yet.
+    const evaluation = evaluateTypingInput({
+      raw,
+      target,
+      acceptedReadings: [target],
+      isKanaInput: isKanaInput.current,
+    });
+
+    setAnswers((prev) => ({
+      ...prev,
+      [answerIndex]: {
+        correct: isCorrect,
+        assisted: wasAssisted,
+        typedRomaji: raw,
+        typedKana: evaluation.converted,
+        statuses: evaluation.statuses,
+      },
+    }));
 
     if (drizzleDb && listId) {
       if (!sessionDirtyRef.current) {
@@ -227,36 +349,29 @@ export default function ContextGameScreen() {
         correct: isCorrect,
         assisted: wasAssisted,
         responseMs: Date.now() - roundStartTime.current,
-        typedAnswer: romajiToKana(raw),
+        typedAnswer: evaluation.converted,
         sessionId: sessionIdRef.current,
       }).catch(() => {});
     }
 
     if (playAudio && audioDb) playEntryAudio(audioDb, round.entry.id);
 
-    setAnswered({ correct: isCorrect });
-    if (advanceTimer.current) clearTimeout(advanceTimer.current);
-    advanceTimer.current = setTimeout(() => {
-      answeredRef.current = false;
-      setAnswered(null);
-      setRevealed(false);
-      setTypedRomaji("");
-      setTypedKana("");
-      setStatuses([]);
-      setCurrentIndex((i) => i + 1);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }, REVIEW_PAUSE_MS);
+    scheduleAdvance(answerIndex);
   }
 
   function handleInput(raw: string) {
-    if (phase !== "playing" || !round || answered) return;
+    if (phase !== "playing" || !round || answeredThisRound) return;
 
     if (raw.length > 0) {
       const lastCode = raw.charCodeAt(raw.length - 1);
       isKanaInput.current = lastCode >= 0x3040 && lastCode <= 0x30ff;
     }
 
+    // Predictive keyboards re-fire onChangeText with identical text; without this
+    // the grace window below would restart forever and never grade the answer.
+    const rawChanged = raw !== latestRaw.current;
     setTypedRomaji(raw);
+    latestRaw.current = raw;
     const target = round.sentence.targetReading;
     const evaluation = evaluateTypingInput({
       raw,
@@ -272,10 +387,51 @@ export default function ContextGameScreen() {
       finishRound(raw, true);
       return;
     }
-    if (evaluation.overrun) finishRound(raw, false);
+    if (evaluation.overrun) {
+      // Held open rather than graded on the spot: a mistyped last kana can be
+      // backspaced away inside this window, which cancels the verdict below.
+      // Restarted on each real keystroke, so a player still correcting at the
+      // deadline isn't graded on a half-typed string.
+      if (rawChanged || !graceTimer.current) {
+        clearGrace();
+        graceTimer.current = setTimeout(() => {
+          graceTimer.current = null;
+          finishRound(latestRaw.current, false);
+        }, WRONG_GRACE_MS);
+      }
+      return;
+    }
+    // Back under length — whatever was pending is no longer wrong.
+    clearGrace();
   }
 
-  const answeredThisRound = answered !== null;
+  // Read by the swipe gesture, which is built once but must always call the
+  // current handlers.
+  const navHandlers = useRef({ prev: () => {}, next: () => {} });
+  navHandlers.current = {
+    prev: () => canGoBack && goToIndex(currentIndex - 1),
+    next: () => canGoForward && goToIndex(currentIndex + 1),
+  };
+
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-15, 15])
+        .failOffsetY([-15, 15])
+        .onEnd((e) => {
+          if (e.translationX > SWIPE_THRESHOLD || e.velocityX > SWIPE_VELOCITY) {
+            runOnJS(runNav)("prev");
+          } else if (e.translationX < -SWIPE_THRESHOLD || e.velocityX < -SWIPE_VELOCITY) {
+            runOnJS(runNav)("next");
+          }
+        }),
+    [],
+  );
+
+  function runNav(direction: "prev" | "next") {
+    navHandlers.current[direction]();
+  }
+
   const total = correctCount + assistedCount + incorrectCount;
   const elapsedSeconds = endTime > 0 ? (endTime - startTime) / 1000 : 0;
 
@@ -386,34 +542,72 @@ export default function ContextGameScreen() {
             ) : (
               <View />
             )}
-            <Text className="text-sm text-muted-foreground">
-              {currentIndex + 1}/{sentences.hasMore ? totalPlayable : sentences.rounds.length}
-            </Text>
+            {/* Chevrons as well as the swipe: on web there is nothing to swipe with */}
+            <View className="flex-row items-center gap-1">
+              <Pressable
+                onPress={() => goToIndex(currentIndex - 1)}
+                disabled={!canGoBack}
+                hitSlop={8}
+                className="p-1"
+                style={{ opacity: canGoBack ? 1 : 0.25 }}
+              >
+                <ChevronLeft size={18} className="text-foreground" />
+              </Pressable>
+              <Text className="text-sm text-muted-foreground">
+                {currentIndex + 1}/{sentences.hasMore ? totalPlayable : sentences.rounds.length}
+              </Text>
+              <Pressable
+                onPress={() => goToIndex(currentIndex + 1)}
+                disabled={!canGoForward}
+                hitSlop={8}
+                className="p-1"
+                style={{ opacity: canGoForward ? 1 : 0.25 }}
+              >
+                <ChevronRight size={18} className="text-foreground" />
+              </Pressable>
+            </View>
           </View>
 
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            {round ? (
-              <SentenceView
-                sentence={round.sentence}
-                statuses={statuses}
-                revealed={revealed}
-                completed={answeredThisRound}
-                correct={answered?.correct ?? false}
-                showEnglish={showEnglish}
-              />
-            ) : (
-              <View className="items-center gap-4">
-                <ActivityIndicator size="large" />
-                <Text className="text-base text-muted-foreground">
-                  Writing the next sentence...
-                </Text>
-              </View>
-            )}
-          </ScrollView>
+          {/* Wrapping a plain View, not the ScrollView itself — matches how the
+              study screen composes its gestures and keeps vertical scroll intact */}
+          <GestureDetector gesture={swipeGesture}>
+            <View className="flex-1">
+              <ScrollView
+                className="flex-1"
+                contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {round ? (
+                  <SentenceView
+                    sentence={round.sentence}
+                    statuses={currentAnswer?.statuses ?? statuses}
+                    revealed={answeredThisRound || revealed}
+                    completed={answeredThisRound}
+                    correct={currentAnswer?.correct ?? false}
+                    showEnglish={showEnglish}
+                    onPressTarget={() => {
+                      // Cancelled so the same sentence is still here on the way back,
+                      // and flagged so focus returning restarts it.
+                      clearGrace();
+                      cancelAdvance();
+                      resumeAdvance.current = true;
+                      // The entry shows the reading, so looking it up mid-question
+                      // counts as assistance, same as revealing it here.
+                      if (!answeredThisRound) setRevealed(true);
+                      router.push(`/lists/word/${round.entry.id}`);
+                    }}
+                  />
+                ) : (
+                  <View className="items-center gap-4">
+                    <ActivityIndicator size="large" />
+                    <Text className="text-base text-muted-foreground">
+                      Writing the next sentence...
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </GestureDetector>
 
           <View
             className="border-t border-border bg-background px-4 py-3"
@@ -422,7 +616,7 @@ export default function ContextGameScreen() {
             <TextInput
               ref={inputRef}
               className="h-12 rounded-lg border border-border bg-background px-4 text-foreground text-lg"
-              value={typedRomaji}
+              value={currentAnswer ? currentAnswer.typedRomaji : typedRomaji}
               onChangeText={handleInput}
               editable={!answeredThisRound && !!round}
               blurOnSubmit={false}
