@@ -70,12 +70,14 @@ const WRONG_GRACE_MS = 1500;
 // Carousel geometry, matching the study screen's flashcards: neighbours peek in
 // at the edges so it reads as a deck you move through rather than a screen that
 // swaps contents.
-const CARD_PEEK = 24;
-const CARD_GAP = 16;
+// Smaller than the flashcards': a sentence needs the width far more than a word
+// does, and peek plus gap is charged twice over.
+const CARD_PEEK = 12;
+const CARD_GAP = 12;
 const SLIDE_DURATION = 250;
 const SLIDE_CONFIG = { duration: SLIDE_DURATION, easing: Easing.out(Easing.ease) };
-/** Fixed, so a short sentence and a long one don't resize the deck between rounds. */
-const DECK_HEIGHT = 280;
+/** Floor only — the deck otherwise takes whatever the keyboard leaves it. */
+const DECK_MIN_HEIGHT = 150;
 const SWIPE_THRESHOLD = 50;
 const SWIPE_VELOCITY = 500;
 /** Sentences rendered either side of the current one. */
@@ -663,9 +665,19 @@ export default function ContextGameScreen() {
             </View>
           </View>
 
-          <View className="flex-1 justify-center">
+          <View className="flex-1">
             <GestureDetector gesture={swipeGesture}>
-              <View style={{ overflow: "hidden", paddingHorizontal: 16, height: DECK_HEIGHT }}>
+              <View
+                style={{
+                  overflow: "hidden",
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  // Flexes rather than a fixed height: the keyboard takes half the
+                  // screen, and a deck that can't shrink squeezes the input row out.
+                  flex: 1,
+                  minHeight: DECK_MIN_HEIGHT,
+                }}
+              >
                 <Animated.View
                   style={[
                     deckStyle,
@@ -689,17 +701,17 @@ export default function ContextGameScreen() {
                           opacity: isCurrent ? 1 : 0.35,
                         }}
                       >
-                        {/* Scrolls inside the card: the deck height is fixed so the
-                            layout never jumps, but a long sentence must not be
-                            cropped by the deck's overflow: hidden. The pan fails on
-                            vertical movement, so this still gets the gesture. */}
+                        {/* Scrolls inside the card so a long sentence is never
+                            cropped by the deck's clipping, however little height
+                            the keyboard leaves. The pan fails on vertical movement,
+                            so this still gets the gesture. */}
                         <GestureScrollView
                           className="flex-1 rounded-2xl border border-border bg-card"
                           contentContainerStyle={{
                             flexGrow: 1,
                             justifyContent: "center",
-                            paddingHorizontal: 16,
-                            paddingVertical: 24,
+                            paddingHorizontal: 12,
+                            paddingVertical: 16,
                           }}
                           keyboardShouldPersistTaps="handled"
                           showsVerticalScrollIndicator={false}
