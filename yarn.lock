@@ -3754,10 +3754,10 @@
   dependencies:
     "@babel/runtime" "^7.12.5"
 
-"@tradersamwise/eas-release@0.1.9":
-  version "0.1.9"
-  resolved "https://registry.yarnpkg.com/@tradersamwise/eas-release/-/eas-release-0.1.9.tgz#2276a36d28aabb43457ec5b045d005489cbcbda6"
-  integrity sha512-D1OjrL60B71SSLhLrArB5vesQEg1dpqSFHmiFrdne3c8Cna4Dx1Kv57tdkKxSCc7j4zHFRkQ+xB/BKt+0/KazQ==
+"@tradersamwise/eas-release@0.1.10":
+  version "0.1.10"
+  resolved "https://registry.yarnpkg.com/@tradersamwise/eas-release/-/eas-release-0.1.10.tgz#0c08379bd422df1446bffc9d9fac5503f41b01dc"
+  integrity sha512-CjV6w3cJEGt5A/o8D3W8AOHluXubqxG/40qvOAJVctjaUH6JlHq4NzLyjyr58q8L1g0dQ0bZ3j0LPXAqjH2Q2g==
   dependencies:
     commander "^14.0.0"
 

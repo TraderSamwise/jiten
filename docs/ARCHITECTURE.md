@@ -1254,11 +1254,11 @@ changed. Always bump the version first, then ship.
 ```bash
 # OTA update — JavaScript / asset changes only
 yarn version:bump-ota && yarn update              # testflight
-yarn version:bump-ota && yarn update:production   # production
+yarn version:bump-ota production && yarn update:production   # production
 
 # Native build — native deps, Expo plugins, permissions, icons, splash, native config
 yarn version:bump-build && yarn build:testflight   # testflight
-yarn version:bump-build && yarn build:production    # production
+yarn version:bump-build production && yarn build:production    # production
 ```
 
 Decision rule: OTA covers JavaScript and assets. A native rebuild is required for

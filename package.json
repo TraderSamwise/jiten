@@ -131,7 +131,7 @@
     "@mozilla/readability": "^0.6.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
-    "@tradersamwise/eas-release": "0.1.9",
+    "@tradersamwise/eas-release": "0.1.10",
     "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.13",
     "@types/encoding-japanese": "^2.2.1",
