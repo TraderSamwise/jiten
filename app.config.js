@@ -1,5 +1,31 @@
 const { APP_VERSION } = require("./lib/version.ts");
 
+/**
+ * This app's Sentry, under names nothing else on the machine uses.
+ *
+ * A native build's upload target is pinned when this config is evaluated, and
+ * the plugin used to be a bare string - so it read the generic SENTRY_ORG /
+ * SENTRY_PROJECT / SENTRY_AUTH_TOKEN, which on a laptop shared with another
+ * product belong to that product. A local build would then push this app's
+ * debug files into somebody else's organisation.
+ *
+ * No prefixed variables, no plugin: this app has no Sentry organisation of its
+ * own yet, and the alternative to uploading nothing is uploading elsewhere.
+ */
+const SENTRY_ORG = process.env.JITEN_SENTRY_ORG;
+const SENTRY_PROJECT = process.env.JITEN_SENTRY_PROJECT;
+const SENTRY_PLUGIN =
+  SENTRY_ORG && SENTRY_PROJECT
+    ? [
+        "@sentry/react-native/expo",
+        {
+          organization: SENTRY_ORG,
+          project: SENTRY_PROJECT,
+          url: process.env.SENTRY_URL || "https://sentry.io/",
+        },
+      ]
+    : null;
+
 module.exports = {
   expo: {
     name: "jiten",
@@ -54,9 +80,9 @@ module.exports = {
       fallbackToCacheTimeout: 30000,
     },
     plugins: [
+      ...(SENTRY_PLUGIN ? [SENTRY_PLUGIN] : []),
       "expo-router",
       "expo-updates",
-      "@sentry/react-native/expo",
       [
         "expo-splash-screen",
         {
