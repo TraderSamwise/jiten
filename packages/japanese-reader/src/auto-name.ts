@@ -3,6 +3,23 @@ export const AUTO_NAME_ONLY_CONFIDENCE = 90;
 export const AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE = 96;
 export const AUTO_NAME_DUAL_CONFIDENCE = 45;
 
+/**
+ * Shortest exact name allowed to override a shorter word match on its own.
+ *
+ * The confidence score is built for the ambiguous case where a name and a word
+ * cover the SAME span (歩 the given name vs 歩 the noun), and it penalises a
+ * competing common word hard. When the name is strictly longer the word is not
+ * a competitor but a fragment of it, and those penalties cap a place name at 75
+ * against a threshold of 90 — 大泉学園 could never win against 泉.
+ *
+ * The override is mostly self-limiting: a name can only be strictly longer than
+ * the best word match when no word covers that span. What leaks through is
+ * two-kanji spans straddling a word boundary — 田先 out of 山田先生, 中電 out of
+ * 食事中電話 — so three characters is the floor. That costs two-kanji surnames
+ * (渋沢, 山田), which still resolve to a single kanji.
+ */
+export const AUTO_NAME_OVERRIDE_MIN_LENGTH = 3;
+
 export interface AutoNameWordCandidate {
   matchedText: string;
   exactSurface: boolean;

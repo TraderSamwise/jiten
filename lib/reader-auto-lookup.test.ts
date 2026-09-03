@@ -57,6 +57,79 @@ function makeNameResult(matchedText: string, names: NameEntry[]): LookupResult {
   };
 }
 
+describe("chooseAutoLookupResults name-length override", () => {
+  // A place name is capped at 75 by the confidence score (place costs 16, a
+  // competing common word costs 28) against a threshold of 90, so 大泉学園 could
+  // never beat 泉 no matter how much longer and more exact it was.
+  it("lets a 3+ char exact name beat a shorter word match", () => {
+    const wordResults = [
+      makeWordResult("泉", [
+        makeWordEntry({ common: true, kanji: [{ text: "泉", common: true, tags: [] }] }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("大泉学園", [
+        makeNameEntry({
+          kanji: "大泉学園",
+          kana: "おおいずみがくえん",
+          nameType: "place",
+          translation: "Ooizumigakuen",
+        }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(nameResults);
+  });
+
+  // Two-kanji names straddling a word boundary are the noise this floor exists
+  // for: 田先 falls out of 山田先生 and claims to be a surname.
+  it("does not let a 2 char name beat a shorter word match", () => {
+    const wordResults = [
+      makeWordResult("田", [
+        makeWordEntry({ common: true, kanji: [{ text: "田", common: true, tags: [] }] }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("田先", [
+        makeNameEntry({ kanji: "田先", kana: "たさき", nameType: "surname" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(wordResults);
+  });
+
+  it("still prefers a word that covers the same span as the name", () => {
+    const wordResults = [
+      makeWordResult("朝鮮半島", [
+        makeWordEntry({ common: true, kanji: [{ text: "朝鮮半島", common: true, tags: [] }] }),
+      ]),
+    ];
+    const nameResults = [
+      makeNameResult("朝鮮半島", [
+        makeNameEntry({ kanji: "朝鮮半島", kana: "ちょうせんはんとう", nameType: "place" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)[0].lookupKind).toBe("word");
+  });
+
+  it("does not override on an inexact name match", () => {
+    const wordResults = [
+      makeWordResult("大", [
+        makeWordEntry({ common: true, kanji: [{ text: "大", common: true, tags: [] }] }),
+      ]),
+    ];
+    // kanji/kana neither equal the matched surface, so the match is not exact.
+    const nameResults = [
+      makeNameResult("大泉学", [
+        makeNameEntry({ kanji: "大泉学園", kana: "おおいずみがくえん", nameType: "place" }),
+      ]),
+    ];
+
+    expect(chooseAutoLookupResults(wordResults, nameResults)).toEqual(wordResults);
+  });
+});
+
 describe("chooseAutoLookupResults", () => {
   it("prefers the longer match", () => {
     const wordResults = [

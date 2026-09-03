@@ -4,6 +4,7 @@ import {
   AUTO_DUAL_MIN_MATCH_LENGTH,
   AUTO_NAME_DUAL_CONFIDENCE,
   AUTO_NAME_ONLY_CONFIDENCE,
+  AUTO_NAME_OVERRIDE_MIN_LENGTH,
   AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE,
   computeAutoNameConfidence,
   shouldShowBothAutoResults,
@@ -562,9 +563,12 @@ function chooseAutoLookupVariants(
       ? AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE
       : AUTO_NAME_ONLY_CONFIDENCE;
 
+  const nameIsLonger = bestName.matchedText.length > taggedWord.matchedText.length;
   if (
-    bestName.matchedText.length > taggedWord.matchedText.length &&
-    nameConfidence >= nameOnlyConfidence
+    nameIsLonger &&
+    (nameConfidence >= nameOnlyConfidence ||
+      (topNameExactSurfaceMatch(bestName) &&
+        bestName.matchedText.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH))
   ) {
     return taggedNames;
   }
