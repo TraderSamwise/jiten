@@ -40,6 +40,7 @@
     "lint:fix": "eslint . --fix",
     "check:env": "node scripts/check-release-env.js",
     "check:ota-native-deps": "node scripts/check-ota-native-deps.js",
+    "check:tap-consistency": "npx tsx scripts/tap-consistency.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "patch-package && yarn build:webviews",

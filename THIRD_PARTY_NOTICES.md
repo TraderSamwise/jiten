@@ -81,6 +81,10 @@ build time; it is not scraped from human-recording services. Use is subject to t
 **public-domain** work obtained from [Aozora Bunko](https://www.aozora.gr.jp/). Additional
 Aozora and Syosetu texts are fetched at runtime, not bundled.
 
+`test/corpus/bocchan.txt` is an excerpt of 夏目漱石『坊っちゃん』(Natsume Sōseki, _Botchan_),
+also **public domain** and from Aozora Bunko. It is prose the tap-lookup consistency check
+(`yarn check:tap-consistency`) measures against; ruby and Aozora markup have been stripped.
+
 ## Fonts
 
 - **Space Mono** — © Colophon Foundry, licensed under the
