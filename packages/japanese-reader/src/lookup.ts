@@ -380,25 +380,6 @@ function shouldPreferContainingExactCandidate(
   return hasKanji(outerResult.matchedText);
 }
 
-function shouldPreferShorterExactSurface(
-  shorterResult: LookupResult,
-  shorterStart: number,
-  longerResult: LookupResult,
-  longerStart: number,
-): boolean {
-  if (!hasExactSurfaceMatch(shorterResult) || hasExactSurfaceMatch(longerResult)) return false;
-  if ([...shorterResult.matchedText].length < 2) return false;
-  if (hasKana(shorterResult.matchedText) && !hasKanji(shorterResult.matchedText)) return false;
-  if (shorterStart !== longerStart) return false;
-  if (longerResult.deinflectReasons.length === 0) return false;
-  return strictlyContainsCandidate(
-    longerStart,
-    longerResult.matchedText,
-    shorterStart,
-    shorterResult.matchedText,
-  );
-}
-
 function shouldPreferLongerDeinflectedOkurigana(
   longerResult: LookupResult,
   longerStart: number,
@@ -1091,17 +1072,6 @@ export async function smartLookupWithOffset(
       bestForLength.start,
     );
     if (bestContainsCurrent) continue;
-
-    const currentIsBetterShorterExact = shouldPreferShorterExactSurface(
-      bestForLength.result,
-      bestForLength.start,
-      bestOverall.result,
-      bestOverall.start,
-    );
-    if (currentIsBetterShorterExact) {
-      bestOverall = bestForLength;
-      continue;
-    }
 
     const currentIsBetterLongerDeinflected = shouldPreferLongerDeinflectedOkurigana(
       bestForLength.result,

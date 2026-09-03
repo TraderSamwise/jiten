@@ -4,9 +4,13 @@ import type {
   ReaderNameEntry as NameEntry,
 } from "../packages/japanese-reader/src/types";
 import type { ReaderSqlDb } from "../packages/japanese-reader/src/backend";
+import Database from "better-sqlite3";
+import { existsSync } from "fs";
+import * as path from "path";
 import {
   autoSelectionLookup,
   chooseAutoLookupResults,
+  smartLookupWithOffset,
   type LookupResult,
 } from "../packages/japanese-reader/src/lookup";
 import * as lookupDb from "../packages/japanese-reader/src/lookup-db";
@@ -315,5 +319,36 @@ describe("autoSelectionLookup", () => {
     expect(results[1].alternateResults).toBeUndefined();
     expect(results[2].matchedText).toBe("こんな");
     expect(results[2].alternateResults).toBeUndefined();
+  });
+});
+
+describe("compound verbs are not truncated to their first stem", () => {
+  const dbPath = path.resolve(__dirname, "..", "assets", "dictionary.db");
+
+  // shouldPreferShorterExactSurface used to prefer a shorter EXACT surface over a
+  // longer DEINFLECTED one starting at the same place, so tapping the first kanji
+  // of 受け合った gave 受け. Measured over 4000 characters of prose, dropping it
+  // changed 83 taps: 38 distinct improvements against 1 regression.
+  it.runIf(existsSync(dbPath))("resolves the whole verb from its first character", async () => {
+    const db = new Database(dbPath, { readonly: true });
+    const dictDb = {
+      getAllAsync: async <T>(sql: string, params?: unknown[]) =>
+        (params ? db.prepare(sql).all(...(params as never[])) : db.prepare(sql).all()) as T[],
+      getFirstAsync: async <T>(sql: string, params?: unknown[]) =>
+        ((params ? db.prepare(sql).get(...(params as never[])) : db.prepare(sql).get()) as T) ??
+        null,
+    };
+    const cases: [string, string, string][] = [
+      ["みせると受け合った。", "受", "受け合った"],
+      ["をはすに切り込んだ。", "切", "切り込んだ"],
+      ["せますと答えた。", "答", "答えた"],
+      ["を垣根へ押しつけて", "押", "押しつけて"],
+      ["つづけに取ったら、", "取", "取ったら"],
+    ];
+    for (const [text, tapChar, expected] of cases) {
+      const results = await smartLookupWithOffset(text, text.indexOf(tapChar), dictDb, null);
+      expect(results[0]?.matchedText, `tapping ${tapChar} in ${text}`).toBe(expected);
+    }
+    db.close();
   });
 });
