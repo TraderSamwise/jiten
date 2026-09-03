@@ -22,6 +22,8 @@ interface DeinflectRule {
   typeIn: number;
   typeOut: number;
   reason: string;
+  /** Minimum stem length left after stripping `from`. Guards 1-char inputs. */
+  minStem?: number;
 }
 
 // ─── Deinflection rules ───
@@ -303,6 +305,39 @@ const RULES: DeinflectRule[] = [
   { from: "び", to: "ぶ", typeIn: V5, typeOut: V5, reason: "masu-stem" },
   { from: "み", to: "む", typeIn: V5, typeOut: V5, reason: "masu-stem" },
   { from: "り", to: "る", typeIn: V5, typeOut: V5, reason: "masu-stem" },
+
+  // ── Ichidan masu-stem / 連用形 as a standalone form ──
+  // The godan half of this is above (き→く, り→る…); the ichidan half was
+  // missing, so 見上げ、/ くたびれ、— a 連用形 used to join clauses, everywhere in
+  // prose — resolved to nothing and the tap fell back to a fragment (上げ).
+  // Only え/い-row endings can be an ichidan stem, and minStem keeps a bare
+  // one-kana word from inventing a verb.
+  { from: "え", to: "える", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "け", to: "ける", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "げ", to: "げる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "せ", to: "せる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ぜ", to: "ぜる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "て", to: "てる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "で", to: "でる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ね", to: "ねる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "へ", to: "へる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "べ", to: "べる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ぺ", to: "ぺる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "め", to: "める", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "れ", to: "れる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "い", to: "いる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "き", to: "きる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ぎ", to: "ぎる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "し", to: "しる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "じ", to: "じる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ち", to: "ちる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ぢ", to: "ぢる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "に", to: "にる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ひ", to: "ひる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "び", to: "びる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "ぴ", to: "ぴる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "み", to: "みる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
+  { from: "り", to: "りる", typeIn: V1, typeOut: V1, reason: "masu-stem", minStem: 1 },
 ];
 
 // ─── Deinflection algorithm ───
@@ -323,6 +358,7 @@ export function deinflect(word: string): DeinflectCandidate[] {
       if (!current.word.endsWith(rule.from)) continue;
       const stemLen = current.word.length - rule.from.length;
       if (stemLen + rule.to.length <= 0) continue;
+      if (rule.minStem != null && stemLen < rule.minStem) continue;
       if (!(current.typeMask & rule.typeIn)) continue;
 
       const base = current.word.slice(0, stemLen) + rule.to;
