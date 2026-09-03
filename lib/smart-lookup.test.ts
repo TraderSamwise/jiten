@@ -1,11 +1,13 @@
 /**
- * Smart lookup integration tests against real dictionary.db
+ * Reader lookup integration tests against real dictionary.db
  *
  * These tests verify the full pipeline: text → substrings → deinflection →
  * dictionary search → ranked results. Uses better-sqlite3 to query the
  * actual dictionary database (same as scripts/search.test.ts).
  *
- * These simulate what happens when a user taps on text in the reader.
+ * These simulate what happens when a user taps on text in the reader, and they
+ * run against packages/japanese-reader — the code the app actually ships. The
+ * file is named for lib/smart-lookup.ts, which moved into that package.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
@@ -13,7 +15,11 @@ import Database from "better-sqlite3";
 import * as path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { toHiragana } from "wanakana";
-import { deinflect, generateSubstrings, generateLookupCandidates } from "./deinflect";
+import {
+  deinflect,
+  generateSubstrings,
+  generateLookupCandidates,
+} from "../packages/japanese-reader/src/deinflect";
 import {
   autoLookupWithOffset,
   smartLookup,

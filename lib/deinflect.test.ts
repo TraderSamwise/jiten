@@ -17,7 +17,7 @@ import {
   generateLookupCandidates,
   type DeinflectCandidate,
   type LookupCandidate,
-} from "./deinflect";
+} from "../packages/japanese-reader/src/deinflect";
 
 // ─── Helper: check if a candidate word appears in deinflection results ───
 
