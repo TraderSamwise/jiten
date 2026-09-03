@@ -17,12 +17,22 @@ export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(({ html, on
     onMessage(event.nativeEvent.data);
   }
 
+  // iOS jettisons a backgrounded WKWebView's content process under memory
+  // pressure. The view survives but its document is gone, so the reader comes
+  // back blank — nothing re-renders it without an explicit reload. The reader
+  // HTML carries its own scroll position, so reloading restores the page.
+  function handleContentProcessDidTerminate() {
+    webViewRef.current?.reload();
+  }
+
   return (
     <WebView
       ref={webViewRef}
       source={{ html }}
       originWhitelist={["*"]}
       onMessage={handleMessage}
+      onContentProcessDidTerminate={handleContentProcessDidTerminate}
+      onRenderProcessGone={handleContentProcessDidTerminate}
       scrollEnabled={false}
       bounces={false}
       showsHorizontalScrollIndicator={false}

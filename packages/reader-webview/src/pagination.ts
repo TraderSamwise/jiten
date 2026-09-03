@@ -57,6 +57,7 @@ export function paginate(): void {
   // Remove stale spacers before measuring (content changed)
   removeSpacers();
   state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  state.paginated = true;
   padEndToGrid();
 }
 
@@ -102,6 +103,7 @@ function padBeginToGrid(deficit: number): void {
   state.pageEl!.scrollLeft -= deficit;
   // Recalculate pagination with the new spacer
   state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  state.paginated = true;
   padEndToGrid(); // end spacer might need updating too
 }
 
@@ -323,6 +325,7 @@ export function replaceOffscreenContent(localCharIndex: number, newHtml: string)
   // Recalculate pagination (remove end spacer first so scrollWidth is accurate)
   document.getElementById("end-spacer")?.remove();
   state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  state.paginated = true;
   padEndToGrid();
   updatePageInfo();
 }
@@ -524,7 +527,8 @@ export function reportScroll(): void {
     JSON.stringify({
       type: "scroll",
       charOffset: globalChar,
-      isLastPage: state.currentPage >= state.totalPages,
+      // Never claim last-page before the first measure — state defaults to 1/1.
+      isLastPage: state.paginated && state.currentPage >= state.totalPages,
     }),
   );
 }
@@ -554,6 +558,7 @@ export function prependBackSlice(html: string, charCount?: number): void {
 
   // Recalculate pagination
   state.totalPages = Math.max(1, ceilPages(state.pageEl!.scrollWidth, state.columnWidth));
+  state.paginated = true;
   padEndToGrid();
   state.currentPage = Math.round(-state.pageEl!.scrollLeft / state.columnWidth) + 1;
   state.currentPage = Math.max(1, Math.min(state.currentPage, state.totalPages));

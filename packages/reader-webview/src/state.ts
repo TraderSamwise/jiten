@@ -1,6 +1,10 @@
 export const state = {
   currentPage: 1,
   totalPages: 1,
+  // False until pagination has measured scrollWidth at least once. The 1/1
+  // defaults above would otherwise read as "on the last page", and a scroll
+  // reported before the first measure persists read_complete on the book.
+  paginated: false,
   columnWidth: 0,
   lastTapNode: null as Node | null,
   lastTapOffset: 0,
