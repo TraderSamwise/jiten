@@ -21,7 +21,7 @@ const SENTRY_PLUGIN =
         {
           organization: SENTRY_ORG,
           project: SENTRY_PROJECT,
-          url: process.env.SENTRY_URL || "https://sentry.io/",
+          url: process.env.SENTRY_URL || "https://sentry.io",
         },
       ]
     : null;
