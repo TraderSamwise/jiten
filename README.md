@@ -22,9 +22,9 @@ offline, with optional encrypted cloud sync across devices.
 - **Study / SRS** — spaced-repetition flashcards (FSRS algorithm) for vocabulary and kanji,
   with custom lists and review statistics.
 - **Kanji tools** — stroke-order, radical search, and primitive-based mnemonic study.
-- **Mini-games** — typing, connection, a kanji "arena" for drilling readings, and two games
-  built on AI-generated sentences: Read in Context (type the reading of a word in a sentence)
-  and Fill in the Blank (choose which of your words completes a sentence).
+- **Mini-games** — typing, connection, and two games built on AI-generated sentences:
+  Read in Context (type the reading of a word in a sentence) and Fill in the Blank
+  (choose which of your words completes a sentence).
 - **Cloud sync (optional)** — offline-first; when signed in, user data (lists, cards, books,
   review history) syncs across devices. Runs identically with sync disabled.
 
@@ -101,7 +101,6 @@ packages/       Yarn workspaces:
   reader-webview/         @tradersamwise/jiten-reader-webview WebView runtime + bridge
   japanese-reader-core/   @tradersamwise/jiten-reader-core HTML/parsing/slicing
   japanese-reader/        @tradersamwise/jiten-reader-react-native reader controller + adapters
-  kanji-arena-webview/    Phaser kanji-arena mini-game
 api/ , server/  Reference backend (Vercel functions / Hono server)
 scripts/        Dictionary + kanji + audio build pipeline
 data/           Committed source data (JLPT lists, etc.) — see data/README.md

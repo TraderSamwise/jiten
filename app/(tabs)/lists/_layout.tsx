@@ -43,7 +43,6 @@ export default function ListsLayout() {
         options={{ title: "Fill in the Blank", headerShown: false }}
       />
       <Stack.Screen name="connect-game" options={{ title: "Connect Game", headerShown: false }} />
-      <Stack.Screen name="kanji-arena" options={{ title: "Kanji Arena", headerShown: false }} />
       <Stack.Screen name="stats" options={{ title: "Review Statistics", headerShown: false }} />
       <Stack.Screen
         name="marked-for-review"

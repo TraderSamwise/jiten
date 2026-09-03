@@ -469,7 +469,7 @@ Use `router.push()` directly only for intentional cross-tab navigation (e.g., ra
 
 - **Lists and Reader tabs**: `SafeBackButton` is set as the default `headerLeft` in each tab's `_layout.tsx` via `screenOptions`. All non-index screens get a back button automatically — no per-screen code needed.
 - **Dictionary tab**: Uses a fully custom `DictionaryHeader` component (search bar, mode toggle) which handles its own back button via `useSafeGoBack("/dictionary")`.
-- **Fullscreen screens** (study, typing-game, context-game, fill-blank, connect-game, kanji-arena, stats, marked-for-review): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
+- **Fullscreen screens** (study, typing-game, context-game, fill-blank, connect-game, stats, marked-for-review): Have `headerShown: false` and implement their own back button using `useSafeGoBack()` directly.
 
 ### Web navigation: back button and browser history
 
@@ -604,7 +604,7 @@ The backdrop colors are centralized in `lib/navigation.ts` as `WEB_BACKDROP_COLO
 
 **2. Custom React Nav header** (`DictionaryHeader`) — A custom header component passed to the stack navigator. Manages its own padding and backdrop color.
 
-**3. `headerShown: false` screens** (study, typing-game, context-game, fill-blank, connect-game, kanji-arena, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
+**3. `headerShown: false` screens** (study, typing-game, context-game, fill-blank, connect-game, reader) — These render their own header inline. They need explicit backdrop colors and top padding to align with the CSS backdrop. Use the `CustomHeaderScreen` system (see below).
 
 ### `CustomHeaderScreen` system (`components/CustomHeaderScreen.tsx`)
 
