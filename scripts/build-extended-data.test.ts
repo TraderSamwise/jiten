@@ -11,16 +11,14 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
+import { hasExtDb } from "../test/dictionary-db";
 
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
 
-describe("dictionary-extended.db", () => {
+describe.skipIf(!hasExtDb)("dictionary-extended.db", () => {
   let db: Database.Database;
 
   beforeAll(() => {
-    if (!fs.existsSync(EXT_DB_PATH)) {
-      throw new Error(`dictionary-extended.db not found. Run 'yarn build:extended' first.`);
-    }
     db = new Database(EXT_DB_PATH, { readonly: true });
   });
 

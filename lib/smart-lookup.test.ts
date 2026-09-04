@@ -25,9 +25,14 @@ import {
   smartLookup,
   smartLookupWithOffset,
 } from "../packages/japanese-reader/src/lookup";
+import { hasBothDbs } from "../test/dictionary-db";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
+
+// Every suite here queries the built dictionaries, which a fresh checkout and CI
+// do not have. Skipping is honest; failing would claim the code is broken.
+const describeWithDb = hasBothDbs ? describe : describe.skip;
 
 // ─── Minimal types mirroring production ───
 
@@ -523,7 +528,7 @@ function simulateSmartLookupWithOffset(
 // 1. BASIC WORD LOOKUP — tapping on a dictionary-form word
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Basic word lookup (dictionary form)", () => {
+describeWithDb("Basic word lookup (dictionary form)", () => {
   test("猫 — finds 'cat'", () => {
     const hits = simulateSmartLookup("猫です");
     expect(hitsContainWord(hits, "猫")).toBe(true);
@@ -559,7 +564,7 @@ describe("Basic word lookup (dictionary form)", () => {
 // 2. INFLECTED VERB LOOKUP — the key reader feature
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Inflected verb lookup", () => {
+describeWithDb("Inflected verb lookup", () => {
   test("食べました (past polite) → 食べる", () => {
     const hits = simulateSmartLookup("食べました。");
     expect(hitsContainWord(hits, "食べる")).toBe(true);
@@ -614,7 +619,7 @@ describe("Inflected verb lookup", () => {
 // 3. IRREGULAR VERB LOOKUP
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Irregular verb lookup", () => {
+describeWithDb("Irregular verb lookup", () => {
   test("した (suru past) → する", () => {
     const hits = simulateSmartLookup("した事");
     expect(hitsContainWord(hits, "為る") || hitsContainWord(hits, "する")).toBe(true);
@@ -641,7 +646,7 @@ describe("Irregular verb lookup", () => {
 // 4. ADJECTIVE LOOKUP
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Adjective lookup", () => {
+describeWithDb("Adjective lookup", () => {
   test("高かった (past) → 高い", () => {
     const hits = simulateSmartLookup("高かった建物");
     expect(hitsContainWord(hits, "高い")).toBe(true);
@@ -663,7 +668,7 @@ describe("Adjective lookup", () => {
 //    The system should prefer longer matches over shorter ones
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Longest match preference", () => {
+describeWithDb("Longest match preference", () => {
   test("学校 is found before 学 when tapping on 学校", () => {
     const hits = simulateSmartLookup("学校に行く");
     // First hit should be for the longer match
@@ -685,7 +690,7 @@ describe("Longest match preference", () => {
 //    Simulating actual sentences a user might encounter while reading
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Real reading scenarios", () => {
+describeWithDb("Real reading scenarios", () => {
   test("吾輩は猫である — finds the novel title entry", () => {
     const hits = simulateSmartLookup("吾輩は猫である");
     // The full phrase is a dictionary entry (I Am a Cat by Natsume Soseki)
@@ -745,7 +750,7 @@ describe("Real reading scenarios", () => {
 // 7. RESULT DEDUPLICATION
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Result deduplication", () => {
+describeWithDb("Result deduplication", () => {
   test("same entry is not returned multiple times", () => {
     const hits = simulateSmartLookup("食べました");
     const allEntryIds = hits.flatMap((h) => h.results.map((r) => r.entryId));
@@ -770,7 +775,7 @@ describe("Result deduplication", () => {
 // 8. EARLY STOP BEHAVIOR
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Early stop behavior", () => {
+describeWithDb("Early stop behavior", () => {
   test("stops trying shorter substrings after finding results", () => {
     // For a long text, once we find matches we shouldn't keep going to length 1
     // This is a behavioral property — we check it by verifying we don't find
@@ -789,7 +794,7 @@ describe("Early stop behavior", () => {
 // 9. KATAKANA AND LOANWORDS
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Katakana and loanwords", () => {
+describeWithDb("Katakana and loanwords", () => {
   test("コーヒー — coffee", () => {
     const hits = simulateSmartLookup("コーヒーを飲む");
     expect(hitsContainWord(hits, "コーヒー")).toBe(true);
@@ -806,7 +811,7 @@ describe("Katakana and loanwords", () => {
 // 10. EDGE CASES
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Lookup edge cases", () => {
+describeWithDb("Lookup edge cases", () => {
   test("single character: 日", () => {
     const hits = simulateSmartLookup("日");
     expect(hits.length).toBeGreaterThan(0);
@@ -833,7 +838,7 @@ describe("Lookup edge cases", () => {
 //     Simulates tapping on a character mid-word with backward context
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
+describeWithDb("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
   test("tapping 積 in 蓄積させること → finds 蓄積, not 積もる", () => {
     // Simulate: text = "蓄積させること", tapOffset = 1 (tapped 積)
     const text = "蓄積させること";
@@ -943,7 +948,7 @@ describe("Tap-offset greedy lookup (smartLookupWithOffset)", () => {
   });
 });
 
-describe("Production counter-aware lookup", () => {
+describeWithDb("Production counter-aware lookup", () => {
   test("tap lookup prefers 発する over suffix-only 競る in 発せられる", async () => {
     const text = "発せられるかわからない";
     for (const tapOffset of [1, 2, 3, 4]) {
@@ -1058,7 +1063,7 @@ describe("Production counter-aware lookup", () => {
 //     adverbial form of 若い (wakai, "young"). The common word should win.
 // ═══════════════════════════════════════════════════════════════════
 
-describe("若くもない disambiguation — prefer common 若い over rare 如く", () => {
+describeWithDb("若くもない disambiguation — prefer common 若い over rare 如く", () => {
   test("若くもない → finds 若い (young), not 如く (to match)", () => {
     const hits = simulateSmartLookup("若くもないという");
     expect(hits.length).toBeGreaterThan(0);
@@ -1098,7 +1103,7 @@ describe("若くもない disambiguation — prefer common 若い over rare 如�
 //     intends the inflected 行く path.
 // ═══════════════════════════════════════════════════════════════════
 
-describe("kana inflection disambiguation — prefer common deinflected words", () => {
+describeWithDb("kana inflection disambiguation — prefer common deinflected words", () => {
   test("tapping い in いかれるって → finds 行く, not the exact slang いかれる", () => {
     const text = "いかれるって";
     const tapOffset = 0;
@@ -1338,7 +1343,7 @@ function simulateSelectionLookup(
   return results;
 }
 
-describe("Selection lookup with boundary expansion (drag selection)", () => {
+describeWithDb("Selection lookup with boundary expansion (drag selection)", () => {
   test("selecting くもないという with prefix 若 → first word is 若い, not 曇る", () => {
     const results = simulateSelectionLookup("くもないという", { prefix: "若" });
     expect(results.length).toBeGreaterThan(0);

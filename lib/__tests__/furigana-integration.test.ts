@@ -6,6 +6,7 @@ import {
   type FuriganaEntry,
   type FuriganaKanjiSet,
 } from "../../packages/japanese-reader/src/furigana";
+import { hasDictDb } from "../../test/dictionary-db";
 
 const DB_PATH = path.resolve(__dirname, "../../assets/dictionary.db");
 
@@ -34,7 +35,7 @@ function buildBuggyNonJouyouSet(db: Database.Database): FuriganaKanjiSet {
   return { all: false, chars };
 }
 
-describe("furigana nonJouyou filter", () => {
+describe.skipIf(!hasDictDb)("furigana nonJouyou filter", () => {
   it("ignores kana in a malformed nonJouyou set", () => {
     const db = new Database(DB_PATH, { readonly: true });
     const buggySet = buildBuggyNonJouyouSet(db);

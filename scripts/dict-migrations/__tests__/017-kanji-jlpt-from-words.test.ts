@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
+import { hasDictDb } from "../../../test/dictionary-db";
 
 const DB_PATH = path.resolve(__dirname, "../../../assets/dictionary.db");
 
@@ -60,7 +61,7 @@ function deriveKanjiJlptLevels(db: Database.Database) {
   return charBest;
 }
 
-describe("Kanji JLPT derivation from words", () => {
+describe.skipIf(!hasDictDb)("Kanji JLPT derivation from words", () => {
   it("should derive correct JLPT levels for jouyou kanji", () => {
     const db = new Database(DB_PATH, { readonly: true });
 

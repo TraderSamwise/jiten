@@ -11,9 +11,14 @@ import Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import { toHiragana } from "wanakana";
+import { hasBothDbs } from "../test/dictionary-db";
 
 const DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary.db");
 const EXT_DB_PATH = path.resolve(__dirname, "..", "assets", "dictionary-extended.db");
+
+// Every suite here queries the built dictionaries, which a fresh checkout and CI
+// do not have. Skipping is honest; failing would claim the code is broken.
+const describeWithDb = hasBothDbs ? describe : describe.skip;
 
 // ─── Types ───
 
@@ -901,7 +906,7 @@ afterAll(() => {
 // 1. Input classification (7 tests)
 // ════════════════════════════════════════════════════════════
 
-describe("classifyInput", () => {
+describeWithDb("classifyInput", () => {
   test("hiragana → hasJapanese", () => {
     const r = classifyInput("かお");
     expect(r.hasJapanese).toBe(true);
@@ -949,7 +954,7 @@ describe("classifyInput", () => {
 // Run all search tests in both FTS5 and LIKE modes
 // ════════════════════════════════════════════════════════════
 
-describe.each(["FTS5", "LIKE"] as const)("Search [%s]", (mode) => {
+describeWithDb.each(["FTS5", "LIKE"] as const)("Search [%s]", (mode) => {
   beforeAll(() => {
     useLikeFallback = mode === "LIKE";
   });

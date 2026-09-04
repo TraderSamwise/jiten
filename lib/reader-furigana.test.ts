@@ -13,6 +13,7 @@ import {
   type FuriganaMatchLevel,
   type ReaderFuriganaSettings,
 } from "../packages/japanese-reader/src/furigana";
+import { hasBothDbs } from "../test/dictionary-db";
 
 const allKanji: FuriganaKanjiSet = { all: true, chars: new Set() };
 const allLevelsDisabled: Record<FuriganaMatchLevel, boolean> = {
@@ -702,7 +703,7 @@ describe("reader furigana rule levels", () => {
   });
 });
 
-describe("resolveFuriganaBatch compound resolution", () => {
+describe.skipIf(!hasBothDbs)("resolveFuriganaBatch compound resolution", () => {
   let rawDb: Database.Database;
   let dictDb: SQLiteDatabase;
   let rawExtDb: Database.Database;
