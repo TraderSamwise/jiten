@@ -6,6 +6,7 @@ import {
   generateReaderHtml,
   getReaderProgressFlushMode,
   hasAozoraMarkup,
+  isBookFinished,
   parseAozoraToHtml,
   parseBookContent,
   plainTextToHtml,
@@ -360,6 +361,7 @@ export function useJapaneseReader({
   const loadedBookSignatureRef = useRef<{ bookId: string; rawContent: string } | null>(null);
   const sliceCharOffsetRef = useRef(0);
   const fwdLoadedEndRef = useRef(0);
+  const documentRestoredRef = useRef(false);
   const isAozoraRef = useRef(false);
   const backPrefetchingRef = useRef(false);
   const kanjiSetRef = useRef<FuriganaKanjiSet | null>(null);
@@ -1325,10 +1327,15 @@ export function useJapaneseReader({
           setShowLookupPopup(true);
         } else if (msg.type === "scroll") {
           scrollPosRef.current = msg.charOffset;
-          pendingReadCompleteRef.current = !!msg.isLastPage;
+          const finished = isBookFinished({
+            isLastPageOfWindow: !!msg.isLastPage,
+            loadedEndChar: fwdLoadedEndRef.current,
+            totalChars: modelRef.current?.totalChars ?? 0,
+          });
+          pendingReadCompleteRef.current = finished;
           const flushMode = getReaderProgressFlushMode({
             initialScrollHandled: initialScrollFiredRef.current,
-            isLastPage: !!msg.isLastPage,
+            isLastPage: finished,
             lastPersistedReadComplete: lastPersistedReadCompleteRef.current,
           });
           if (flushMode === "skip") {
@@ -1427,6 +1434,12 @@ export function useJapaneseReader({
           setShowJumpSlider(true);
         } else if (msg.type === "ready") {
           void syncBookmarkHighlights();
+          // A restored document boots from the HTML baked at open time, so
+          // re-seed it at the offset reached since, or the reader jumps back.
+          if (documentRestoredRef.current) {
+            documentRestoredRef.current = false;
+            if (scrollPosRef.current > 0) void reloadAtChar(scrollPosRef.current);
+          }
         }
       } catch {}
     },
@@ -1435,12 +1448,19 @@ export function useJapaneseReader({
       clearPendingTapTooltipTimer,
       dictDb,
       extendedDb,
+      reloadAtChar,
       renderSliceHtml,
       scheduleReadingProgressFlush,
       scheduleTapTooltipFallback,
       syncBookmarkHighlights,
     ],
   );
+
+  // The webview document was destroyed and remounted; the next "ready" belongs
+  // to a fresh document that still carries the open-time position.
+  const handleDocumentTerminated = useCallback(() => {
+    documentRestoredRef.current = true;
+  }, []);
 
   const handleCopy = useCallback(() => {
     if (!copyTooltip) return;
@@ -1552,7 +1572,9 @@ export function useJapaneseReader({
     setLookupMode,
     cycleLookupMode,
     readerViewRef,
-    readerViewProps: html ? { html, onMessage: handleMessage } : null,
+    readerViewProps: html
+      ? { html, onMessage: handleMessage, onContentProcessTerminated: handleDocumentTerminated }
+      : null,
     loadingState,
     lookupResults,
     lookupLoading,

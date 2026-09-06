@@ -6,6 +6,8 @@ export interface ReaderViewRef {
 export interface ReaderViewProps {
   html: string;
   onMessage: (data: string) => void;
+  // Fired when the platform destroys the webview document out from under us.
+  onContentProcessTerminated?: () => void;
 }
 
 export type ReaderLookupMode = "word" | "name" | "auto";
