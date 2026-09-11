@@ -1280,7 +1280,18 @@ export async function getEntries(
     jlptMap.set(r.id, r.jlpt_level);
   }
 
-  return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap, jlptMap);
+  // Only ids with a real entries row. Callers pass ids from user data, which can
+  // hold the entry_id = 0 kanji sentinel or an id a later dictionary build
+  // dropped; assembling those anyway yields an entry with no kanji, kana or
+  // senses, which renders as a blank word and, in the typing game, as a word
+  // with no reading to type and therefore no way to advance.
+  const present = entryIds.filter((id) => commonMap.has(id));
+  if (present.length !== entryIds.length) {
+    const missing = [...new Set(entryIds.filter((id) => !commonMap.has(id)))];
+    console.warn(`[dict] getEntries: no dictionary entry for id(s) ${missing.join(", ")}`);
+  }
+
+  return assembleEntries(present, kanjiRows, kanaRows, senseRows, pitchRows, commonMap, jlptMap);
 }
 
 /**

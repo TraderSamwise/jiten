@@ -555,6 +555,36 @@ export default function TypingGameScreen() {
       .map((entry) => ({ entry, completed: false, correct: false, assisted: false }));
   }
 
+  // Batches can come back short, or empty, when a list holds an id the
+  // dictionary no longer has. An empty batch leaves the game with no word to
+  // type and no way to advance, so skip past it.
+  async function pullNonEmptyBatch(): Promise<WordState[]> {
+    while (shuffledQueue.current.length > 0) {
+      const ids = shuffledQueue.current.slice(0, batchSize);
+      shuffledQueue.current = shuffledQueue.current.slice(batchSize);
+      const batch = await loadBatch(ids);
+      if (batch.length > 0) return batch;
+    }
+    return [];
+  }
+
+  function finishSession(total: number) {
+    setCompletedTotal(total);
+    setEndTime(Date.now());
+    setPhase("done");
+    if (userDb && listId) {
+      logSessionSummary(drizzleDb!, {
+        sessionId: sessionIdRef.current,
+        listId,
+        practiceMode: "typing_game",
+        startedAt: new Date(startTime).toISOString(),
+        durationMs: Date.now() - startTime,
+        totalItems: total,
+        correctCount: correctCountRef.current,
+      }).catch(() => {});
+    }
+  }
+
   async function startGame() {
     if (!dictDb || !listId) return;
 
@@ -574,10 +604,10 @@ export default function TypingGameScreen() {
     sessionIdRef.current = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     correctCountRef.current = 0;
 
-    const firstBatchIds = entryIds.slice(0, batchSize);
-    shuffledQueue.current = entryIds.slice(batchSize);
+    shuffledQueue.current = entryIds;
 
-    const batch = await loadBatch(firstBatchIds);
+    const batch = await pullNonEmptyBatch();
+    if (batch.length === 0) return;
     answers.current = new Array(batch.length).fill("");
     setWords(batch);
     setCurrentWordIndex(0);
@@ -594,10 +624,11 @@ export default function TypingGameScreen() {
     wordYPositions.current.clear();
     scrollRef.current?.scrollTo({ y: 0, animated: false });
 
-    const nextBatchIds = shuffledQueue.current.slice(0, batchSize);
-    shuffledQueue.current = shuffledQueue.current.slice(batchSize);
-
-    const batch = await loadBatch(nextBatchIds);
+    const batch = await pullNonEmptyBatch();
+    if (batch.length === 0) {
+      finishSession(prevCompleted);
+      return;
+    }
     answers.current = new Array(batch.length).fill("");
     setWords(batch);
     setCurrentWordIndex(0);
@@ -708,20 +739,7 @@ export default function TypingGameScreen() {
       if (shuffledQueue.current.length > 0) {
         setTimeout(() => advanceToNextBatch(newCompletedTotal), 1500);
       } else {
-        setCompletedTotal(newCompletedTotal);
-        setEndTime(Date.now());
-        setPhase("done");
-        if (userDb && listId) {
-          logSessionSummary(drizzleDb!, {
-            sessionId: sessionIdRef.current,
-            listId,
-            practiceMode: "typing_game",
-            startedAt: new Date(startTime).toISOString(),
-            durationMs: Date.now() - startTime,
-            totalItems: newCompletedTotal,
-            correctCount: correctCountRef.current,
-          }).catch(() => {});
-        }
+        finishSession(newCompletedTotal);
       }
     } else {
       setCurrentWordIndex(nextIndex);

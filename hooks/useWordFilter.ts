@@ -23,8 +23,12 @@ export function useWordFilter(listId: string | undefined): WordFilterState {
   const load = useCallback(async () => {
     if (!userDb || !listId) return;
 
+    // Word games only. A list can also hold kanji entries, which carry the
+    // kanji in kanji_literal and entry_id = 0 — feeding those to a dictionary
+    // lookup finds nothing, and they are not words to read or type anyway.
     const allRows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ? AND deleted_at IS NULL",
+      `SELECT entry_id FROM list_entries
+       WHERE list_id = ? AND deleted_at IS NULL AND kanji_literal IS NULL AND entry_id != 0`,
       [listId],
     );
     const entryIds = allRows.map((r: { entry_id: number }) => r.entry_id);

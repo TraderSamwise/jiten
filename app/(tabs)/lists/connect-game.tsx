@@ -243,7 +243,10 @@ export default function ConnectGameScreen() {
     const entryIds = wordFilter.getFilteredEntryIds(selectedFilter);
     if (entryIds.length < 3) return;
 
+    // Ids the dictionary no longer has drop out here, so re-check the minimum
+    // against what actually resolved rather than what the list claimed.
     const entries = await getEntries(dictDb, entryIds);
+    if (entries.length < 3) return;
 
     // Compute field dimensions (full screen minus header and safe area)
     const fieldWidth = containerWidth;
