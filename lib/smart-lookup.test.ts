@@ -1428,3 +1428,28 @@ describeWithDb("Entry order within one match", () => {
     }
   });
 });
+
+describeWithDb("i-adjective ～そう in the reader", () => {
+  test("恥ずかしそうに resolves 恥ずかしい, not the noun 恥", async () => {
+    const hits = await smartLookupWithOffset(
+      "恥ずかしそうに身をよじって",
+      0,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("恥ずかしそう");
+    expect(hits[0].entries[0].kanji[0]?.text).toBe("恥ずかしい");
+  });
+
+  test("止まらずに leads with とまる, not とどまる", async () => {
+    const hits = await smartLookupWithOffset(
+      "一度も止まらずに必死で",
+      3,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].entries[0].kana[0]?.text).toBe("とまる");
+  });
+});

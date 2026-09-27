@@ -283,6 +283,9 @@ const RULES: DeinflectRule[] = [
   { from: "ければ", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "conditional" },
   { from: "かろう", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "volitional" },
   { from: "さ", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "nominalization" },
+  // 恥ずかしそう "looks embarrassed". Shares its ending with the godan
+  // volitional 話そう below; both rules are tried and the dictionary decides.
+  { from: "そう", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "appearance" },
   // ── Negative ～ず / ～ずに (written negative, the ～ない of literary prose) ──
   { from: "ずに", to: "ず", typeIn: ANY, typeOut: ANY, reason: "without doing" },
   { from: "ず", to: "る", typeIn: V1, typeOut: V1, reason: "negative", minStem: 1 },

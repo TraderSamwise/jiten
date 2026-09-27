@@ -95,10 +95,16 @@ function isHeadwordEntrySurface(entry: ReaderDictEntry, matchedText: string): bo
   return entry.kanji[0]?.text === matchedText || entry.kana[0]?.text === matchedText;
 }
 
+/**
+ * No JLPT term. A level says how hard a word is to learn, not which word the
+ * sentence means, and paying 80 - level * 10 made the rarer reading win: 自ら
+ * opened おのずから (N1) over みずから (N5), 止まらず gave とどまる (N2) over
+ * とまる (N5). What is left is evidence about the text — commonness, whether
+ * the spelling is the entry's headword, whether it matches exactly, counters.
+ */
 function scoreEntryForMatchedSurface(entry: ReaderDictEntry, context: EntrySortContext): number {
   let score = 0;
   if (entry.common) score += 120;
-  if (entry.jlptLevel != null) score += Math.max(0, 80 - entry.jlptLevel * 10);
   if (hasExactEntrySurface(entry, context.matchedText)) score += 120;
   // JMdict lists an entry's spellings most-prevalent first, so a surface that is
   // an entry's headword spelling is better evidence than the same surface listed

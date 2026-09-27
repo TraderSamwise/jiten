@@ -43,3 +43,23 @@ describe("negative ～ず", () => {
     expect(bases("水")).toEqual(["水"]);
   });
 });
+
+// A ～そう "looks like" form of an i-adjective had no rule either, so a tap on
+// 恥ずかしそうに stopped at 恥 and showed the noun 恥/はじ "shame".
+describe("i-adjective ～そう (appearance)", () => {
+  it("recovers the dictionary form", () => {
+    expect(bases("恥ずかしそう")).toContain("恥ずかしい");
+    expect(bases("嬉しそう")).toContain("嬉しい");
+    expect(bases("涼しそう")).toContain("涼しい");
+    expect(bases("強そう")).toContain("強い");
+  });
+
+  it("labels the reason", () => {
+    const hit = deinflect("恥ずかしそう").find((c) => c.word === "恥ずかしい");
+    expect(hit?.reasons).toContain("appearance");
+  });
+
+  it("leaves the godan volitional そう alone", () => {
+    expect(bases("話そう")).toContain("話す");
+  });
+});
