@@ -27,6 +27,7 @@ import { showRomajiAtom } from "@/stores/settings";
 import { shouldDeEmphasize, shouldHide, getTagLabel } from "@/lib/tags";
 import { japaneseFontStyle } from "@/lib/japanese-font";
 import { BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
+import { formatSenseMisc } from "@/lib/sense-tags";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
 import type { DictEntry } from "@/db/types";
@@ -299,6 +300,11 @@ export function WordDetail({ entryId }: WordDetailProps) {
                 .filter((g) => g.lang === "eng")
                 .map((g) => g.text)
                 .join("; ")}
+              {formatSenseMisc(sense.misc).length > 0 && (
+                <Text className="text-xs text-muted-foreground italic">
+                  {"  "}({formatSenseMisc(sense.misc).join(", ")})
+                </Text>
+              )}
             </Text>
             {sense.field && (
               <Text className="text-xs text-muted-foreground italic">Field: {sense.field}</Text>
