@@ -525,31 +525,52 @@ async function findOkuriganaStarts(
   prefetch: (words: string[]) => Promise<void>,
   lookupOnce: (word: string) => Promise<ReaderDictEntry[]>,
 ): Promise<Set<number>> {
-  const stems = new Map<number, string[]>();
-  for (let start = Math.max(1, tapOffset - 14); start <= tapOffset; start++) {
-    if (!isKanaChar(text[start]) || !isKanjiChar(text[start - 1])) continue;
-    let head = start - 1;
+  const earliest = Math.max(1, tapOffset - 14 - MAX_OKURIGANA);
+  const tails: { first: number; ends: { end: number; words: string[] }[] }[] = [];
+  for (let first = earliest; first <= tapOffset; first++) {
+    if (!isKanaChar(text[first]) || !isKanjiChar(text[first - 1])) continue;
+    let head = first - 1;
     while (head > 0 && isKanjiChar(text[head - 1])) head--;
-    stems.set(
-      start,
-      deinflect(text.slice(head, start + 1)).map((candidate) => candidate.word),
-    );
+    const ends: { end: number; words: string[] }[] = [];
+    for (let end = first; end < text.length && end < first + MAX_OKURIGANA; end++) {
+      if (!isKanaChar(text[end])) break;
+      ends.push({
+        end,
+        // One inflection step is the word conjugating itself. Two is a chain
+        // through an auxiliary, which is a second word: 倒して is 倒す in its
+        // te-form, but 倒してや reaches 倒す as well and would swallow やった.
+        words: deinflect(text.slice(head, end + 1))
+          .filter((candidate) => candidate.reasons.length <= 1)
+          .map((candidate) => candidate.word),
+      });
+    }
+    if (ends.length > 0) tails.push({ first, ends });
   }
-  if (stems.size === 0) return new Set();
+  if (tails.length === 0) return new Set();
 
-  await prefetch([...stems.values()].flat());
+  await prefetch(tails.flatMap((tail) => tail.ends.flatMap((option) => option.words)));
   const starts = new Set<number>();
-  for (const [start, words] of stems) {
-    for (const word of words) {
-      const entries = await lookupOnce(word);
-      if (entries.some(entryInflects)) {
-        starts.add(start);
-        break;
+  for (const { first, ends } of tails) {
+    // Longest first: the word decides how far its own tail runs, and taking the
+    // shortest would leave the rest of the tail open to a span that cuts in.
+    for (const { end, words } of [...ends].reverse()) {
+      let inflects = false;
+      for (const word of words) {
+        if ((await lookupOnce(word)).some(entryInflects)) {
+          inflects = true;
+          break;
+        }
       }
+      if (!inflects) continue;
+      for (let inside = first; inside <= end; inside++) starts.add(inside);
+      break;
     }
   }
   return starts;
 }
+
+/** How far past a kanji a single word's kana tail is allowed to reach. */
+const MAX_OKURIGANA = 4;
 
 /** Only an inflecting word has okurigana; a noun's trailing kana is a particle. */
 function entryInflects(entry: ReaderDictEntry): boolean {
@@ -563,7 +584,6 @@ function scoreTapCandidate(
   result: LookupResult,
   start: number,
   hasCommon: boolean,
-  startsInsideOkurigana = false,
 ): number {
   const length = [...result.matchedText].length;
   let score = length * 100;
@@ -579,10 +599,6 @@ function scoreTapCandidate(
   else if (hasExactKanaSurfaceMatch(result, result.matchedText)) score += 45;
 
   if (tapCandidateStartsAtKanaToKanjiBoundary(text, start)) score += 120;
-  // The first kana after a kanji looks like the start of a word and usually is
-  // not: it is that kanji's okurigana. Charged like a mid-kanji-run start,
-  // because the claim is the same and the caller proved the word exists.
-  else if (startsInsideOkurigana) score -= 140;
   else if (tapCandidateStartsAtKanaRunStart(text, start)) score += 50;
   else if (tapCandidateStartsMidKanaRun(text, start)) score -= 65;
 
@@ -1141,6 +1157,11 @@ export async function smartLookupWithOffset(
     // was touched, since the comparison below only replaces on a strict win.
     const spans: { start: number; substr: string; candidates: TapCandidate[] }[] = [];
     for (let start = minStart; start <= maxStart; start++) {
+      // A span that begins inside a word is not a worse answer, it is not an
+      // answer: 死ぬまで has no span starting at its ぬ. Scoring it down is not
+      // enough, because the walk stops at the first span two characters longer
+      // than the best and a condemned span would still shield the rest.
+      if (okuriganaStarts.has(start)) continue;
       const substr = text.slice(start, start + len);
       const candidates: TapCandidate[] = [...deinflect(substr)];
       for (const variant of particleVariants(substr)) {
@@ -1207,7 +1228,7 @@ export async function smartLookupWithOffset(
             matchStart: start,
           };
           const score =
-            scoreTapCandidate(text, result, start, hasCommon, okuriganaStarts.has(start)) +
+            scoreTapCandidate(text, result, start, hasCommon) +
             scoreCounterHint(result, counterHints.get(substr));
           if (!bestForLength || score > bestForLength.score) {
             bestForLength = { result, score, length: len, start };

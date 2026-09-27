@@ -1566,4 +1566,39 @@ describeWithDb("spans that start inside a word's okurigana", () => {
   test("手に付いて: tapping に still gives に", async () => {
     expect(await tap("今だに親指は手に付いている", 7)).toBe("に");
   });
+
+  /** The whole proved tail is closed, not only its first character. */
+  test("囃したから: tapping か gives から, not たから", async () => {
+    expect(await tap("虫やーい。と囃したからである", 9)).toBe("から");
+  });
+
+  test("云いながら: tapping い reaches 云い, not いながら", async () => {
+    expect(await tap("おりますからと云いながら革鞄を", 8)).toBe("云い");
+  });
+
+  /** The tail closes where the word ends: ながら is its own word, not okurigana. */
+  test("云いながら: tapping な still gives ながら", async () => {
+    expect(await tap("おりますからと云いながら革鞄を", 9)).toBe("ながら");
+  });
+
+  /**
+   * One inflection step is the word conjugating itself; two is a chain through
+   * an auxiliary. 倒して is 倒す in its te-form, but 倒してや also reaches 倒す and
+   * would close や, handing the tap the straddling してやった.
+   */
+  test("倒してやった: や is still やった with the whole clause in the window", async () => {
+    expect(await tap("足搦をかけて向うへ倒してやった。山城屋の", 12)).toBe("やった");
+  });
+
+  /**
+   * Without the one-step bound 込んでい proves itself a word, closes the い that
+   * starts いい加減, and the tap answers 加減.
+   */
+  test("込んでいい加減: the tail stops before the next word's first kana", async () => {
+    expect(await tap("錘と糸を抛り込んでいい加減にしゃくると", 10)).toBe("いい加減");
+  });
+
+  test("帰ろうと: tapping と gives と, not ろうと", async () => {
+    expect(await tap("宿へ帰ろうと思ったが", 5)).toBe("と");
+  });
 });

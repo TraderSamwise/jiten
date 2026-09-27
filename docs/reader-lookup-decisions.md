@@ -14,8 +14,8 @@ of argued about.
   reader) before and after, and diff the matched span and top entry. ~11,250
   taps. `scripts/tap-consistency.ts` is the committed gate over the same corpus
   (`yarn check:tap-consistency`); it reports the share of taps that agree with
-  every other tap landing inside their own span, currently **97.6%** (3760 taps,
-  11383 pairwise checks, 155 disagreeing).
+  every other tap landing inside their own span, currently **97.9%** (3760 taps,
+  11343 pairwise checks, 129 disagreeing).
 - **Furigana.** Resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus, up to 8 characters. ~54,900 surfaces.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
@@ -111,34 +111,54 @@ and no deinflection explains it (`pageSpellingNote` in `lib/entry-surface.ts`).
 An inflected match keeps only its reason chip; repeating the surface there
 would be noise.
 
-### A span may not start in a word's okurigana
+### A span may not start inside a word
 
 Kana straight after a kanji is usually that kanji's okurigana, not the start of
 a new word, so a candidate beginning there is cutting a word in half: 死ぬまで
-answered as ぬま, 消えぬ as えぬ, 白くって as くって, 云うから as うから. The
-scorer had it backwards — `tapCandidateStartsAtKanaRunStart` paid such a start
-+120 for looking like a word boundary.
+answered as ぬま, 消えぬ as えぬ, 白くって as くって, 云うから as うから,
+囃したから as たから. The scorer had it backwards —
+`tapCandidateStartsAtKanaRunStart` paid such a start +120 for looking like a
+word boundary.
 
 Looking like one is not enough to separate okurigana from a real particle after
-a kanji (手 に), so the kanji run and that kana are looked up together and the
-position only counts when they spell an **inflecting** word that exists:
-死ぬ (v5n), 消える (v1), 白い (adj-i). 手に resolves to nothing that inflects, so
-に keeps its bonus. One extra batched lookup per tap; `findOkuriganaStarts` in
-`lookup.ts`. A candidate starting at such a position is charged −140, the same
-as starting mid-kanji-run, because the claim is the same and the word was
-proved.
+a kanji (手 に), so the kanji run and the kana after it are looked up together
+and the position only closes when they spell an **inflecting** word that
+exists: 死ぬ (v5n), 消える (v1), 白い (adj-i). 手に resolves to nothing that
+inflects, so に stays open. `findOkuriganaStarts` in `lookup.ts`, one batched
+lookup per tap.
+
+Three things this took, each measured:
+
+- **Close the whole proved tail, not only its first kana.** 囃した covers し and
+  た, so たから cannot start; から can. First-kana-only left 96 of the 158
+  overlaps untouched.
+- **Bound the tail by one inflection step.** 倒して is 倒す in its te-form, but
+  倒してや reaches 倒す as well and would close や, handing the tap the
+  straddling してやった. Chains through an auxiliary are a second word. Without
+  the bound, 込んでい proves itself and closes the い that starts いい加減.
+- **Refuse such a span outright rather than scoring it down.** A −140 penalty
+  was not enough: the walk stops at the first span two characters longer than
+  the best (`lengthDiff >= 2`), so してやった kept winning at 220 against
+  やった's 340 because the walk never reached length 3. A span that begins
+  inside a word is not a worse answer, it is not an answer.
 
 Measured: 62 of the 158 overlapping disagreements had exactly one side starting
-this way and never both, so the signal is clean. The gate moves 97.3% → 97.6%,
-176 disagreeing pairs → 155. Over the corpus 366 taps change, 139 distinct
-transitions, all read: うから→から, いながら→ながら, たから→から, ぬま→まで,
-してやった→やった, せば→廃せば, つべ→べき, にやし→やしない.
+this way and never both, so the signal is clean. The gate moves 97.3% → 97.9%,
+176 disagreeing pairs → 129. Over the corpus 352 taps change across 136
+distinct transitions, all read: たから→から (50), ないか→から (22), いと→と
+(17), ったって→って, たよう→ように, いながら→云い, きじゃけれ→好き,
+しかねる→決し, せば→廃せば, ようか→尋ねよう.
 
-**The one accepted regression: 来たまえ.** 来た is a real inflected verb, so た
-counts as okurigana and たまえ — the auxiliary 給え, which is the correct
-reading here — is charged for starting inside it. The tap now answers まえ. Two
-taps in the corpus. Not worth an auxiliary exemption: the exemption would have
-to fire on exactly the forms the rule is there to catch.
+**Accepted regressions**, all read in that diff and kept:
+
+- 来たまえ → まえ (2 taps). 来た is a real inflected verb, so たまえ — the
+  auxiliary 給え, correct here — starts inside it. An exemption would have to
+  fire on exactly the forms this rule exists to catch.
+- 居やがる → がる, 出来そうもない → もない, 同じような → な (5 taps between
+  them). The auxiliary starts one kana early in each.
+- Three taps now answer nothing — つきゃあがった, 睨めっくら, 卸しゃ — where
+  every span containing them began inside a word. They get the empty-state
+  message rather than a junk word, which is the honest answer.
 
 ## Rejected
 
@@ -224,11 +244,11 @@ catching none of the idioms that actually come up. `exp` is the tag that works.
 
 The disagreements left after the okurigana rule above are overlaps where
 _neither_ side starts on a kanji's okurigana and both are ordinary kana:
-おやじ/じが, ぐらい/いか, つば/ばかり, たから out of 囃した + から. The junk span
-straddles a boundary between two real words and wins on length alone, and
-nothing local to it says so — JMdict tags the right side `prt` often enough to
-be suggestive but not reliably. Ruling these out needs part-of-speech and
-connection costs across the whole line, i.e. an analyzer. Leaving the last 2.4%.
+おやじ/じが, ぐらい/いか, つば/ばかり, そうもない/いと. The junk span straddles a
+boundary between two real words and wins on length alone, and with no kanji
+anywhere near it there is nothing local to say so — JMdict tags the right side
+`prt` often enough to be suggestive but not reliably. Ruling these out needs part-of-speech and
+connection costs across the whole line, i.e. an analyzer. Leaving the last 2.1%.
 
 ## Not a bug
 
