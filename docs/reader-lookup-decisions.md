@@ -140,8 +140,21 @@ Fixing it needs kanji-to-reading alignment: either a morphological analyzer, or
 a build-time index of the mixed variants of each expression. 12,385 of the
 13,154 `exp` entries have both a kanji and a kana form and would need it.
 
-Note what this is **not**: 目の玉の飛び出る is simply absent from JMdict, so
-returning 目の玉 is the best answer that exists, and 発破をかける already works.
+The same mechanism covers particle variation. 目の玉の飛び出るような looks like
+a coverage gap and is not: JMdict has **目の玉が飛び出る** (めのたまがとびでる,
+"eye-popping; staggering"), and the text writes の for が, the ordinary
+relative-clause subject substitution. 1436 exp entries contain が.
+
+JMdict's own idiom tags are **not** a usable filter for this. 目の玉が飛び出る,
+気を持たせる and 発破をかける are all plain `exp` with no `id` tag; the
+`id`/`proverb`/`yoji` tags together fire 5 times in 40,000 characters of the
+corpus and catch none of the idioms that actually come up.
+
+How much of the problem is matching, measured over the corpus: 411 multi-token
+expression occurrences in 40,000 characters, one per ~96. A tap on the phrase's
+**first** character finds 87% of them; a tap on **any** character inside finds
+89%. Matching is not the bottleneck — you have to already know it is a phrase
+and where it starts.
 
 ### Kana-run junk in tap lookup
 
