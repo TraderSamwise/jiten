@@ -54,6 +54,11 @@ are measured exhaustively rather than argued:
 - **Counters** — `counter_readings` is finite; resolve all 2728 distinct
   `combined_kanji` forms, which bounds any counter change exactly.
 
+The gate is a tripwire, not the judge: it counts taps that agree with each
+other, and two taps agree perfectly well on a wrong answer, so a junk span that
+swallows its neighbours can _raise_ the number. Read the diff; a rule picked by
+the gate alone has already been the wrong one here.
+
 Ship when every entry in the diff is an improvement, neutral, or a regression
 you name and accept in that document. A regression nobody wrote down is not
 accepted, it is unnoticed — record the trade there, not only in a commit

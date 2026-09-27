@@ -26,6 +26,14 @@ A change is shippable when the diff is enumerable and every entry in it is an
 improvement, neutral, or a regression named and accepted in this document. A
 regression nobody wrote down is not accepted, it is unnoticed.
 
+**The gate is a tripwire, not the judge.** It counts taps that agree with each
+other, and two taps agree perfectly well on a wrong answer — a junk span that
+swallows its neighbours makes every tap inside it agree, so a regression can
+_raise_ the number. That happened here: 倒してやった answered as してやった scored
+better on the gate than answering やった, and a character cap chosen by the gate
+alone picked the worse of two rules by four pairs. Read the corpus diff. The
+gate's job is to catch what you did not look at.
+
 ## Taken
 
 ### Counter readings lose to a common word they contradict
@@ -161,6 +169,33 @@ distinct transitions, all read: たから→から (50), ないか→から (22)
   message rather than a junk word, which is the honest answer.
 
 ## Rejected
+
+### A character cap on how far a word's kana tail runs
+
+The first attempt at closing okurigana tails bounded them by length —
+`MAX_OKURIGANA` at 2, 3, 4, 5, 6 — and the gate reads 142, 136, 133, 131, 131.
+Straight monotone improvement, and wrong: the longer caps score better precisely
+because 倒してや proves itself a word, closes や, and lets してやった win every
+tap inside it, which is six taps agreeing on junk. The bound that works is one
+inflection step, not a character count (see above); the length cap survives only
+as a cheap outer limit.
+
+### A morphological analyzer for the remaining overlaps
+
+Considered and declined for the reader: kuromoji.js with IPADic is 12MB+ of
+dictionary shipped into the app and loaded per slice, for the last couple of
+points of a self-consistency metric. The okurigana half of the problem turned
+out not to need it at all — JMdict's own part-of-speech tags plus one lookup
+settle whether kana is a tail or a word. Revisit only if reading throws up cases
+a person actually hits.
+
+### Instrumenting real taps to find out whether this matters
+
+Proposed and dropped: logging where in a matched span the finger lands, over a
+week of real reading, to learn whether the junk spans are ever reached. The
+failing taps are things like the ま of 死ぬまで and the second kana of 囃した —
+positions a reader has little reason to touch, since you tap the word you do not
+know. Not worth a build and a week of attention.
 
 ### Gating deinflected candidates on JMdict part of speech
 
