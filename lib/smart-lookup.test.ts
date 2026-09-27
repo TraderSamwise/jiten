@@ -1488,3 +1488,46 @@ describeWithDb("kana-spelled words inside a phrase", () => {
     expect(hits[0].entries[0].kanji[0]?.text).not.toBe("飢餓");
   });
 });
+
+/**
+ * A set phrase is written with whichever particle the sentence wants — が for
+ * the subject of a relative clause becomes の, は and も trade places — so the
+ * text often carries a particle the dictionary entry does not.
+ */
+describeWithDb("particle-substituted phrases", () => {
+  test("目の玉の飛び出る resolves 目の玉が飛び出る", async () => {
+    const hits = await smartLookupWithOffset(
+      "目の玉の飛び出るような値段だった",
+      2,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("目の玉の飛び出る");
+    expect(hits[0].entries[0].kanji[0]?.text).toBe("目の玉が飛び出る");
+  });
+
+  test("役には立たない resolves 役にも立たない", async () => {
+    const hits = await smartLookupWithOffset(
+      "とても役には立たないと思った",
+      3,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits[0].matchedText).toBe("役には立たない");
+    expect(hits[0].entries[0].kanji[0]?.text).toBe("役にも立たない");
+  });
+
+  /** のか swapped is がか, the common noun 画家 — a swap must not invent a word. */
+  test("a short span is not swapped into an unrelated common word", async () => {
+    const hits = await smartLookupWithOffset("そうなのかと思う", 3, dictDbAsync, extendedDbAsync);
+    expect(hits[0]?.entries[0]?.kanji[0]?.text).not.toBe("画家");
+  });
+
+  test("a swap only counts when it lands on a multi-word expression", async () => {
+    // はい -> がい reaches 害, 街, 外 — all common nouns, none an expression.
+    const hits = await smartLookupWithOffset("それでもはいると", 4, dictDbAsync, extendedDbAsync);
+    const top = hits[0]?.entries[0]?.kanji[0]?.text;
+    expect(["害", "街", "外"]).not.toContain(top);
+  });
+});

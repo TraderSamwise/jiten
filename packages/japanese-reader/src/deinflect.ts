@@ -460,6 +460,68 @@ export function kanaSpellings(
   return { literal: chars[kanjiAt], spellings };
 }
 
+/**
+ * Particles a set phrase swaps without becoming a different phrase. が, は and
+ * も trade places as subject, topic and emphasis; に and へ both mark a goal;
+ * and が becomes の on the subject of a relative clause, which is why the entry
+ * 目の玉が飛び出る appears in a book as 目の玉の飛び出る.
+ *
+ * The map runs text -> dictionary, so the の entry is the text's spelling and
+ * が the entry's. を, で, と and から are absent because swapping those changes
+ * the case rather than the register.
+ */
+const PARTICLE_ALTERNATIVES: Record<string, string> = {
+  の: "が",
+  が: "はも",
+  は: "がも",
+  も: "がは",
+  に: "へ",
+  へ: "に",
+};
+
+/** Below this a swap invents a word rather than recovering one — see below. */
+const MIN_PARTICLE_VARIANT_LENGTH = 4;
+
+/**
+ * The text with one particle replaced by an equivalent, one variant per swap.
+ *
+ * Only one particle moves at a time: a phrase needing two simultaneous
+ * substitutions is not one worth guessing at, and the combinations multiply
+ * against a walk that already tries ~120 substrings per tap.
+ *
+ * Short spans are refused outright. のか swapped is がか, the common noun 画家;
+ * はい is がい, which is 害, 街 and 外. Over the corpus, swapping without a
+ * length floor put 1161 spans on a real entry, 240 of them common.
+ */
+export function particleVariants(text: string): string[] {
+  const chars = [...text];
+  if (chars.length < MIN_PARTICLE_VARIANT_LENGTH) return [];
+  // A phrase worth recovering is anchored by a kanji. Without this the walk
+  // guesses at every run of kana it passes — 200 extra dictionary reads per
+  // tap, none of them cacheable — and mis-cuts spans out of ordinary grammar,
+  // reading でもないから as でもないか.
+  if (!chars.some(isSpellingKanji)) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>([text]);
+  // From 1: a particle in first position governs the phrase before this span,
+  // not this one. Swapping it read 宿屋へ連れて来た, "brought me to the inn",
+  // as につれて, "as it progressed".
+  for (let i = 1; i < chars.length; i++) {
+    const alternatives = PARTICLE_ALTERNATIVES[chars[i]];
+    if (!alternatives) continue;
+    for (const alternative of alternatives) {
+      const swapped = [...chars];
+      swapped[i] = alternative;
+      const variant = swapped.join("");
+      if (seen.has(variant)) continue;
+      seen.add(variant);
+      out.push(variant);
+    }
+  }
+  return out;
+}
+
 export function generateSubstrings(text: string, maxLen: number = 15): string[] {
   const len = Math.min(text.length, maxLen);
   const result: string[] = [];

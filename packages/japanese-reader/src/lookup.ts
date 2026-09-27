@@ -12,7 +12,7 @@ import {
   type AutoNameWordCandidate,
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
-import { deinflect, generateSubstrings, kanaSpellings } from "./deinflect";
+import { deinflect, generateSubstrings, kanaSpellings, particleVariants } from "./deinflect";
 import { getKanjiAsync, lookupExactJapanese, lookupExactName } from "./lookup-db";
 import type { LookupResult, ReaderDictEntry } from "./types";
 
@@ -1062,15 +1062,28 @@ export async function smartLookupWithOffset(
     // was touched, since the comparison below only replaces on a strict win.
     for (let start = minStart; start <= maxStart; start++) {
       const substr = text.slice(start, start + len);
-      const candidates: { word: string; reasons: string[]; spelledKanji?: string }[] = [
-        ...deinflect(substr),
-      ];
+      const candidates: {
+        word: string;
+        reasons: string[];
+        spelledKanji?: string;
+        particleSwapped?: boolean;
+      }[] = [...deinflect(substr)];
+      for (const variant of particleVariants(substr)) {
+        candidates.push({ word: variant, reasons: [], particleSwapped: true });
+      }
       const spelled = await kanaSpellingCandidates(substr);
       for (const spelling of spelled.spellings) {
         candidates.push({ word: spelling, reasons: [], spelledKanji: spelled.literal });
       }
 
+      // Candidates are ordered literal-first. A particle swap is a guess about
+      // what the book meant, so it is only allowed to speak when reading the
+      // span as written found nothing — にしては is an entry in its own right
+      // and must not be answered with にしても, which merely happens to be the
+      // commoner of the two.
+      let literalMatched = false;
       for (const candidate of candidates) {
+        if (candidate.particleSwapped && literalMatched) continue;
         let entries = await lookupOnce(candidate.word);
         // Rewriting a kanji as kana claims the entry is that word spelled
         // differently, so the entry has to contain the kanji. Without this the
@@ -1080,6 +1093,14 @@ export async function smartLookupWithOffset(
           const literal = candidate.spelledKanji;
           entries = entries.filter((entry) =>
             entry.kanji.some((kanji) => kanji.text.includes(literal)),
+          );
+        }
+        // Swapping a particle only makes sense inside a phrase, so the entry
+        // has to be one. Without this the swap reaches ordinary nouns that
+        // merely share the resulting sound — のか becomes 画家, はい becomes 害.
+        if (candidate.particleSwapped) {
+          entries = entries.filter((entry) =>
+            entry.senses.some((sense) => sense.partOfSpeech?.includes("exp")),
           );
         }
         if (entries.length > 0) {
@@ -1099,6 +1120,7 @@ export async function smartLookupWithOffset(
           const hasCommon = entries.some(
             (entry) => entry.common && entryMatchesSearchSurface(entry, candidate.word),
           );
+          if (!candidate.particleSwapped && !candidate.spelledKanji) literalMatched = true;
           const result: LookupResult = {
             matchedText: substr,
             entries: sortedEntries,
