@@ -134,6 +134,8 @@ export interface UseJapaneseReaderResult {
   lookupResults: LookupResult[];
   lookupLoading: boolean;
   lookupError: string | null;
+  /** The text the current lookup ran on, so an empty result can name it. */
+  lookupQuery: string | null;
   showLookupPopup: boolean;
   closeLookupPopup: () => void;
   copyTooltip: ReaderSelectionTooltip | null;
@@ -338,6 +340,7 @@ export function useJapaneseReader({
   const [showLookupPopup, setShowLookupPopup] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupQuery, setLookupQuery] = useState<string | null>(null);
   const [copyTooltip, setCopyTooltip] = useState<ReaderSelectionTooltip | null>(null);
   const [copied, setCopied] = useState(false);
   const [lookupMode, setLookupMode] = useState<ReaderLookupMode>(initialLookupMode);
@@ -1255,6 +1258,7 @@ export function useJapaneseReader({
           setLookupResults([]);
           setLookupLoading(true);
           setLookupError(null);
+          setLookupQuery(text);
           setShowLookupPopup(true);
           setCopyTooltip(null);
           setCopied(false);
@@ -1265,23 +1269,38 @@ export function useJapaneseReader({
               x: msg.selectionX ?? msg.startX ?? 0,
               y: msg.selectionTop ?? msg.startY ?? 0,
             });
+            let found = 0;
             if (isNameMode) {
               const names = await nameLookup(text, extendedDb!);
+              found = names.length;
               setLookupResults(names);
             } else if (isAutoMode) {
               const results = await autoSelectionLookup(text, dictDb!, extendedDb, {
                 prefix: msg.prefix || "",
                 suffix: msg.suffix || "",
               });
+              found = results.length;
               setLookupResults(results);
             } else {
               await selectionLookup(
                 text,
                 dictDb!,
                 (result) => {
+                  found++;
                   setLookupResults((prev) => [...prev, result]);
                 },
                 { prefix: msg.prefix || "", suffix: msg.suffix || "", extendedDb },
+              );
+            }
+            if (found === 0) {
+              // "No results found" on its own says nothing about which of the
+              // selection, the mode or the dictionary came up short.
+              warnOnce(
+                `empty-selection:${text}`,
+                `selection lookup found nothing for ${JSON.stringify(text)} ` +
+                  `(mode ${isNameMode ? "name" : isAutoMode ? "auto" : "word"}, ` +
+                  `prefix ${JSON.stringify(msg.prefix || "")}, ` +
+                  `suffix ${JSON.stringify(msg.suffix || "")})`,
               );
             }
           } else {
@@ -1579,6 +1598,7 @@ export function useJapaneseReader({
     lookupResults,
     lookupLoading,
     lookupError,
+    lookupQuery,
     showLookupPopup,
     closeLookupPopup,
     copyTooltip,

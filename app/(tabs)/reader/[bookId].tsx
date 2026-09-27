@@ -597,6 +597,7 @@ export default function BookReaderScreen() {
     lookupResults,
     lookupLoading,
     lookupError,
+    lookupQuery,
     showLookupPopup,
     closeLookupPopup,
     copyTooltip,
@@ -1196,6 +1197,7 @@ export default function BookReaderScreen() {
               visible={showLookupPopup}
               loading={lookupLoading}
               errorMessage={lookupError}
+              query={lookupQuery}
               explanation={visibleSentenceExplanation}
               onClose={handleCloseLookupPopup}
               onPanelTopChange={handleLookupPopupTopChange}

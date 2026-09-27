@@ -12,6 +12,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { EntrySummary } from "@/components/EntrySummary";
+import { emptyLookupMessage } from "@/lib/lookup-empty-state";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
@@ -40,6 +41,8 @@ interface DictionaryPopupProps {
   results: LookupResult[];
   loading?: boolean;
   errorMessage?: string | null;
+  /** What the lookup ran on, so an empty result can say so. */
+  query?: string | null;
   explanation?: ReaderSentenceExplanationState;
   onPanelTopChange?: (top: number) => void;
 }
@@ -249,6 +252,7 @@ export function DictionaryPopup({
   results,
   loading,
   errorMessage,
+  query,
   explanation = { status: "idle" },
   onPanelTopChange,
 }: DictionaryPopupProps) {
@@ -813,7 +817,9 @@ export function DictionaryPopup({
               <ActivityIndicator size="large" />
             </View>
           ) : (
-            <Text className="text-center text-muted-foreground py-8">No results found</Text>
+            <Text className="text-center text-muted-foreground py-8">
+              {emptyLookupMessage(query)}
+            </Text>
           )}
         </>
       );
