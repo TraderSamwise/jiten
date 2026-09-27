@@ -58,8 +58,7 @@
     "version:rollback": "eas-release rollback",
     "version:set": "eas-release set",
     "version:sync": "eas-release sync",
-    "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs",
-    "check:expressions": "npx tsx scripts/expression-coverage.ts"
+    "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs"
   },
   "dependencies": {
     "@tradersamwise/jiten-reader-react-native": "0.1.0",
