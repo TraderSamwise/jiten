@@ -489,17 +489,28 @@ async function lookupNegativeScopeParticleAtTap(
   return null;
 }
 
+/**
+ * Scores a candidate span on its own merits and the text around it, never on
+ * where inside it the reader happened to touch. Candidate generation already
+ * tries every window containing the tap, so if the score also read the tap the
+ * same span could win from one character and lose from the next — which is the
+ * disagreement `yarn check:tap-consistency` measures.
+ */
 function scoreTapCandidate(
   text: string,
-  tapOffset: number,
   result: LookupResult,
   start: number,
   hasCommon: boolean,
 ): number {
-  let score = result.matchedText.length * 100;
+  const length = [...result.matchedText].length;
+  let score = length * 100;
   const isKanaOnly = hasKana(result.matchedText) && !hasKanji(result.matchedText);
   const isMixedKanjiKana = hasKanji(result.matchedText) && hasKana(result.matchedText);
-  const suffixCharsAfterTap = start + result.matchedText.length - 1 - tapOffset;
+
+  // A long kana-only span will happily swallow the word that was tapped —
+  // 囃した as した, 熱く as くって. Charge it for its own length rather than for
+  // how far it runs past the tap, which is the same brake without the finger.
+  if (isKanaOnly) score -= (length - 1) * 30;
 
   if (hasExactKanjiSurfaceMatch(result, result.matchedText)) score += 160;
   else if (hasExactKanaSurfaceMatch(result, result.matchedText)) score += 45;
@@ -516,13 +527,6 @@ function scoreTapCandidate(
     score -= 20;
     if (hasCommon && isMixedKanjiKana) score += 100;
   }
-  if (isKanaOnly && suffixCharsAfterTap > 0) {
-    score -= suffixCharsAfterTap * 30;
-  }
-
-  // Small fallback toward candidates that extend backward from the tap
-  // rather than starting strictly after it.
-  if (start < tapOffset) score += 8;
 
   return score;
 }
@@ -1023,8 +1027,10 @@ export async function smartLookupWithOffset(
       start: number;
     } | null = null;
 
-    // Iterate starts from tapOffset downward (prefer word starting at/near tap)
-    for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
+    // Left to right, so an equal score resolves to the leftmost span. Walking
+    // outward from the tap instead made the winner depend on which character
+    // was touched, since the comparison below only replaces on a strict win.
+    for (let start = minStart; start <= maxStart; start++) {
       const substr = text.slice(start, start + len);
       const candidates = deinflect(substr);
 
@@ -1054,7 +1060,7 @@ export async function smartLookupWithOffset(
             matchStart: start,
           };
           const score =
-            scoreTapCandidate(text, tapOffset, result, start, hasCommon) +
+            scoreTapCandidate(text, result, start, hasCommon) +
             scoreCounterHint(result, counterHints.get(substr));
           if (!bestForLength || score > bestForLength.score) {
             bestForLength = { result, score, length: len, start };
