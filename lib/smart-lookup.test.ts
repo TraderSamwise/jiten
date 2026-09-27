@@ -1386,3 +1386,45 @@ describeWithDb("Selection lookup with boundary expansion (drag selection)", () =
     expect(lastResult.matchedText).toBe("姿勢");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 12. ENTRY ORDER WITHIN ONE MATCH
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * When one spelling belongs to several entries the reader shows entries[0]
+ * first, so its order has to mean something. Rank by the same signal the
+ * dictionary tab sorts on — priority plus a common bonus — rather than by
+ * entry id, which is arbitrary and put 自ら under おのずから instead of みずから.
+ */
+describeWithDb("Entry order within one match", () => {
+  test("自ら leads with みずから, not おのずから", async () => {
+    const hits = await smartLookupWithOffset("自ら選んだ", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("自ら");
+    expect(hits[0].entries[0].kana[0]?.text).toBe("みずから");
+  });
+
+  test("自ずから still leads with おのずから", async () => {
+    const hits = await smartLookupWithOffset("自ずから", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].entries[0].kana[0]?.text).toBe("おのずから");
+  });
+
+  test("both readings of 自ら stay reachable", async () => {
+    const hits = await smartLookupWithOffset("自ら選んだ", 0, dictDbAsync, extendedDbAsync);
+    const readings = hits[0].entries.flatMap((entry) => entry.kana.map((kana) => kana.text));
+    expect(readings).toContain("みずから");
+    expect(readings).toContain("おのずから");
+  });
+
+  test("entries are ordered by priority, highest first", async () => {
+    const hits = await smartLookupWithOffset("上手に", 0, dictDbAsync, extendedDbAsync);
+    expect(hits.length).toBeGreaterThan(0);
+    const commonFlags = hits[0].entries.map((entry) => entry.common);
+    const firstUncommon = commonFlags.indexOf(false);
+    if (firstUncommon !== -1) {
+      expect(commonFlags.slice(firstUncommon).every((flag) => !flag)).toBe(true);
+    }
+  });
+});

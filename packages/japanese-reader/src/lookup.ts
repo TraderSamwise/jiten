@@ -91,11 +91,20 @@ function hasExactEntrySurface(entry: ReaderDictEntry, matchedText: string): bool
   );
 }
 
+function isHeadwordEntrySurface(entry: ReaderDictEntry, matchedText: string): boolean {
+  return entry.kanji[0]?.text === matchedText || entry.kana[0]?.text === matchedText;
+}
+
 function scoreEntryForMatchedSurface(entry: ReaderDictEntry, context: EntrySortContext): number {
   let score = 0;
   if (entry.common) score += 120;
   if (entry.jlptLevel != null) score += Math.max(0, 80 - entry.jlptLevel * 10);
   if (hasExactEntrySurface(entry, context.matchedText)) score += 120;
+  // JMdict lists an entry's spellings most-prevalent first, so a surface that is
+  // an entry's headword spelling is better evidence than the same surface listed
+  // as someone else's variant: 自ら is the headword of みずから but only a second
+  // spelling of 自ずから/おのずから.
+  if (isHeadwordEntrySurface(entry, context.matchedText)) score += 60;
 
   if (isCounterEntry(entry)) {
     score -= 240;
