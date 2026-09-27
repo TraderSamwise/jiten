@@ -30,6 +30,8 @@ export {
   smartLookup,
   smartLookupWithOffset,
 } from "./lookup";
+export { buildExpressionIndex, findExpressions } from "./expressions";
+export type { ExpressionIndex, ExpressionMatch } from "./expressions";
 export { useJapaneseReader } from "./use-japanese-reader";
 export type {
   ReaderBookRecord,
