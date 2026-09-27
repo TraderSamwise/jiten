@@ -12,7 +12,7 @@ import {
   type AutoNameWordCandidate,
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
-import { deinflect, generateSubstrings } from "./deinflect";
+import { deinflect, generateSubstrings, kanaSpellings } from "./deinflect";
 import { getKanjiAsync, lookupExactJapanese, lookupExactName } from "./lookup-db";
 import type { LookupResult, ReaderDictEntry } from "./types";
 
@@ -1004,6 +1004,36 @@ export async function smartLookupWithOffset(
   if (negativeScopeParticle) return [asWordLookupResult(negativeScopeParticle)];
 
   const kanjiCache = new Map<string, KanjiReadingRecord>();
+  // The walk asks for the same word from many overlapping substrings, and the
+  // kana spellings below multiply that again. One tap, one lookup per word.
+  const entryCache = new Map<string, ReaderDictEntry[]>();
+  const lookupOnce = async (word: string): Promise<ReaderDictEntry[]> => {
+    const cached = entryCache.get(word);
+    if (cached) return cached;
+    const found = await lookupExactJapanese(dictDb, word);
+    entryCache.set(word, found);
+    return found;
+  };
+
+  /**
+   * Spellings of `substr` with its one kanji written as a reading instead.
+   * Looked up as they stand — they are a different way of writing the same
+   * surface, not an inflection of it, so they carry no deinflection reason and
+   * must not collect the bonus that scoreTapCandidate pays inflected matches.
+   */
+  const kanaSpellingCandidates = async (
+    substr: string,
+  ): Promise<{ literal: string; spellings: string[] }> => {
+    const none = { literal: "", spellings: [] as string[] };
+    // kanaSpellings owns the "exactly one kanji" test, so the definition of a
+    // kanji lives in one place rather than being restated here.
+    const { literal } = kanaSpellings(substr, []);
+    if (!literal) return none;
+    if (!kanjiCache.has(literal)) kanjiCache.set(literal, await getKanjiAsync(dictDb, literal));
+    const record = kanjiCache.get(literal);
+    if (!record) return none;
+    return kanaSpellings(substr, [...record.readingsOn, ...record.readingsKun]);
+  };
   const tapSurfaces = new Set<string>();
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     const minStart = Math.max(0, tapOffset - len + 1);
@@ -1032,10 +1062,26 @@ export async function smartLookupWithOffset(
     // was touched, since the comparison below only replaces on a strict win.
     for (let start = minStart; start <= maxStart; start++) {
       const substr = text.slice(start, start + len);
-      const candidates = deinflect(substr);
+      const candidates: { word: string; reasons: string[]; spelledKanji?: string }[] = [
+        ...deinflect(substr),
+      ];
+      const spelled = await kanaSpellingCandidates(substr);
+      for (const spelling of spelled.spellings) {
+        candidates.push({ word: spelling, reasons: [], spelledKanji: spelled.literal });
+      }
 
       for (const candidate of candidates) {
-        const entries = await lookupExactJapanese(dictDb, candidate.word);
+        let entries = await lookupOnce(candidate.word);
+        // Rewriting a kanji as kana claims the entry is that word spelled
+        // differently, so the entry has to contain the kanji. Without this the
+        // rewrite lands on whatever else shares the reading — 出てき on 水滴,
+        // 来るもの on 着る物, 死んだん on 診断.
+        if (candidate.spelledKanji) {
+          const literal = candidate.spelledKanji;
+          entries = entries.filter((entry) =>
+            entry.kanji.some((kanji) => kanji.text.includes(literal)),
+          );
+        }
         if (entries.length > 0) {
           let sortedEntries = sortEntriesForMatchedSurface(
             entries,

@@ -1453,3 +1453,38 @@ describeWithDb("i-adjective ～そう in the reader", () => {
     expect(hits[0].entries[0].kana[0]?.text).toBe("とまる");
   });
 });
+
+/**
+ * A book may spell a word inside a set phrase in kana — 気を持たせる written
+ * 気をもたせる — which matches neither the entry's kanji form nor its kana form.
+ * Rewriting the one remaining kanji as its reading reaches the kana form.
+ */
+describeWithDb("kana-spelled words inside a phrase", () => {
+  test("気をもたせる resolves 気を持たせる", async () => {
+    const hits = await smartLookupWithOffset(
+      "いいかげんに気をもたせるのはやめてくれよ",
+      6,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].matchedText).toBe("気をもたせる");
+    expect(hits[0].entries[0].kanji[0]?.text).toBe("気を持たせる");
+  });
+
+  test("気を持たせる written in kanji still resolves", async () => {
+    const hits = await smartLookupWithOffset(
+      "いいかげんに気を持たせるのはやめて",
+      6,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits[0].matchedText).toBe("気を持たせる");
+  });
+
+  /** きが is the common word 飢餓, and must not outrank the tapped 気. */
+  test("a two-character span is not rewritten into an unrelated word", async () => {
+    const hits = await smartLookupWithOffset("元気がある", 2, dictDbAsync, extendedDbAsync);
+    expect(hits[0].entries[0].kanji[0]?.text).not.toBe("飢餓");
+  });
+});

@@ -1,3 +1,5 @@
+import { toHiragana } from "wanakana";
+
 // ─── POS type bitmasks ───
 // These constrain which deinflection rules can apply to which word types
 const V1 = 1; // ichidan verb
@@ -398,6 +400,66 @@ export function deinflect(word: string): DeinflectCandidate[] {
  * Given text extracted from a tap position, we try progressively shorter
  * prefixes (up to maxLen chars) to find the longest matching word.
  */
+const MAX_KANA_SPELLINGS = 8;
+/**
+ * Below this a rewritten span is not a phrase, just a short kana string that
+ * collides with something: 気が becomes きが, the common word 飢餓; 中から
+ * becomes ちゅうから, 中辛; が死ん becomes がしん.
+ */
+const MIN_KANA_SPELLING_LENGTH = 4;
+
+function isSpellingKanji(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf);
+}
+
+/**
+ * The same text with its single kanji rewritten as that kanji's reading.
+ *
+ * A book may spell one word of a set phrase in kana — 気を持たせる written
+ * 気をもたせる — which matches neither the entry's kanji form nor its kana form
+ * きをもたせる. Rewriting the one kanji that is left bridges the two.
+ *
+ * Only ever one kanji, because a span with two is not the case this is for and
+ * the combinations multiply; and only spans long enough to be a phrase, because
+ * rewriting 気が gives きが, which is the common word 飢餓.
+ *
+ * `readings` come from KANJIDIC, where a dot separates the kanji's own reading
+ * from the okurigana that follows it and a leading hyphen marks a suffix
+ * reading: 持 is "も.つ", of which only も belongs to the kanji.
+ */
+export function kanaSpellings(
+  text: string,
+  readings: readonly string[],
+): { literal: string; spellings: string[] } {
+  const none = { literal: "", spellings: [] as string[] };
+  const chars = [...text];
+  if (chars.length < MIN_KANA_SPELLING_LENGTH) return none;
+
+  let kanjiAt = -1;
+  for (let i = 0; i < chars.length; i++) {
+    if (!isSpellingKanji(chars[i])) continue;
+    if (kanjiAt !== -1) return none;
+    kanjiAt = i;
+  }
+  if (kanjiAt === -1) return none;
+
+  const spellings: string[] = [];
+  const seen = new Set<string>([text]);
+  for (const reading of readings) {
+    // "-も.ち" is a suffix reading of 持 whose okurigana is ち; "あい-" is a
+    // prefix reading. Only the part between the markers is the kanji's own.
+    const bare = toHiragana(reading.replace(/^-|-$/g, "").split(".")[0]).trim();
+    if (!bare) continue;
+    const spelled = [...chars.slice(0, kanjiAt), bare, ...chars.slice(kanjiAt + 1)].join("");
+    if (seen.has(spelled)) continue;
+    seen.add(spelled);
+    spellings.push(spelled);
+    if (spellings.length >= MAX_KANA_SPELLINGS) break;
+  }
+  return { literal: chars[kanjiAt], spellings };
+}
+
 export function generateSubstrings(text: string, maxLen: number = 15): string[] {
   const len = Math.min(text.length, maxLen);
   const result: string[] = [];
