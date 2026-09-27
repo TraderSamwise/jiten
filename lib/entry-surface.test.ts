@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { displayKanjiForSurface } from "./entry-surface";
+import { displayKanjiForSurface, pageSpellingNote } from "./entry-surface";
 
 const forms = (...texts: string[]) => texts.map((text) => ({ text }));
 
@@ -31,5 +31,28 @@ describe("displayKanjiForSurface", () => {
 
   test("returns nothing for a kana-only entry", () => {
     expect(displayKanjiForSurface([], "ひらがな")).toBeUndefined();
+  });
+});
+
+describe("pageSpellingNote", () => {
+  const spellings = forms("気を持たせる", "きをもたせる");
+
+  test("names the page's spelling when the entry is headed by another", () => {
+    expect(pageSpellingNote(spellings, "気をもたせる", [])).toBe("気をもたせる");
+  });
+
+  test("says nothing when the page used one of the entry's own spellings", () => {
+    expect(pageSpellingNote(spellings, "気を持たせる", [])).toBeNull();
+    expect(pageSpellingNote(spellings, "きをもたせる", [])).toBeNull();
+  });
+
+  /** The deinflection chip already explains an inflected surface. */
+  test("says nothing about an inflected match", () => {
+    expect(pageSpellingNote(forms("食べる"), "食べた", ["past"])).toBeNull();
+  });
+
+  test("says nothing without a surface", () => {
+    expect(pageSpellingNote(spellings, null, [])).toBeNull();
+    expect(pageSpellingNote(spellings, "", [])).toBeNull();
   });
 });

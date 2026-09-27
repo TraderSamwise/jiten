@@ -13,11 +13,12 @@ import Animated, {
 import { Text } from "@/components/ui/text";
 import { EntrySummary } from "@/components/EntrySummary";
 import { emptyLookupMessage } from "@/lib/lookup-empty-state";
+import { pageSpellingNote } from "@/lib/entry-surface";
 import { BookmarkPopover } from "@/components/BookmarkPopover";
 import { Bookmark, ChevronLeft, ChevronRight, X } from "@/lib/icons";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmark } from "@/hooks/useQuickBookmark";
-import type { NameEntry } from "@/db/types";
+import type { DictEntry, NameEntry } from "@/db/types";
 import type { ReaderSentenceExplanationState } from "@/lib/reader-explain";
 import type { LookupResult } from "@tradersamwise/jiten-reader-react-native";
 
@@ -199,6 +200,30 @@ function formatDeinflectReasons(reasons: string[]): string {
     if (!compact.includes(reason)) compact.push(reason);
   }
   return compact.join(" -> ");
+}
+
+/**
+ * The chips beside the headword: how the surface was inflected, and — when the
+ * entry is spelled differently from the page — what the page actually wrote.
+ */
+function renderMatchMeta(result: LookupResult, entry: DictEntry): React.ReactNode {
+  const reasons = result.deinflectReasons;
+  const written = pageSpellingNote([...entry.kanji, ...entry.kana], result.matchedText, reasons);
+  if (reasons.length === 0 && !written) return null;
+  return (
+    <View className="flex-row flex-wrap items-center gap-1.5">
+      {reasons.length > 0 && (
+        <View className="rounded-md bg-muted px-2 py-1">
+          <Text className="text-xs text-muted-foreground">{formatDeinflectReasons(reasons)}</Text>
+        </View>
+      )}
+      {written && (
+        <View className="rounded-md bg-muted px-2 py-1">
+          <Text className="text-xs text-muted-foreground">{`written ${written}`}</Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 function LookupKindSwitch({
@@ -698,15 +723,7 @@ export function DictionaryPopup({
                 <EntrySummary
                   entry={panelEntry}
                   surface={panelWordResult.matchedText}
-                  inlineMeta={
-                    panelWordResult.deinflectReasons.length > 0 ? (
-                      <View className="rounded-md bg-muted px-2 py-1">
-                        <Text className="text-xs text-muted-foreground">
-                          {formatDeinflectReasons(panelWordResult.deinflectReasons)}
-                        </Text>
-                      </View>
-                    ) : null
-                  }
+                  inlineMeta={renderMatchMeta(panelWordResult, panelEntry)}
                   rightAccessory={lookupSwitch ?? undefined}
                 />
               )}

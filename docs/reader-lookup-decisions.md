@@ -100,6 +100,17 @@ real kana reading and nothing checks the result is really an adjective (5 taps).
 arguably better for a learner. Net over the corpus: 10 clearly better, 8
 arguable, 5 worse. Commit `d7b84f0`.
 
+### A substituted match says what the page wrote
+
+When a kana spelling or a particle swap wins, the entry shown carries a
+different spelling from the text — 役には立たない headed by 役にも立たない — and
+neither carries a deinflection reason, because a respelling is not an
+inflection. The popup now shows a second chip beside the headword, `written
+役には立たない`, whenever the tapped surface is none of the entry's own spellings
+and no deinflection explains it (`pageSpellingNote` in `lib/entry-surface.ts`).
+An inflected match keeps only its reason chip; repeating the surface there
+would be noise.
+
 ## Rejected
 
 ### Gating deinflected candidates on JMdict part of speech
@@ -179,14 +190,6 @@ distinct, every one a span rescued from junk into a phrase.
 catching none of the idioms that actually come up. `exp` is the tag that works.
 
 ## Open
-
-### A substituted match does not say it substituted
-
-When a kana spelling or a particle swap wins, `matchedText` is the text as
-written but the entry shown carries a different spelling — 役には立たない headed
-by 役にも立たない — with nothing to explain the difference. Both carry no
-deinflection reason by design, since a respelling is not an inflection, and the
-popup only renders its reason chip when there is one.
 
 ### Kana-run junk in tap lookup
 
