@@ -3,7 +3,11 @@ import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Badge } from "@/components/ui/badge";
 import { PitchAccent } from "@/components/PitchAccent";
-import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
+import {
+  BOOKMARK_HIGHLIGHT_BLOCK_CLASS,
+  BOOKMARK_HIGHLIGHT_CLASS,
+  BOOKMARK_HIGHLIGHT_STYLE,
+} from "@/lib/bookmark-styles";
 import { displayKanjiForSurface } from "@/lib/entry-surface";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
@@ -75,7 +79,7 @@ export const EntrySummary = React.memo(function EntrySummary({
       <View className="flex-row items-start justify-between gap-3">
         <View className="min-w-0 flex-1 gap-1">
           <View
-            className={isBookmarked ? `min-w-0 ${BOOKMARK_HIGHLIGHT_CLASS}` : "min-w-0"}
+            className={isBookmarked ? `min-w-0 ${BOOKMARK_HIGHLIGHT_BLOCK_CLASS}` : "min-w-0"}
             style={isBookmarked ? BOOKMARK_HIGHLIGHT_STYLE : undefined}
           >
             <View className="min-w-0 flex-row flex-wrap items-start gap-x-3 gap-y-1.5">

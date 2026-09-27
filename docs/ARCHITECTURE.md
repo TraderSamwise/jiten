@@ -342,6 +342,12 @@ On tap in the reader:
 5. `nameLookup()` searches the extended DB for proper nouns (when name mode is enabled)
 6. Result displayed in `DictionaryPopup`; matched text highlighted in reader via bridge message
 
+The scoring that picks _which_ match and _which_ entry — and the furigana
+resolution above it — is tuned against a committed corpus. See
+[reader-lookup-decisions.md](reader-lookup-decisions.md) for what each heuristic
+is for, the measurements behind it, and the approaches that were tried and
+rejected.
+
 ### Book storage
 
 Books are stored in the user SQLite database:

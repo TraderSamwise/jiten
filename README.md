@@ -110,6 +110,9 @@ docs/           Architecture reference and design docs
 Deep dive: [**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) — the reader engine, furigana
 algorithm, navigation model, virtualized lists, sync protocol, and platform-polymorphism
 conventions are all documented there.
+[**docs/reader-lookup-decisions.md**](docs/reader-lookup-decisions.md) records why the tap
+ranking, furigana and deinflection heuristics are the way they are, with the corpus
+measurements behind each one.
 
 ## Contributing
 
