@@ -20,9 +20,15 @@ import type { ReaderSqlDb } from "./backend";
  *   word slot matches literally or through the deinflector, a particle slot may
  *   swap within its grammatical class, and everything else must appear as
  *   written. Stage 1 is allowed to be loose because stage 2 is strict.
+ *
+ * Known limit: a phrase whose only remaining kanji is a common one cannot be
+ * anchored. 気を持たせる written 気をもたせる leaves just 気, and 気を fires on so
+ * much ordinary text that indexing it costs more than the phrase is worth.
+ * Reaching those needs an index over readings rather than over kanji.
  */
 
-const MAX_KANA_BETWEEN_ANCHORS = 4;
+const ANCHOR_START_SLACK = 2;
+const MAX_FALLBACK_BUCKET = 12;
 const MAX_INFLECTION_GROWTH = 6;
 
 /**
@@ -54,14 +60,16 @@ interface Slot {
   text: string;
   /** Word slots only: the dictionary says this can conjugate. */
   inflects: boolean;
+  /** Word slots only: the same word spelled in kana, when the dictionary has it. */
+  kana?: string;
 }
 
 interface IndexedExpression {
   entryId: number;
   form: string;
   slots: Slot[];
-  /** How many kanji of the phrase precede the anchor pair. */
-  kanjiBeforeAnchor: number;
+  /** Characters of the phrase before its anchor, bounding where a match may start. */
+  charsBeforeAnchor: number;
 }
 
 export interface ExpressionIndex {
@@ -110,6 +118,23 @@ function tokenize(form: string): Slot[] {
 }
 
 /**
+ * Windows of a kanji followed by a particle that cannot be swapped away. The
+ * particle is fixed and the kanji is one character, so this anchor survives a
+ * following word being spelled in kana.
+ */
+function particleAnchorsOf(form: string): { text: string; at: number }[] {
+  const chars = [...form];
+  const out: { text: string; at: number }[] = [];
+  for (let i = 0; i + 1 < chars.length; i++) {
+    if (!isExpressionKanji(chars[i])) continue;
+    const next = chars[i + 1];
+    if (!PARTICLES.has(next) || PARTICLE_SWAPS[next]) continue;
+    out.push({ text: chars[i] + next, at: i });
+  }
+  return out;
+}
+
+/**
  * Build the index. One pass over JMdict's multi-token expressions, then one
  * batched query to learn which of their word slots can conjugate.
  */
@@ -134,44 +159,101 @@ export async function buildExpressionIndex(dictDb: ReaderSqlDb): Promise<Express
     for (const slot of item.slots) if (slot.kind === "word") slotTexts.add(slot.text);
   }
   const inflecting = await loadInflectingForms(dictDb, [...slotTexts]);
+  const kanaOf = await loadKanaSpellings(dictDb, [...slotTexts]);
   for (const item of prepared) {
     for (const slot of item.slots) {
-      if (slot.kind === "word") slot.inflects = inflecting.has(slot.text);
+      if (slot.kind !== "word") continue;
+      slot.inflects = inflecting.has(slot.text);
+      const kana = kanaOf.get(slot.text);
+      if (kana && kana !== slot.text) slot.kana = kana;
     }
   }
 
-  // Anchor on the rarest adjacent kanji pair, so a common leading kanji like 気
-  // or 事 does not drag its whole bucket into every verification.
-  const pairFrequency = new Map<string, number>();
+  // Anchor on the rarest two-character window that starts at a kanji. Starting
+  // at a kanji keeps the scan cheap — one lookup per kanji in the slice — and
+  // taking the window rather than a kanji pair reaches the 4467 expressions
+  // with only one kanji in them (あぐらを掻く, あげ足をとる). A window is only
+  // usable if neither character can vary: a swappable particle would move, and
+  // a second kanji could be written in kana instead.
+  const anchorsOf = (form: string): { text: string; at: number }[] => {
+    const chars = [...form];
+    const kanjiAt: number[] = [];
+    for (let i = 0; i < chars.length; i++) if (isExpressionKanji(chars[i])) kanjiAt.push(i);
+
+    // Two kanji, skipping whatever kana lies between them. Kanji do not
+    // inflect and particles sit between them, so the pair survives both kinds
+    // of variation — 腹が立つ still shows 腹…立 in 腹が立てば and 腹の立つ.
+    if (kanjiAt.length >= 2) {
+      const out: { text: string; at: number }[] = [];
+      for (let i = 0; i + 1 < kanjiAt.length; i++) {
+        out.push({ text: chars[kanjiAt[i]] + chars[kanjiAt[i + 1]], at: kanjiAt[i] });
+      }
+      return out;
+    }
+
+    // One kanji: pair it with the character before it, which is fixed kana —
+    // あぐらを掻く anchors on を掻, あげ足をとる on げ足. Anchoring on what
+    // follows would not work, because that is the verb's own okurigana.
+    if (kanjiAt.length === 1) {
+      const at = kanjiAt[0];
+      if (at > 0 && !PARTICLE_SWAPS[chars[at - 1]]) {
+        return [{ text: chars[at - 1] + chars[at], at: at - 1 }];
+      }
+    }
+    return [];
+  };
+
+  const anchorFrequency = new Map<string, number>();
   for (const item of prepared) {
-    for (let i = 0; i + 1 < item.kanji.length; i++) {
-      const pair = item.kanji[i] + item.kanji[i + 1];
-      pairFrequency.set(pair, (pairFrequency.get(pair) ?? 0) + 1);
+    for (const anchor of [...anchorsOf(item.form), ...particleAnchorsOf(item.form)]) {
+      anchorFrequency.set(anchor.text, (anchorFrequency.get(anchor.text) ?? 0) + 1);
     }
   }
 
   const byAnchor = new Map<string, IndexedExpression[]>();
-  let size = 0;
-  for (const item of prepared) {
-    if (item.kanji.length < 2) continue;
-    let anchorIndex = 0;
+  const rarestOf = (options: { text: string; at: number }[]) => {
+    let chosen = options[0];
     let rarest = Number.POSITIVE_INFINITY;
-    for (let i = 0; i + 1 < item.kanji.length; i++) {
-      const count = pairFrequency.get(item.kanji[i] + item.kanji[i + 1]) ?? 0;
+    for (const option of options) {
+      const count = anchorFrequency.get(option.text) ?? 0;
       if (count < rarest) {
         rarest = count;
-        anchorIndex = i;
+        chosen = option;
       }
     }
-    const anchor = item.kanji[anchorIndex] + item.kanji[anchorIndex + 1];
-    const list = byAnchor.get(anchor) ?? [];
-    list.push({
-      entryId: item.entryId,
-      form: item.form,
-      slots: item.slots,
-      kanjiBeforeAnchor: anchorIndex,
-    });
-    byAnchor.set(anchor, list);
+    return chosen;
+  };
+
+  let size = 0;
+  for (const item of prepared) {
+    const options = anchorsOf(item.form);
+    const anchors = options.length > 0 ? [rarestOf(options)] : [];
+
+    // A kanji anchor is only there if the book spells that word in kanji, and
+    // 92% of these phrases contain a word the dictionary also lists in kana —
+    // 気を持たせる written 気をもたせる. Add a second anchor pinned to a particle,
+    // which cannot be respelled, so those are still reachable.
+    const fallback = particleAnchorsOf(item.form);
+    if (fallback.length > 0) {
+      const pick = rarestOf(fallback);
+      // Particles are common in running text, so a crowded particle anchor
+      // fires constantly and drags its whole bucket into verification. Past
+      // this size it costs more than the recall it buys.
+      const crowded = (anchorFrequency.get(pick.text) ?? 0) > MAX_FALLBACK_BUCKET;
+      if (!crowded && !anchors.some((a) => a.text === pick.text)) anchors.push(pick);
+    }
+    if (anchors.length === 0) continue;
+
+    for (const anchor of anchors) {
+      const list = byAnchor.get(anchor.text) ?? [];
+      list.push({
+        entryId: item.entryId,
+        form: item.form,
+        slots: item.slots,
+        charsBeforeAnchor: anchor.at,
+      });
+      byAnchor.set(anchor.text, list);
+    }
     size++;
   }
 
@@ -209,39 +291,79 @@ async function loadInflectingForms(dictDb: ReaderSqlDb, texts: string[]): Promis
  */
 const AMBIGUOUS_WITH_TRANSITIVE = new Set(["potential", "imperative"]);
 
+/**
+ * The masu-stem rule turns any verb into itself-plus-one-kana, so a span that
+ * needs it is almost always one character too greedy: 馬鹿にされていけない is
+ * 馬鹿にされて followed by いけない, but されてい also deinflects to する. A set
+ * phrase standing in its masu-stem is rare enough to trade away.
+ */
+const GREEDY_REASONS = new Set(["masu-stem"]);
+
 function reachesSlot(candidate: string, slot: string): boolean {
   return deinflect(candidate).some(
-    (form) => form.word === slot && !form.reasons.some((r) => AMBIGUOUS_WITH_TRANSITIVE.has(r)),
+    (form) =>
+      form.word === slot &&
+      !form.reasons.some((r) => AMBIGUOUS_WITH_TRANSITIVE.has(r) || GREEDY_REASONS.has(r)),
   );
 }
 
-/** Match one word slot at `at`, returning how many characters it consumed. */
+/** The kana spelling of each word, so a slot written in kana still matches. */
+async function loadKanaSpellings(
+  dictDb: ReaderSqlDb,
+  texts: string[],
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const BATCH = 500;
+  for (let i = 0; i < texts.length; i += BATCH) {
+    const batch = texts.slice(i, i + BATCH);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = await dictDb.getAllAsync<{ text: string; kana: string }>(
+      `SELECT k.text AS text, MIN(ka.text) AS kana
+       FROM kanji k
+       JOIN kana ka ON ka.entry_id = k.entry_id
+       WHERE k.text IN (${placeholders})
+       GROUP BY k.text`,
+      batch,
+    );
+    for (const row of rows) if (row.kana) found.set(row.text, row.kana);
+  }
+  return found;
+}
+
+function literalRun(spelling: string, at: number, chars: string[]): number {
+  const want = [...spelling];
+  if (at + want.length > chars.length) return 0;
+  for (let i = 0; i < want.length; i++) if (chars[at + i] !== want[i]) return 0;
+  return want.length;
+}
+
+/**
+ * Match one word slot at `at`, returning how many characters it consumed.
+ *
+ * A book may write the word in kanji or in kana — 気を持たせる appears as
+ * 気をもたせる — so both spellings are tried. The longest span that deinflects
+ * wins, with the greedy rules above excluded so it cannot run one kana past
+ * the end of the word.
+ */
 function matchWordSlot(slot: Slot, at: number, chars: string[]): number {
-  const want = [...slot.text];
-  if (at + want.length <= chars.length) {
-    let same = true;
-    for (let i = 0; i < want.length; i++) {
-      if (chars[at + i] !== want[i]) {
-        same = false;
-        break;
-      }
-    }
-    if (same) return want.length;
+  const spellings = slot.kana && slot.kana !== slot.text ? [slot.text, slot.kana] : [slot.text];
+
+  for (const spelling of spellings) {
+    const exact = literalRun(spelling, at, chars);
+    if (exact > 0) return exact;
   }
   if (!slot.inflects) return 0;
 
-  // The stem has to survive, so never shrink past the leading non-kana run.
-  let stem = 0;
-  while (stem < want.length && isExpressionKanji(want[stem])) stem++;
-  const shortest = Math.max(1, stem);
-  for (
-    let len = Math.min(want.length + MAX_INFLECTION_GROWTH, chars.length - at);
-    len >= shortest;
-    len--
-  ) {
-    const candidate = chars.slice(at, at + len).join("");
-    if (candidate === slot.text) return len;
-    if (reachesSlot(candidate, slot.text)) return len;
+  for (const spelling of spellings) {
+    const want = [...spelling];
+    // The stem has to survive, so never shrink past the leading kanji run.
+    let stem = 0;
+    while (stem < want.length && isExpressionKanji(want[stem])) stem++;
+    const shortest = Math.max(1, stem);
+    const longest = Math.min(want.length + MAX_INFLECTION_GROWTH, chars.length - at);
+    for (let len = longest; len >= shortest; len--) {
+      if (reachesSlot(chars.slice(at, at + len).join(""), spelling)) return len;
+    }
   }
   return 0;
 }
@@ -280,27 +402,47 @@ export function findExpressions(text: string, index: ExpressionIndex): Expressio
   for (let i = 0; i < chars.length; i++) if (isExpressionKanji(chars[i])) kanjiAt.push(i);
 
   const matches: ExpressionMatch[] = [];
-  for (let k = 0; k + 1 < kanjiAt.length; k++) {
-    if (kanjiAt[k + 1] - kanjiAt[k] - 1 > MAX_KANA_BETWEEN_ANCHORS) continue;
-    const bucket = index.byAnchor.get(chars[kanjiAt[k]] + chars[kanjiAt[k + 1]]);
-    if (!bucket) continue;
+  for (let k = 0; k < kanjiAt.length; k++) {
+    const at = kanjiAt[k];
+    const buckets: IndexedExpression[][] = [];
+    // A kanji pair, skipping the kana between them.
+    if (k + 1 < kanjiAt.length) {
+      const pair = index.byAnchor.get(chars[at] + chars[kanjiAt[k + 1]]);
+      if (pair) buckets.push(pair);
+    }
+    // A single kanji with the character before it.
+    if (at > 0) {
+      const withPrefix = index.byAnchor.get(chars[at - 1] + chars[at]);
+      if (withPrefix) buckets.push(withPrefix);
+    }
+    // A kanji with the particle after it, for phrases whose other words the
+    // book spelled in kana.
+    if (at + 1 < chars.length) {
+      const withSuffix = index.byAnchor.get(chars[at] + chars[at + 1]);
+      if (withSuffix) buckets.push(withSuffix);
+    }
+    if (buckets.length === 0) continue;
 
-    for (const candidate of bucket) {
-      const anchorKanji = k - candidate.kanjiBeforeAnchor;
-      if (anchorKanji < 0) continue;
-      const start = kanjiAt[anchorKanji];
-      // A kanji immediately before the phrase means its first noun is really
-      // the tail of a longer compound — 冷汗 read as 汗を流す, 寝小便 as 小便をする.
-      if (start > 0 && isExpressionKanji(chars[start - 1])) continue;
-      const length = matchSlots(candidate.slots, start, chars);
-      if (length === 0) continue;
-      matches.push({
-        start,
-        length,
-        surface: chars.slice(start, start + length).join(""),
-        form: candidate.form,
-        entryId: candidate.entryId,
-      });
+    for (const candidate of buckets.flat()) {
+      // The phrase's prefix may be spelled differently in the text than in the
+      // dictionary, so the anchor's offset within the form only bounds where
+      // the phrase can start. Try each start rather than computing one.
+      const earliest = Math.max(0, at - candidate.charsBeforeAnchor - ANCHOR_START_SLACK);
+      for (let start = at; start >= earliest; start--) {
+        // A kanji immediately before the phrase means its first noun is really
+        // the tail of a longer compound — 冷汗 read as 汗を流す, 寝小便 as 小便をする.
+        if (start > 0 && isExpressionKanji(chars[start - 1])) continue;
+        const length = matchSlots(candidate.slots, start, chars);
+        if (length === 0) continue;
+        matches.push({
+          start,
+          length,
+          surface: chars.slice(start, start + length).join(""),
+          form: candidate.form,
+          entryId: candidate.entryId,
+        });
+        break;
+      }
     }
   }
 

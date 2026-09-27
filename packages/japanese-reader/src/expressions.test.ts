@@ -99,6 +99,29 @@ describe.skipIf(!hasDictDb)("findExpressions", () => {
     expect(text.slice(match.start, match.start + match.length)).toBe(match.surface);
   });
 
+  /** One kanji is still an anchor when paired with the kana before it. */
+  it("finds a phrase with only one kanji in it", () => {
+    expect(found("あぐらを掻いて座った")).toContain("あぐらを掻く|あぐらを掻いて");
+    expect(found("しらを切るつもりだ")).toContain("しらを切る|しらを切る");
+    expect(found("けちを付けると同じ事だ")).toContain("けちを付ける|けちを付ける");
+  });
+
+  /**
+   * The masu-stem rule turns any verb into itself-plus-one-kana, so it will
+   * happily eat the first character of the next word: 馬鹿にされていけない is
+   * 馬鹿にされて followed by いけない, not 馬鹿にされてい.
+   */
+  it("does not run one character past the end of the phrase", () => {
+    const [match] = findExpressions("どうも人に馬鹿にされていけない", index).filter(
+      (m) => m.form === "馬鹿にする",
+    );
+    expect(match?.surface).toBe("馬鹿にされて");
+  });
+
+  it("keeps the whole inflected tail when it belongs to the phrase", () => {
+    expect(found("うちへ帰って飯を食っていたら来た")).toContain("飯を食う|飯を食っていたら");
+  });
+
   it("finds nothing in text with no expressions", () => {
     expect(findExpressions("ここにはなにもない", index)).toEqual([]);
   });
