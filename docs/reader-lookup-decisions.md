@@ -14,7 +14,8 @@ of argued about.
   reader) before and after, and diff the matched span and top entry. ~11,250
   taps. `scripts/tap-consistency.ts` is the committed gate over the same corpus
   (`yarn check:tap-consistency`); it reports the share of taps that agree with
-  every other tap landing inside their own span, currently **96.8%**.
+  every other tap landing inside their own span, currently **97.3%** (3760 taps,
+  11413 pairwise checks, 176 disagreeing).
 - **Furigana.** Resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus, up to 8 characters. ~54,900 surfaces.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
@@ -22,7 +23,8 @@ of argued about.
   exactly.
 
 A change is shippable when the diff is enumerable and every entry in it is an
-improvement or neutral. Where that is not true, the trade is recorded below.
+improvement, neutral, or a regression named and accepted in this document. A
+regression nobody wrote down is not accepted, it is unnoticed.
 
 ## Taken
 
@@ -115,11 +117,22 @@ most were worse: every passive, every ～ば conditional, 来た, 持って来�
 帰って来た, 出て来た, 連れて来た. Do not try this again without first making the
 masks mean what JMdict means.
 
+### An anchor index and slot matcher for set phrases
+
+Built in `bd5d799` and `c700a80`, reverted in `cef58de`: ~500 lines indexing
+every expression by a kanji pair and verifying it against typed slots. It was
+unnecessary. The walk already deinflects, so most of what it "fixed" already
+worked, and the part that did not — a respelled word and a swapped particle —
+turned out to be about a hundred lines inside the walk. Its one unique ability
+was scanning a slice with no tap, to mark phrases on the page, which nobody had
+asked for. Measure the existing path first.
+
 ### DP segmentation of the tap span
 
 Tried in an earlier pass. `findBoundaryWord` prefix expansion and suffix
 extension are load-bearing — DP regressed 若い → くもる and 姿勢 → 姿, and
-DP-snapping kana runs took tap consistency from 97.6% to 88.3%.
+DP-snapping kana runs took tap consistency from 97.6% to 88.3% (measured
+against the gate as it stood then).
 
 ### Tuning the kana-only suffix penalty
 
@@ -128,41 +141,61 @@ gives identical results, because both competitors extend the same distance past
 the tap and the penalty cancels. The driver is `hasCommon` +120 against +100 per
 character of length.
 
-## Open, needs a design call
+### Set phrases the book spells differently from the dictionary
 
-### Set phrases written with a different kanji/kana mix
+A book writes a phrase the way the sentence wants it, so the text often carries
+a spelling or a particle the entry does not.
 
-JMdict holds 気を持たせる and きをもたせる; a book may write 気をもたせる, a third,
-partly-kanji spelling that matches neither. The reader matches surfaces exactly
-(plus katakana folding), so it finds nothing and falls back to 気/ぎ.
+**Inflection was never the gap.** The walk deinflects the whole substring, so
+腹が立った, 飯を食っていたら, 頭を下げなければ, あぐらを掻いて and しらを切る all
+resolved before any of this was written — 87% of the corpus's 411 multi-token
+expression occurrences were already reachable from the phrase's first character,
+89% from any character inside it. Measure before building here; see Rejected.
 
-Fixing it needs kanji-to-reading alignment: either a morphological analyzer, or
-a build-time index of the mixed variants of each expression. 12,385 of the
-13,154 `exp` entries have both a kanji and a kana form and would need it.
+**A word spelled in kana** (`04a235e`). 気を持たせる appears as 気をもたせる, which
+matches neither the entry's kanji form nor its kana form きをもたせる. A substring
+holding exactly one kanji is also tried with that kanji written as its readings.
+Guards: at least four characters, because 気が rewritten is きが, the common word
+飢餓, and 中から is 中辛; and the entry found must contain the kanji that was
+rewritten, without which the kana lands on whatever else shares the sound —
+出てき on 水滴, 死んだん on 診断 — costing 1.6 points of consistency on its own.
+Five corpus taps change, both distinct cases improvements.
 
-The same mechanism covers particle variation. 目の玉の飛び出るような looks like
-a coverage gap and is not: JMdict has **目の玉が飛び出る** (めのたまがとびでる,
-"eye-popping; staggering"), and the text writes の for が, the ordinary
-relative-clause subject substitution. 1436 exp entries contain が.
+**A swapped particle** (`7109607`). 目の玉が飛び出る appears as 目の玉の飛び出る,
+役にも立たない as 役には立たない. One particle at a time is replaced by an
+equivalent: の→が for a relative-clause subject, が/は/も among themselves, に↔へ.
+Not を, で, と or から, which carry case rather than register. Guards, each from
+a measured failure: the entry must be `exp`, or 1161 corpus spans reach a real
+entry and 240 of those are common nouns sharing a sound (のか→画家, はい→害);
+a literal reading of the same span wins outright, or にしては is answered with the
+commoner にしても; at least four characters, a kanji somewhere in the span, and
+never a swap at index 0, since a leading particle governs the phrase before the
+span (宿屋へ連れて来た was reaching につれて). Thirty-seven corpus taps change, 19
+distinct, every one a span rescued from junk into a phrase.
 
-JMdict's own idiom tags are **not** a usable filter for this. 目の玉が飛び出る,
-気を持たせる and 発破をかける are all plain `exp` with no `id` tag; the
-`id`/`proverb`/`yoji` tags together fire 5 times in 40,000 characters of the
-corpus and catch none of the idioms that actually come up.
+**JMdict's idiom tags are not a usable filter here.** 目の玉が飛び出る,
+気を持たせる and 発破をかける are all plain `exp` with no `id` tag, and
+`id`/`proverb`/`yoji` together fire five times in 40,000 characters of corpus,
+catching none of the idioms that actually come up. `exp` is the tag that works.
 
-How much of the problem is matching, measured over the corpus: 411 multi-token
-expression occurrences in 40,000 characters, one per ~96. A tap on the phrase's
-**first** character finds 87% of them; a tap on **any** character inside finds
-89%. Matching is not the bottleneck — you have to already know it is a phrase
-and where it starts.
+## Open
+
+### A substituted match does not say it substituted
+
+When a kana spelling or a particle swap wins, `matchedText` is the text as
+written but the entry shown carries a different spelling — 役には立たない headed
+by 役にも立たない — with nothing to explain the difference. Both carry no
+deinflection reason by design, since a respelling is not an inflection, and the
+popup only renders its reason chip when there is one.
 
 ### Kana-run junk in tap lookup
 
-About 81% of the remaining tap-consistency disagreements are short kana runs
-where an uncommon long match beats a common short one — でまず reaching 出丸,
-があ/じが/さかば. These are genuine JMdict entries, so no dictionary-membership
-rule can exclude them; it needs an analyzer with part-of-speech and connection
-costs. Leaving the last ~3%.
+90% of the remaining disagreements (158 of 176) are overlaps rather than clean
+prefixes or suffixes, and most are short kana runs where an uncommon long match
+beats a common short one — でまず reaching 出丸, があ/じが/さかば. These are
+genuine JMdict entries, so no dictionary-membership rule can exclude them; it
+needs an analyzer with part-of-speech and connection costs. Leaving the last
+2.7%.
 
 ## Not a bug
 
