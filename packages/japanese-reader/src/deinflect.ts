@@ -283,6 +283,20 @@ const RULES: DeinflectRule[] = [
   { from: "ければ", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "conditional" },
   { from: "かろう", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "volitional" },
   { from: "さ", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "nominalization" },
+  // ── Negative ～ず / ～ずに (written negative, the ～ない of literary prose) ──
+  { from: "ずに", to: "ず", typeIn: ANY, typeOut: ANY, reason: "without doing" },
+  { from: "ず", to: "る", typeIn: V1, typeOut: V1, reason: "negative", minStem: 1 },
+  { from: "わず", to: "う", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "かず", to: "く", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "がず", to: "ぐ", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "さず", to: "す", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "たず", to: "つ", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "なず", to: "ぬ", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "ばず", to: "ぶ", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "まず", to: "む", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "らず", to: "る", typeIn: V5, typeOut: V5, reason: "negative" },
+  { from: "せず", to: "する", typeIn: SURU, typeOut: SURU, reason: "negative" },
+  { from: "こず", to: "くる", typeIn: KURU, typeOut: KURU, reason: "negative" },
 
   // ── Generic te-iru forms (works across verb types after te-form resolution) ──
   { from: "ている", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
