@@ -462,6 +462,25 @@ function scoreFuriganaWordMatch(
   return score;
 }
 
+/**
+ * Counter readings are a generated number × counter cross-product, so they
+ * exist for spellings nobody writes — 一種 is いっしゅ, not the 種/くさ "counter
+ * for varieties". A common dictionary entry for the exact same spelling is the
+ * better evidence, so a counter that contradicts one loses. A counter that
+ * agrees with it, or one for a spelling the dictionary lacks, is untouched.
+ */
+function counterContradictedByCommonWord(
+  surface: string,
+  counterLookupMap: Map<string, CounterMatch>,
+  bestWordMatch: { match: DictMatch; deinflectedWord: string } | null,
+): boolean {
+  const counterMatch = counterLookupMap.get(surface);
+  if (!counterMatch || !bestWordMatch) return false;
+  const { match, deinflectedWord } = bestWordMatch;
+  if (!match.common || deinflectedWord !== surface || match.kanjiForm !== surface) return false;
+  return counterMatch.kanaForm !== match.kanaForm;
+}
+
 function scoreFuriganaNameMatch(surface: string, match: NameMatch): number {
   let score = [...surface].length * 1000;
   if (match.kanjiForm === surface || match.kanaForm === surface) score += 260;
@@ -585,7 +604,25 @@ export async function resolveFuriganaBatch(
   const resolved = new Map<string, FuriganaEntry>();
 
   for (const surface of surfaces) {
-    const counterMatch = counterLookupMap.get(surface);
+    const deinflected = surfaceToDeinflected.get(surface)!;
+    let bestWordMatch: {
+      match: DictMatch;
+      score: number;
+      deinflectedWord: string;
+    } | null = null;
+
+    for (const word of deinflected) {
+      const match = lookupMap.get(word);
+      if (!match || !match.kanaForm) continue;
+      const score = scoreFuriganaWordMatch(surface, match, word);
+      if (!bestWordMatch || score > bestWordMatch.score) {
+        bestWordMatch = { match, score, deinflectedWord: word };
+      }
+    }
+
+    const counterMatch = counterContradictedByCommonWord(surface, counterLookupMap, bestWordMatch)
+      ? undefined
+      : counterLookupMap.get(surface);
     if (counterMatch) {
       const { kanjiPart, reading, kanjiPartLen } = stripOkurigana(
         counterMatch.kanjiForm,
@@ -601,22 +638,6 @@ export async function resolveFuriganaBatch(
           fullKanaForm: counterMatch.kanaForm,
         });
         continue;
-      }
-    }
-
-    const deinflected = surfaceToDeinflected.get(surface)!;
-    let bestWordMatch: {
-      match: DictMatch;
-      score: number;
-      deinflectedWord: string;
-    } | null = null;
-
-    for (const word of deinflected) {
-      const match = lookupMap.get(word);
-      if (!match || !match.kanaForm) continue;
-      const score = scoreFuriganaWordMatch(surface, match, word);
-      if (!bestWordMatch || score > bestWordMatch.score) {
-        bestWordMatch = { match, score, deinflectedWord: word };
       }
     }
 

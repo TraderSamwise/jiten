@@ -1038,3 +1038,159 @@ describe.skipIf(!hasBothDbs)("resolveFuriganaBatch compound resolution", () => {
     expect(result).not.toContain("<ruby>");
   });
 });
+
+/**
+ * The counter table is a generated number × counter cross-product, so it holds
+ * readings for spellings nobody writes. Where it contradicts a common
+ * dictionary entry for the same spelling, the dictionary is the better
+ * evidence; everywhere else the counter is left alone.
+ */
+describe("counter readings vs dictionary words", () => {
+  interface DictRow {
+    id: number;
+    kanji: string;
+    kana: string;
+    common: number;
+  }
+
+  function buildDbs(dictRows: DictRow[], counterRows: [string, string][]) {
+    const dict = new Database(":memory:");
+    dict.exec(`
+      CREATE TABLE entries (id INTEGER PRIMARY KEY, common INTEGER, jlpt_level INTEGER);
+      CREATE TABLE kanji (entry_id INTEGER, text TEXT, tags TEXT);
+      CREATE TABLE kana (entry_id INTEGER, text TEXT, tags TEXT);
+      CREATE TABLE kanji_characters (literal TEXT, readings_on TEXT, readings_kun TEXT, nanori TEXT);
+    `);
+    for (const r of dictRows) {
+      dict
+        .prepare("INSERT INTO entries (id, common, jlpt_level) VALUES (?, ?, NULL)")
+        .run(r.id, r.common);
+      dict
+        .prepare("INSERT INTO kanji (entry_id, text, tags) VALUES (?, ?, NULL)")
+        .run(r.id, r.kanji);
+      dict.prepare("INSERT INTO kana (entry_id, text, tags) VALUES (?, ?, NULL)").run(r.id, r.kana);
+    }
+
+    const ext = new Database(":memory:");
+    ext.exec(`
+      CREATE TABLE counter_readings (combined_kanji TEXT, reading TEXT);
+      CREATE TABLE names (kanji TEXT, kana TEXT, name_type TEXT, translation TEXT);
+    `);
+    for (const [form, reading] of counterRows) {
+      ext
+        .prepare("INSERT INTO counter_readings (combined_kanji, reading) VALUES (?, ?)")
+        .run(form, reading);
+    }
+    return { dict, ext };
+  }
+
+  it("drops a counter reading that contradicts a common entry for the same spelling", async () => {
+    const { dict, ext } = buildDbs(
+      [{ id: 1, kanji: "一種", kana: "いっしゅ", common: 1 }],
+      [["一種", "いっくさ"]],
+    );
+    const result = await resolveFuriganaBatch(
+      ["一種"],
+      wrapBetterSqlite(dict),
+      wrapBetterSqlite(ext),
+    );
+    expect(result["一種"]?.reading).toBe("いっしゅ");
+    expect(result["一種"]?.isCounter).toBeUndefined();
+    dict.close();
+    ext.close();
+  });
+
+  it("keeps the counter when it agrees with the common entry", async () => {
+    const { dict, ext } = buildDbs(
+      [{ id: 1, kanji: "一枚", kana: "いちまい", common: 1 }],
+      [["一枚", "いちまい"]],
+    );
+    const result = await resolveFuriganaBatch(
+      ["一枚"],
+      wrapBetterSqlite(dict),
+      wrapBetterSqlite(ext),
+    );
+    expect(result["一枚"]?.reading).toBe("いちまい");
+    expect(result["一枚"]?.isCounter).toBe(true);
+    dict.close();
+    ext.close();
+  });
+
+  it("keeps the counter for a spelling the dictionary does not have", async () => {
+    const { dict, ext } = buildDbs([], [["七膳", "ななぜん"]]);
+    const result = await resolveFuriganaBatch(
+      ["七膳"],
+      wrapBetterSqlite(dict),
+      wrapBetterSqlite(ext),
+    );
+    expect(result["七膳"]?.reading).toBe("ななぜん");
+    expect(result["七膳"]?.isCounter).toBe(true);
+    dict.close();
+    ext.close();
+  });
+
+  it("keeps the counter when the only dictionary entry is uncommon", async () => {
+    const { dict, ext } = buildDbs(
+      [{ id: 1, kanji: "三種", kana: "みくさ", common: 0 }],
+      [["三種", "さんしゅ"]],
+    );
+    const result = await resolveFuriganaBatch(
+      ["三種"],
+      wrapBetterSqlite(dict),
+      wrapBetterSqlite(ext),
+    );
+    expect(result["三種"]?.reading).toBe("さんしゅ");
+    expect(result["三種"]?.isCounter).toBe(true);
+    dict.close();
+    ext.close();
+  });
+});
+
+describe.skipIf(!hasBothDbs)("counter readings against the real dictionary", () => {
+  let rawDb: Database.Database;
+  let rawExtDb: Database.Database;
+
+  beforeAll(() => {
+    rawDb = new Database(DB_PATH, { readonly: true });
+    rawExtDb = new Database(EXT_DB_PATH, { readonly: true });
+  });
+
+  afterAll(() => {
+    rawDb.close();
+    rawExtDb.close();
+  });
+
+  it.each([
+    ["一種", "いっしゅ"],
+    ["三種", "さんしゅ"],
+    ["一度", "いちど"],
+    ["三度", "さんど"],
+    ["何度", "なんど"],
+    ["五日", "いつか"],
+    ["一目", "ひとめ"],
+    ["何所", "どこ"],
+  ])("reads %s as %s rather than its counter reading", async (surface, reading) => {
+    const result = await resolveFuriganaBatch(
+      [surface],
+      wrapBetterSqlite(rawDb),
+      wrapBetterSqlite(rawExtDb),
+    );
+    expect(result[surface]?.reading).toBe(reading);
+  });
+
+  it.each([
+    ["一枚", "いちまい"],
+    ["三枚", "さんまい"],
+    ["二人", "ふたり"],
+    ["三日", "みっか"],
+    ["一本", "いっぽん"],
+  ])("still reads %s as the counter %s", async (surface, reading) => {
+    const result = await resolveFuriganaBatch(
+      [surface],
+      wrapBetterSqlite(rawDb),
+      wrapBetterSqlite(rawExtDb),
+    );
+    expect(result[surface]?.reading).toBe(reading);
+    expect(result[surface]?.isCounter).toBe(true);
+  });
+});
