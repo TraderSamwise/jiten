@@ -242,6 +242,89 @@ export async function lookupExactJapanese(
   );
 }
 
+/**
+ * Exact lookups for many surfaces in one pass. The tap walk asks about a few
+ * hundred candidate spellings and the great majority do not exist at all, so
+ * asking one at a time spends most of its queries proving absence. Same
+ * matching as lookupExactJapanese, one round trip for the lot.
+ */
+export async function lookupExactJapaneseMany(
+  db: ReaderSqlDb,
+  words: readonly string[],
+): Promise<Map<string, ReaderDictEntry[]>> {
+  const out = new Map<string, ReaderDictEntry[]>();
+  const unique = [...new Set(words)];
+  if (unique.length === 0) return out;
+
+  const kanjiForms = new Map<string, string[]>();
+  const kanaForms = new Map<string, string[]>();
+  for (const word of unique) {
+    kanjiForms.set(word, [...new Set([word, normalizeDigitsToKanji(word)])]);
+    kanaForms.set(word, [...new Set([toHiragana(word), word])]);
+  }
+  const kanjiSurfaces = [...new Set([...kanjiForms.values()].flat())];
+  const kanaSurfaces = [...new Set([...kanaForms.values()].flat())];
+
+  const [kanjiHits, kanaHits] = await Promise.all([
+    selectEntryIdsBySurface(db, "kanji", kanjiSurfaces),
+    selectEntryIdsBySurface(db, "kana", kanaSurfaces),
+  ]);
+
+  const idsByWord = new Map<string, number[]>();
+  const wanted = new Set<number>();
+  for (const word of unique) {
+    const ids = new Set<number>();
+    for (const surface of kanjiForms.get(word) ?? []) {
+      for (const id of kanjiHits.get(surface) ?? []) ids.add(id);
+    }
+    for (const surface of kanaForms.get(word) ?? []) {
+      for (const id of kanaHits.get(surface) ?? []) ids.add(id);
+    }
+    if (ids.size === 0) {
+      out.set(word, []);
+      continue;
+    }
+    const sorted = [...ids].sort((a, b) => a - b);
+    idsByWord.set(word, sorted);
+    for (const id of sorted) wanted.add(id);
+  }
+
+  const entries = await getEntries(db, [...wanted]);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  for (const [word, ids] of idsByWord) {
+    out.set(
+      word,
+      ids.map((id) => byId.get(id)).filter((entry): entry is ReaderDictEntry => !!entry),
+    );
+  }
+  return out;
+}
+
+/** SQLite caps bound parameters, and a tap can ask about a few hundred surfaces. */
+const SURFACE_CHUNK = 400;
+
+async function selectEntryIdsBySurface(
+  db: ReaderSqlDb,
+  table: "kanji" | "kana",
+  surfaces: string[],
+): Promise<Map<string, number[]>> {
+  const found = new Map<string, number[]>();
+  for (let i = 0; i < surfaces.length; i += SURFACE_CHUNK) {
+    const chunk = surfaces.slice(i, i + SURFACE_CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = await db.getAllAsync<{ text: string; entry_id: number }>(
+      `SELECT text, entry_id FROM ${table} WHERE text IN (${placeholders})`,
+      chunk,
+    );
+    for (const row of rows) {
+      const list = found.get(row.text);
+      if (list) list.push(row.entry_id);
+      else found.set(row.text, [row.entry_id]);
+    }
+  }
+  return found;
+}
+
 export async function lookupExactName(db: ReaderSqlDb, text: string): Promise<ReaderNameEntry[]> {
   if (!text) return [];
   try {

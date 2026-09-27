@@ -13,7 +13,12 @@ import {
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
 import { deinflect, generateSubstrings, kanaSpellings, particleVariants } from "./deinflect";
-import { getKanjiAsync, lookupExactJapanese, lookupExactName } from "./lookup-db";
+import {
+  getKanjiAsync,
+  lookupExactJapanese,
+  lookupExactJapaneseMany,
+  lookupExactName,
+} from "./lookup-db";
 import type { LookupResult, ReaderDictEntry } from "./types";
 
 export type { LookupKind, LookupResult, ReaderLookupMode } from "./types";
@@ -29,6 +34,14 @@ interface EntrySortContext {
 }
 
 type KanjiReadingRecord = Awaited<ReturnType<typeof getKanjiAsync>>;
+
+/** One spelling the tap walk will ask the dictionary about, and why. */
+interface TapCandidate {
+  word: string;
+  reasons: string[];
+  spelledKanji?: string;
+  particleSwapped?: boolean;
+}
 
 const DIGIT_TO_KANJI: Record<string, string> = {
   "0": "〇",
@@ -1014,6 +1027,17 @@ export async function smartLookupWithOffset(
     entryCache.set(word, found);
     return found;
   };
+  /**
+   * Fill the cache for a whole length's candidates in one round trip. Most
+   * candidate spellings do not exist, and asking one at a time spent the bulk
+   * of a tap's queries proving that.
+   */
+  const prefetch = async (words: string[]): Promise<void> => {
+    const missing = [...new Set(words)].filter((word) => !entryCache.has(word));
+    if (missing.length === 0) return;
+    const found = await lookupExactJapaneseMany(dictDb, missing);
+    for (const word of missing) entryCache.set(word, found.get(word) ?? []);
+  };
 
   /**
    * Spellings of `substr` with its one kanji written as a reading instead.
@@ -1060,14 +1084,10 @@ export async function smartLookupWithOffset(
     // Left to right, so an equal score resolves to the leftmost span. Walking
     // outward from the tap instead made the winner depend on which character
     // was touched, since the comparison below only replaces on a strict win.
+    const spans: { start: number; substr: string; candidates: TapCandidate[] }[] = [];
     for (let start = minStart; start <= maxStart; start++) {
       const substr = text.slice(start, start + len);
-      const candidates: {
-        word: string;
-        reasons: string[];
-        spelledKanji?: string;
-        particleSwapped?: boolean;
-      }[] = [...deinflect(substr)];
+      const candidates: TapCandidate[] = [...deinflect(substr)];
       for (const variant of particleVariants(substr)) {
         candidates.push({ word: variant, reasons: [], particleSwapped: true });
       }
@@ -1075,7 +1095,11 @@ export async function smartLookupWithOffset(
       for (const spelling of spelled.spellings) {
         candidates.push({ word: spelling, reasons: [], spelledKanji: spelled.literal });
       }
+      spans.push({ start, substr, candidates });
+    }
+    await prefetch(spans.flatMap((span) => span.candidates.map((candidate) => candidate.word)));
 
+    for (const { start, substr, candidates } of spans) {
       // Candidates are ordered literal-first. A particle swap is a guess about
       // what the book meant, so it is only allowed to speak when reading the
       // span as written found nothing — にしては is an entry in its own right
