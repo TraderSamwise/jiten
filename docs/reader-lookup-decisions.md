@@ -14,8 +14,8 @@ of argued about.
   reader) before and after, and diff the matched span and top entry. ~11,250
   taps. `scripts/tap-consistency.ts` is the committed gate over the same corpus
   (`yarn check:tap-consistency`); it reports the share of taps that agree with
-  every other tap landing inside their own span, currently **97.3%** (3760 taps,
-  11413 pairwise checks, 176 disagreeing).
+  every other tap landing inside their own span, currently **97.6%** (3760 taps,
+  11383 pairwise checks, 155 disagreeing).
 - **Furigana.** Resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus, up to 8 characters. ~54,900 surfaces.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
@@ -111,6 +111,35 @@ and no deinflection explains it (`pageSpellingNote` in `lib/entry-surface.ts`).
 An inflected match keeps only its reason chip; repeating the surface there
 would be noise.
 
+### A span may not start in a word's okurigana
+
+Kana straight after a kanji is usually that kanji's okurigana, not the start of
+a new word, so a candidate beginning there is cutting a word in half: 死ぬまで
+answered as ぬま, 消えぬ as えぬ, 白くって as くって, 云うから as うから. The
+scorer had it backwards — `tapCandidateStartsAtKanaRunStart` paid such a start
++120 for looking like a word boundary.
+
+Looking like one is not enough to separate okurigana from a real particle after
+a kanji (手 に), so the kanji run and that kana are looked up together and the
+position only counts when they spell an **inflecting** word that exists:
+死ぬ (v5n), 消える (v1), 白い (adj-i). 手に resolves to nothing that inflects, so
+に keeps its bonus. One extra batched lookup per tap; `findOkuriganaStarts` in
+`lookup.ts`. A candidate starting at such a position is charged −140, the same
+as starting mid-kanji-run, because the claim is the same and the word was
+proved.
+
+Measured: 62 of the 158 overlapping disagreements had exactly one side starting
+this way and never both, so the signal is clean. The gate moves 97.3% → 97.6%,
+176 disagreeing pairs → 155. Over the corpus 366 taps change, 139 distinct
+transitions, all read: うから→から, いながら→ながら, たから→から, ぬま→まで,
+してやった→やった, せば→廃せば, つべ→べき, にやし→やしない.
+
+**The one accepted regression: 来たまえ.** 来た is a real inflected verb, so た
+counts as okurigana and たまえ — the auxiliary 給え, which is the correct
+reading here — is charged for starting inside it. The tap now answers まえ. Two
+taps in the corpus. Not worth an auxiliary exemption: the exemption would have
+to fire on exactly the forms the rule is there to catch.
+
 ## Rejected
 
 ### Gating deinflected candidates on JMdict part of speech
@@ -193,12 +222,13 @@ catching none of the idioms that actually come up. `exp` is the tag that works.
 
 ### Kana-run junk in tap lookup
 
-90% of the remaining disagreements (158 of 176) are overlaps rather than clean
-prefixes or suffixes, and most are short kana runs where an uncommon long match
-beats a common short one — でまず reaching 出丸, があ/じが/さかば. These are
-genuine JMdict entries, so no dictionary-membership rule can exclude them; it
-needs an analyzer with part-of-speech and connection costs. Leaving the last
-2.7%.
+The disagreements left after the okurigana rule above are overlaps where
+_neither_ side starts on a kanji's okurigana and both are ordinary kana:
+おやじ/じが, ぐらい/いか, つば/ばかり, たから out of 囃した + から. The junk span
+straddles a boundary between two real words and wins on length alone, and
+nothing local to it says so — JMdict tags the right side `prt` often enough to
+be suggestive but not reliably. Ruling these out needs part-of-speech and
+connection costs across the whole line, i.e. an analyzer. Leaving the last 2.4%.
 
 ## Not a bug
 

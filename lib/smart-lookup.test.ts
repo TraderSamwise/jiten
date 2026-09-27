@@ -1531,3 +1531,39 @@ describeWithDb("particle-substituted phrases", () => {
     expect(["害", "街", "外"]).not.toContain(top);
   });
 });
+
+/**
+ * Kana straight after a kanji is usually that kanji's okurigana, so a span
+ * starting there is cutting a word in half — 死ぬまで answered as ぬま, 白くって
+ * as くって. Every one of these taps lands one character past the kanji.
+ */
+describeWithDb("spans that start inside a word's okurigana", () => {
+  const tap = async (text: string, offset: number) =>
+    (await smartLookupWithOffset(text, offset, dictDbAsync, extendedDbAsync))[0]?.matchedText;
+
+  test("死ぬまで: tapping ま gives まで, not ぬま", async () => {
+    expect(await tap("しかし創痕は死ぬまで消えぬ", 8)).toBe("まで");
+  });
+
+  test("云うから: tapping か gives から, not うから", async () => {
+    expect(await tap("見たくないと云うから、親類へ", 8)).toBe("から");
+  });
+
+  test("白くって: tapping っ gives って, not くって", async () => {
+    expect(await tap("兄はやに色が白くって、芝居の", 8)).toBe("って");
+  });
+
+  test("倒してやった: tapping や gives やった, not してやった", async () => {
+    expect(await tap("向うへ倒してやった。山城屋の", 6)).toBe("やった");
+  });
+
+  /** 廃せば was reached only once せば stopped winning from inside 廃す. */
+  test("廃せばいい: tapping せ reaches the verb itself", async () => {
+    expect(await tap("つまらない、廃せばいいのにと", 7)).toBe("廃せば");
+  });
+
+  /** A particle after a kanji is not okurigana — 手 and に are two words. */
+  test("手に付いて: tapping に still gives に", async () => {
+    expect(await tap("今だに親指は手に付いている", 7)).toBe("に");
+  });
+});

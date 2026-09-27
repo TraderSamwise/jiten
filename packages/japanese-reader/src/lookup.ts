@@ -509,11 +509,61 @@ async function lookupNegativeScopeParticleAtTap(
  * same span could win from one character and lose from the next — which is the
  * disagreement `yarn check:tap-consistency` measures.
  */
+/**
+ * Positions where a candidate would begin inside a word rather than at one.
+ *
+ * Kana straight after a kanji is usually that kanji's okurigana — the ぬ of
+ * 死ぬ, the え of 消え — so a span starting there is cutting a word in half:
+ * 死ぬまで answered as ぬま, 消えぬ as えぬ. Looking like a kana run's start is
+ * not enough to tell those from a real particle after a kanji (手 に), so the
+ * kanji and the kana are looked up together and the position only counts when
+ * they spell an inflecting word that actually exists.
+ */
+async function findOkuriganaStarts(
+  text: string,
+  tapOffset: number,
+  prefetch: (words: string[]) => Promise<void>,
+  lookupOnce: (word: string) => Promise<ReaderDictEntry[]>,
+): Promise<Set<number>> {
+  const stems = new Map<number, string[]>();
+  for (let start = Math.max(1, tapOffset - 14); start <= tapOffset; start++) {
+    if (!isKanaChar(text[start]) || !isKanjiChar(text[start - 1])) continue;
+    let head = start - 1;
+    while (head > 0 && isKanjiChar(text[head - 1])) head--;
+    stems.set(
+      start,
+      deinflect(text.slice(head, start + 1)).map((candidate) => candidate.word),
+    );
+  }
+  if (stems.size === 0) return new Set();
+
+  await prefetch([...stems.values()].flat());
+  const starts = new Set<number>();
+  for (const [start, words] of stems) {
+    for (const word of words) {
+      const entries = await lookupOnce(word);
+      if (entries.some(entryInflects)) {
+        starts.add(start);
+        break;
+      }
+    }
+  }
+  return starts;
+}
+
+/** Only an inflecting word has okurigana; a noun's trailing kana is a particle. */
+function entryInflects(entry: ReaderDictEntry): boolean {
+  return entry.senses.some((sense) =>
+    sense.partOfSpeech?.some((pos) => /^(v[15]|vk|vn|vr|vs-|vz|adj-i)/.test(pos)),
+  );
+}
+
 function scoreTapCandidate(
   text: string,
   result: LookupResult,
   start: number,
   hasCommon: boolean,
+  startsInsideOkurigana = false,
 ): number {
   const length = [...result.matchedText].length;
   let score = length * 100;
@@ -529,6 +579,10 @@ function scoreTapCandidate(
   else if (hasExactKanaSurfaceMatch(result, result.matchedText)) score += 45;
 
   if (tapCandidateStartsAtKanaToKanjiBoundary(text, start)) score += 120;
+  // The first kana after a kanji looks like the start of a word and usually is
+  // not: it is that kanji's okurigana. Charged like a mid-kanji-run start,
+  // because the claim is the same and the caller proved the word exists.
+  else if (startsInsideOkurigana) score -= 140;
   else if (tapCandidateStartsAtKanaRunStart(text, start)) score += 50;
   else if (tapCandidateStartsMidKanaRun(text, start)) score -= 65;
 
@@ -1067,6 +1121,7 @@ export async function smartLookupWithOffset(
     }
   }
   const counterHints = await buildCounterHintMap([...tapSurfaces], extDb);
+  const okuriganaStarts = await findOkuriganaStarts(text, tapOffset, prefetch, lookupOnce);
   let bestOverall: { result: LookupResult; score: number; length: number; start: number } | null =
     null;
 
@@ -1152,7 +1207,7 @@ export async function smartLookupWithOffset(
             matchStart: start,
           };
           const score =
-            scoreTapCandidate(text, result, start, hasCommon) +
+            scoreTapCandidate(text, result, start, hasCommon, okuriganaStarts.has(start)) +
             scoreCounterHint(result, counterHints.get(substr));
           if (!bestForLength || score > bestForLength.score) {
             bestForLength = { result, score, length: len, start };

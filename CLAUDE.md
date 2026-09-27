@@ -48,7 +48,7 @@ are measured exhaustively rather than argued:
   `test/corpus/bocchan.txt` with a 24-character window either side, before and
   after, and diff the matched span and the top entry (~11,250 taps). The
   committed gate over the same corpus is `yarn check:tap-consistency`, currently
-  97.3%.
+  97.6%.
 - **Furigana** — resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus up to 8 characters (~54,900 surfaces).
 - **Counters** — `counter_readings` is finite; resolve all 2728 distinct
