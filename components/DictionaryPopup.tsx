@@ -697,6 +697,7 @@ export function DictionaryPopup({
               {panelEntry && (
                 <EntrySummary
                   entry={panelEntry}
+                  surface={panelWordResult.matchedText}
                   inlineMeta={
                     panelWordResult.deinflectReasons.length > 0 ? (
                       <View className="rounded-md bg-muted px-2 py-1">

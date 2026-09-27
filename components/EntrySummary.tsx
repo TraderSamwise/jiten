@@ -4,6 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Badge } from "@/components/ui/badge";
 import { PitchAccent } from "@/components/PitchAccent";
 import { BOOKMARK_HIGHLIGHT_CLASS, BOOKMARK_HIGHLIGHT_STYLE } from "@/lib/bookmark-styles";
+import { displayKanjiForSurface } from "@/lib/entry-surface";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import type { DictEntry } from "@/db/types";
 
@@ -13,6 +14,8 @@ interface EntrySummaryProps {
   readingMode?: "all" | "primary-only";
   inlineMeta?: React.ReactNode;
   rightAccessory?: React.ReactNode;
+  /** The text this entry was matched from, so a multi-spelling entry shows the one on the page. */
+  surface?: string | null;
 }
 
 export const EntrySummary = React.memo(function EntrySummary({
@@ -21,9 +24,10 @@ export const EntrySummary = React.memo(function EntrySummary({
   readingMode = "all",
   inlineMeta,
   rightAccessory,
+  surface,
 }: EntrySummaryProps) {
   const isBookmarked = useBookmarkStore((s) => s.bookmarkedIds.has(`e:${entry.id}`));
-  const primaryKanji = entry.kanji[0]?.text;
+  const primaryKanji = displayKanjiForSurface(entry.kanji, surface);
   const primaryKana = entry.kana[0]?.text;
   const primaryGloss = entry.senses[0]?.glosses
     .filter((g) => g.lang === "eng")
