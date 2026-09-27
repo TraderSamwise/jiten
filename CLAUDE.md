@@ -10,6 +10,27 @@ behind a link. `AGENTS.md` points here. The two documents above stay where they 
 are written for people as well — the README is the open-source front page and ARCHITECTURE.md is
 the contributor reference.
 
+## Before building a mechanism, run the one that is already here
+
+Measure the **existing** code path against the exact failing inputs, and report
+what it already handles, before designing anything to replace or supplement it.
+The scope of the work is the delta, not the whole problem.
+
+This is not hypothetical. A set-phrase matcher — an anchor index, a slot
+verifier, a coverage harness, ~500 lines — was built and reverted in one
+session (`cef58de`) because `smartLookupWithOffset` already deinflects the whole
+substring, so 腹が立った, 飯を食っていたら, 頭を下げなければ, あぐらを掻いて and
+しらを切る all resolved on tap before a line was written. The real gap was
+particle substitution, worth about fifty lines. A measurement in that same
+session had already put the existing hit rate at 87%; it was reported and then
+designed past.
+
+- Run the shipping function on the failing case first. One command.
+- A measurement showing the current system mostly works is a stop sign, not
+  background. Whatever it misses is the whole brief.
+- Do not invent a requirement to justify a design. If the task is lookup, a
+  page-marking feature nobody asked for is not evidence that an index is needed.
+
 ## Reader lookup and furigana scoring is settled — measure before you touch it
 
 Tap ranking, furigana resolution, counter readings and the deinflection rule

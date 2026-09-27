@@ -210,6 +210,26 @@ The reader uses **column-based vertical pagination** in a WebView:
 
 No virtual DOM or framework — vanilla TypeScript compiled to a single JS bundle embedded in the HTML.
 
+#### Where per-slice work goes
+
+The reader never holds a whole book. `sliceContent(model, startChar, cpp * 3)` cuts a
+**slice** of three pages — about 600 characters on a phone, 1800 on a tablet, per
+`calcCharsPerPage` — and `renderSliceHtml` in `use-japanese-reader.ts` turns it into HTML:
+
+```
+sliceText → getBaseSliceHtml      (aozora/markup → HTML)
+          → getFuriganaSliceHtml  (extractSurfacesFromHtml → resolveFuriganaBatch → inject <ruby>)
+```
+
+Slices are cached 48 deep, keyed on the slice and the furigana settings, and rendered
+**ahead** of the reader — `replaceOffscreenContent` swaps the next one in offscreen and
+`prependBackSlice` prepends for backward navigation. So anything that must annotate the
+page belongs in `renderSliceHtml` beside the furigana pass: it gets the raw slice text
+before ruby injection, it is already async, already cached, and already off the critical
+path. Two things it is not: `syncBookmarkHighlights` takes bare _surfaces_ and highlights
+every occurrence, so it cannot express a per-occurrence span; and there is no whole-book
+pass to hook, by design.
+
 #### Key modules
 
 | File                                        | Purpose                                                                            |
