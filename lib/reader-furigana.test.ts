@@ -721,6 +721,31 @@ describe.skipIf(!hasBothDbs)("resolveFuriganaBatch compound resolution", () => {
     rawExtDb.close();
   });
 
+  /**
+   * JMdict stops carrying numbers long before prose does, and JMnedict picks up
+   * where it stops: 四十三 and 五十八 are real given names, and a sentence
+   * counting someone's age was furigana'd よそぞう.
+   */
+  it("reads a number no dictionary holds, instead of a name", async () => {
+    const result = await resolveFuriganaBatch(["四十三", "五十八", "九十四"], dictDb, extDb);
+    expect(result["四十三"]?.reading).toBe("よんじゅうさん");
+    expect(result["四十三"]?.isName).toBeFalsy();
+    expect(result["五十八"]?.reading).toBe("ごじゅうはち");
+    expect(result["九十四"]?.reading).toBe("きゅうじゅうよん");
+  });
+
+  it("leaves a number that is an entry to its entry", async () => {
+    const result = await resolveFuriganaBatch(["四十", "十三"], dictDb, extDb);
+    expect(result["四十"]?.reading).toBe("よんじゅう");
+    expect(result["十三"]?.reading).toBe("じゅうさん");
+  });
+
+  /** 五十嵐 carries a non-numeral, so it is still a surname. */
+  it("still reads a name that only looks numeric", async () => {
+    const result = await resolveFuriganaBatch(["五十嵐"], dictDb, extDb);
+    expect(result["五十嵐"]?.isName).toBe(true);
+  });
+
   it("resolves 一軒 as いっけん, not 軒=のき", async () => {
     const result = await resolveFuriganaBatch(["一軒"], dictDb, extDb);
     expect(result["一軒"]?.reading).toBe("いっけん");

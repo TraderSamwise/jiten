@@ -6,6 +6,7 @@ import {
   type AutoNameWordCandidate,
 } from "./auto-name";
 import { deinflect } from "./deinflect";
+import { isKanjiNumeralRun, kanjiNumeralReading } from "./numerals";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "./furigana-db";
 import type { ReaderSqlDb } from "./backend";
 import {
@@ -520,7 +521,9 @@ function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | n
 }
 
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
-  return hasKanjiText(surface);
+  // 四十三 and 五十八 are given names in JMnedict and numbers everywhere else.
+  // A run written only in numerals is a number.
+  return hasKanjiText(surface) && !isKanjiNumeralRun(surface);
 }
 
 function resolveLexicalSuffixJlpt(
@@ -636,6 +639,23 @@ export async function resolveFuriganaBatch(
           isCounter: true,
           fullKanjiForm: counterMatch.kanjiForm,
           fullKanaForm: counterMatch.kanaForm,
+        });
+        continue;
+      }
+    }
+
+    // JMdict stops carrying numbers long before prose does: 四十 is an entry and
+    // 四十三 is not. Compose what no dictionary holds, but leave the ones that
+    // are entries to their entry.
+    if (!bestWordMatch && isKanjiNumeralRun(surface)) {
+      const numeralReading = kanjiNumeralReading(surface);
+      if (numeralReading) {
+        resolved.set(surface, {
+          kanjiPart: surface,
+          reading: numeralReading,
+          kanjiPartLen: [...surface].length,
+          fullKanjiForm: surface,
+          fullKanaForm: numeralReading,
         });
         continue;
       }

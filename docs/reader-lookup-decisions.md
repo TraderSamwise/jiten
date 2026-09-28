@@ -191,6 +191,31 @@ Two guards, both from measured failures:
 Four corpus taps change, all of them 飼っとく reaching 飼う where the tap
 previously found nothing or 解く. Gate unmoved at 97.9% / 129.
 
+### A number spelled in kanji is never a name
+
+JMdict carries the short numbers — 四十 is よんじゅう, 十三 is じゅうさん — and stops
+well before prose does. 四十三 and 五十八 are in no dictionary, and both are real
+given names in JMnedict, so a sentence counting someone's age was furigana'd
+よそぞう and a tap on it offered Shitomi and Yosozou.
+
+A kanji run written **only** in numerals is refused a name reading, in the
+furigana pass and in `lookupExactName`, and the number is composed from its
+parts instead (`numerals.ts`). Composition only runs where no dictionary entry
+exists, so 四十 and 十三 keep the readings they already had. The sound changes
+are the reason it cannot be done digit by digit: 三百 is さんびゃく, 六百 is
+ろっぴゃく, 八千 is はっせん.
+
+Measured over every kanji-initial corpus substring up to 8 characters (67,299
+surfaces): 二十三 はたぞう→にじゅうさん and 六百 むお→ろっぴゃく are corrected, 五万,
+十五万 and 二十五万 gain readings they had none for, and 五六 いつむ, 六七 むな,
+十三四 とみよ lose name readings that were wrong anyway. 五十嵐 carries a
+non-numeral, so it is still いかざき.
+
+**Accepted regressions.** 一二三 no longer offers ひふみ, and 三四 loses さんし —
+which was right for "three or four" — with nothing composed in its place, since
+a bare run of digits with no power is not a number this reads. Two surfaces
+against five corrected.
+
 ## Rejected
 
 ### A character cap on how far a word's kana tail runs

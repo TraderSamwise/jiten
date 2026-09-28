@@ -1,6 +1,7 @@
 import { type ReaderKanjiCharacter } from "@tradersamwise/jiten-reader-core";
 import { toHiragana } from "wanakana";
 import type { ReaderSqlDb } from "./backend";
+import { isKanjiNumeralRun } from "./numerals";
 import type {
   ReaderDictEntry,
   ReaderDictKana,
@@ -327,6 +328,9 @@ async function selectEntryIdsBySurface(
 
 export async function lookupExactName(db: ReaderSqlDb, text: string): Promise<ReaderNameEntry[]> {
   if (!text) return [];
+  // 四十三 and 五十八 are given names in JMnedict and numbers everywhere else, so
+  // in running prose a run written only in numerals is never a name.
+  if (isKanjiNumeralRun(text)) return [];
   try {
     const hiragana = toHiragana(text);
     const rows = await db.getAllAsync<NameRow>(

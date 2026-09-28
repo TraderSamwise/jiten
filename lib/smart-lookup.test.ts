@@ -1634,3 +1634,21 @@ describeWithDb("te-oku contraction in the reader", () => {
     expect(hit?.entries[0]?.kana[0]?.text).toBe("かいとく");
   });
 });
+
+describeWithDb("numbers are not names in the reader", () => {
+  /** 四十三 is the given name よそぞう in JMnedict and a number everywhere else. */
+  test("tapping a spelled-out number does not offer a name", async () => {
+    const hits = await autoLookupWithOffset(
+      "四十三でも、五十八でも",
+      1,
+      dictDbAsync,
+      extendedDbAsync,
+    );
+    expect(hits[0]?.lookupKind).not.toBe("name");
+  });
+
+  test("a name that merely contains numerals still resolves", async () => {
+    const hits = await autoLookupWithOffset("五十嵐さんが来た", 1, dictDbAsync, extendedDbAsync);
+    expect(hits.some((hit) => hit.lookupKind === "name")).toBe(true);
+  });
+});
