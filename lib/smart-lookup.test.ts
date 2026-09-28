@@ -1602,3 +1602,35 @@ describeWithDb("spans that start inside a word's okurigana", () => {
     expect(await tap("宿へ帰ろうと思ったが", 5)).toBe("と");
   });
 });
+
+/**
+ * ～とく / ～どく is the spoken contraction of ～ておく. 置いとくからだよ reached
+ * nothing as a word, so the bare kanji 置 fell through to the surname おき.
+ */
+describeWithDb("te-oku contraction in the reader", () => {
+  const tap = async (text: string, offset: number) =>
+    (await smartLookupWithOffset(text, offset, dictDbAsync, extendedDbAsync))[0];
+
+  test("置いとく resolves 置く, from any character of it", async () => {
+    for (const offset of [5, 6, 7, 8]) {
+      const hit = await tap("シナリオか置いとくからだよ", offset);
+      expect(hit?.matchedText).toBe("置いとく");
+      expect(hit?.entries[0]?.kanji[0]?.text).toBe("置く");
+    }
+  });
+
+  test("飼っとく resolves 飼う", async () => {
+    const hit = await tap("バッタを床の中に飼っとく奴が", 9);
+    expect(hit?.matchedText).toBe("飼っとく");
+    expect(hit?.entries[0]?.kanji[0]?.text).toBe("飼う");
+  });
+
+  /**
+   * 書いとく is an entry in its own right, so undoing the contraction must not
+   * answer with 買い手, which is merely the commoner of the two.
+   */
+  test("a reading that needs no guess wins over undoing the contraction", async () => {
+    const hit = await tap("履歴書にもかいときましたが", 6);
+    expect(hit?.entries[0]?.kana[0]?.text).toBe("かいとく");
+  });
+});

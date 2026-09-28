@@ -8,6 +8,13 @@ const ADJ = 4; // i-adjective
 const SURU = 8; // suru verb
 const KURU = 16; // kuru verb
 const IKU = 32; // iku verb (special te-form)
+
+/**
+ * Undoing ～ておく is a guess about a contraction, so the lookup lets a reading
+ * that needs no guess win first: かいときました is 書いとく, an entry of its own,
+ * and must not be answered with 買い手.
+ */
+export const TE_OKU_REASON = "te-oku (casual)";
 const ANY = 0xff;
 
 // Passive, causative, and potential forms are themselves ichidan verbs.
@@ -308,6 +315,19 @@ const RULES: DeinflectRule[] = [
   { from: "てる", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
   { from: "でいる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
   { from: "でる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
+
+  // ── ～とく / ～どく: the spoken contraction of ～ておく ──
+  // Rewritten to the te-form so the rules above finish the job: 置いとく → 置いて
+  // → 置く. The te-stem kana is part of the pattern rather than left to minStem,
+  // because a bare ～とく also matches the output of the masu-stem rules and turns
+  // のとき into 乗る and 行くとき into 行い.
+  { from: "いとく", to: "いて", typeIn: ANY, typeOut: V5, reason: TE_OKU_REASON },
+  { from: "っとく", to: "って", typeIn: ANY, typeOut: V5, reason: TE_OKU_REASON },
+  { from: "んどく", to: "んで", typeIn: ANY, typeOut: V5, reason: TE_OKU_REASON },
+  // An ichidan te-form is just the stem plus て, so ～とく sits straight on the
+  // stem: 見とく, 食べとく. typeIn V1 is what keeps this off the masu-stem rules'
+  // output, which they type V5 — that path is how のとき reached 乗る.
+  { from: "とく", to: "て", typeIn: V1, typeOut: V1, reason: TE_OKU_REASON, minStem: 1 },
 
   // ── たい (want to) ── applies to masu-stem, which looks like ichidan
   { from: "たい", to: "る", typeIn: V1, typeOut: V1, reason: "tai (want)" },

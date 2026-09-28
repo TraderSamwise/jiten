@@ -168,6 +168,29 @@ distinct transitions, all read: たから→から (50), ないか→から (22)
   every span containing them began inside a word. They get the empty-state
   message rather than a junk word, which is the honest answer.
 
+### ～とく / ～どく, the spoken contraction of ～ておく
+
+置いとくからだよ reached nothing as a word — 置い has no path to 置く — so the
+furigana and the tap both fell through to JMnedict and offered the surname おき.
+The contraction is rewritten to the te-form and the existing rules finish the
+job: 置いとく → 置いて → 置く.
+
+Two guards, both from measured failures:
+
+- **The te-stem kana is part of the pattern** (いとく, っとく, んどく), not left to a
+  stem-length floor. A bare ～とく also matches the _output_ of the masu-stem
+  rules, which turned のとき into 乗る and 行くとき into 行い. The ichidan form
+  sits straight on the stem (見とく, 食べとく) and is typed `V1` for the same
+  reason — the masu-stem rules type their output `V5`, so the chain cannot reach
+  it.
+- **A reading that needs no guess wins.** 書いとく is an entry of its own, and
+  undoing the contraction reaches かいて → 買い手, the commoner of the two. The
+  lookup already defers particle swaps to a literal reading; the contraction
+  joins them.
+
+Four corpus taps change, all of them 飼っとく reaching 飼う where the tap
+previously found nothing or 解く. Gate unmoved at 97.9% / 129.
+
 ## Rejected
 
 ### A character cap on how far a word's kana tail runs

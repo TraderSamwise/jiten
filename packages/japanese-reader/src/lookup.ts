@@ -12,7 +12,13 @@ import {
   type AutoNameWordCandidate,
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
-import { deinflect, generateSubstrings, kanaSpellings, particleVariants } from "./deinflect";
+import {
+  TE_OKU_REASON,
+  deinflect,
+  generateSubstrings,
+  kanaSpellings,
+  particleVariants,
+} from "./deinflect";
 import {
   getKanjiAsync,
   lookupExactJapanese,
@@ -1183,7 +1189,8 @@ export async function smartLookupWithOffset(
       // commoner of the two.
       let literalMatched = false;
       for (const candidate of candidates) {
-        if (candidate.particleSwapped && literalMatched) continue;
+        const guessed = candidate.particleSwapped || candidate.reasons.includes(TE_OKU_REASON);
+        if (guessed && literalMatched) continue;
         let entries = await lookupOnce(candidate.word);
         // Rewriting a kanji as kana claims the entry is that word spelled
         // differently, so the entry has to contain the kanji. Without this the
@@ -1220,7 +1227,7 @@ export async function smartLookupWithOffset(
           const hasCommon = entries.some(
             (entry) => entry.common && entryMatchesSearchSurface(entry, candidate.word),
           );
-          if (!candidate.particleSwapped && !candidate.spelledKanji) literalMatched = true;
+          if (!guessed && !candidate.spelledKanji) literalMatched = true;
           const result: LookupResult = {
             matchedText: substr,
             entries: sortedEntries,
