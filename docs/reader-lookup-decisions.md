@@ -237,6 +237,29 @@ correct — a bookmarked する lights up して, した, している, しな�
 
 ## Rejected
 
+### Alternatives weighed on 2026-09-28 and not taken
+
+Four reader bugs were fixed that day, and each had a wider option that was put
+to Sam and declined. They are recorded so the wider one is not proposed again
+as if it were new.
+
+- **Numbers: refusing the name reading without composing one.** Would have left
+  四十三 with no furigana at all and a tap on it finding nothing — a wrong answer
+  replaced by no answer. Composing was chosen because it is the only option that
+  leaves the number readable, at the price of 一二三 losing ひふみ.
+- **置いとく: also refusing a name reading to any lone kanji followed by kana.**
+  Would fix more of this class, but this novel is full of names and a
+  single-kanji surname (林, 森) would lose its reading. The contraction rule
+  alone settled the reported case, so the name path was left alone.
+- **Bookmarks: matching the tap exactly.** Kana respellings and particle swaps
+  as well as deinflection, so anything tappable would highlight. Declined for
+  now as more work on the per-slice render path than the reported cases need;
+  deinflection alone covers a bookmark saved from inflected text, which is
+  nearly all of them.
+- **たまらず: hunting for a rule that separates 堪る from 溜まる.** Declined before
+  it was attempted — see **Not a bug** below. The measurement would likely have
+  come back empty, and commonness is the right default.
+
 ### A character cap on how far a word's kana tail runs
 
 The first attempt at closing okurigana tails bounded them by length —
