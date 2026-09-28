@@ -1269,23 +1269,72 @@ export function useJapaneseReader({
               x: msg.selectionX ?? msg.startX ?? 0,
               y: msg.selectionTop ?? msg.startY ?? 0,
             });
+            let found = 0;
             if (isNameMode) {
               const names = await nameLookup(text, extendedDb!);
+              found = names.length;
               setLookupResults(names);
             } else if (isAutoMode) {
               const results = await autoSelectionLookup(text, dictDb!, extendedDb, {
                 prefix: msg.prefix || "",
                 suffix: msg.suffix || "",
               });
+              found = results.length;
               setLookupResults(results);
             } else {
               await selectionLookup(
                 text,
                 dictDb!,
                 (result) => {
+                  found++;
                   setLookupResults((prev) => [...prev, result]);
                 },
                 { prefix: msg.prefix || "", suffix: msg.suffix || "", extendedDb },
+              );
+            }
+            if (found === 0) {
+              // "No results found" on its own says nothing about which of the
+              // selection, the mode or the dictionary came up short.
+              warnOnce(
+                `empty-selection:${text}`,
+                `selection lookup found nothing for ${JSON.stringify(text)} ` +
+                  `(mode ${isNameMode ? "name" : isAutoMode ? "auto" : "word"}, ` +
+                  `prefix ${JSON.stringify(msg.prefix || "")}, ` +
+                  `suffix ${JSON.stringify(msg.suffix || "")})`,
+              );
+            }
+          } else {
+            const tapOffset = msg.tapOffset as number | undefined;
+            const results = isNameMode
+              ? tapOffset && tapOffset > 0
+                ? await nameLookupWithOffset(text, tapOffset, extendedDb!)
+                : await nameLookup(text, extendedDb!)
+              : isAutoMode
+                ? tapOffset && tapOffset > 0
+                  ? await autoLookupWithOffset(text, tapOffset, dictDb!, extendedDb)
+                  : await autoLookup(text, dictDb!, extendedDb)
+                : tapOffset && tapOffset > 0
+                  ? await smartLookupWithOffset(text, tapOffset, dictDb!, extendedDb)
+                  : await smartLookup(text, dictDb!, extendedDb);
+
+            setLookupResults(results);
+            scheduleTapTooltipFallback({
+              placementId,
+              text: results.length > 0 ? results[0].matchedText : text,
+              x: msg.x ?? 0,
+              y: msg.y ?? 0,
+            });
+
+            if (results.length > 0) {
+              const matchStart = results[0].matchStart ?? (tapOffset || 0);
+              const startDelta = matchStart - (tapOffset || 0);
+              readerViewRef.current?.postMessage(
+                JSON.stringify({
+                  type: "highlight",
+                  placementId,
+                  start: startDelta,
+                  length: results[0].matchedText.length,
+                }),
               );
             }
           }
