@@ -335,6 +335,13 @@ connection costs across the whole line, i.e. an analyzer. Leaving the last 2.1%.
 
 ## Not a bug
 
+- **たまらず gives 溜まる, not 堪る.** The ～ず rule fires correctly and reaches
+  たまる; the ranking then picks 溜まる ("to collect"), which is marked common,
+  over 堪る ("to endure"), which is not. 溜まらず is ordinary Japanese too, so
+  nothing in the span separates them — the only signal is commonness, and
+  preferring the common word is right far more often than it is wrong here.
+  Written 堪らず it resolves correctly. Left alone deliberately.
+
 - **教れた** is not a Japanese conjugation, so the lookup has nothing to find and
   falls back to 教/きょう. The reader provably does not drop characters: applying
   furigana to 1266 sentences of the corpus changed the visible text zero times.
