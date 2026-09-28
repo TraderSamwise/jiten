@@ -1,4 +1,5 @@
 import type { ReaderSqlDb } from "./backend";
+import { deinflect } from "./deinflect";
 import type { ReaderBookmarkMembership } from "./types";
 
 const BATCH_SIZE = 500;
@@ -124,9 +125,23 @@ export async function resolveBookmarkedWordSurfacesInHtml(
   const candidates = [...extractBookmarkCandidateSurfaces(html)];
   if (candidates.length === 0) return new Set();
 
+  // A bookmark is nearly always saved from an inflected form, because that is
+  // what the page says and what the tap resolved. Ask the dictionary about the
+  // forms behind each candidate, then highlight the candidate as written.
+  const wordToSurfaces = new Map<string, { surface: string; inflected: boolean }[]>();
+  for (const candidate of candidates) {
+    for (const { word, reasons } of deinflect(candidate)) {
+      const found = wordToSurfaces.get(word);
+      const entry = { surface: candidate, inflected: reasons.length > 0 };
+      if (found) found.push(entry);
+      else wordToSurfaces.set(word, [entry]);
+    }
+  }
+  const words = [...wordToSurfaces.keys()];
+
   const surfaces = new Set<string>();
-  for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-    const batch = candidates.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < words.length; i += BATCH_SIZE) {
+    const batch = words.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
     const [kanjiRows, kanaRows] = await Promise.all([
       dictDb.getAllAsync<BookmarkSurfaceRow>(
@@ -156,14 +171,18 @@ export async function resolveBookmarkedWordSurfacesInHtml(
     }
 
     for (const row of kanjiRows) {
-      if (bookmarks.hasEntryId(row.entry_id)) {
-        surfaces.add(row.text);
-      }
+      if (!bookmarks.hasEntryId(row.entry_id)) continue;
+      for (const { surface } of wordToSurfaces.get(row.text) ?? []) surfaces.add(surface);
     }
     for (const row of kanaRows) {
       if (!bookmarks.hasEntryId(row.entry_id)) continue;
-      if (entryIdsWithKanji.has(row.entry_id)) continue;
-      surfaces.add(row.text);
+      for (const { surface, inflected } of wordToSurfaces.get(row.text) ?? []) {
+        // A bare kana reading of a word the dictionary writes in kanji is not
+        // evidence the page means that word — a bookmarked 事 would light up
+        // every こと. An undone inflection is.
+        if (entryIdsWithKanji.has(row.entry_id) && !inflected) continue;
+        surfaces.add(surface);
+      }
     }
   }
 

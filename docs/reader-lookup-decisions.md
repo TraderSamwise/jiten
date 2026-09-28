@@ -216,6 +216,25 @@ which was right for "three or four" — with nothing composed in its place, sinc
 a bare run of digits with no power is not a number this reads. Two surfaces
 against five corrected.
 
+### Bookmark highlighting follows the same deinflection the tap does
+
+The highlighter matched spellings literally, so a bookmark saved while reading
+almost never lit up again: you tap the text in front of you, which is inflected,
+and 縁がある then failed to find 縁があったら, やり込める failed to find やりこめてい.
+Only a bookmark saved from a plain dictionary form — 表札 — ever highlighted.
+
+The candidate substrings the pass already cuts out of the page are now
+deinflected before they are looked up, and the candidate is highlighted as
+written rather than the dictionary form. One guard carried over and one added:
+a kana surface still loses to the kanji its entry is written with, **unless an
+inflection was undone to reach it** — otherwise a bookmarked 事 lights up every
+こと, while やりこめてい stays specific enough to mean what it says.
+
+Cost on the per-slice render path, measured over a 3,000-character slice:
+29ms and 71 queries to 68ms and 109. Over-highlighting is small and mostly
+correct — a bookmarked する lights up して, した, している, しなければ, which are
+する.
+
 ## Rejected
 
 ### A character cap on how far a word's kana tail runs
