@@ -13,7 +13,7 @@ import {
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
 import {
-  TE_OKU_REASON,
+  CONTRACTION_REASONS,
   deinflect,
   generateSubstrings,
   kanaSpellings,
@@ -1189,7 +1189,9 @@ export async function smartLookupWithOffset(
       // commoner of the two.
       let literalMatched = false;
       for (const candidate of candidates) {
-        const guessed = candidate.particleSwapped || candidate.reasons.includes(TE_OKU_REASON);
+        const guessed =
+          candidate.particleSwapped ||
+          candidate.reasons.some((reason) => CONTRACTION_REASONS.has(reason));
         if (guessed && literalMatched) continue;
         let entries = await lookupOnce(candidate.word);
         // Rewriting a kanji as kana claims the entry is that word spelled

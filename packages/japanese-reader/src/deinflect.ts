@@ -15,7 +15,18 @@ const IKU = 32; // iku verb (special te-form)
  * and must not be answered with 買い手.
  */
 export const TE_OKU_REASON = "te-oku (casual)";
+/** Same rule for ～ちゃう / ～じゃう, the contraction of ～てしまう / ～でしまう. */
+export const TE_SHIMAU_REASON = "te-shimau (casual)";
+/** Undoing any of these is a guess; a reading that needs no guess wins first. */
+export const CONTRACTION_REASONS: ReadonlySet<string> = new Set([TE_OKU_REASON, TE_SHIMAU_REASON]);
 const ANY = 0xff;
+/**
+ * Everything but a godan verb. The masu-stem rules type their output V5, so a
+ * contraction rule carrying this cannot latch onto one: without it 云っちゃい
+ * became 云っちゃう and then 言う, swallowing the いけない of 云っちゃいけない,
+ * which is ～てはいけない and a different contraction entirely.
+ */
+const NOT_MASU_STEM = ANY & ~V5;
 
 // Passive, causative, and potential forms are themselves ichidan verbs.
 // When they conjugate (past, negative, etc.), the V1 deinflection strips
@@ -328,6 +339,32 @@ const RULES: DeinflectRule[] = [
   // stem: 見とく, 食べとく. typeIn V1 is what keeps this off the masu-stem rules'
   // output, which they type V5 — that path is how のとき reached 乗る.
   { from: "とく", to: "て", typeIn: V1, typeOut: V1, reason: TE_OKU_REASON, minStem: 1 },
+
+  // ── ～ちゃう / ～じゃう: the spoken contraction of ～てしまう ──
+  // Same shape and the same reason for it as ～とく above: the te-stem kana is in
+  // the pattern so a bare ～ちゃう cannot latch onto another rule's output.
+  { from: "っちゃう", to: "って", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いちゃう", to: "いて", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いじゃう", to: "いで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "しちゃう", to: "して", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "んじゃう", to: "んで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "ちゃう", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
+
+  // ～ちゃう's own past and te-form, spelled out. Reaching them by chaining
+  // through the past rule would mean letting a masu-stem through too, and
+  // ～ちゃい is 云っちゃいけない — ～てはいけない, a different contraction.
+  { from: "っちゃった", to: "って", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "っちゃって", to: "って", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いちゃった", to: "いて", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いちゃって", to: "いて", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いじゃった", to: "いで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "いじゃって", to: "いで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "しちゃった", to: "して", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "しちゃって", to: "して", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "んじゃった", to: "んで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "んじゃって", to: "んで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
+  { from: "ちゃった", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
+  { from: "ちゃって", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
 
   // ── たい (want to) ── applies to masu-stem, which looks like ichidan
   { from: "たい", to: "る", typeIn: V1, typeOut: V1, reason: "tai (want)" },
