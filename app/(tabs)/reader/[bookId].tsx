@@ -41,8 +41,11 @@ import {
   type ReaderSentenceExplanationState,
 } from "@/lib/reader-explain";
 import { useBookmarkStore } from "@/stores/bookmarks";
+import { useListsStore } from "@/stores/lists";
+import { readerHighlightEntryIds } from "@/lib/reader-highlight-lists";
 import {
   readerBookmarkHighlightsAtom,
+  readerHighlightExcludedListIdsAtom,
   readerCounterFuriganaAtom,
   readerFuriganaRuleLevelsAtom,
   readerNameFuriganaAtom,
@@ -470,25 +473,33 @@ export default function BookReaderScreen() {
   const [readerBookmarkHighlights, setReaderBookmarkHighlights] = useAtom(
     readerBookmarkHighlightsAtom,
   );
+  const [readerHighlightExcludedListIds, setReaderHighlightExcludedListIds] = useAtom(
+    readerHighlightExcludedListIdsAtom,
+  );
+  const allLists = useListsStore((state) => state.lists);
+  const highlightableLists = useMemo(
+    () => allLists.filter((list) => !list.isDefault && !list.id.startsWith("_")),
+    [allLists],
+  );
   const [readerCounterFurigana, setReaderCounterFurigana] = useAtom(readerCounterFuriganaAtom);
   const [readerNameFurigana, setReaderNameFurigana] = useAtom(readerNameFuriganaAtom);
   const [furiganaRuleLevels, setFuriganaRuleLevels] = useAtom(readerFuriganaRuleLevelsAtom);
   const [pageAnimations, setPageAnimations] = useAtom(readerPageAnimationsAtom);
   const bookmarkedIds = useBookmarkStore((s) => s.bookmarkedIds);
+  const listIdsByKey = useBookmarkStore((s) => s.listIdsByKey);
 
   const bookmarkMembership = useMemo<ReaderBookmarkMembership>(() => {
-    const entryIds = new Set(
-      [...bookmarkedIds]
-        .filter((key) => key.startsWith("e:"))
-        .map((key) => Number(key.slice(2)))
-        .filter((id) => Number.isFinite(id)),
+    const entryIds = readerHighlightEntryIds(
+      bookmarkedIds,
+      listIdsByKey,
+      readerHighlightExcludedListIds,
     );
     const version = [...entryIds].sort((a, b) => a - b).join(",");
     return {
       version,
       hasEntryId: (entryId) => entryIds.has(entryId),
     };
-  }, [bookmarkedIds]);
+  }, [bookmarkedIds, listIdsByKey, readerHighlightExcludedListIds]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showAdvancedReadingPatterns, setShowAdvancedReadingPatterns] = useState(false);
@@ -1148,6 +1159,44 @@ export default function BookReaderScreen() {
                         }
                       />
                     </View>
+                    {draftSettings.readerBookmarkHighlights && highlightableLists.length > 0 && (
+                      <View className="mt-3 gap-2">
+                        <Text className="text-xs text-muted-foreground">
+                          Every list at once marks about a third of a page. Tap a list to leave it
+                          out.
+                        </Text>
+                        <View className="flex-row flex-wrap gap-2">
+                          {highlightableLists.map((list) => {
+                            const isOn = !readerHighlightExcludedListIds.includes(list.id);
+                            return (
+                              <Pressable
+                                key={list.id}
+                                onPress={() =>
+                                  setReaderHighlightExcludedListIds((prev) =>
+                                    prev.includes(list.id)
+                                      ? prev.filter((id) => id !== list.id)
+                                      : [...prev, list.id],
+                                  )
+                                }
+                                className={`rounded-full border px-3 py-1 ${
+                                  isOn
+                                    ? "border-primary bg-primary/15"
+                                    : "border-border bg-muted/30"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-xs ${
+                                    isOn ? "text-primary" : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {list.name}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
                   </View>
 
                   <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">

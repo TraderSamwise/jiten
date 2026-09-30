@@ -37,6 +37,12 @@ export const defaultSettings = Object.freeze({
   readerNameFurigana: false as boolean,
   readerCounterFurigana: false as boolean,
   readerBookmarkHighlights: false as boolean,
+  /**
+   * Lists whose words the reader must NOT highlight. Excluded rather than
+   * included so a list made later is highlighted without being opted in, and
+   * because every list at once marks about a third of a page.
+   */
+  readerHighlightExcludedListIds: [] as string[],
   readerFuriganaRuleLevels: defaultReaderFuriganaRuleLevels as Record<
     ReaderFuriganaRule,
     Record<FuriganaMatchLevel, boolean>
@@ -125,6 +131,9 @@ export const readerCounterFuriganaAtom = focusAtom(settingsAtom, (o) =>
 );
 export const readerBookmarkHighlightsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerBookmarkHighlights"),
+);
+export const readerHighlightExcludedListIdsAtom = focusAtom(settingsAtom, (o) =>
+  o.prop("readerHighlightExcludedListIds"),
 );
 export const readerFuriganaRuleLevelsAtom = focusAtom(settingsAtom, (o) =>
   o.prop("readerFuriganaRuleLevels"),
