@@ -74,3 +74,116 @@ describe("applyBookmarkHighlightsToHtml", () => {
     expect(surfaces.has("のみ")).toBe(true);
   });
 });
+
+/**
+ * A bookmark saved while reading is almost always saved from an inflected form
+ * — you tap the text in front of you — and the highlighter only ever matched
+ * spellings literally, so 縁がある never lit up 縁があったら and やり込める never
+ * lit up やりこめてい.
+ */
+describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
+  const db = {
+    async getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]> {
+      const kanji = [
+        { text: "縁がある", entry_id: 10 },
+        { text: "やり込める", entry_id: 11 },
+        { text: "事", entry_id: 12 },
+      ];
+      const kana = [
+        { text: "えんがある", entry_id: 10 },
+        { text: "やりこめる", entry_id: 11 },
+        { text: "こと", entry_id: 12 },
+      ];
+      if (sql.includes("FROM kanji WHERE text IN"))
+        return kanji.filter((row) => params?.includes(row.text)) as T[];
+      if (sql.includes("FROM kana WHERE text IN"))
+        return kana.filter((row) => params?.includes(row.text)) as T[];
+      if (sql.includes("SELECT DISTINCT entry_id FROM kanji WHERE entry_id IN"))
+        return [...new Set(kanji.map((row) => row.entry_id))]
+          .filter((id) => params?.includes(id))
+          .map((entry_id) => ({ entry_id })) as T[];
+      throw new Error(`Unexpected SQL: ${sql}`);
+    },
+    async getFirstAsync<T>(): Promise<T | null> {
+      return null;
+    },
+  };
+  const bookmarked = (...ids: number[]) => ({
+    version: "test",
+    size: ids.length,
+    hasEntryId: (id: number) => ids.includes(id),
+  });
+
+  it("finds the page's inflected form for a bookmarked entry", async () => {
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>どうせもう縁があったら、その時は</p>",
+      bookmarked(10),
+    );
+    expect([...surfaces]).toContain("縁があったら");
+  });
+
+  it("follows an entry written in kana on the page", async () => {
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>相手をやりこめていく痛快さ</p>",
+      bookmarked(11),
+    );
+    expect([...surfaces]).toContain("やりこめてい");
+  });
+
+  it("still finds the plain dictionary form", async () => {
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>縁がある人だ</p>",
+      bookmarked(10),
+    );
+    expect([...surfaces]).toContain("縁がある");
+  });
+
+  /**
+   * A bare kana reading of a bookmarked kanji word is not evidence — 事 would
+   * light up every こと on the page. Only an undone inflection is.
+   */
+  it("does not light up a bare kana reading of a kanji entry", async () => {
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>そんなことはない</p>",
+      bookmarked(12),
+    );
+    expect([...surfaces]).not.toContain("こと");
+  });
+
+  /**
+   * Deinflecting against every list at once marks 57% of a slice instead of
+   * 29%, so past a few thousand entries the page is better off literal.
+   */
+  it("stops deinflecting once the bookmarked set is too big to stay readable", async () => {
+    const huge = { version: "v", size: 12000, hasEntryId: (id: number) => id === 10 };
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>どうせもう縁があったら、その時は</p>",
+      huge,
+    );
+    expect([...surfaces]).not.toContain("縁があったら");
+  });
+
+  it("stays literal when the caller does not say how big the set is", async () => {
+    const unsized = { version: "v", hasEntryId: (id: number) => id === 10 };
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>どうせもう縁があったら、その時は</p>",
+      unsized,
+    );
+    expect([...surfaces]).not.toContain("縁があったら");
+  });
+
+  it("finds nothing when the entry is not bookmarked", async () => {
+    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
+      db,
+      "<p>どうせもう縁があったら</p>",
+      bookmarked(99),
+    );
+    expect(surfaces.size).toBe(0);
+  });
+});

@@ -241,6 +241,40 @@ of 見る, which is common, while ご覧なさい as an entry is not, so the sho
 wins on commonness. Left as is rather than raising the ichidan stem floor,
 which would cost 見なさい.
 
+### Bookmark highlighting: a chosen set of lists, deinflected while it is small
+
+`bookmarkedIds` is every entry in every list. For one real library that is
+RTK6th 2927, Hardest 153, Problems 736 and Common 8578, and measured against a
+12,000-entry stand-in on a 3,000-character slice it marks **29.5% of the page
+before any change** — which is why a word just saved did not stand out.
+
+Deinflecting that same set was shipped in `caae544` and reverted in `fc28052`:
+it took coverage to **57.1%**, half the page. The fix was the set, not the
+matcher. Reader settings now show the lists as chips and a tap leaves one out;
+the setting stores the **excluded** lists so a list made later is highlighted
+without being opted in (`readerHighlightEntryIds`).
+
+With the set under control, deinflection is back and gated on its size, because
+what it costs depends entirely on that. Measured through the real function on
+the same slice:
+
+| entries | literal | deinflected |
+| ------- | ------- | ----------- |
+| 150     | 3.2%    | 3.6%        |
+| 750     | 13.4%   | 15.4%       |
+| 3000    | 13.5%   | 18.8%       |
+| 12000   | 29.5%   | 57.1%       |
+
+`MAX_ENTRIES_FOR_DEINFLECTION` is 3000. Below it the page stays readable and
+のめりこんだ, 勧誘される, 退団した and やりこめてい all light up; above it the highlighter
+stays literal, and a caller that does not say how big its set is gets literal
+too. The kana guard carries over with one exception: a kana surface still loses
+to the kanji its entry is written with **unless an inflection was undone to
+reach it**, so a bookmarked 事 does not light up every こと.
+
+Cost on the per-slice render path: 25ms and 71 queries literal, 71ms and 109
+deinflected.
+
 ## Rejected
 
 ### Alternatives weighed on 2026-09-28 and not taken

@@ -93,4 +93,12 @@ export interface ReaderBookRecord {
 export interface ReaderBookmarkMembership {
   version: string;
   hasEntryId: (entryId: number) => boolean;
+  /**
+   * How many entries are in the set. Deinflecting the page against a small set
+   * costs a few points of coverage and finds the inflected form the reader
+   * actually saved; against a big one it buries the page, so the highlighter
+   * uses this to decide. Measured on a 3,000-character slice: 150 entries go
+   * 3.2% → 3.6% covered, 3,000 go 13.5% → 18.8%, and 12,000 go 29.5% → 57.1%.
+   */
+  size?: number;
 }
