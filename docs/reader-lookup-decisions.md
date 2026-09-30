@@ -216,6 +216,31 @@ which was right for "three or four" — with nothing composed in its place, sinc
 a bare run of digits with no power is not a number this reads. Two surfaces
 against five corrected.
 
+### ～ちゃう / ～じゃう and ～なさい
+
+喋っちゃいなさいって came back as fragments — っち, ちゃい — because neither piece
+existed: no ～ちゃう rule and no ～なさい rule. Both are now in, and both are
+spelled out per stem rather than left to chain.
+
+**～ちゃう** is ～てしまう, handled like ～とく. The rules carry
+`NOT_MASU_STEM`, because with `typeIn: ANY` the masu-stem rule turns 云っちゃい
+into 云っちゃう and then 言う, swallowing the いけない of 云っちゃいけない — which
+is ～てはいけない, a different contraction. That mask also blocks the chain to
+～ちゃった, so the past, te-form and ～なさい combinations are listed explicitly.
+Zero corpus taps change: Bocchan is 1906 and has no ～ちゃう at all, so the gate
+can only show this costs nothing. 喋っちゃった→喋る and 読んじゃった→読む are
+checked directly instead.
+
+**～なさい** is the polite imperative on the masu-stem, one rule per godan row
+plus ichidan, する and くる. 45 corpus taps change: お使いなさい, お出しなさい,
+お持ちなさいます, お上がりなさい and お買いなさい all resolve as one phrase where
+the tap previously split them. Gate 97.9% → 98.0%, 129 pairs → 128.
+
+**Accepted regression: ご覧なさい → 覧なさい** (8 taps). 覧る is a listed spelling
+of 見る, which is common, while ご覧なさい as an entry is not, so the shorter span
+wins on commonness. Left as is rather than raising the ichidan stem floor,
+which would cost 見なさい.
+
 ## Rejected
 
 ### Alternatives weighed on 2026-09-28 and not taken

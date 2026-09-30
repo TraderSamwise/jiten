@@ -327,6 +327,24 @@ const RULES: DeinflectRule[] = [
   { from: "でいる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
   { from: "でる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
 
+  // ── ～なさい: the polite imperative, built on the masu-stem ──
+  // Spelled out per row rather than stripping なさい and leaving the stem to the
+  // masu-stem rules, so it cannot fire on a bare なさい or on a な that is the
+  // negative imperative.
+  { from: "いなさい", to: "う", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "きなさい", to: "く", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "ぎなさい", to: "ぐ", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "しなさい", to: "す", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "ちなさい", to: "つ", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "になさい", to: "ぬ", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "びなさい", to: "ぶ", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "みなさい", to: "む", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "りなさい", to: "る", typeIn: ANY, typeOut: V5, reason: "polite imperative" },
+  { from: "なさい", to: "る", typeIn: V1, typeOut: V1, reason: "polite imperative", minStem: 1 },
+  { from: "しなさい", to: "する", typeIn: SURU, typeOut: SURU, reason: "polite imperative" },
+  { from: "きなさい", to: "くる", typeIn: KURU, typeOut: KURU, reason: "polite imperative" },
+  { from: "来なさい", to: "来る", typeIn: KURU, typeOut: KURU, reason: "polite imperative" },
+
   // ── ～とく / ～どく: the spoken contraction of ～ておく ──
   // Rewritten to the te-form so the rules above finish the job: 置いとく → 置いて
   // → 置く. The te-stem kana is part of the pattern rather than left to minStem,
@@ -365,6 +383,45 @@ const RULES: DeinflectRule[] = [
   { from: "んじゃって", to: "んで", typeIn: NOT_MASU_STEM, typeOut: V5, reason: TE_SHIMAU_REASON },
   { from: "ちゃった", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
   { from: "ちゃって", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
+
+  // ～ちゃう under ～なさい, spelled out for the same reason: the なさい rules type
+  // their output V5, which NOT_MASU_STEM refuses.
+  {
+    from: "っちゃいなさい",
+    to: "って",
+    typeIn: NOT_MASU_STEM,
+    typeOut: V5,
+    reason: TE_SHIMAU_REASON,
+  },
+  {
+    from: "いちゃいなさい",
+    to: "いて",
+    typeIn: NOT_MASU_STEM,
+    typeOut: V5,
+    reason: TE_SHIMAU_REASON,
+  },
+  {
+    from: "いじゃいなさい",
+    to: "いで",
+    typeIn: NOT_MASU_STEM,
+    typeOut: V5,
+    reason: TE_SHIMAU_REASON,
+  },
+  {
+    from: "しちゃいなさい",
+    to: "して",
+    typeIn: NOT_MASU_STEM,
+    typeOut: V5,
+    reason: TE_SHIMAU_REASON,
+  },
+  {
+    from: "んじゃいなさい",
+    to: "んで",
+    typeIn: NOT_MASU_STEM,
+    typeOut: V5,
+    reason: TE_SHIMAU_REASON,
+  },
+  { from: "ちゃいなさい", to: "て", typeIn: V1, typeOut: V1, reason: TE_SHIMAU_REASON, minStem: 1 },
 
   // ── たい (want to) ── applies to masu-stem, which looks like ichidan
   { from: "たい", to: "る", typeIn: V1, typeOut: V1, reason: "tai (want)" },
