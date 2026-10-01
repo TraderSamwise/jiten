@@ -27,9 +27,9 @@ describe("bookmark highlight separation", () => {
     for (const layoutProperty of [
       "margin",
       "padding",
-      "border:",
-      "border-width",
+      "border",
       "letter-spacing",
+      "word-spacing",
     ]) {
       expect(rule, `${layoutProperty} would shift the pagination`).not.toContain(layoutProperty);
     }
