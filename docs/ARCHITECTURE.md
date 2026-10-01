@@ -1310,7 +1310,12 @@ The dictionary lives in `assets/` as five database files plus a manifest:
 - `dictionary.db` — full dictionary (~120MB): all entries, kanji, kana, senses, pitch accents, FTS index
 - `dictionary-mini.db` — mini dictionary (~32MB, ~13MB compressed): common entries (~22.5k) + all kanji tables. This is what users download at the gate — the full DB downloads in the background afterward.
 - `dictionary-audio.db` — word audio (~190MB): MP3 BLOBs for pronunciation
-- `dictionary-extended.db` — extended data (~110MB): synonyms (WordNet), names (JMnedict) with FTS5
+- `dictionary-extended.db` — extended data (~112MB): synonyms (WordNet), names (JMnedict) with FTS5.
+  `names.name_freq` says how often a spelling is read each way when it names a
+  person, built by `yarn build:name-freq` from `data/name-frequency.tsv` — see
+  [data/README.md](../data/README.md) for its sources, limits and how to
+  regenerate it, and [reader-lookup-decisions.md](reader-lookup-decisions.md)
+  for how the reader uses it. Extended DB version **4**.
 - `dict-manifest.json` — version, file sizes (full + mini + compressed), and download URLs
 
 #### Mini DB architecture
