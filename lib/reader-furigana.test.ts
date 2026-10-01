@@ -1093,7 +1093,7 @@ describe("counter readings vs dictionary words", () => {
     const dict = new Database(":memory:");
     dict.exec(`
       CREATE TABLE entries (id INTEGER PRIMARY KEY, common INTEGER, jlpt_level INTEGER);
-      CREATE TABLE kanji (entry_id INTEGER, text TEXT, tags TEXT);
+      CREATE TABLE kanji (entry_id INTEGER, text TEXT, tags TEXT, common INTEGER);
       CREATE TABLE kana (entry_id INTEGER, text TEXT, tags TEXT);
       CREATE TABLE kanji_characters (literal TEXT, readings_on TEXT, readings_kun TEXT, nanori TEXT);
     `);
@@ -1102,8 +1102,8 @@ describe("counter readings vs dictionary words", () => {
         .prepare("INSERT INTO entries (id, common, jlpt_level) VALUES (?, ?, NULL)")
         .run(r.id, r.common);
       dict
-        .prepare("INSERT INTO kanji (entry_id, text, tags) VALUES (?, ?, NULL)")
-        .run(r.id, r.kanji);
+        .prepare("INSERT INTO kanji (entry_id, text, tags, common) VALUES (?, ?, NULL, ?)")
+        .run(r.id, r.kanji, r.common);
       dict.prepare("INSERT INTO kana (entry_id, text, tags) VALUES (?, ?, NULL)").run(r.id, r.kana);
     }
 
