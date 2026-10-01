@@ -63,6 +63,14 @@ ruby rt {
 .bookmarked-word {
   background: var(--reader-bookmark-bg);
   border-radius: 2px;
+  /* Two bookmarked words side by side read as one. A ring in the page colour
+     parts them, and it is paint rather than layout on purpose: pagination
+     measures characters by absolute offset, so a margin here would move every
+     character after the highlight and change where pages break. Inset, so it
+     stays inside the span: an outset ring reaches into the negative margin
+     <rt> sits in, and punches a hole in the ancestor background of a selected
+     ruby word. */
+  box-shadow: inset 0 0 0 1px var(--reader-bg);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
