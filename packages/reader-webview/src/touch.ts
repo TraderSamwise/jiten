@@ -3,6 +3,12 @@ import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText, getAbsRangeBounds, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
 import {
+  postFuriganaPinTarget,
+  pressTargetAt,
+  resolvePressedRun,
+  type PressTarget,
+} from "./furigana-pin";
+import {
   nextPage,
   prevPage,
   expandPageForHighlight,
@@ -22,8 +28,44 @@ export function setupTouchHandlers(): void {
   let dragStartAbs = -1;
   let dragEndAbs = -1;
   let prevTouchX = 0;
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressFired = false;
+  /**
+   * The hit test is done when the finger lands, not when the timer fires: a
+   * page animation or any reflow in between moves the text under the original
+   * coordinates, and the run reported would be a character the user never
+   * touched. Only the paragraph walk waits for the timer.
+   */
+  let pressTarget: PressTarget | null = null;
 
   const DECIDE_THRESHOLD = 15;
+  /** Long enough not to fire on a tap, short enough to feel deliberate. */
+  const LONG_PRESS_MS = 500;
+  /** A finger is never still; this is the slack a press gets before it is a drag. */
+  const LONG_PRESS_SLACK = 10;
+
+  function cancelLongPress(): void {
+    pressTarget = null;
+    if (longPressTimer === null) return;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  /**
+   * Let go of the click guard the long press took.
+   *
+   * It must happen on touchcancel as well as touchend: the sheet the press
+   * opens is a native modal, and presenting it while the finger is still down
+   * cancels the WebView's touch, so touchend never arrives. Leaving the guard
+   * set swallows every later tap in the book.
+   */
+  function releaseLongPressClickGuard(): void {
+    if (!longPressFired) return;
+    longPressFired = false;
+    setTimeout(function () {
+      state.suppressClick = false;
+    }, 50);
+  }
 
   state.contentEl!.addEventListener(
     "touchstart",
@@ -46,6 +88,29 @@ export function setupTouchHandlers(): void {
           dragStartAbs = nodeOffsetToAbsolute(caret.node, caret.offset);
         }
       }
+
+      // Hold still on a kanji run to be asked which reading it should carry.
+      cancelLongPress();
+      longPressFired = false;
+      // A second finger is a pinch or a stray thumb, not a press.
+      if (e.touches.length > 1) return;
+      pressTarget = pressTargetAt(touchStartX, touchStartY);
+      if (!pressTarget) return;
+      const pressX = touchStartX;
+      const pressY = touchStartY;
+      longPressTimer = setTimeout(function () {
+        longPressTimer = null;
+        if (state.dragMode === "selecting" || state.dragMode === "swiping") return;
+        if (!pressTarget) return;
+        const pressed = resolvePressedRun(pressTarget);
+        if (!pressed) return;
+        postFuriganaPinTarget(pressed, pressX, pressY);
+        longPressFired = true;
+        // The finger is still down; the click it ends with would otherwise
+        // open the tap lookup on top of the picker.
+        state.suppressClick = true;
+        state.dragMode = "idle";
+      }, LONG_PRESS_MS);
     },
     { passive: true },
   );
@@ -57,6 +122,10 @@ export function setupTouchHandlers(): void {
       const cy = e.touches[0].clientY;
       const dx = Math.abs(cx - touchStartX);
       const dy = Math.abs(cy - touchStartY);
+
+      if (dx > LONG_PRESS_SLACK || dy > LONG_PRESS_SLACK || e.touches.length > 1) {
+        cancelLongPress();
+      }
 
       // Decide mode once finger has moved enough
       if (state.dragMode === "undecided" && (dx > DECIDE_THRESHOLD || dy > DECIDE_THRESHOLD)) {
@@ -105,6 +174,7 @@ export function setupTouchHandlers(): void {
   state.contentEl!.addEventListener(
     "touchend",
     function (e: TouchEvent) {
+      cancelLongPress();
       const dx = e.changedTouches[0].clientX - touchStartX;
       const dt = Date.now() - touchStartTime;
 
@@ -162,6 +232,25 @@ export function setupTouchHandlers(): void {
       dragStartAbs = -1;
       state.swipeHandled = false;
       state.dragMode = "idle";
+      releaseLongPressClickGuard();
+    },
+    { passive: true },
+  );
+
+  state.contentEl!.addEventListener(
+    "touchcancel",
+    function () {
+      cancelLongPress();
+      dragStartAbs = -1;
+      dragEndAbs = -1;
+      state.swipeHandled = false;
+      state.dragMode = "idle";
+      releaseLongPressClickGuard();
+      // The drag-select branch sets the guard too, and its own release only
+      // runs on touchend.
+      setTimeout(function () {
+        state.suppressClick = false;
+      }, 50);
     },
     { passive: true },
   );

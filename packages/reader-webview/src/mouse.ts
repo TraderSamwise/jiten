@@ -2,6 +2,7 @@ import { state } from "./state";
 import { isJapanese } from "./japanese";
 import { nodeOffsetToAbsolute, getAbsText, getAbsRangeBounds, resolveCaretAt } from "./text";
 import { clearHighlight, highlightAbsRange } from "./highlight";
+import { reportFuriganaPinTarget } from "./furigana-pin";
 import {
   nextPage,
   prevPage,
@@ -24,7 +25,20 @@ export function setupMouseHandlers(): void {
 
   const DECIDE_THRESHOLD = 15;
 
+  // The web reader has no long press. Right-click is what asks the same thing.
+  state.contentEl!.addEventListener("contextmenu", function (e: MouseEvent) {
+    if (state.dragMode === "selecting" || state.dragMode === "swiping") return;
+    if (!reportFuriganaPinTarget(e.clientX, e.clientY)) return;
+    e.preventDefault();
+    state.suppressClick = true;
+    setTimeout(function () {
+      state.suppressClick = false;
+    }, 50);
+  });
+
   state.contentEl!.addEventListener("mousedown", function (e: MouseEvent) {
+    // The right button is the pin gesture; it must not also start a drag.
+    if (e.button !== 0) return;
     // Don't start a new gesture if touch already claimed it
     if (state.dragMode !== "idle" && state.dragMode !== "undecided") return;
     resetPageShift();
