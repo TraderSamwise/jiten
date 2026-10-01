@@ -856,6 +856,21 @@ right.
 敷きこんで stays wrong, pinned as `knownRed` in the fixture with あぐらをかいた
 beside it as the case that rules the cheap fixes out.
 
+**It is a dictionary gap, and that is checkable.** The same shape with the
+compound present is right:
+
+| text       | compound in JMdict | きこんで painted |
+| ---------- | ------------------ | ---------------- |
+| 敷きこんで | no 敷き込む        | **yes**          |
+| 書きこんで | 書き込む           | no               |
+| 持ちこんで | 持ち込む           | no               |
+
+So nothing here needs a cleverer rule; it needs the entry. What it also
+exposed is the cost of confirmation not being positional: put 敷きこんで and
+書きこんで in one sentence and きこんで is painted **twice**, the second time
+inside a token that is correct on its own, because the surface was confirmed
+somewhere else on the page. That half survives a dictionary fix. Case 37.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first

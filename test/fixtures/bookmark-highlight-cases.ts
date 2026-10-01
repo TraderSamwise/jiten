@@ -328,6 +328,15 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     note: "ございません is the polite negative of ござる, and いません is matching 射る. Found in the corpus while narrowing the kana guard, and exposed by the `exp` correction below it rather than caused by it — 用いません and 構いません are both whole tokens and both right, so this is the boundary falling badly on one word, not the rule.",
   },
   {
+    id: "37",
+    text: "クッションを敷きこんで、ノートに住所を書きこんで。",
+    bookmarks: [1423040 /* 着込む きこむ v5m */],
+    mustHighlight: [],
+    mustNotHighlight: ["きこんで"],
+    knownRed: ["きこんで"],
+    note: "Two bugs in one sentence, and only the first is about 敷き込む missing from the dictionary. 書きこんで on its own is a single token and paints nothing — but confirmation still ships a SET of surfaces rather than positions, so きこんで confirmed over by 敷きこんで is painted inside 書きこんで as well. That half stays wrong even if the dictionary gains 敷き込む; it is the positional-spans work.",
+  },
+  {
     id: "24",
     text: "帰りに店に寄った。",
     bookmarks: [1221270 /* 帰る かえる v5r */],
