@@ -288,6 +288,112 @@ describeWithDb("useJapaneseReader furigana pins", () => {
     );
   });
 
+  /**
+   * The long press reaches the hook as a message, like a tap does. The sheet
+   * opens before the dictionaries have answered — half a second of holding a
+   * finger down has to show something — and fills in after.
+   */
+  test("a long press opens the sheet at once and fills it in", async () => {
+    const { result } = render(fakePins({ 杏子: "きょうこ" }));
+    await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
+
+    await act(async () => {
+      await result.current.readerViewProps!.onMessage(
+        JSON.stringify({ type: "furiganaPin", run: "杏子", currentReading: "きょうこ" }),
+      );
+    });
+
+    expect(result.current.furiganaPinTarget?.run).toBe("杏子");
+    expect(result.current.furiganaPinTarget?.pinnedReading).toBe("きょうこ");
+    await waitFor(() => expect(result.current.furiganaPinTarget?.candidates).not.toBeNull());
+    expect(result.current.furiganaPinTarget!.candidates!.map((c) => c.reading)).toContain("あんず");
+  });
+
+  test("closing the sheet forgets what it was asking about", async () => {
+    const { result } = render(fakePins());
+    await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
+    await act(async () => {
+      await result.current.readerViewProps!.onMessage(
+        JSON.stringify({ type: "furiganaPin", run: "杏子", currentReading: "" }),
+      );
+    });
+    expect(result.current.furiganaPinTarget).not.toBeNull();
+
+    act(() => result.current.closeFuriganaPinSheet());
+    expect(result.current.furiganaPinTarget).toBeNull();
+  });
+
+  test("a long press on something with no run says nothing", async () => {
+    const { result } = render(fakePins());
+    await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
+    await act(async () => {
+      await result.current.readerViewProps!.onMessage(
+        JSON.stringify({ type: "furiganaPin", run: "", currentReading: "" }),
+      );
+    });
+    expect(result.current.furiganaPinTarget).toBeNull();
+  });
+
+  /**
+   * The page is repainted as soon as a write returns, so a write that failed
+   * must not return. Showing a reading nothing remembers is worse than showing
+   * none: it looks saved until the next reload.
+   */
+  test("leaves the page alone when the reading could not be stored", async () => {
+    const pins = fakePins();
+    const failing: ReaderFuriganaPins = {
+      ...pins,
+      set: async () => {
+        throw new Error("disk full");
+      },
+    };
+    const { result } = render(failing);
+    await waitFor(() => expect(result.current.html).not.toBeNull());
+
+    await act(async () => {
+      await expect(result.current.setFuriganaPin("杏子", "きょうこ")).rejects.toThrow("disk full");
+    });
+
+    expect(result.current.furiganaPins.has("杏子")).toBe(false);
+  });
+
+  /**
+   * The screen stays mounted when the book changes. A sheet still asking about
+   * a run in the book before it would write the next choice to this one.
+   */
+  test("forgets the sheet and the pins when the book changes", async () => {
+    const pins = fakePins({ 杏子: "きょうこ" });
+    const other = "ちがう本の文。";
+    let currentBookId = "b1";
+    const { result, rerender } = renderHook(
+      ({ bookId }: { bookId: string }) =>
+        useJapaneseReader({
+          bookId,
+          bookSource: {
+            loadBook: async (id) =>
+              id === "b1" ? book : { ...book, id, rawContent: other, totalChars: other.length },
+            saveProgress: async () => {},
+          },
+          backend: { dictDb, extendedDb: null, furiganaPins: pins },
+          settings: SETTINGS,
+          settingsActions: SETTINGS_ACTIONS,
+          isDark: true,
+        }),
+      { initialProps: { bookId: currentBookId } },
+    );
+    await waitFor(() => expect(result.current.html).toContain("きょうこ"));
+    await act(async () => {
+      await result.current.readerViewProps!.onMessage(
+        JSON.stringify({ type: "furiganaPin", run: "杏子", currentReading: "きょうこ" }),
+      );
+    });
+    expect(result.current.furiganaPinTarget).not.toBeNull();
+
+    currentBookId = "b9";
+    rerender({ bookId: currentBookId });
+    expect(result.current.furiganaPinTarget).toBeNull();
+  });
+
   test("does nothing, rather than throwing, with no pin store behind it", async () => {
     const backend: JapaneseReaderBackend = { dictDb, extendedDb: null };
     const { result } = renderHook(() =>

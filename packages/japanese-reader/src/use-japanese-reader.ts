@@ -482,6 +482,18 @@ export function useJapaneseReader({
     bookmarkMembershipRef.current = bookmarks ?? null;
   }, [bookmarks]);
 
+  /**
+   * A different book is a different set of pins, and the sheet was asking about
+   * a run in the one before it. Leaving either in place writes the next choice
+   * to the wrong book.
+   */
+  useEffect(() => {
+    furiganaPinRequestRef.current++;
+    setFuriganaPinTarget(null);
+    furiganaPinsRef.current = new Map();
+    setFuriganaPinsKey("");
+  }, [bookId]);
+
   const clearPendingTapTooltipTimer = useCallback(() => {
     if (pendingTapTooltipTimerRef.current) {
       clearTimeout(pendingTapTooltipTimerRef.current);
@@ -957,6 +969,8 @@ export function useJapaneseReader({
   const setFuriganaPin = useCallback(
     async (surface: string, reading: string) => {
       if (!furiganaPins || !bookId || surface.length === 0) return;
+      // Store first. A rejection here must leave the page as it was, rather
+      // than painting a reading nothing remembers.
       await furiganaPins.set(bookId, surface, reading);
       await applyPinChange((pins) => {
         pins.set(surface, reading);

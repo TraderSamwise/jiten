@@ -17,6 +17,7 @@ import { useColorScheme } from "nativewind";
 import { useAtom } from "jotai";
 import { CustomHeaderScreen, useWebBackdrop } from "@/components/CustomHeaderScreen";
 import { DictionaryPopup } from "@/components/DictionaryPopup";
+import { FuriganaPinSheet } from "@/components/FuriganaPinSheet";
 import { PhasedLoadingOverlay } from "@/components/PhasedLoadingOverlay";
 import { Separator } from "@/components/ui/separator";
 import { Text } from "@/components/ui/text";
@@ -63,6 +64,8 @@ import {
 } from "@tradersamwise/jiten-reader-react-native";
 import { ReaderView } from "@tradersamwise/jiten-reader-react-native/reader-view";
 import { createJitenReaderBookSource } from "./book-source";
+import { createJitenFuriganaPins } from "./furigana-pins";
+import { confirm } from "@/lib/confirm";
 
 const TOOLBAR_GAP = 24;
 const TOOLBAR_DRAWER_GAP = 8;
@@ -541,13 +544,19 @@ export default function BookReaderScreen() {
     [markDirty, userDb],
   );
 
+  const furiganaPinStore = useMemo(
+    () => (userDb ? createJitenFuriganaPins(userDb, markDirty) : undefined),
+    [markDirty, userDb],
+  );
+
   const readerBackend = useMemo(
     () => ({
       dictDb,
       extendedDb,
       bookmarks: bookmarkMembership,
+      furiganaPins: furiganaPinStore,
     }),
-    [bookmarkMembership, dictDb, extendedDb],
+    [bookmarkMembership, dictDb, extendedDb, furiganaPinStore],
   );
 
   const readerSettings = useMemo(
@@ -622,11 +631,55 @@ export default function BookReaderScreen() {
     applySettingsDraft,
     patchBook,
     hasSourceFurigana,
+    furiganaPinTarget,
+    closeFuriganaPinSheet,
+    setFuriganaPin,
+    clearFuriganaPin,
+    clearAllFuriganaPins,
+    furiganaPins,
   } = reader;
 
   useEffect(() => {
     if (missingBook) goBack();
   }, [goBack, missingBook]);
+
+  const handleChooseFuriganaReading = useCallback(
+    (reading: string) => {
+      const run = furiganaPinTarget?.run;
+      closeFuriganaPinSheet();
+      if (!run) return;
+      setFuriganaPin(run, reading).catch((err) => {
+        console.error("[reader] could not pin a reading", err);
+      });
+    },
+    [closeFuriganaPinSheet, furiganaPinTarget?.run, setFuriganaPin],
+  );
+
+  /**
+   * Asked for, because this is the one destructive row in the reader and it
+   * sits inside a Cancel/Apply sheet that cannot undo it.
+   */
+  const handleClearAllFuriganaPins = useCallback(async () => {
+    const ok = await confirm(
+      "Clear pinned readings",
+      "Every reading you pinned in this book goes back to the dictionary's.",
+    );
+    if (!ok) return;
+    try {
+      await clearAllFuriganaPins();
+    } catch (err) {
+      console.error("[reader] could not clear the pinned readings", err);
+    }
+  }, [clearAllFuriganaPins]);
+
+  const handleRemoveFuriganaPin = useCallback(() => {
+    const run = furiganaPinTarget?.run;
+    closeFuriganaPinSheet();
+    if (!run) return;
+    clearFuriganaPin(run).catch((err) => {
+      console.error("[reader] could not remove a pinned reading", err);
+    });
+  }, [clearFuriganaPin, closeFuriganaPinSheet, furiganaPinTarget?.run]);
 
   const openSettings = useCallback(() => {
     setDraftSettings(createSettingsDraft());
@@ -862,6 +915,27 @@ export default function BookReaderScreen() {
                   </View>
 
                   <Separator className="opacity-40" />
+
+                  {furiganaPins.size > 0 ? (
+                    <View className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-3">
+                      <View className="flex-row items-center justify-between gap-3">
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-foreground">
+                            Pinned readings
+                          </Text>
+                          <Text className="text-[11px] text-muted-foreground">
+                            {furiganaPins.size} in this book
+                          </Text>
+                        </View>
+                        <Pressable
+                          onPress={() => void handleClearAllFuriganaPins()}
+                          className="rounded-lg border border-border px-3 py-2"
+                        >
+                          <Text className="text-xs text-destructive">Clear all</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : null}
 
                   {furiganaRuleSections.map(({ title, rules }) => (
                     <View key={title} className="gap-2">
@@ -1241,6 +1315,17 @@ export default function BookReaderScreen() {
                 onDismiss={dismissJumpSlider}
               />
             )}
+
+            <FuriganaPinSheet
+              visible={furiganaPinTarget !== null}
+              run={furiganaPinTarget?.run ?? ""}
+              candidates={furiganaPinTarget?.candidates ?? []}
+              loading={furiganaPinTarget?.candidates == null}
+              pinnedReading={furiganaPinTarget?.pinnedReading ?? null}
+              onChoose={handleChooseFuriganaReading}
+              onRemove={handleRemoveFuriganaPin}
+              onClose={closeFuriganaPinSheet}
+            />
 
             <DictionaryPopup
               visible={showLookupPopup}
