@@ -58,7 +58,10 @@
     "version:rollback": "eas-release rollback",
     "version:set": "eas-release set",
     "version:sync": "eas-release sync",
-    "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs"
+    "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs",
+    "build:name-freq": "tsx scripts/build-name-frequency.ts",
+    "sweep:furigana": "tsx scripts/furigana-sweep.ts",
+    "probe:names": "tsx scripts/probe-name-furigana.ts"
   },
   "dependencies": {
     "@tradersamwise/jiten-reader-react-native": "0.1.0",
@@ -154,6 +157,7 @@
     "patch-package": "^8.0.1",
     "prettier": "^3.8.1",
     "react-test-renderer": "19.1.0",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8",
     "vitest": "^4.0.18",

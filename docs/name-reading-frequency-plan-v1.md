@@ -118,7 +118,12 @@ and it discards pen names for free (石崎 寿夫 read すしお has no consiste
 split). (3) and (4) need no split at all: the name item already is one
 component, which is why they are worth pooling in despite being small.
 
-Rows are deduped on (label, kana) first; 5,861 were duplicates.
+Rows are not deduplicated. Collapsing identical name-and-reading pairs would
+suppress exactly the readings common enough to have namesakes. Deduping on the
+Wikidata entity instead would be strictly right, but selecting `?h` triples the
+response payload and the large shards stop coming back within the endpoint's
+timeout; duplicate items for one person are rarer than shared names and fall on
+no particular reading.
 
 ### Measured
 

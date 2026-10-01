@@ -82,3 +82,6 @@ rtk-game/
 
 # Scratch measurement scripts (corpus dumps, benchmarks) — never committed
 .*.tmp.ts
+
+# Furigana sweep snapshots (generated, compared locally)
+*.sweep.json

@@ -168,3 +168,78 @@ user wording.
 
 After running either, the rebuilt strokes DB **and** `dict-manifest.json`
 (`strokes.version` + `sizeBytes`) must be published together.
+
+---
+
+# Name reading frequency (`name-frequency.tsv`)
+
+How often a Japanese name spelling is actually read a given way, as
+`kanji \t kana \t count`. Built into the `names.name_freq` column of
+`assets/dictionary-extended.db` and used to rank furigana for names.
+
+## Why it exists
+
+JMnedict lists every reading a spelling has ever taken and ranks none of them.
+杏子 offers thirteen — あこ, あん, あんこ, あんず, あんずこ, きょうこ, きょうし,
+きようこ, ちょうこ, なつこ, ももこ, ようこ, りょうこ — which score identically,
+so the reader printed whichever row SQLite returned first. That was あんず, the
+apricot, for a character called きょうこ.
+
+Nothing in JMdict, JMnedict or KANJIDIC separates a reading people use from one
+merely recorded, so the ranking has to come from outside.
+
+## How it is derived
+
+Four Wikidata queries, pooled (`scripts/build-name-frequency.ts`):
+
+|                      | pattern                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| people               | `?h wdt:P31 wd:Q5 ; wdt:P1814 ?kana ; rdfs:label ?l` (lang ja) |
+| fictional characters | the same against `wdt:P31/wdt:P279* wd:Q95074`                 |
+| given-name items     | `?h wdt:P735 ?gn . ?gn rdfs:label ?gl ; wdt:P1814 ?k`          |
+| family-name items    | the same via `wdt:P734`                                        |
+
+Fictional characters are included deliberately: `P31 wd:Q5` is "human" and
+excludes every character in every novel, which is the case this exists for.
+
+The first two give a whole-name reading (`まつやま ちはる`) against a label that
+is not split the same way (`松山千春`), so the kanji boundary has to be found.
+It is found by checking candidates against JMnedict rather than guessed: a split
+counts only when the `names` table already holds both halves with those exact
+readings, and only when exactly one boundary fits. **This cannot invent a
+reading** — it ranks readings JMnedict already lists — and it discards pen names
+for free, since 石崎 寿夫 read すしお splits nowhere.
+
+Rows are not deduplicated. Two people really can be called 田中洋子, and
+collapsing them would suppress exactly the readings common enough to have
+namesakes — the opposite of what is being measured. Deduping on the Wikidata
+entity would be strictly better, but selecting it triples the payload and the
+large shards stop returning; duplicate items for one person are rarer than
+shared names and fall on no particular reading.
+
+## What the counts are not
+
+**Undercounts, not probabilities.** A fifth of the input finds no consistent
+split and contributes nothing. Two consequences, both load-bearing:
+
+- **Never compare counts across spellings.** 高遠's 4 and 洋子's 267 say nothing
+  about each other. The reader uses them only to order readings of one spelling.
+- **Zero is not evidence against a reading**, only the absence of evidence —
+  and most readings have none.
+
+## Regenerating
+
+```bash
+yarn build:name-freq           # add --refresh to ignore the .cache copies
+yarn build:extended            # folds it into names.name_freq
+```
+
+The first needs `assets/dictionary-extended.db` present, because it validates
+against that table. Wikidata is live, so the output drifts with the source;
+that is why the derived file is committed and the dump is not. Per-shard
+responses are cached under `.cache/name-freq/`.
+
+## License
+
+Wikidata is CC0. The derived counts are CC-BY-SA 4.0 with the rest of this
+directory.
