@@ -1,5 +1,31 @@
 # Bookmark highlighting — repair plan v1
 
+**Status: executed, 2026-10-01.** All six phases are done and committed. The
+decisions and every number are in
+[reader-lookup-decisions.md](reader-lookup-decisions.md); this file is the plan
+they were measured against, kept with each phase's outcome written against it.
+
+| phase                        | outcome                                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 0 — explain 一緒 / おいしい  | Not a membership bug. 一緒 was never painted — 緒 was; おいしい is two abutting spans, おい and しい. `2d88015` |
+| 1 — fixture and instrument   | 22 labelled cases with a `knownRed` ratchet, and `yarn why:highlight --text` for a whole page. `6ed533a`        |
+| 2 — part-of-speech validity  | Corpus 1,926 → 1,647 surfaces, none added. `ca95ebb`                                                            |
+| 3 — boundaries               | By segmentation, not the resolver: 1,647 → 962 surfaces, page 21 boxes → 9. `3160610`                           |
+| 4 — density                  | Answered by 2 and 3 (page 31.0% → 10.5%); the list-exclusion lever fixed. `89244c6`                             |
+| 5 — highlight inside the tap | Tapping 励み offers 励む. `9d8af02`                                                                             |
+
+On the page Sam walked, **nine boxes remain where thirty-one did, and nothing
+wrong is left on it.** One span he accepted was lost: より, inside というより.
+The fixture's `knownRed` is down to that one entry plus the ruby seam.
+
+Gates at the end: `yarn check:tap-consistency` unchanged at 98.0% / 128 pairs
+throughout; the furigana sweep over all 67,299 corpus surfaces **0 changed**;
+typecheck and lint clean; 393 tests across every touched area.
+
+What is deliberately **not** done, and written up in the decisions doc:
+positional spans (a surface confirmed in one place is still painted in every
+place), and shrinking the in-page box when a contained bookmark is chosen.
+
 Written 2026-10-01 from the 29 findings in
 [bookmark-highlight-bugs-v1.md](bookmark-highlight-bugs-v1.md), all diagnosed
 against one real page of ダブル・ファンタジー 上 at 6.9% and Sam's "Common"

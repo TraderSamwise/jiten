@@ -21,7 +21,11 @@ of argued about.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
   distinct `combined_kanji` forms and diff. This bounds any counter change
   exactly.
-- **Bookmark highlights.** `yarn why:highlight --list <export.jiten> --text
+- **Bookmark highlights.** Also run `yarn sweep:furigana --out <file>` before
+  and after any change to `deinflect.ts`, because the furigana resolver reads
+  the same candidates: the bookmark work of 2026-10-01 added nine kuru rules
+  and changed 0 of 67,299 surfaces, which is how that was known rather than
+  assumed. `yarn why:highlight --list <export.jiten> --text
 <file> --json <out>` runs the shipping matcher and the shipping painter over
   a whole text and reports every painted span with its provenance, plus
   distinct surfaces, spans, boxes and the share of Japanese characters
