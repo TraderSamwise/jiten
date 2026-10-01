@@ -2,6 +2,7 @@ import { type ReaderKanjiCharacter } from "@tradersamwise/jiten-reader-core";
 import { toHiragana } from "wanakana";
 import type { ReaderSqlDb } from "./backend";
 import { isKanjiNumeralRun } from "./numerals";
+import { hasNameFreqColumn } from "./ext-columns";
 import type {
   ReaderDictEntry,
   ReaderDictKana,
@@ -54,6 +55,7 @@ interface NameRow {
   kana: string;
   name_type: string | null;
   translation: string | null;
+  name_freq?: number | null;
 }
 
 interface KanjiReadingRow {
@@ -333,9 +335,15 @@ export async function lookupExactName(db: ReaderSqlDb, text: string): Promise<Re
   if (isKanjiNumeralRun(text)) return [];
   try {
     const hiragana = toHiragana(text);
+    // Ordered by how often the spelling is actually read each way, so a tap on
+    // 杏子 leads with きょうこ like its furigana does rather than with
+    // whichever of thirteen rows SQLite returned first. Readings with no count
+    // keep their existing order behind the counted ones.
+    const freq = await hasNameFreqColumn(db);
     const rows = await db.getAllAsync<NameRow>(
-      `SELECT id, kanji, kana, name_type, translation FROM names
+      `SELECT id, kanji, kana, name_type, translation${freq ? ", name_freq" : ""} FROM names
        WHERE kanji = ? OR kana = ? OR kana = ?
+       ${freq ? "ORDER BY name_freq IS NULL, name_freq DESC" : ""}
        LIMIT 20`,
       [text, text, hiragana],
     );
@@ -345,6 +353,7 @@ export async function lookupExactName(db: ReaderSqlDb, text: string): Promise<Re
       kana: row.kana,
       nameType: row.name_type,
       translation: row.translation,
+      freq: row.name_freq ?? null,
     }));
   } catch {
     return [];

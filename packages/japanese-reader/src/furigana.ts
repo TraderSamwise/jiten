@@ -9,6 +9,7 @@ import { deinflect } from "./deinflect";
 import { isKanjiNumeralRun, kanjiNumeralReading } from "./numerals";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "./furigana-db";
 import type { ReaderSqlDb } from "./backend";
+import { hasNameFreqColumn } from "./ext-columns";
 import {
   classifyReaderReadingPattern,
   type ReaderReadingPattern,
@@ -151,6 +152,13 @@ interface DictMatch {
   kanjiForm: string;
   kanaForm: string;
   common: boolean;
+  /**
+   * Whether the matched SPELLING is itself common, not merely some spelling of
+   * a common entry. 杏子 belongs to the common entry for あんず, whose common
+   * spelling is 杏 — 杏子 is a rare variant of it, and treating it as a common
+   * word is what let the apricot outrank a character's name.
+   */
+  commonForm: boolean;
   jlptLevel: number | null;
   irregularReading: boolean;
 }
@@ -160,11 +168,17 @@ interface CounterMatch {
   kanaForm: string;
 }
 
-interface NameMatch {
+export interface NameMatch {
   kanjiForm: string;
   kanaForm: string;
   nameType: string | null;
   translation: string | null;
+  /**
+   * How often this spelling is read this way when it names a person, or null
+   * where nothing was observed. Comparable only against other readings of the
+   * SAME spelling — see docs/reader-lookup-decisions.md.
+   */
+  freq: number | null;
 }
 
 export interface ResolveFuriganaBatchOptions {
@@ -247,6 +261,8 @@ async function batchLookup(
 
   // Phase B: Batch fetch forms + common flag + jlpt_level + tags
   const entryKanji = new Map<number, string[]>();
+  /** Spellings JMdict marks common in their own right, not via their entry. */
+  const commonForms = new Set<string>();
   const entryKana = new Map<number, string>();
   const entryCommon = new Map<number, boolean>();
   const entryJlpt = new Map<number, number | null>();
@@ -292,8 +308,8 @@ async function batchLookup(
     }
 
     const [kanjiRows, kanaRows, entryRows] = await Promise.all([
-      dictDb.getAllAsync<{ entry_id: number; text: string; tags: string | null }>(
-        `SELECT entry_id, text, tags FROM kanji WHERE entry_id IN (${ph}) ORDER BY rowid`,
+      dictDb.getAllAsync<{ entry_id: number; text: string; tags: string | null; common: number }>(
+        `SELECT entry_id, text, tags, common FROM kanji WHERE entry_id IN (${ph}) ORDER BY rowid`,
         batch,
       ),
       dictDb.getAllAsync<{ entry_id: number; text: string; tags: string | null }>(
@@ -310,6 +326,7 @@ async function batchLookup(
     for (const r of kanjiRows) {
       if (!entryKanji.has(r.entry_id)) entryKanji.set(r.entry_id, []);
       entryKanji.get(r.entry_id)!.push(r.text);
+      if (r.common) commonForms.add(`${r.entry_id}\u0000${r.text}`);
       // Check for irregular reading tags
       if (r.tags) {
         try {
@@ -364,6 +381,7 @@ async function batchLookup(
           kanjiForm,
           kanaForm: kana,
           common,
+          commonForm: commonForms.has(`${id}\u0000${kanjiForm}`),
           jlptLevel: entryJlpt.get(id) ?? null,
           irregularReading: entryIrregular.get(id) ?? false,
         };
@@ -404,13 +422,15 @@ async function batchLookupNames(
   for (let i = 0; i < formList.length; i += BATCH_SIZE) {
     const batch = formList.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
+    const freqColumn = (await hasNameFreqColumn(extDb)) ? ", name_freq" : "";
     const rows = await extDb.getAllAsync<{
       kanji: string | null;
       kana: string;
       name_type: string | null;
       translation: string | null;
+      name_freq?: number | null;
     }>(
-      `SELECT kanji, kana, name_type, translation
+      `SELECT kanji, kana, name_type, translation${freqColumn}
        FROM names
        WHERE kanji IN (${ph}) OR kana IN (${ph})`,
       [...batch, ...batch],
@@ -430,6 +450,7 @@ async function batchLookupNames(
           kanaForm: row.kana,
           nameType: row.name_type,
           translation: row.translation,
+          freq: row.name_freq ?? null,
         });
       }
     }
@@ -518,7 +539,17 @@ function scoreFuriganaNameMatch(surface: string, match: NameMatch): number {
   return score;
 }
 
-function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | null {
+/**
+ * The best reading for a surface.
+ *
+ * JMnedict ranks nothing, so thirteen readings of 杏子 score identically and
+ * whichever row SQLite returned first used to win. Observed frequency breaks
+ * that tie — but only between readings OF ONE SPELLING. The counts are
+ * undercounts drawn from a corpus that covers half the spellings at all, so
+ * 高遠's 4 and 洋子's 267 say nothing about each other, and the contest
+ * between different spellings is left to the score exactly as before.
+ */
+export function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | null {
   let best: NameMatch | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
   for (const match of matches) {
@@ -526,9 +557,33 @@ function pickBestNameMatch(surface: string, matches: NameMatch[]): NameMatch | n
     if (!best || score > bestScore) {
       best = match;
       bestScore = score;
+      continue;
     }
+    const sameSpelling = score === bestScore && match.kanjiForm === best.kanjiForm;
+    if (sameSpelling && (match.freq ?? 0) > (best.freq ?? 0)) best = match;
   }
   return best;
+}
+
+/**
+ * The winning reading's share of everything observed for its own spelling,
+ * with how much was observed.
+ *
+ * `share` is what says a spelling has settled on one reading — 杏子 is
+ * きょうこ in 26 of 33 sightings — and `total` is what says there was enough
+ * of it to mean anything. Null when no reading of this spelling was ever
+ * observed, which is most of them.
+ */
+export function nameReadingDominance(
+  best: NameMatch,
+  matches: NameMatch[],
+): { share: number; total: number } | null {
+  let total = 0;
+  for (const match of matches) {
+    if (match.kanjiForm === best.kanjiForm) total += match.freq ?? 0;
+  }
+  if (total === 0) return null;
+  return { share: (best.freq ?? 0) / total, total };
 }
 
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
@@ -687,6 +742,7 @@ export async function resolveFuriganaBatch(
               candidateCount: nameMatches.length,
               nameType: bestNameMatch.nameType,
               hasTranslation: nameMatches.some((name) => !!name.translation),
+              dominance: nameReadingDominance(bestNameMatch, nameMatches),
             } satisfies AutoNameNameCandidate,
             {
               matchedText: surface,
@@ -697,6 +753,8 @@ export async function resolveFuriganaBatch(
                 bestWordMatch.match.common &&
                 (bestWordMatch.match.kanjiForm === surface ||
                   bestWordMatch.match.kanaForm === surface),
+              exactRareForm:
+                bestWordMatch.match.kanjiForm === surface && !bestWordMatch.match.commonForm,
               commonWord: bestWordMatch.match.common,
               deinflected: bestWordMatch.deinflectedWord !== surface,
             } satisfies AutoNameWordCandidate,

@@ -10,6 +10,10 @@
  * This is the method docs/reader-lookup-decisions.md describes. It lived in a
  * throwaway script until the name-frequency work needed it twice.
  *
+ * `--surfaces <file>` sweeps a newline-separated list instead of the corpus,
+ * for gating a population the corpus cannot reach — every name spelling that
+ * is also a written word, say.
+ *
  * Usage:
  *   yarn sweep:furigana --out before.json
  *   (make the change)
@@ -83,7 +87,7 @@ async function sweep(out: string) {
   for (const [path, what] of [
     [DICT, "assets/dictionary.db"],
     [EXT, "assets/dictionary-extended.db"],
-    [CORPUS, "test/corpus/bocchan.txt"],
+    ...(arg("--surfaces") ? [] : ([[CORPUS, "test/corpus/bocchan.txt"]] as const)),
   ] as const) {
     if (!existsSync(path)) {
       console.error(`Missing ${what} — the sweep needs the built dictionaries.`);
@@ -91,8 +95,15 @@ async function sweep(out: string) {
     }
   }
 
-  const surfaces = corpusSurfaces(readFileSync(CORPUS, "utf-8"));
-  console.log(`${surfaces.length} kanji-initial surfaces up to ${MAX_SURFACE} characters`);
+  const listPath = arg("--surfaces");
+  const surfaces = listPath
+    ? readFileSync(listPath, "utf-8").split("\n").filter(Boolean).sort()
+    : corpusSurfaces(readFileSync(CORPUS, "utf-8"));
+  console.log(
+    listPath
+      ? `${surfaces.length} surfaces from ${listPath}`
+      : `${surfaces.length} kanji-initial surfaces up to ${MAX_SURFACE} characters`,
+  );
 
   const dictDb = openDb(DICT);
   const extDb = openDb(EXT);

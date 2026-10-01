@@ -209,7 +209,8 @@ Measured over every kanji-initial corpus substring up to 8 characters (67,299
 surfaces): 二十三 はたぞう→にじゅうさん and 六百 むお→ろっぴゃく are corrected, 五万,
 十五万 and 二十五万 gain readings they had none for, and 五六 いつむ, 六七 むな,
 十三四 とみよ lose name readings that were wrong anyway. 五十嵐 carries a
-non-numeral, so it is still いかざき.
+non-numeral, so this rule leaves it alone — it read いかざき until the name
+reading counts below made it いがらし.
 
 **Accepted regressions.** 一二三 no longer offers ひふみ, and 三四 loses さんし —
 which was right for "three or four" — with nothing composed in its place, since
@@ -335,17 +336,154 @@ check runs before the settings filter so a span that will never be annotated
 cannot mark shorter ones blocked on its way past. Zero sweep changes: the
 corpus is plain text.
 
-### Two furigana readings the dictionaries cannot settle
+### Name readings, ranked by how often a spelling takes them
 
-- **後味 reads the surname ごみ** instead of あとあじ. The name scores 2455 and
-  the word 2260, and the word is not common. But 高遠→たかとお, which is wanted,
-  scores identically — non-common word, strong-type name, kanji-only surface.
-  No feature in JMdict or JMnedict separates them.
-- **杏子 should read きょうこ**, a character's name, and reads あんず. JMnedict
-  lists 13 female readings for 杏子 with no frequency data, so they tie exactly
-  and `pickBestNameMatch` keeps whichever row SQLite returns first. きょうこ is
-  not derivable from the dictionaries; only book-local evidence — source ruby
-  at first occurrence, or a per-book override — could pick it.
+JMnedict lists every reading a spelling has ever taken and ranks none of them.
+杏子 offers thirteen, `scoreFuriganaNameMatch` scores them identically, and
+`pickBestNameMatch` kept whichever row SQLite returned first — あんず, the
+apricot, for a character called きょうこ. Nothing in JMdict, JMnedict or
+KANJIDIC separates a reading people use from one merely recorded.
+
+`names.name_freq` now carries how often a spelling is read each way when it
+names a person, derived offline from Wikidata and validated against JMnedict
+itself, so it can only rank readings the dictionary already lists. Method,
+sources and limits: [data/README.md](../data/README.md). 59,414 pairs over
+50,410 spellings; 48.2% of the 47,711 ambiguous spellings get a number.
+
+**The counts are undercounts, not probabilities.** Two rules follow, and both
+are load-bearing:
+
+- **Never compare them across spellings.** 高遠's 4 and 洋子's 282 say nothing
+  about each other. `pickBestNameMatch` breaks ties only between readings that
+  share a `kanjiForm`, and leaves the contest between spellings to the score
+  exactly as before.
+- **Zero is not evidence against a reading**, only the absence of evidence.
+  Most readings have none.
+
+#### What the ranking fixed
+
+|        | was      | now                       |
+| ------ | -------- | ------------------------- |
+| 杏子   | あんず   | **きょうこ** (26 of 33)   |
+| 京子   | あつこ   | **きょうこ** (150 of 153) |
+| 洋子   | きよこ   | **ようこ** (282 of 293)   |
+| 五十嵐 | いかざき | **いがらし** (179 of 185) |
+
+五十嵐 moves, and the earlier note under the numeral rule saying it "is still
+いかざき" recorded that rule leaving it alone, not a claim that いかざき was
+right. いがらし is the surname.
+
+#### The name-against-word contest
+
+Ranking the readings was not enough for 杏子: the word あんず still won the
+separate contest over whether a name is what is written. Two things were wrong
+there, and the fix is deliberately narrow because this is where the feature
+could have turned into wrong furigana everywhere.
+
+**The candidate-count penalty was backwards.** Thirteen readings read as −24
+uncertainty even when 26 of 33 sightings pick one. A settled reading — at least
+5 observations with at least 60% of them on one reading — now scores +4
+instead, the same as a name with two or three readings and no evidence. **4 is
+the measured minimum**: 0 leaves 杏子 at 87 against a threshold of 90, and 10
+changes nothing that 4 does not.
+
+**`exactCommonWord` was too generous.** It meant "a common entry matched this
+surface exactly", but JMdict marks commonness per _written form_, and 杏子 is a
+rare spelling of the common word あんず — which is written 杏. A word is only
+treated as exactly-and-commonly spelled this way when the form itself is
+common; where it is not, and the name reading is settled, the −28 becomes −8.
+
+Both conditions are required, and that is the whole safety argument:
+
+- A **settled name alone** cannot beat a commonly-spelled word. 希望 stays
+  きぼう however many people are called のぞみ.
+- A **rare spelling alone** cannot hand the surface to a name. 真面 stays
+  まとも rather than becoming the surname さなつら, which has one listing and
+  no sightings.
+
+#### Measured
+
+Furigana resolved over all 67,299 kanji-initial corpus substrings up to 8
+characters, before and after, by `yarn sweep:furigana` — now a committed
+harness rather than a script rewritten every time.
+
+**70 of 67,299 surfaces changed. None gained a reading and none lost one**; the
+change is always which reading. 67 are name-to-name corrections — 吉川 きかわ→
+よしかわ, 多田 おいだ→ただ, 小倉 おくら→おぐら, 小日向 おひなた→こひなた,
+徹 あきら→とおる, 渡 とさき→わたる, 遥 うらら→はるか, 潔 いさお→きよし,
+見上 けんじょう→みかみ. The rest swap one obscure reading of a single kanji for
+another, where neither was right before.
+
+One novel is a weak bound for this, so the same sweep was run over **every
+multi-character name spelling that is also a written word — all 9,110**. 269
+change, again none gained or lost: 72 keep their reading and are only tagged as
+a name, and 197 read differently. The bulk is the ことも/-子 class finally
+reading as names — 光子 こうし→みつこ, 冬子 どんこ→ふゆこ, 和子 わこ→かずこ,
+伸子 しんし→のぶこ, 塔子 ターツ→とうこ, 俊彦 しゅんげん→としひこ.
+
+**Accepted regressions.** A minority of those 197 are genuine compound words
+that now read as names because JMdict does not mark them common: 和音 かずね
+for the musical chord, 和洋 かずひろ, 一矢 かずや and 一花 いちか out of their
+idioms, 古池 こいけ, 土方 ひじかた. In the corpus the same trade shows as
+真平 まっぴら→しんぺい. Each needs word-frequency data the dictionary does not
+carry — JMdict's common flag is the only signal available, and it says these
+are not common. 容子 ようす→ようこ is in the same class and is an improvement:
+ようす is written 様子.
+
+`yarn check:tap-consistency` unchanged at 98.0% / 128 disagreeing pairs.
+
+#### Still not settled
+
+**後味 reads the surname ごみ** instead of あとあじ. It has no counts at all,
+and zero is not evidence against a reading, so nothing here separates it from
+高遠, which keeps たかとお on 4 sightings. The feature that does not exist in
+JMdict or JMnedict does not exist in the counts either — this would need
+evidence about how often a spelling is a WORD, which is a different corpus.
+
+#### The tap side
+
+`lookupExactName` ordered by nothing, so a tap on 杏子 led with あこ while the
+furigana said きょうこ. It orders by `name_freq` now, readings with no count
+keeping their existing order behind the counted ones, and the tap's
+name-against-word contest is handed the same dominance and rare-spelling
+evidence as the furigana pass so the two cannot reason from different pictures.
+That second part is **neutral on measurement** — no change across the 37,411
+corpus taps — because the two paths deliberately hold different bars: a tap
+needs 96 when an exact same-span word competes
+(`AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE`) where furigana needs 90.
+
+So a tap and the furigana can still disagree: 伸子 is furigana'd のぶこ and taps
+as the weaving tool しんし, as do 光子 こうし, 冬子 どんこ and 和子 わこ. That
+gap is the threshold, not the counts, and closing it means lowering the tap's
+bar for every name — a wider change than this, and unmeasured. Left alone
+deliberately.
+
+#### The column may not be there
+
+`names.name_freq` arrived in extended DB v4, and a client can run v4 code
+against a v3 file: an OTA replaces the JavaScript at once while the 116 MB
+download happens in the background, and the local-install path opens whatever
+is on disk without comparing versions. A missing column makes the SELECT throw,
+which would take down the whole furigana batch rather than just the ranking,
+and makes the tap name lookup return no names at all. `hasNameFreqColumn` asks
+once per handle instead (`ext-columns.ts`).
+
+### A dead end: ranking readings by how generic they are
+
+Before any corpus was fetched, a cheaper idea was measured and killed: rank a
+spelling's readings by how many distinct kanji take that same kana as a name,
+recoverable from the shipped table with a self-join and no new data. It ranks
+きょうこ first for 杏子, which looked like the answer.
+
+It is noise. Against names whose reading is not in doubt it picks けいこ for
+京子, ひろこ for 洋子, さとみ for 恵子, ひろみ for 裕子, かずお for 一郎 and
+あき for 愛 — wrong on about ten of the thirteen spellings with more than one
+candidate, on margins of 140 against 135. Counting how many kanji share a
+reading measures how **generic** the reading is, not whether it fits this
+spelling, so よしみ and ひろみ float to the top everywhere.
+
+Do not rebuild it. It is cheap to try and it looks right on whichever case is
+being tested.
 
 ## Rejected
 

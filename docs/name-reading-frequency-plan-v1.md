@@ -275,7 +275,7 @@ the expected counts.
   be a rank within the candidate set, not a term added to an absolute score.
 - `computeAutoNameConfidence` (`packages/japanese-reader/src/auto-name.ts`):
   the `candidateCount` penalty is backwards when one reading dominates. 13
-  readings currently reads as −24 uncertainty even when 25 of 30 observations
+  readings currently reads as −24 uncertainty even when 26 of 33 observations
   pick one of them. Dominance should raise confidence, not lower it.
 - **A floor, both absolute and relative.** 杏子 beats a _common_ JMdict word on
   27 observations. Without a minimum count and a minimum winner share, one

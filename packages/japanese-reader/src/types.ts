@@ -60,6 +60,12 @@ export interface ReaderNameEntry {
   kana: string;
   nameType: string | null;
   translation: string | null;
+  /**
+   * How often this spelling is read this way when it names a person, or null
+   * where nothing was observed. Comparable only against other readings of the
+   * SAME spelling — see docs/reader-lookup-decisions.md.
+   */
+  freq?: number | null;
 }
 
 export interface ReaderLookupResult {

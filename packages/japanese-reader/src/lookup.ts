@@ -303,6 +303,40 @@ function isKanjiChar(ch?: string): boolean {
   );
 }
 
+/**
+ * The winning name reading's share of everything observed for its spelling.
+ *
+ * The same measure the furigana pass uses, so a tap and the furigana over the
+ * same word reach the same answer instead of one saying きょうこ while the
+ * other says あんず. Only readings of the SAME spelling are pooled: the counts
+ * are undercounts and mean nothing across spellings.
+ */
+function nameReadingDominance(result: LookupResult): { share: number; total: number } | null {
+  const matches = result.nameMatches ?? [];
+  const best = matches[0];
+  if (!best) return null;
+  let total = 0;
+  for (const match of matches) {
+    if (match.kanji === best.kanji) total += match.freq ?? 0;
+  }
+  if (total === 0) return null;
+  return { share: (best.freq ?? 0) / total, total };
+}
+
+/**
+ * The surface is this word spelled a way JMdict does not mark common — 杏子
+ * for あんず, which is written 杏.
+ */
+function wordExactButRarelySpelled(result: LookupResult): boolean {
+  for (const entry of result.entries) {
+    if (!entry.common) continue;
+    for (const kanji of entry.kanji) {
+      if (kanji.text === result.matchedText) return !kanji.common;
+    }
+  }
+  return false;
+}
+
 function topWordExactSurfaceMatch(result: LookupResult): boolean {
   return result.entries.some(
     (entry) =>
@@ -638,6 +672,7 @@ function chooseAutoLookupVariants(
       candidateCount: bestName.nameMatches?.length ?? 0,
       nameType: bestName.nameMatches?.[0]?.nameType ?? null,
       hasTranslation: bestName.nameMatches?.some((name) => !!name.translation) ?? false,
+      dominance: nameReadingDominance(bestName),
     } satisfies AutoNameNameCandidate,
     {
       matchedText: taggedWord.matchedText,
@@ -645,6 +680,7 @@ function chooseAutoLookupVariants(
       exactCommonWord: wordExactSurface && wordHasCommon,
       commonWord: wordHasCommon,
       deinflected: taggedWord.deinflectReasons.length > 0,
+      exactRareForm: wordExactButRarelySpelled(taggedWord),
     } satisfies AutoNameWordCandidate,
   );
   const nameOnlyConfidence =
@@ -673,6 +709,7 @@ function chooseAutoLookupVariants(
     exactCommonWord: wordExactSurface && wordHasCommon,
     commonWord: wordHasCommon,
     deinflected: taggedWord.deinflectReasons.length > 0,
+    exactRareForm: wordExactButRarelySpelled(taggedWord),
   } satisfies AutoNameWordCandidate;
   const nameCandidate = {
     matchedText: bestName.matchedText,
@@ -680,6 +717,7 @@ function chooseAutoLookupVariants(
     candidateCount: bestName.nameMatches?.length ?? 0,
     nameType: bestName.nameMatches?.[0]?.nameType ?? null,
     hasTranslation: bestName.nameMatches?.some((name) => !!name.translation) ?? false,
+    dominance: nameReadingDominance(bestName),
   } satisfies AutoNameNameCandidate;
 
   const exactWordNameAmbiguity =

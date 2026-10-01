@@ -26,6 +26,12 @@ export interface AutoNameWordCandidate {
   exactCommonWord: boolean;
   commonWord: boolean;
   deinflected: boolean;
+  /**
+   * The surface is this word spelled a way JMdict does NOT mark common. 杏子
+   * belongs to the common entry for あんず, whose common spelling is 杏; 杏子
+   * is a rare variant of it.
+   */
+  exactRareForm?: boolean;
 }
 
 export interface AutoNameNameCandidate {
@@ -34,6 +40,35 @@ export interface AutoNameNameCandidate {
   candidateCount: number;
   nameType: string | null;
   hasTranslation: boolean;
+  /**
+   * The winning reading's share of everything observed for this spelling, and
+   * how much was observed. Null where nothing was — which is most spellings,
+   * and where the candidate-count penalty below still applies.
+   */
+  dominance?: { share: number; total: number } | null;
+}
+
+/**
+ * What it takes for observed frequency to answer the candidate count.
+ *
+ * Many readings is normally a reason to doubt a name, and it still is — but
+ * not when the readings have been counted and one of them is what people
+ * actually use. 杏子 has thirteen readings and is きょうこ in 26 of 33
+ * sightings; the thirteen are the dictionary being thorough, not the name
+ * being uncertain.
+ *
+ * Both floors matter. Without a minimum share a bare plurality counts as
+ * settled; without a minimum total, two sightings of an obscure surname would
+ * be enough to write furigana over a common noun.
+ */
+export const NAME_DOMINANCE_MIN_SHARE = 0.6;
+export const NAME_DOMINANCE_MIN_TOTAL = 5;
+
+export function isDominantNameReading(
+  dominance: { share: number; total: number } | null | undefined,
+): boolean {
+  if (!dominance) return false;
+  return dominance.total >= NAME_DOMINANCE_MIN_TOTAL && dominance.share >= NAME_DOMINANCE_MIN_SHARE;
 }
 
 function hasKana(text: string): boolean {
@@ -95,7 +130,19 @@ export function computeAutoNameConfidence(
     confidence -= 12;
   }
 
-  if (name.candidateCount === 1) confidence += 10;
+  const settled = isDominantNameReading(name.dominance);
+
+  // A spelling whose readings have been counted, and settled on one, is not
+  // made doubtful by how many the dictionary also lists — 杏子's thirteen are
+  // the dictionary being thorough, not the name being uncertain.
+  //
+  // Worth 4, the same as a name with two or three readings and no evidence.
+  // That is the smallest value that settles 杏子, measured: 0 leaves it at 87
+  // against a threshold of 90, and 10 changes nothing 4 does not. The counts
+  // say WHICH reading, so they earn little on the separate question of whether
+  // a name is what is on the page.
+  if (settled) confidence += 4;
+  else if (name.candidateCount === 1) confidence += 10;
   else if (name.candidateCount <= 3) confidence += 4;
   else if (name.candidateCount > 4) confidence -= Math.min(name.candidateCount - 4, 6) * 4;
 
@@ -105,7 +152,15 @@ export function computeAutoNameConfidence(
   if (word.matchedText.length > text.length) confidence -= 10;
   if (text.length > word.matchedText.length) confidence += 6;
 
-  if (word.exactCommonWord) confidence -= 28;
+  // A common word spelled exactly this way is normally decisive, and 28 is
+  // what makes it so. Both halves of that have to hold: 杏子 is a spelling of
+  // the common word あんず, but not one JMdict marks common — あんず is written
+  // 杏 — and 26 sightings in 33 read 杏子 きょうこ. Only evidence that the
+  // spelling really names people reopens the question; a rare spelling alone
+  // does not, or 真面 would stop reading まとも for a surname nobody uses.
+  const wordSpelledRarely = settled && word.exactRareForm === true;
+  if (word.exactCommonWord && !wordSpelledRarely) confidence -= 28;
+  else if (wordSpelledRarely) confidence -= 8;
   else if (word.exactSurface) confidence -= 16;
   else if (word.commonWord) confidence -= 8;
 

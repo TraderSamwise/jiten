@@ -13,7 +13,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 
 import { resolveFuriganaBatch } from "../packages/japanese-reader/src/furigana";
-import { lookupExactName } from "../packages/japanese-reader/src/lookup-db";
+import { smartLookupWithOffset } from "../packages/japanese-reader/src/lookup";
 import type { ReaderSqlDb } from "../packages/japanese-reader/src/backend";
 
 const ROOT = resolve(__dirname, "..");
@@ -52,15 +52,25 @@ async function main() {
 
   for (const surface of probes) {
     const entry = furigana[surface];
-    const names = await lookupExactName(extDb, surface);
     const shown = entry
       ? `${entry.reading}${entry.isName ? " [name]" : ""}${entry.isCounter ? " [counter]" : ""}`
       : "(no furigana)";
-    const tap = names
-      .slice(0, 3)
-      .map((name) => name.kana)
-      .join(", ");
-    console.log(`${surface}\tfurigana: ${shown}\ttap: ${tap || "(no name)"}`);
+
+    // A tap needs the prose around it: the span walk is given a 24-character
+    // window either side in the reader, and a bare word on its own picks
+    // shorter spans than it ever would on a page.
+    const context = `きのうその${surface}について話した。`;
+    const results = await smartLookupWithOffset(context, 5, dictDb, extDb);
+    const tap = results
+      .map((result) => {
+        const reading =
+          result.lookupKind === "name"
+            ? (result.nameMatches?.[0]?.kana ?? "?")
+            : (result.entries[0]?.kana[0]?.text ?? "?");
+        return `${reading}${result.lookupKind === "name" ? " [name]" : ""}`;
+      })
+      .join(" | ");
+    console.log(`${surface}\tfurigana: ${shown}\ttap: ${tap || "(nothing)"}`);
   }
 }
 
