@@ -443,8 +443,11 @@ exposure:
 **Accepted regressions: those three.** 小形 (small size), 真白 (a variant of
 真っ白) and 米蔵 (rice storehouse) are real words that JMdict marks common as
 entries but not in these spellings, and each has a settled surname reading.
-Separating them needs evidence about how often a spelling is a WORD, which is a
-different corpus from the one derived here.
+
+Separating them needs a different measurement: not which reading a name takes,
+but **how often a spelling is a word at all** — counted over running text
+rather than over people. See "What word frequency would and would not fix"
+below; the source exists and is already downloaded.
 
 **Not taken: the -子 class.** An earlier, broader version of the rare-form test
 also fixed 光子 こうし→みつこ, 冬子 どんこ→ふゆこ, 和子 わこ→かずこ, 伸子
@@ -452,7 +455,36 @@ also fixed 光子 こうし→みつこ, 冬子 どんこ→ふゆこ, 和子 �
 reading novels. They are gone, because they rode on the broken condition above
 rather than on anything true: every one of those entries is not common, so the
 test that was supposed to mean "a rare spelling of a common word" was only
-saying "not common". Getting them back honestly needs word-frequency data.
+saying "not common".
+
+#### What word frequency would and would not fix
+
+The missing axis is how often a spelling is **the word**, and the source for it
+is already in the repo: the JPDB list (`scripts/lib/novel-freq.ts`, cached at
+`.cache/jpdb-freq.zip`), built from anime, novels and visual novels and already
+downloaded for `yarn build:jlpt`. Measured against the disputed spellings:
+
+| should stay a word | rank   | should become a name | rank    |
+| ------------------ | ------ | -------------------- | ------- |
+| 希望 きぼう        | 1,254  | 光子 こうし          | 32,309  |
+| 丈夫 じょうぶ      | 6,886  | 杏子 あんず          | 42,308  |
+| 後味 あとあじ      | 14,319 | 伸子 しんし          | 107,168 |
+| 一矢 いっし        | 17,787 | 冬子 / 和子 / 塔子   | absent  |
+| 真平 まっぴら      | 25,721 |                      |         |
+| 真白 まっしろ      | 25,873 |                      |         |
+
+A cutoff near 30,000 recovers the -子 class and keeps 希望, 丈夫, 後味, 一矢,
+真平 and 真白 as words. It is **not** sufficient: 一花 ひとはな is 44,931,
+rarer than 杏子's 42,308 and therefore on the wrong side of any cutoff that
+settles 杏子, and 古池 and 米蔵 are absent from the list entirely — the same
+signal as 冬子 and 和子. Both read as part of live idioms or compounds rather
+than as standalone rare words, which rank alone cannot see.
+
+**The cost is a main-dictionary bump.** Word frequency is per JMdict entry, so
+it is a column on `entries` in `dictionary.db` — the 120 MB file — which means
+`DICT_BASE_VERSION` and a full re-download for every user, not the extended
+tier's. `jlpt_level` would have been free but is NULL on every one of these
+entries, since levels were only assigned to common ones.
 
 `yarn check:tap-consistency` unchanged at 98.0% / 128 disagreeing pairs.
 
