@@ -547,3 +547,60 @@ The 49 surfaces resolved on this page, longest first:
 しい して はた 岩盤 帰り 流し いて くく くり きた しめ とい ひた より 飽き
 かし だち 欲し けれ はい わた 緒 通 く し 岩 数 欲
 ```
+
+## Phase 1 baseline, measured 2026-10-01
+
+`yarn why:highlight --list <export.jiten> --text .cache/highlight-page.txt`
+against Sam's Common list (8,586 entries) and the transcribed page:
+
+| measure                               | value     |
+| ------------------------------------- | --------- |
+| distinct surfaces in the set          | 49        |
+| painted spans                         | 37        |
+| visible boxes (abutting spans merged) | 31        |
+| Japanese characters covered           | 80 of 258 |
+| coverage                              | **31.0%** |
+
+Sam counted 29 boxes from the screenshot; the instrument says 31. Nearly a
+third of the page is painted.
+
+### The painter is not the one in this package
+
+`applyBookmarkHighlightsToHtml` and `applyResolvedBookmarkHighlightsToHtml` in
+`packages/japanese-reader/src/bookmarks.ts` are string painters with **no
+production caller**. The device ships only the surface set over postMessage
+(`use-japanese-reader.ts:607`) and `packages/reader-webview/src/bookmarks.ts`
+paints it into the DOM — different sort key (`b.length` in UTF-16 rather than
+code points), a per-paragraph text walk rather than a tag scan, and matches
+that advance past what they consumed.
+
+They are kept because this package publishes a barrel for embedders, but they
+are only covered by `bookmarks.test.ts` and `bookmarks.suru.test.ts`, which
+therefore test a painter nobody runs. The new case fixture uses the webview
+painter under jsdom instead.
+
+### The fixture is a ratchet, not a red suite
+
+`test/fixtures/bookmark-highlight-cases.ts` carries `knownRed` on each case:
+the expectations the shipping code does not meet yet. Those run as
+`it.fails`, so the committed suite is **green while the bug stands and goes
+red the moment the bug is fixed** — which is the prompt to delete the entry.
+Proved both ways on 2026-10-01: marking the passing 励み case red fails the
+suite, and all 25 real `it.fails` pass, meaning each of those assertions
+genuinely fails against current code.
+
+25 of 51 expectations are red today. The green ones include every span Sam
+accepted (励み, 岩盤, しめくくり, 夜更け, 互いに, より) plus 帰り and 飽きない.
+
+### One caveat on the transcription
+
+`.cache/highlight-page.txt` has one line per printed **column**, not per
+paragraph, and the instrument wraps each line in `<p>`. The device painter
+matches within a `<p>`, so a span straddling a column break cannot be found by
+the instrument where it would be found on the device. Nine breaks on this
+page; the count is therefore a slight undercount, never an overcount.
+
+The transcription also carries no furigana, where the device renders ruby.
+The painter splits a match at every ruby boundary, so the real page has more
+**spans** than the 37 here — that figure is a floor. Boxes and coverage are
+unaffected, because a ruby split leaves no gap.

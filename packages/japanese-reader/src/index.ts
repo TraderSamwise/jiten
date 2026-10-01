@@ -2,8 +2,10 @@ export type { JapaneseReaderBackend, ReaderBookSource, ReaderSqlDb } from "./bac
 export {
   applyBookmarkHighlightsToHtml,
   applyResolvedBookmarkHighlightsToHtml,
+  explainBookmarkedWordSurfacesInHtml,
   resolveBookmarkedWordSurfacesInHtml,
 } from "./bookmarks";
+export type { BookmarkSurfaceProvenance } from "./bookmarks";
 export {
   applyFuriganaToHtml,
   buildFuriganaKanjiSet,

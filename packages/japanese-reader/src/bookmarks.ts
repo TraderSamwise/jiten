@@ -115,20 +115,39 @@ type EntryIdRow = {
   entry_id: number;
 };
 
-export async function resolveBookmarkedWordSurfacesInHtml(
+/** Why one surface is highlighted: the bookmarked entry and the path to it. */
+export interface BookmarkSurfaceProvenance {
+  entryId: number;
+  /** The deinflected form that was found in the dictionary. */
+  word: string;
+  /** The deinflection path, outermost first. Empty when matched as written. */
+  reasons: string[];
+  /** Which table the word was found in. */
+  via: "kanji" | "kana";
+}
+
+/**
+ * The matcher, with its reasoning. `resolveBookmarkedWordSurfacesInHtml` is
+ * this function's keys — one implementation, so a tool that explains a
+ * highlight cannot drift from the one that paints it.
+ */
+export async function explainBookmarkedWordSurfacesInHtml(
   dictDb: ReaderSqlDb,
   html: string,
   bookmarks: ReaderBookmarkMembership | null | undefined,
-): Promise<Set<string>> {
-  if (!bookmarks) return new Set();
+): Promise<Map<string, BookmarkSurfaceProvenance[]>> {
+  if (!bookmarks) return new Map();
 
   const candidates = [...extractBookmarkCandidateSurfaces(html)];
-  if (candidates.length === 0) return new Set();
+  if (candidates.length === 0) return new Map();
 
   // A bookmark is nearly always saved from an inflected form, because that is
   // what the page says and what the tap resolved. Ask the dictionary about the
   // forms behind each candidate, then highlight the candidate as written.
-  const wordToSurfaces = new Map<string, { surface: string; inflected: boolean }[]>();
+  const wordToSurfaces = new Map<
+    string,
+    { surface: string; inflected: boolean; reasons: string[] }[]
+  >();
   for (const candidate of candidates) {
     for (const { word, reasons } of deinflect(candidate)) {
       const found = wordToSurfaces.get(word);
@@ -146,6 +165,7 @@ export async function resolveBookmarkedWordSurfacesInHtml(
       const entry = {
         surface: trimmed ? word : candidate,
         inflected: !trimmed && reasons.length > 0,
+        reasons,
       };
       if (found) found.push(entry);
       else wordToSurfaces.set(word, [entry]);
@@ -153,7 +173,15 @@ export async function resolveBookmarkedWordSurfacesInHtml(
   }
   const words = [...wordToSurfaces.keys()];
 
-  const surfaces = new Set<string>();
+  // Built once, across every batch: one surface is often reached from several
+  // words, and those words can fall in different batches.
+  const provenance = new Map<string, BookmarkSurfaceProvenance[]>();
+  const record = (surface: string, entry: BookmarkSurfaceProvenance) => {
+    const found = provenance.get(surface);
+    if (found) found.push(entry);
+    else provenance.set(surface, [entry]);
+  };
+
   for (let i = 0; i < words.length; i += BATCH_SIZE) {
     const batch = words.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
@@ -186,21 +214,31 @@ export async function resolveBookmarkedWordSurfacesInHtml(
 
     for (const row of kanjiRows) {
       if (!bookmarks.hasEntryId(row.entry_id)) continue;
-      for (const { surface } of wordToSurfaces.get(row.text) ?? []) surfaces.add(surface);
+      for (const { surface, reasons } of wordToSurfaces.get(row.text) ?? []) {
+        record(surface, { entryId: row.entry_id, word: row.text, reasons, via: "kanji" });
+      }
     }
     for (const row of kanaRows) {
       if (!bookmarks.hasEntryId(row.entry_id)) continue;
-      for (const { surface, inflected } of wordToSurfaces.get(row.text) ?? []) {
+      for (const { surface, inflected, reasons } of wordToSurfaces.get(row.text) ?? []) {
         // A bare kana reading of a word the dictionary writes in kanji is not
         // evidence the page means that word — a bookmarked 事 would light up
         // every こと. An undone inflection is.
         if (entryIdsWithKanji.has(row.entry_id) && !inflected) continue;
-        surfaces.add(surface);
+        record(surface, { entryId: row.entry_id, word: row.text, reasons, via: "kana" });
       }
     }
   }
 
-  return surfaces;
+  return provenance;
+}
+
+export async function resolveBookmarkedWordSurfacesInHtml(
+  dictDb: ReaderSqlDb,
+  html: string,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
+): Promise<Set<string>> {
+  return new Set((await explainBookmarkedWordSurfacesInHtml(dictDb, html, bookmarks)).keys());
 }
 
 export async function applyResolvedBookmarkHighlightsToHtml(

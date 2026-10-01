@@ -75,14 +75,17 @@ So the fixture is split:
 
 ### 1b. The instrument
 
-`yarn check:highlights --text <file> --list <export.jiten>` — for a whole page,
-print every painted span with the bookmarked entry and the deinflection path
-that reached it, plus totals: distinct spans, characters covered, percentage of
-the page.
+`yarn why:highlight --list <export.jiten> --text <page.txt>` — for a whole
+page, print every painted span with the bookmarked entry and the deinflection
+path that reached it, plus totals: distinct surfaces, spans, boxes, characters
+covered, percentage of the page. `--json` saves a run and `--diff` compares
+against one, the way `yarn sweep:furigana` does for furigana.
 
-This is `scripts/why-highlight.ts` (already built, already used for all 29
-findings) extended from one surface to a whole text. It gives before/after
-diffs the way `yarn sweep:furigana` does for furigana.
+Built by extending `scripts/why-highlight.ts` rather than adding a second
+script. It runs the shipping matcher
+(`explainBookmarkedWordSurfacesInHtml`) and the shipping painter
+(`packages/reader-webview/src/bookmarks.ts`, under jsdom) — see "the painter
+is not the one in this package" below.
 
 ### 1c. The expectation table
 
@@ -261,7 +264,7 @@ Sam's bookmark list; it is the subset the cases exercise.
 | 1577030 | 化す           | かす/けす      | v5s,vt,vi          | 22                      |
 | 2406900 | 科す           | かす           | v5s                | 22                      |
 | 2601360 | 脱             | だつ           | **pref**           | 23 だち                 |
-| 1331630 | 励む           | はげむ         | v5m,vi             | 3 ✓                     |
+| 1557390 | 励む           | はげむ         | v5m,vi             | 3 ✓                     |
 | 1217400 | 岩盤           | がんばん       | n                  | 8 ✓                     |
 | 2410130 | 欲す           | ほりす         | v5s,vt             | 24 欲し                 |
 | 1208840 | 且つ/且        | かつ           | conj,adv           | 24 かった               |
