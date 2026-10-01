@@ -1,6 +1,24 @@
 # Name reading frequency — plan v1
 
-Status: Phase 1 done (source settled, 2026-10-01). Phases 2-4 pending.
+Status: **done and shipped, 2026-10-01.**
+
+- Extended DB **v4** published (117,321,728 bytes), live on the CDN.
+- **OTA 23.17** for Build 23, runtime `1.0.0-23`, commit `8bf0147`, channel
+  testflight. Confirmed on device: `Extended: yes (v4) / loaded: yes`, 杏子
+  reads きょうこ.
+- Commits `598ffd5`, `29b7ef4`, `657dc25`, `7203d27`, `c70499b`, `8e0718b`,
+  `d6eebf0`, `1dfffe3`.
+- Result and every accepted regression recorded in
+  [reader-lookup-decisions.md](reader-lookup-decisions.md).
+- 杏子 → きょうこ, 京子 → きょうこ, 洋子 → ようこ, 五十嵐 → いがらし, plus 67
+  name-reading corrections across the corpus.
+- **後味 not fixed** and still `wontdo`: it has no counts, and zero is the
+  absence of evidence rather than evidence against. Needs word-frequency data,
+  which is a `DICT_BASE_VERSION` bump on the 120 MB dictionary — see
+  "What word frequency would and would not fix" in reader-lookup-decisions.md.
+- One caveat found after shipping: furigana does not re-resolve when the
+  extended DB swaps under a live session, so the fix only appeared after an app
+  restart. [open-defects-v1.md](open-defects-v1.md) §1.
 
 ## The problem
 
