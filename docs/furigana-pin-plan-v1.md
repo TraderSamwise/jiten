@@ -53,8 +53,14 @@ committed on its own.
 - `furigana_pins` table appended to `USER_DB_MIGRATIONS`:
   `id TEXT PRIMARY KEY, book_id TEXT NOT NULL, surface TEXT NOT NULL,
 reading TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-deleted_at TEXT` plus `CREATE UNIQUE INDEX … (book_id, surface)` and
-  `CREATE INDEX … (book_id)`.
+deleted_at TEXT` plus `CREATE INDEX … (book_id)` and
+  `CREATE INDEX … idx_furigana_pins_updated ON furigana_pins(updated_at)` —
+  that one named for `_updated` because `isRemoteRelevant` in
+  `db/sync-engine.ts` is what decides whether an index reaches the remote at
+  all, and the delta pull scans `updated_at`. **No UNIQUE index on
+  (book_id, surface):** the deterministic id already enforces it, and a second
+  constraint would abort a whole pull transaction if a row ever arrived under a
+  different id.
 - **`id` is deterministic — `${book_id}${surface}`.** A random id would
   let two devices create two rows for one pin and last-write-wins would never
   collapse them.
@@ -69,8 +75,14 @@ reading)` (upsert, clears `deleted_at`), `clearPin(db, bookId, surface)`
 **Tests** — `lib/furigana-pins.test.ts` on `createTestDb`: upsert replaces
 rather than duplicates; a cleared pin stops being listed; the empty-string
 reading round-trips and is not confused with "no pin"; two books do not see
-each other's pins. `db/sync-engine.test.ts` already asserts the migration
-count — update it.
+each other's pins. Nothing in the repo hard-codes the migration count —
+`db/sync-engine.test.ts` computes it from `USER_DB_MIGRATIONS.length` — so
+appending needs no test updated.
+
+`lib/data-backup.ts` gets the table too (`BACKUP_TABLES`, `TABLE_COLUMNS`,
+`IMPORT_ORDER`), `deleted_at` included, because a pin is durable user data.
+`review_marks` and `primitive_note_assoc` are absent from backup on purpose —
+one is pruned after 30 days, the other is rebuildable.
 
 ### Phase 2 — Candidates
 

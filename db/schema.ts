@@ -291,6 +291,16 @@ export const syncMeta = sqliteTable("sync_meta", {
   value: text("value").notNull(),
 });
 
+export const furiganaPins = sqliteTable("furigana_pins", {
+  id: text("id").primaryKey(),
+  bookId: text("book_id").notNull(),
+  surface: text("surface").notNull(),
+  reading: text("reading").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  deletedAt: text("deleted_at"),
+});
+
 export const reviewMarks = sqliteTable("review_marks", {
   id: text("id").primaryKey(),
   entryId: integer("entry_id").notNull(),

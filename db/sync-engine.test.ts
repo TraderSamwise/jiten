@@ -576,6 +576,85 @@ describe("sync engine", () => {
     });
   });
 
+  describe("furigana pins", () => {
+    /**
+     * A pinned reading is worth nothing on one device. This walks the whole
+     * claim: it reaches the remote, it reaches a second device, and removing
+     * it reaches that device too.
+     */
+    it("carries a pin to a second device, and its removal after it", async () => {
+      const t1 = "2025-01-01T00:00:00.000Z";
+      await local.runAsync(
+        `INSERT INTO furigana_pins (id, book_id, surface, reading, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        ["book-1\u001f杏子", "book-1", "杏子", "きょうこ", t1, t1],
+      );
+
+      await sync(local, turso, noop, noop);
+
+      const remoteRow = remoteDb
+        .prepare("SELECT reading FROM furigana_pins WHERE book_id = ? AND surface = ?")
+        .get("book-1", "杏子") as { reading: string } | undefined;
+      expect(remoteRow?.reading).toBe("きょうこ");
+
+      const local2 = createTestDb();
+      try {
+        await sync(local2, turso, noop, noop);
+        const pulled = await local2.getFirstAsync<{ reading: string }>(
+          "SELECT reading FROM furigana_pins WHERE id = ?",
+          ["book-1\u001f杏子"],
+        );
+        expect(pulled?.reading).toBe("きょうこ");
+
+        const t2 = new Date(Date.now() + 60_000).toISOString();
+        await local.runAsync(
+          "UPDATE furigana_pins SET deleted_at = ?, updated_at = ? WHERE id = ?",
+          [t2, t2, "book-1\u001f杏子"],
+        );
+        await sync(local, turso, noop, noop);
+        await sync(local2, turso, noop, noop);
+
+        const after = await local2.getFirstAsync<{ deleted_at: string | null }>(
+          "SELECT deleted_at FROM furigana_pins WHERE id = ?",
+          ["book-1\u001f杏子"],
+        );
+        expect(after?.deleted_at).toBe(t2);
+      } finally {
+        local2.close();
+      }
+    });
+
+    /**
+     * The id is derived from (book_id, surface) precisely so that two devices
+     * pinning the same run collapse into one row instead of racing forever.
+     */
+    it("collapses the same run pinned on two devices into one row", async () => {
+      const t1 = "2025-01-01T00:00:00.000Z";
+      const local2 = createTestDb();
+      try {
+        for (const [db, reading, at] of [
+          [local, "あんず", t1],
+          [local2, "きょうこ", new Date(Date.now() + 60_000).toISOString()],
+        ] as const) {
+          await db.runAsync(
+            `INSERT INTO furigana_pins (id, book_id, surface, reading, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            ["book-1\u001f杏子", "book-1", "杏子", reading, at, at],
+          );
+        }
+
+        await sync(local, turso, noop, noop);
+        await sync(local2, turso, noop, noop);
+
+        const rows = remoteDb
+          .prepare("SELECT reading FROM furigana_pins WHERE book_id = ?")
+          .all("book-1") as { reading: string }[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0].reading).toBe("きょうこ");
+      } finally {
+        local2.close();
+      }
+    });
+  });
+
   describe("version-based pull optimization", () => {
     it("skips pull when remote version unchanged", async () => {
       const now = "2025-01-01T00:00:00.000Z";

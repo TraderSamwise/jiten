@@ -211,4 +211,20 @@ export const USER_DB_MIGRATIONS = [
   `ALTER TABLE list_entries ADD COLUMN position INTEGER`,
   `UPDATE list_entries SET position = ${LIST_POSITION_RANK}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE position IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_list_entries_list_position ON list_entries(list_id, position)`,
+  // A reading the reader pins over one kanji run, for one book. `reading` is
+  // the rt text, and '' is a pin meaning "no furigana here". No FK to books:
+  // sync pulls tables in MUTABLE_TABLES order and a pin must survive a
+  // soft-deleted book. `id` is derived from (book_id, surface) by
+  // lib/furigana-pins.ts so two devices cannot make two rows for one pin.
+  `CREATE TABLE IF NOT EXISTS furigana_pins (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    surface TEXT NOT NULL,
+    reading TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT DEFAULT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_furigana_pins_book ON furigana_pins(book_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_furigana_pins_updated ON furigana_pins(updated_at)`,
 ];

@@ -58,6 +58,11 @@ export const BACKUP_TABLES: {
     query:
       "SELECT id, title, author, source, scroll_position, char_offset, total_chars, font_size, last_read_at, is_default, saved, read_complete, created_at, updated_at FROM books",
   },
+  {
+    name: "furigana_pins",
+    query:
+      "SELECT id, book_id, surface, reading, created_at, updated_at, deleted_at FROM furigana_pins",
+  },
   { name: "user_kanji_notes", query: "SELECT literal, mnemonic, keyword FROM user_kanji_notes" },
   {
     name: "practice_sessions",
@@ -191,6 +196,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
+  furigana_pins: ["id", "book_id", "surface", "reading", "created_at", "updated_at", "deleted_at"],
   user_kanji_notes: ["literal", "mnemonic", "keyword"],
   practice_sessions: [
     "id",
@@ -228,6 +234,7 @@ const IMPORT_ORDER = [
   "confusion_pairs",
   "confusion_events",
   "books",
+  "furigana_pins",
   "user_kanji_notes",
   "practice_sessions",
   "game_scores",

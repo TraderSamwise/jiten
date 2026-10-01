@@ -48,6 +48,12 @@ export const MUTABLE_TABLES = [
     blobCols: { cols: ["raw_content"], filter: "is_default = 0 AND saved = 1" },
   },
   { name: "user_kanji_notes", pk: "literal", timestampCol: "updated_at" },
+  // Deliberately unfiltered. `books` pushes only saved = 1, and a filter of
+  // "book_id IN (SELECT id FROM books WHERE saved = 1)" would strand every pin
+  // made before a book was saved: nothing bumps a pin's updated_at when the
+  // book's flag flips, so it would never push again. A pin on an unsaved book
+  // is three short strings.
+  { name: "furigana_pins", pk: "id", timestampCol: "updated_at" },
   { name: "confusion_pairs", pk: "id", timestampCol: "updated_at" },
   // app_flags removed — only contains local seeding flags, not user data
 ] as const;
@@ -96,7 +102,7 @@ export const DATA_CATEGORIES: Record<
 > = {
   lists: { label: "Study Lists", mutable: ["lists", "list_entries"], append: [] },
   flashcards: { label: "Flashcards", mutable: ["srs_cards"], append: ["review_logs"] },
-  books: { label: "Books", mutable: ["books"], append: [] },
+  books: { label: "Books", mutable: ["books", "furigana_pins"], append: [] },
   notes: { label: "Kanji Notes", mutable: ["user_kanji_notes"], append: [] },
   practice: {
     label: "Practice History",
