@@ -23,15 +23,15 @@ describe("bookmark highlight separation", () => {
   });
 
   it("uses no property that would move the text", () => {
-    const rule = bookmarkRule();
-    for (const layoutProperty of [
-      "margin",
-      "padding",
-      "border",
-      "letter-spacing",
-      "word-spacing",
-    ]) {
-      expect(rule, `${layoutProperty} would shift the pagination`).not.toContain(layoutProperty);
+    // border-radius is shape, not space, so match property names rather than
+    // substrings: "border" alone would reject the radius the rule needs.
+    const moves = /^(margin|padding|border(?!-radius)|letter-spacing|word-spacing|inset|translate)/;
+    const declared = bookmarkRule()
+      .split(";")
+      .map((declaration) => declaration.split(":")[0].trim())
+      .filter(Boolean);
+    for (const property of declared) {
+      expect(property, `${property} would shift the pagination`).not.toMatch(moves);
     }
   });
 
