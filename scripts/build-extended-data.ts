@@ -17,6 +17,7 @@ import Database from "better-sqlite3";
 import WordNet from "node-wordnet";
 import wordnetDb from "wordnet-db";
 import { downloadFile, CACHE_DIR, ASSETS_DIR } from "./lib/download";
+import { loadNameFrequencies } from "./lib/name-frequency";
 
 const DICT_DB_PATH = path.join(ASSETS_DIR, "dictionary.db");
 const EXT_DB_PATH = path.join(ASSETS_DIR, "dictionary-extended.db");
@@ -43,7 +44,10 @@ function createSchema(db: InstanceType<typeof Database>) {
       kana TEXT NOT NULL,
       name_type TEXT,
       translation TEXT,
-      category TEXT
+      category TEXT,
+      -- How often this spelling is read this way when it names a person.
+      -- NULL for most rows; see data/name-frequency.tsv for what it means.
+      name_freq INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS counter_readings (
@@ -260,8 +264,11 @@ async function insertNames(db: InstanceType<typeof Database>): Promise<number> {
 
   // Bulk insert into DB
   console.log("  Inserting into DB...");
+  const nameFreq = loadNameFrequencies();
+  console.log(`  ${nameFreq.size} name reading counts loaded`);
+
   const insert = db.prepare(
-    "INSERT OR REPLACE INTO names (id, kanji, kana, name_type, translation, category) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO names (id, kanji, kana, name_type, translation, category, name_freq) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
 
   const insertMany = db.transaction((entries: JMnedictEntry[]) => {
@@ -287,6 +294,18 @@ async function insertNames(db: InstanceType<typeof Database>): Promise<number> {
         category = "place";
       }
 
+      // Matched per spelling before the list is joined, so the 288 entries
+      // with several spellings are not left uncounted. Entries listing several
+      // readings get nothing: the count says how often a spelling takes ONE
+      // reading, and such a row does not stand for one.
+      let freq: number | null = null;
+      if (category === "person" && kana.length === 1) {
+        for (const k of kanji) {
+          const count = nameFreq.get(`${k}\t${kana[0]}`);
+          if (count !== undefined && (freq === null || count > freq)) freq = count;
+        }
+      }
+
       insert.run(
         id,
         kanji.length > 0 ? kanji.join(", ") : null,
@@ -294,6 +313,7 @@ async function insertNames(db: InstanceType<typeof Database>): Promise<number> {
         nameType,
         translations.length > 0 ? translations.join("; ") : null,
         category,
+        freq,
       );
     }
   });
@@ -401,8 +421,14 @@ async function main() {
   const nameCount = await insertNames(db);
   const counterCount = insertCounterReadings(db);
 
-  // Write version metadata
-  const version = 2;
+  // Write version metadata.
+  //
+  // Bumped to 4 for the name_freq column. The published manifest was already
+  // at 3 while this constant still said 2, so a rebuild would have shipped a
+  // downgrade; it is now the single source again. There is no client-side
+  // migration for the extended DB — isExtendedReady() compares this against
+  // the stored ext-db-version and re-downloads the whole file.
+  const version = 4;
   db.prepare("INSERT OR REPLACE INTO ext_meta (key, value) VALUES (?, ?)").run(
     "version",
     String(version),
@@ -438,7 +464,9 @@ async function main() {
   console.log("\nDone! Run 'yarn publish:dict' to upload.");
 }
 
-main().catch((err) => {
-  console.error("Build failed:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Build failed:", err);
+    process.exit(1);
+  });
+}
