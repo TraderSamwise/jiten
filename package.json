@@ -61,6 +61,7 @@
     "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs",
     "build:name-freq": "tsx scripts/build-name-frequency.ts",
     "sweep:furigana": "tsx scripts/furigana-sweep.ts",
+    "sweep:render": "tsx scripts/render-sweep.ts",
     "probe:names": "tsx scripts/probe-name-furigana.ts",
     "check:reading-order": "tsx scripts/reading-order-check.ts",
     "why:highlight": "tsx scripts/why-highlight.ts"

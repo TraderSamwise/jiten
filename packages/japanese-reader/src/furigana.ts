@@ -17,6 +17,7 @@ import {
 import {
   defaultReaderFuriganaSettings,
   type FuriganaEntry,
+  type ReaderFuriganaPinMap,
   type FuriganaKanjiSet,
   type FuriganaMatchLevel,
   type ReaderFuriganaRule,
@@ -1027,6 +1028,89 @@ function isPrefixOfRejectedLongerSurface(
 }
 
 /**
+ * Text going into HTML we generate.
+ *
+ * Everything else this function emits is copied from the input, but a pinned
+ * reading is a stored value that reaches the page from a backup file or from
+ * another device, and the page it lands in owns a bridge to the app.
+ */
+function escapeHtmlText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The pinned run that starts here, longest first, or null.
+ *
+ * Pins are tried before anything else at a position — before the dictionary
+ * surfaces, and before the shadow a rejected longer surface casts — because a
+ * pin is the user overruling all of that.
+ */
+function pinAt(html: string, i: number, pinsByLength: string[], longest: number): string | null {
+  const remaining = getVisibleCharsFrom(html, i, longest);
+  for (const run of pinsByLength) {
+    const runChars = [...run];
+    if (runChars.length > remaining.length) continue;
+    let isMatch = true;
+    for (let at = 0; at < runChars.length; at++) {
+      if (remaining[at] !== runChars[at]) {
+        isMatch = false;
+        break;
+      }
+    }
+    if (!isMatch) continue;
+    // Same refusal a dictionary surface gets: wrapping a span that opens or
+    // closes the book's own markup orphans whatever followed.
+    if (spanCrossesMarkup(html, i, runChars.length)) continue;
+    return run;
+  }
+  return null;
+}
+
+const EMPTY_PINS: ReaderFuriganaPinMap = new Map();
+
+/** Everything a ruby shows as its base: not the reading, not the fallback. */
+function rubyBaseText(inner: string): string {
+  return inner
+    .replace(/<rt\b[^>]*>[\s\S]*?<\/rt>/gi, "")
+    .replace(/<rp\b[^>]*>[\s\S]*?<\/rp>/gi, "")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+
+/**
+ * Re-read the ruby a book supplied, where that run is pinned.
+ *
+ * A book that ships its own ruby never reaches the text branch of
+ * `applyFuriganaToHtml` — the whole element passes through — so a pin on one
+ * of its words has to be applied here. Aozora's own ruby, which this repo
+ * generates, goes through the same pass before the text branch runs.
+ *
+ * The shapes are real ones: Aozora Bunko's XHTML writes
+ * `<ruby><rb>親方</rb><rp>（</rp><rt>おやかた</rt><rp>）</rp></ruby>`, and
+ * `<ruby class="...">` appears too. So the base is everything that is not an
+ * rt or an rp, rather than "the text before the first tag".
+ */
+export function applyFuriganaPinsToSourceRuby(html: string, pins: ReaderFuriganaPinMap): string {
+  if (pins.size === 0) return html;
+  // Non-greedy, so a nested ruby would be cut at the inner close. Nothing this
+  // repo renders produces one, and the result is escaped either way.
+  return html.replace(/<ruby\b[^>]*>([\s\S]*?)<\/ruby>/gi, (whole, inner: string) => {
+    const base = rubyBaseText(inner);
+    const reading = pins.get(base);
+    if (reading === undefined) return whole;
+    // Only the reading and the fallback parentheses are replaced; whatever
+    // markup the book put around the base — <b>, <a> — is kept as it was.
+    const keptBase = inner
+      .replace(/<rt\b[^>]*>[\s\S]*?<\/rt>/gi, "")
+      .replace(/<rp\b[^>]*>[\s\S]*?<\/rp>/gi, "")
+      .replace(/<\/?rb\b[^>]*>/gi, "")
+      .trim();
+    if (reading.length === 0) return keptBase;
+    return `<ruby>${keptBase}<rt>${escapeHtmlText(reading)}</rt></ruby>`;
+  });
+}
+
+/**
  * Apply furigana map to an HTML string.
  *
  * Wraps matched kanji substrings in <ruby>base<rt>reading</rt></ruby>.
@@ -1046,10 +1130,13 @@ export function applyFuriganaToHtml(
   kanjiSet: FuriganaKanjiSet,
   settings: ReaderFuriganaSettings = defaultReaderFuriganaSettings,
 ): string {
-  if (furiganaMap.size === 0) return html;
+  const pins = settings.pins ?? EMPTY_PINS;
+  if (furiganaMap.size === 0 && pins.size === 0) return html;
 
   // Pre-sort map keys by length descending for longest-first matching
   const sortedSurfaces = [...furiganaMap.keys()].sort((a, b) => [...b].length - [...a].length);
+  const pinsByLength = [...pins.keys()].sort((a, b) => [...b].length - [...a].length);
+  const longestPin = pinsByLength.length > 0 ? Math.max(10, [...pinsByLength[0]].length) : 10;
 
   let out = "";
   let i = 0;
@@ -1120,6 +1207,25 @@ export function applyFuriganaToHtml(
       if (semi >= 0 && semi - i <= 8) {
         out += html.slice(i, semi + 1);
         i = semi + 1;
+        continue;
+      }
+    }
+
+    // Before `blockedVisibleChars`, which would otherwise swallow a pin that
+    // begins inside the shadow of a rejected longer surface, and before the
+    // `tryMatch` gate, which a run like お父さん does not pass.
+    if (pinsByLength.length > 0) {
+      const pinned = pinAt(html, i, pinsByLength, longestPin);
+      if (pinned !== null) {
+        const reading = pins.get(pinned)!;
+        // The empty reading is a pin meaning "nothing here". It still
+        // consumes the run, so no shorter surface annotates inside it.
+        out +=
+          reading.length > 0
+            ? `<ruby>${escapeHtmlText(pinned)}<rt>${escapeHtmlText(reading)}</rt></ruby>`
+            : escapeHtmlText(pinned);
+        i = advanceHtmlPastChars(html, i, [...pinned].length);
+        blockedVisibleChars = 0;
         continue;
       }
     }
@@ -1208,12 +1314,14 @@ export function applyFuriganaToHtml(
 
 /**
  * Get an array of visible characters starting from position `start` in the HTML.
- * Skips tags and returns up to 10 chars (max surface length).
+ * Skips tags and returns up to `limit` chars — 10, the longest surface, unless
+ * a caller needs more: a pinned run can be longer than any surface, and one
+ * that could not be read this far would silently never match.
  */
-function getVisibleCharsFrom(html: string, start: number): string[] {
+function getVisibleCharsFrom(html: string, start: number, limit = 10): string[] {
   const chars: string[] = [];
   let i = start;
-  while (i < html.length && chars.length < 10) {
+  while (i < html.length && chars.length < limit) {
     const ch = html[i];
     if (ch === "<") {
       // Stop at closing block tags (</p>, </div>) to avoid crossing paragraph boundaries

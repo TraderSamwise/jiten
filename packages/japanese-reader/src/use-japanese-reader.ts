@@ -25,10 +25,12 @@ import {
   buildFuriganaKanjiSet,
   extractSurfacesFromHtml,
   injectRubySpacers,
+  applyFuriganaPinsToSourceRuby,
   resolveFuriganaBatch,
   type FuriganaEntry,
   type FuriganaKanjiSet,
 } from "./furigana";
+import { furiganaReadingCandidates, type FuriganaReadingCandidate } from "./furigana-pins";
 import type { FuriganaMatchLevel, ReaderFuriganaRule } from "./furigana-types";
 import {
   autoLookup,
@@ -154,6 +156,23 @@ export interface UseJapaneseReaderResult {
   createSettingsDraft: () => JapaneseReaderSettingsDraft;
   applySettingsDraft: (draft: JapaneseReaderSettingsDraft) => void;
   patchBook: (patch: Partial<ReaderBookRecord>) => void;
+  /** The readings this book has been told to use, run → reading ("" = none). */
+  furiganaPins: ReadonlyMap<string, string>;
+  setFuriganaPin: (surface: string, reading: string) => Promise<void>;
+  clearFuriganaPin: (surface: string) => Promise<void>;
+  clearAllFuriganaPins: () => Promise<void>;
+  /** What a long press is asking about, while the sheet is open. */
+  furiganaPinTarget: ReaderFuriganaPinTarget | null;
+  closeFuriganaPinSheet: () => void;
+}
+
+/** The run a long press landed on, and what it could be read as. */
+export interface ReaderFuriganaPinTarget {
+  run: string;
+  /** Null until the dictionaries have answered. */
+  candidates: FuriganaReadingCandidate[] | null;
+  /** The reading pinned for this run, or null when none is. */
+  pinnedReading: string | null;
 }
 
 type ReaderSettingsDiff = {
@@ -169,6 +188,8 @@ type ReaderTransformSettingsSnapshot = {
   readerCounterFurigana: boolean;
   readerNameFurigana: boolean;
   furiganaRuleLevelsKey: string;
+  /** Pinned readings are part of the furigana a page shows, so a change repaints it. */
+  furiganaPinsKey: string;
 };
 
 function warnOnce(key: string, message: string, onWarning?: (message: string) => void) {
@@ -200,13 +221,22 @@ function bookHasSourceFurigana(rawContent: string): boolean {
   return /<ruby[\s>]/.test(rawContent) || hasAozoraMarkup(rawContent);
 }
 
+/**
+ * Whether the page will carry ruby at all.
+ *
+ * This decides the line height, the `furigana-active` class and how many
+ * characters fit on a page, so a single pinned reading has to count: a page
+ * laid out as if it had no ruby clips the one it does have.
+ */
 function hasFuriganaActive(
   sourceDefault: boolean,
   showNames: boolean,
   showCounters: boolean,
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
   bookHasSource: boolean,
+  hasPins = false,
 ): boolean {
+  if (hasPins) return true;
   if (bookHasSource && sourceDefault) return true;
   if (showNames || showCounters) return true;
   return Object.values(ruleLevels).some((levels) => Object.values(levels).some(Boolean));
@@ -216,7 +246,9 @@ function hasInjectedFuriganaActive(
   showNames: boolean,
   showCounters: boolean,
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>,
+  hasPins = false,
 ): boolean {
+  if (hasPins) return true;
   if (showNames || showCounters) return true;
   return Object.values(ruleLevels).some((levels) => Object.values(levels).some(Boolean));
 }
@@ -251,6 +283,18 @@ function getReaderThemePayload(isDark: boolean) {
 
 function stripRubyTags(html: string): string {
   return html.replace(/<ruby>([\s\S]*?)<rt>[\s\S]*?<\/rt><\/ruby>/g, "$1");
+}
+
+/**
+ * A string that changes whenever any pinned reading does.
+ *
+ * JSON rather than `run=reading` joined by a separator: a reading containing
+ * the separator would make two different pin sets share a key, and the key is
+ * what tells the reader to repaint.
+ */
+function furiganaPinsCacheKey(pins: ReadonlyMap<string, string>): string {
+  if (pins.size === 0) return "";
+  return JSON.stringify([...pins.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 function ruleLevelsEqual(
@@ -312,7 +356,8 @@ function transformSettingsSnapshotsEqual(
     a.sourceFuriganaEnabled === b.sourceFuriganaEnabled &&
     a.readerCounterFurigana === b.readerCounterFurigana &&
     a.readerNameFurigana === b.readerNameFurigana &&
-    a.furiganaRuleLevelsKey === b.furiganaRuleLevelsKey
+    a.furiganaRuleLevelsKey === b.furiganaRuleLevelsKey &&
+    a.furiganaPinsKey === b.furiganaPinsKey
   );
 }
 
@@ -326,7 +371,7 @@ export function useJapaneseReader({
   initialLookupMode = "auto",
   onMissingCapabilityWarning,
 }: UseJapaneseReaderOptions): UseJapaneseReaderResult {
-  const { dictDb, extendedDb, bookmarks } = backend;
+  const { dictDb, extendedDb, bookmarks, furiganaPins } = backend;
   const {
     pageAnimations,
     sourceFuriganaEnabled,
@@ -408,6 +453,12 @@ export function useJapaneseReader({
    * the rest is what lets a tap name the bookmarked word inside its span.
    */
   const bookmarkProvenanceRef = useRef<Map<string, BookmarkSurfaceProvenance[]>>(new Map());
+  /** Readings this book has been told to use, keyed on the run the page spells. */
+  const furiganaPinsRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const [furiganaPinsKey, setFuriganaPinsKey] = useState("");
+  const [furiganaPinTarget, setFuriganaPinTarget] = useState<ReaderFuriganaPinTarget | null>(null);
+  /** Only the latest long press may fill the sheet. */
+  const furiganaPinRequestRef = useRef(0);
 
   useEffect(() => {
     sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
@@ -562,8 +613,10 @@ export function useJapaneseReader({
       readerCounterFurigana,
       readerNameFurigana,
       furiganaRuleLevelsKey: getRuleLevelsCacheKey(furiganaRuleLevels),
+      furiganaPinsKey,
     }),
     [
+      furiganaPinsKey,
       furiganaRuleLevels,
       getRuleLevelsCacheKey,
       readerCounterFurigana,
@@ -697,8 +750,11 @@ export function useJapaneseReader({
       ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
     }) => {
       const hasFuri = hasFuriganaActive(sourceDefault, showNames, showCounters, ruleLevels, true);
-      const content = hasFuri ? rawContent : stripRubyTags(rawContent);
-      return { content, hasFuri };
+      const stripped = hasFuri ? rawContent : stripRubyTags(rawContent);
+      // A book that ships its own ruby never reaches applyFuriganaToHtml, so a
+      // pin on one of its words has to be applied to that ruby directly.
+      const content = applyFuriganaPinsToSourceRuby(stripped, furiganaPinsRef.current);
+      return { content, hasFuri: hasFuri || furiganaPinsRef.current.size > 0 };
     },
     [],
   );
@@ -760,6 +816,8 @@ export function useJapaneseReader({
         includeCounters ? 1 : 0,
         includeNames ? 1 : 0,
         getRuleLevelsCacheKey(ruleLevels),
+        // Without this a pinned page keeps serving the reading it had.
+        furiganaPinsKey,
       ].join(":");
       const cachedHtml = furiganaSliceHtmlCacheRef.current.get(cacheKey);
       if (cachedHtml != null) {
@@ -768,10 +826,16 @@ export function useJapaneseReader({
       }
 
       let sliceHtml = isAozora && !sourceDefault ? stripRubyTags(baseHtml) : baseHtml;
+      const pins = furiganaPinsRef.current;
+      // Aozora's own ruby is generated before this runs, so a pin on one of
+      // its words is applied to the ruby rather than to the text under it.
+      if (pins.size > 0) sliceHtml = applyFuriganaPinsToSourceRuby(sliceHtml, pins);
       if (kanjiSetRef.current && dictDb) {
         onStage?.("generatingFurigana");
         const surfaces = extractSurfacesFromHtml(sliceHtml, kanjiSetRef.current);
-        if (surfaces.length > 0) {
+        // A slice with a pin but nothing extractable — a page of kana around
+        // one pinned run — still has to be painted.
+        if (surfaces.length > 0 || pins.size > 0) {
           const cache = furiganaEntryCacheRef.current;
           const resolverCacheKey = `${includeNames ? 1 : 0}:${includeCounters ? 1 : 0}`;
           const missing = surfaces.filter(
@@ -799,8 +863,25 @@ export function useJapaneseReader({
             showCounters: includeCounters,
             showNames: includeNames,
             ruleLevels,
+            pins,
           });
         }
+        sliceHtml = injectRubySpacers(sliceHtml);
+      } else if (pins.size > 0) {
+        // No dictionary furigana is active at all, but a pin is still a
+        // reading the user asked for.
+        sliceHtml = applyFuriganaToHtml(
+          !hasFuri && isAozora ? stripRubyTags(sliceHtml) : sliceHtml,
+          new Map(),
+          { all: true, chars: new Set() },
+          {
+            sourceDefault,
+            showCounters: includeCounters,
+            showNames: includeNames,
+            ruleLevels,
+            pins,
+          },
+        );
         sliceHtml = injectRubySpacers(sliceHtml);
       } else if (!hasFuri && isAozora) {
         sliceHtml = stripRubyTags(sliceHtml);
@@ -809,7 +890,7 @@ export function useJapaneseReader({
       setCachedHtml(furiganaSliceHtmlCacheRef.current, cacheKey, sliceHtml);
       return { cacheKey, html: sliceHtml };
     },
-    [dictDb, extendedDb, getRuleLevelsCacheKey, setCachedHtml],
+    [dictDb, extendedDb, furiganaPinsKey, getRuleLevelsCacheKey, setCachedHtml],
   );
 
   const renderSliceHtml = useCallback(
@@ -853,6 +934,85 @@ export function useJapaneseReader({
     [getBaseSliceHtml, getFuriganaSliceHtml],
   );
 
+  /**
+   * Write a pin and repaint.
+   *
+   * The ref is what the renderer reads and the key is what tells the
+   * re-transform effect that the furigana changed; both move together or the
+   * page keeps the reading it had.
+   */
+  const applyPinChange = useCallback(
+    async (change: (pins: Map<string, string>) => void | Promise<void>) => {
+      const next = new Map(furiganaPinsRef.current);
+      await change(next);
+      furiganaPinsRef.current = next;
+      setFuriganaPinsKey(furiganaPinsCacheKey(next));
+      setFuriganaPinTarget((prev) =>
+        prev ? { ...prev, pinnedReading: next.get(prev.run) ?? null } : prev,
+      );
+    },
+    [],
+  );
+
+  const setFuriganaPin = useCallback(
+    async (surface: string, reading: string) => {
+      if (!furiganaPins || !bookId || surface.length === 0) return;
+      await furiganaPins.set(bookId, surface, reading);
+      await applyPinChange((pins) => {
+        pins.set(surface, reading);
+      });
+    },
+    [applyPinChange, bookId, furiganaPins],
+  );
+
+  const clearFuriganaPin = useCallback(
+    async (surface: string) => {
+      if (!furiganaPins || !bookId || surface.length === 0) return;
+      await furiganaPins.clear(bookId, surface);
+      await applyPinChange((pins) => {
+        pins.delete(surface);
+      });
+    },
+    [applyPinChange, bookId, furiganaPins],
+  );
+
+  const clearAllFuriganaPins = useCallback(async () => {
+    if (!furiganaPins || !bookId) return;
+    await furiganaPins.clearAll(bookId);
+    await applyPinChange((pins) => {
+      pins.clear();
+    });
+  }, [applyPinChange, bookId, furiganaPins]);
+
+  /**
+   * A long press asked what this run should read as. Open the sheet at once —
+   * the gesture has to feel like it did something — and fill it when the
+   * dictionaries answer.
+   */
+  const openFuriganaPinSheet = useCallback(
+    async (run: string, currentReading: string) => {
+      if (!furiganaPins || !dictDb || run.length === 0) return;
+      const requestId = ++furiganaPinRequestRef.current;
+      const pinned = furiganaPinsRef.current.get(run);
+      setFuriganaPinTarget({
+        run,
+        candidates: null,
+        pinnedReading: pinned ?? null,
+      });
+      const candidates = await furiganaReadingCandidates(run, dictDb, extendedDb, {
+        currentReading: currentReading.length > 0 ? currentReading : null,
+      });
+      if (requestId !== furiganaPinRequestRef.current) return;
+      setFuriganaPinTarget((prev) => (prev && prev.run === run ? { ...prev, candidates } : prev));
+    },
+    [dictDb, extendedDb, furiganaPins],
+  );
+
+  const closeFuriganaPinSheet = useCallback(() => {
+    furiganaPinRequestRef.current++;
+    setFuriganaPinTarget(null);
+  }, []);
+
   const cycleLookupMode = useCallback(() => {
     setLookupMode((prev) => {
       if (prev === "auto") return "name";
@@ -886,7 +1046,14 @@ export function useJapaneseReader({
       const ruleLevels = furiganaRuleLevelsRef.current;
       const hasFuri =
         kanjiSetRef.current != null ||
-        hasFuriganaActive(sourceDefault, showNames, showCounters, ruleLevels, bookHasSource);
+        hasFuriganaActive(
+          sourceDefault,
+          showNames,
+          showCounters,
+          ruleLevels,
+          bookHasSource,
+          furiganaPinsRef.current.size > 0,
+        );
 
       const screen = Dimensions.get("window");
       const cpp = calcCharsPerPage(screen.width, screen.height, currentFontSize, hasFuri);
@@ -1022,6 +1189,13 @@ export function useJapaneseReader({
         lastPersistedReadCompleteRef.current = !!nextBook.readComplete;
         pendingReadCompleteRef.current = !!nextBook.readComplete;
 
+        // Before the first render: a page painted without them would have to
+        // be thrown away and painted again.
+        const pins = (await furiganaPins?.list(bookId)) ?? new Map<string, string>();
+        furiganaPinsRef.current = pins;
+        const pinsKey = furiganaPinsCacheKey(pins);
+        setFuriganaPinsKey(pinsKey);
+
         const rawContent = nextBook.rawContent;
         const hasSource = bookHasSourceFurigana(rawContent);
         hasSourceFuriganaRef.current = hasSource;
@@ -1038,6 +1212,7 @@ export function useJapaneseReader({
           readerCounterFurigana: showCounters,
           readerNameFurigana: showNames,
           furiganaRuleLevelsKey: getRuleLevelsCacheKey(ruleLevels),
+          furiganaPinsKey: pinsKey,
         };
 
         const hasRubyTags = /<ruby[>\s]/.test(rawContent);
@@ -1045,7 +1220,8 @@ export function useJapaneseReader({
           buildReaderLoadSequence({
             needsParsing: !hasRubyTags,
             needsFurigana:
-              !hasRubyTags && hasInjectedFuriganaActive(showNames, showCounters, ruleLevels),
+              !hasRubyTags &&
+              hasInjectedFuriganaActive(showNames, showCounters, ruleLevels, pins.size > 0),
           }),
         );
         const activeLoad = load;
@@ -1086,6 +1262,7 @@ export function useJapaneseReader({
             showCounters,
             ruleLevels,
             isAozora,
+            pins.size > 0,
           );
           const cpp = calcCharsPerPage(screen.width, screen.height, nextBook.fontSize, hasFuri);
 
@@ -1104,7 +1281,7 @@ export function useJapaneseReader({
           fwdLoadedEndRef.current = Math.min(startChar + totalBudget, model.totalChars);
           isAozoraRef.current = isAozora;
 
-          if (!dictDb && hasInjectedFuriganaActive(showNames, showCounters, ruleLevels)) {
+          if (!dictDb && hasInjectedFuriganaActive(showNames, showCounters, ruleLevels, false)) {
             warnOnce(
               "missing-dictdb-furigana",
               "Injected furigana requested, but no dictionary backend was provided. Reader will render without injected furigana.",
@@ -1167,6 +1344,7 @@ export function useJapaneseReader({
     clearBaseAndTransformCaches,
     dictDb,
     finishReaderLoad,
+    furiganaPins,
     getRuleLevelsCacheKey,
     onMissingCapabilityWarning,
     renderPreformattedReaderContent,
@@ -1186,7 +1364,8 @@ export function useJapaneseReader({
       previousSnapshot.sourceFuriganaEnabled !== nextSnapshot.sourceFuriganaEnabled ||
       previousSnapshot.readerCounterFurigana !== nextSnapshot.readerCounterFurigana ||
       previousSnapshot.readerNameFurigana !== nextSnapshot.readerNameFurigana ||
-      previousSnapshot.furiganaRuleLevelsKey !== nextSnapshot.furiganaRuleLevelsKey;
+      previousSnapshot.furiganaRuleLevelsKey !== nextSnapshot.furiganaRuleLevelsKey ||
+      previousSnapshot.furiganaPinsKey !== nextSnapshot.furiganaPinsKey;
     (async () => {
       const hasRubyTags = /<ruby[>\s]/.test(rawContent);
       const load = beginReaderLoad(
@@ -1407,6 +1586,11 @@ export function useJapaneseReader({
             }
           }
           setLookupLoading(false);
+        } else if (msg.type === "furiganaPin") {
+          void openFuriganaPinSheet(
+            typeof msg.run === "string" ? msg.run : "",
+            typeof msg.currentReading === "string" ? msg.currentReading : "",
+          );
         } else if (msg.type === "error") {
           setLookupResults([]);
           setLookupLoading(false);
@@ -1444,6 +1628,7 @@ export function useJapaneseReader({
                 readerCounterFuriganaRef.current,
                 furiganaRuleLevelsRef.current,
                 hasSourceFuriganaRef.current,
+                furiganaPinsRef.current.size > 0,
               );
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSizeRef.current, hasFuri);
@@ -1483,6 +1668,7 @@ export function useJapaneseReader({
                 readerCounterFuriganaRef.current,
                 furiganaRuleLevelsRef.current,
                 hasSourceFuriganaRef.current,
+                furiganaPinsRef.current.size > 0,
               );
             const screen = Dimensions.get("window");
             const cpp = calcCharsPerPage(screen.width, screen.height, fontSizeRef.current, hasFuri);
@@ -1536,6 +1722,7 @@ export function useJapaneseReader({
       clearPendingTapTooltipTimer,
       dictDb,
       extendedDb,
+      openFuriganaPinSheet,
       reloadAtChar,
       renderSliceHtml,
       scheduleReadingProgressFlush,
@@ -1575,6 +1762,7 @@ export function useJapaneseReader({
           readerCounterFuriganaRef.current,
           furiganaRuleLevelsRef.current,
           hasSourceFuriganaRef.current,
+          furiganaPinsRef.current.size > 0,
         );
       const lineHeight = hasFuri ? `${rounded * 2}px` : `${Math.round(rounded * 1.5)}px`;
       readerViewRef.current?.postMessage(
@@ -1684,5 +1872,11 @@ export function useJapaneseReader({
     createSettingsDraft,
     applySettingsDraft,
     patchBook: (patch) => setBook((prev) => (prev ? { ...prev, ...patch } : prev)),
+    furiganaPins: furiganaPinsRef.current,
+    setFuriganaPin,
+    clearFuriganaPin,
+    clearAllFuriganaPins,
+    furiganaPinTarget,
+    closeFuriganaPinSheet,
   };
 }

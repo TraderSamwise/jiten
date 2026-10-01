@@ -100,3 +100,17 @@ export interface ReaderBookmarkMembership {
   version: string;
   hasEntryId: (entryId: number) => boolean;
 }
+
+/**
+ * The readings this book has been told to use, keyed on the kanji run as the
+ * page spells it. The empty reading means "show no furigana over this run".
+ *
+ * A port rather than a table, like `ReaderBookSource`: the package never
+ * learns that the app keeps these in SQLite.
+ */
+export interface ReaderFuriganaPins {
+  list: (bookId: string) => Promise<Map<string, string>>;
+  set: (bookId: string, surface: string, reading: string) => Promise<void>;
+  clear: (bookId: string, surface: string) => Promise<void>;
+  clearAll: (bookId: string) => Promise<void>;
+}

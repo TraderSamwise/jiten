@@ -21,4 +21,5 @@ export interface JapaneseReaderBackend {
   dictDb?: ReaderSqlDb | null;
   extendedDb?: ReaderSqlDb | null;
   bookmarks?: import("./types").ReaderBookmarkMembership;
+  furiganaPins?: import("./types").ReaderFuriganaPins;
 }

@@ -13,11 +13,23 @@ export interface FuriganaKanjiSet {
   chars: Set<string>;
 }
 
+/**
+ * Readings this book has been told to use, keyed on the kanji run as the page
+ * spells it. The empty reading means "show no furigana over this run".
+ *
+ * A pin is the user overruling the resolver, so it is checked before every
+ * dictionary surface and it ignores the rest of these settings — a name
+ * reading pinned while names are switched off must still appear, or the
+ * gesture looks broken.
+ */
+export type ReaderFuriganaPinMap = ReadonlyMap<string, string>;
+
 export interface ReaderFuriganaSettings {
   sourceDefault: boolean;
   showNames: boolean;
   showCounters: boolean;
   ruleLevels: Record<ReaderFuriganaRule, Record<FuriganaMatchLevel, boolean>>;
+  pins?: ReaderFuriganaPinMap;
 }
 
 export interface FuriganaEntry {

@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
+  applyFuriganaPinsToSourceRuby,
   applyFuriganaToHtml,
   defaultReaderFuriganaSettings,
   injectRubySpacers,
@@ -1299,5 +1300,180 @@ describe.skipIf(!hasBothDbs)("furigana over a book's own ruby", () => {
   it("still annotates a compound with no ruby in the way", async () => {
     const out = await render("<p>つまみ、拍手喝采に応える</p>");
     expect(out).toContain("<ruby>拍手喝采<rt>はくしゅかっさい</rt></ruby>");
+  });
+});
+
+/**
+ * A pin is the user overruling the resolver for one book: 杏子 is きょうこ in
+ * this novel whatever the dictionary says. It wins over every dictionary
+ * surface, it shows through the settings filter — a name reading pinned while
+ * names are switched off must still appear, or the gesture looks broken — and
+ * the empty reading is how "show nothing here" is stored.
+ */
+describe("pinned readings", () => {
+  const pinned = (pins: Record<string, string>): ReaderFuriganaSettings => ({
+    ...withRuleLevels({ matchAnyKanji: { ...allVisibleLevels } }),
+    pins: new Map(Object.entries(pins)),
+  });
+
+  it("writes the pinned reading over the run", () => {
+    const out = applyFuriganaToHtml(
+      "<p>杏子は帰った</p>",
+      new Map(),
+      allKanji,
+      pinned({ 杏子: "きょうこ" }),
+    );
+    expect(out).toContain("<ruby>杏子<rt>きょうこ</rt></ruby>");
+  });
+
+  it("beats the dictionary reading for the same run", () => {
+    const map = makeMap([["杏子", "杏子", "あんず"]]);
+    const out = applyFuriganaToHtml(
+      "<p>杏子は帰った</p>",
+      map,
+      allKanji,
+      pinned({ 杏子: "きょうこ" }),
+    );
+    expect(out).toContain("<ruby>杏子<rt>きょうこ</rt></ruby>");
+    expect(out).not.toContain("あんず");
+  });
+
+  /**
+   * Longest-first is how the dictionary resolves its own ambiguity. A pin is
+   * not ambiguity — it is an instruction — so it wins even where a longer
+   * surface would have matched. Pinning 日本 inside 日本語 therefore splits it,
+   * which is the user's to undo.
+   */
+  it("beats a longer dictionary surface that starts at the same place", () => {
+    const map = makeMap([["日本語", "日本語", "にほんご"]]);
+    const out = applyFuriganaToHtml(
+      "<p>日本語を習う</p>",
+      map,
+      allKanji,
+      pinned({ 日本: "にほん" }),
+    );
+    expect(out).toContain("<ruby>日本<rt>にほん</rt></ruby>");
+    expect(out).not.toContain("にほんご");
+  });
+
+  it("shows through a settings filter that hides everything else", () => {
+    const map = makeMap([["帰", "帰", "かえ"]]);
+    // No rule level is on, so nothing from the dictionary may be annotated.
+    const settings: ReaderFuriganaSettings = {
+      ...withRuleLevels({}),
+      pins: new Map([["杏子", "きょうこ"]]),
+    };
+    const out = applyFuriganaToHtml("<p>杏子は帰った</p>", map, allKanji, settings);
+    expect(out).toContain("<ruby>杏子<rt>きょうこ</rt></ruby>");
+    expect(out).not.toContain("かえ");
+  });
+
+  it("shows nothing over a run pinned to the empty reading", () => {
+    const map = makeMap([["後味", "後味", "ごみ"]]);
+    const out = applyFuriganaToHtml("<p>後味が悪い</p>", map, allKanji, pinned({ 後味: "" }));
+    expect(out).toContain("後味");
+    expect(out).not.toContain("<ruby>後味");
+    expect(out).not.toContain("ごみ");
+  });
+
+  /** A suppressed run must still be consumed, or a shorter surface fills it. */
+  it("stops a shorter surface annotating inside a suppressed run", () => {
+    const map = makeMap([["後", "後", "あと"]]);
+    const out = applyFuriganaToHtml("<p>後味が悪い</p>", map, allKanji, pinned({ 後味: "" }));
+    expect(out).not.toContain("あと");
+  });
+
+  /**
+   * A rejected longer surface shadows the characters behind it so nothing
+   * shorter annotates inside. A pin is not something shorter.
+   */
+  it("is not swallowed by the shadow of a rejected longer surface", () => {
+    const map = makeMapWithJlpt([["反省会", "反省会", "はんせいかい", 3]]);
+    const n5Only: FuriganaKanjiSet = { all: false, chars: new Set(["花"]) };
+    const settings: ReaderFuriganaSettings = {
+      ...withRuleLevels({ matchAnyKanji: { ...allVisibleLevels } }),
+      pins: new Map([["省会", "しょうかい"]]),
+    };
+    const out = applyFuriganaToHtml("<p>反省会をする</p>", new Map(map), n5Only, settings);
+    expect(out).toContain("<ruby>省会<rt>しょうかい</rt></ruby>");
+  });
+
+  it("refuses a pin that would straddle the book's own markup", () => {
+    const out = applyFuriganaToHtml(
+      "<p>杏<em>子</em>は帰った</p>",
+      new Map(),
+      allKanji,
+      pinned({ 杏子: "きょうこ" }),
+    );
+    expect(out).toContain("<p>杏<em>子</em>は");
+    expect(out).not.toContain("きょうこ");
+  });
+
+  it("escapes what it writes into the page", () => {
+    const out = applyFuriganaToHtml(
+      "<p>杏子は帰った</p>",
+      new Map(),
+      allKanji,
+      pinned({ 杏子: "<script>x</script>" }),
+    );
+    expect(out).not.toContain("<script>");
+    expect(out).toContain("&lt;script&gt;");
+  });
+
+  it("leaves a page with no pins exactly as it was", () => {
+    const map = makeMap([["杏子", "杏子", "あんず"]]);
+    const html = "<p>杏子は帰った</p>";
+    const base = applyFuriganaToHtml(
+      html,
+      map,
+      allKanji,
+      withRuleLevels({ matchAnyKanji: { ...allVisibleLevels } }),
+    );
+    expect(applyFuriganaToHtml(html, map, allKanji, pinned({}))).toBe(base);
+  });
+});
+
+describe("applyFuriganaPinsToSourceRuby", () => {
+  const pins = new Map([
+    ["杏子", "きょうこ"],
+    ["親方", "おやかた"],
+    ["後味", ""],
+  ]);
+
+  it("re-reads the ruby a book shipped", () => {
+    expect(applyFuriganaPinsToSourceRuby("<p><ruby>杏子<rt>あんず</rt></ruby>は</p>", pins)).toBe(
+      "<p><ruby>杏子<rt>きょうこ</rt></ruby>は</p>",
+    );
+  });
+
+  /** Aozora Bunko's XHTML, which is what an imported book actually contains. */
+  it("reads the rb and rp shape", () => {
+    const html = "<ruby><rb>親方</rb><rp>（</rp><rt>おや</rt><rp>）</rp></ruby>";
+    expect(applyFuriganaPinsToSourceRuby(html, pins)).toBe("<ruby>親方<rt>おやかた</rt></ruby>");
+  });
+
+  it("reads a ruby that carries attributes", () => {
+    expect(applyFuriganaPinsToSourceRuby('<ruby class="x">杏子<rt>あんず</rt></ruby>', pins)).toBe(
+      "<ruby>杏子<rt>きょうこ</rt></ruby>",
+    );
+  });
+
+  it("drops the ruby entirely where the pin is the empty reading", () => {
+    expect(applyFuriganaPinsToSourceRuby("<ruby>後味<rt>ごみ</rt></ruby>が", pins)).toBe("後味が");
+  });
+
+  it("escapes what it writes into the page", () => {
+    const out = applyFuriganaPinsToSourceRuby(
+      "<ruby>親友<rt>しんゆう</rt></ruby>",
+      new Map([["親友", "<script>x</script>"]]),
+    );
+    expect(out).not.toContain("<script>");
+    expect(out).toContain("&lt;script&gt;");
+  });
+
+  it("leaves a ruby nobody pinned alone", () => {
+    const html = "<ruby>親友<rt>しんゆう</rt></ruby>";
+    expect(applyFuriganaPinsToSourceRuby(html, pins)).toBe(html);
+    expect(applyFuriganaPinsToSourceRuby(html, new Map())).toBe(html);
   });
 });
