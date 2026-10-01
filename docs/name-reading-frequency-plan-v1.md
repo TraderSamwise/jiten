@@ -1,6 +1,6 @@
 # Name reading frequency — plan v1
 
-Status: not started. Written 2026-10-01 so the work survives a context compaction.
+Status: Phase 1 done (source settled, 2026-10-01). Phases 2-4 pending.
 
 ## The problem
 
@@ -77,56 +77,175 @@ row.
 
 ### Measured size cost
 
-`assets/dictionary-extended.db` is 116,617,216 bytes with 743,184 `names` rows.
-Adding a populated `INTEGER` column and `VACUUM`ing takes it to 119,029,760 —
-**+2.4 MB, +2.1%**. Acceptable, and it can be smaller: only 134,574 rows need a
-number at all (370,968 person rows, of which 47,638 spellings are ambiguous).
-A `NULL` on the other 608,610 rows costs a byte of record header each.
+Adding a populated `INTEGER` column to `names` and `VACUUM`ing takes
+`assets/dictionary-extended.db` from 116,617,216 to 116,703,232 bytes —
+**+86 KB, +0.07%**. Only 58,209 of 661,719 kanji-bearing rows carry a number;
+the rest are `NULL` and cost a byte of record header each.
 
-## Open question to settle first
+**Do not add an index on it.** `names(kanji)` already exists and
+`batchLookupNames` selects whole rows by `kanji IN (...)`, so reading one more
+column is free. A `names(kanji, name_freq DESC)` index costs **+12.78 MB**
+— 150x the column — and buys nothing.
 
-**Which corpus.** Not yet decided; settle it before building anything else.
+## Phase 1 — source settled (2026-10-01)
 
-- **ja.wikipedia `pages-articles.xml.bz2` — 4.4 GB.** Person articles open with
-  a near-universal pattern, 「山田 太郎（やまだ たろう、1950年…」, giving
-  spelling → reading for hundreds of thousands of real people. Richest, heaviest.
-  `jawiki-latest-abstract.xml.gz` would have been the cheap version of this and
-  **404s** — it is no longer produced.
-- **Wikidata.** 140,748 items are `instance of: human` with a Japanese native
-  label (P1559). Whether they carry an actual kana reading (P1814) is
-  **unknown** — the count query returned empty, timed out or unsupported. Settle
-  this first: if P1814 coverage is six figures, Wikidata is far cheaper than a
-  4.4 GB parse and needs no HTML heuristics.
+**Chosen: Wikidata, `instance of: human` + `name in kana` (P1814), with the
+item's Japanese `rdfs:label` as the spelling.** Not the 4.7 GB article dump.
 
-Decide on coverage, not preference. The question each source answers is the same:
-_when this spelling names a person, how is it read?_
+### How the pairs are derived
+
+Four queries, pooled:
+
+1. **Whole people** — `?h wdt:P31 wd:Q5 ; wdt:P1814 ?kana ; rdfs:label ?l`
+   (lang ja). 213,503 rows.
+2. **Fictional characters** — the same against
+   `wdt:P31/wdt:P279* wd:Q95074`. Only 2,101 rows, but fiction is the actual
+   use case: `P31 wd:Q5` excludes every character in every novel.
+3. **Given-name items** — `?h wdt:P735 ?gn . ?gn rdfs:label ?gl ; wdt:P1814 ?k`,
+   grouped and counted. 4,128 rows.
+4. **Family-name items** — the same via `P734`. 6,621 rows.
+
+(1) and (2) give a whole-name reading (`まつやま ちはる`) against an unspaced
+label (`松山千春`), so the pair means nothing until it is split. The split
+validates itself against the shipped table: for each split of the spelling into
+A+B, accept it only if `names` already holds A→kana1 **and** B→kana2. Exactly
+one consistent split counts; zero or several are dropped. The enumeration tries
+every boundary and never early-returns, which is why "several" is a real
+measurement rather than an artifact.
+
+This cannot invent a reading — it only counts readings JMnedict already lists —
+and it discards pen names for free (石崎 寿夫 read すしお has no consistent
+split). (3) and (4) need no split at all: the name item already is one
+component, which is why they are worth pooling in despite being small.
+
+Rows are deduped on (label, kana) first; 5,861 were duplicates.
+
+### Measured
+
+|                                         |            |
+| --------------------------------------- | ---------- |
+| rows in                                 | 215,604    |
+| split uniquely                          | 159,177    |
+| mononyms                                | 965        |
+| direct name-item counts                 | 10,117     |
+| no consistent split                     | 44,223     |
+| genuinely ambiguous split               | 4          |
+| malformed / non-kana                    | 5,374      |
+| **distinct (spelling, reading, count)** | **59,215** |
+| **distinct spellings**                  | **50,245** |
+
+Against the 47,638 person spellings that have more than one reading — the only
+ones where a tie exists to break — **22,968 (48.2%) get a count**, and in
+**21,598 of those (94.0%) one reading strictly beats the rest**. The other 51.8%
+keep today's behaviour exactly: no counts means no change, not a worse answer.
+
+Requiring `P1559` (`name in native language`) instead of the Japanese label
+halves the input for nothing — 125,442 rows and 38.5% coverage — because most
+Japanese people on Wikidata carry a label without that statement.
+
+### What the counts are and are not
+
+They are **undercounts, not probabilities.** A fifth of the input finds no
+consistent split and contributes nothing, and that loss is uncorrelated with
+which reading a spelling took. Two consequences, both load-bearing:
+
+- **Never compare counts across spellings.** 高遠's 4 and 洋子's 267 say
+  nothing about each other.
+- **Zero is not evidence against a reading.** It is the absence of evidence,
+  and most readings have it.
+
+### Why not ja.wikipedia
+
+`page_props` carries DEFAULTSORT for every article — 231 MB of SQL dumps rather
+than a 4.7 GB article parse, and roughly twice Wikidata's person count. It is
+still the wrong source: **ja.wikipedia sort keys are stripped of dakuten and
+small kana.** 生物 sorts as せいふつ, ヨーロッパ as よおろつは, 五十嵐 as
+いからし. That collapses きょうこ with きようこ and いがらし with いからし —
+exactly the pairs the ranking has to separate. More rows, less signal.
+
+`jawiki-latest-abstract.xml.gz`, which would have been the cheap lead-sentence
+source, **404s** — it is no longer produced.
+
+### The result on the cases that mattered
+
+Every spelling that killed the structural heuristic resolves correctly:
+
+| spelling | heuristic picked | correct  | counts                        |
+| -------- | ---------------- | -------- | ----------------------------- |
+| 京子     | けいこ ✗         | きょうこ | きょうこ 145, けいこ 2        |
+| 洋子     | ひろこ ✗         | ようこ   | ようこ 267, ひろこ 11         |
+| 恵子     | さとみ ✗         | けいこ   | けいこ 158, あやこ 1          |
+| 裕子     | ひろみ ✗         | ゆうこ   | ゆうこ 182, ひろこ 49         |
+| 由美     | よしみ ✗         | ゆみ     | ゆみ 100, よしみ 2            |
+| 美咲     | みき ✗           | みさき   | みさき 93                     |
+| 花子     | みつき ✗         | はなこ   | はなこ 21                     |
+| 一郎     | かずお ✗         | いちろう | いちろう 326                  |
+| 翼       | たすく ✗         | つばさ   | つばさ 322, よく 12, たすく 3 |
+| 愛       | あき ✗           | あい     | あい 179, めぐみ 23           |
+| 杏子     | きょうこ ✓       | きょうこ | **きょうこ 25, あんず 2**     |
+
+Eleven of eleven, against roughly one of eleven for the heuristic.
+
+The two canaries and the second target:
+
+- **高遠 → たかとお = 4**, every other reading 0. Keeps working, and now on
+  evidence rather than a tie.
+- **後味 → no counts at all**, against 高遠's 4. The feature recorded in
+  `reader-lookup-decisions.md` as existing in neither dictionary exists here.
+  Still to be proved through the scorer in Phase 4 and not claimed before.
+- **五十嵐 → いがらし 170, いからし 5, いそあらし 1, いかざき 0.** This moves.
+  The canary line in `reader-lookup-decisions.md` says 五十嵐 "is still
+  いかざき", but that recorded the numeral rule leaving it alone, not a claim
+  that いかざき is right. いがらし is the correct surname reading. Treat the
+  change as a fix and record it; do not defend いかざき.
+
+### Reproducibility
+
+The SPARQL endpoint is live, so the query is not a pinned artifact. The derived
+pairs are: 59,215 lines, about 1.2 MB. Commit them as **plain TSV in `data/`**,
+the way `data/jlpt-words.csv` (1.0 MB) and `data/rtk-primitives.json` already
+are — a derived build _input_, committed precisely because regenerating it
+needs a network round trip to a source that drifts. Plain, not gzipped, so it
+stays diffable. Record the four queries and the fetch date beside it.
+
+Deep `OFFSET` paging times out on this endpoint; shard query (1) by the first
+character of the kana instead. Queries (3) and (4) group server-side and need
+no sharding.
+
+### Considered and not taken
+
+- **ja.wikipedia DEFAULTSORT as a fallback** for spellings Wikidata leaves
+  uncounted, matching on dakuten-stripped keys where exactly one `names`
+  reading collides. Sound in principle and pure coverage gain. Not built: 48.2%
+  coverage already settles every reported case, and a second source with a
+  lossy key is a way to print いからし for 五十嵐 the first time the collision
+  check is wrong. Revisit only if real misses demand it.
+- **An index on `name_freq`.** Measured at +12.78 MB for no gain. See above.
 
 ## Phases
 
-### Phase 1 — Settle the source
+### Phase 1 — Settle the source — **done**
 
-Re-run the Wikidata P1814 coverage query (paginate or use the dump if SPARQL
-times out). If coverage is weak, take the Wikipedia dump. Produce a short
-written comparison: rows obtained, distinct spellings covered, and whether
-高遠/杏子/京子/後味 appear.
-
-Gate: a decision with numbers behind it.
+See "Phase 1 — source settled" above. Wikidata, four queries, pooled and
+split-validated against the shipped `names` table.
 
 ### Phase 2 — The derivation script
 
-`scripts/build-name-frequency.ts`, run manually, never by the app.
+`scripts/build-name-frequency.ts`, run manually by `yarn build:name-freq`,
+never by the app.
 
-- Input: the chosen dump, downloaded to a scratch path outside the repo.
-- Output: a small TSV or JSON of `kanji \t kana \t count`, committed **only if
-  small**; otherwise written to a release asset. The dump itself is never
-  committed and never shipped.
-- Extraction rule for Wikipedia: lead-sentence pattern, full-width parens,
-  kana-only reading, discard entries whose kanji is not in `names`.
-- Sanity output: total pairs, distinct spellings, and the counts for 杏子, 京子,
-  洋子, 一郎, 高遠, 五十嵐, 後味.
+- Input: the four SPARQL queries above, against the live endpoint. Nothing is
+  downloaded to the repo and no dump is fetched.
+- Output: `data/name-frequency.tsv`, `kanji \t kana \t count`, sorted, with a
+  header comment carrying the fetch date.
+- Validation: against `assets/dictionary-extended.db`'s own `names` table, so
+  the script needs the extended DB present and says so if it is missing.
+- Sanity output on every run: rows in, each rejection bucket, pairs out,
+  distinct spellings, ambiguous-spelling coverage, and the counts for 杏子,
+  京子, 洋子, 一郎, 高遠, 五十嵐, 後味.
 
-Gate: the script is idempotent and its output is reproducible from the recorded
-dump date.
+Gate: re-running the script on the same day reproduces the same file, and the
+sanity line matches the numbers recorded above.
 
 ### Phase 3 — The column
 
@@ -145,13 +264,20 @@ the expected counts.
 ### Phase 4 — Use it, measured
 
 - `batchLookupNames` (`packages/japanese-reader/src/furigana.ts`) selects
-  `name_freq` alongside the existing columns.
-- `scoreFuriganaNameMatch` uses it to separate readings of one spelling.
+  `name_freq` alongside the existing columns. No new query, no new index.
+- `scoreFuriganaNameMatch` uses it to separate readings **of one spelling**.
+  Because counts are undercounts and not comparable across spellings, this must
+  be a rank within the candidate set, not a term added to an absolute score.
 - `computeAutoNameConfidence` (`packages/japanese-reader/src/auto-name.ts`):
-  the candidate-count penalty is backwards when one reading dominates. Dominance
-  should raise confidence, not lower it.
-- Re-measure 後味 against 高遠 — with real counts they may finally separate. Do
-  not claim it until the sweep says so.
+  the `candidateCount` penalty is backwards when one reading dominates. 13
+  readings currently reads as −24 uncertainty even when 25 of 30 observations
+  pick one of them. Dominance should raise confidence, not lower it.
+- **A floor, both absolute and relative.** 杏子 beats a _common_ JMdict word on
+  27 observations. Without a minimum count and a minimum winner share, one
+  noisy pair starts furigana-ing common nouns as names. Pick both on the sweep,
+  not by taste, and write the chosen numbers down.
+- Re-measure 後味 against 高遠. 後味 has no counts and 高遠 has 4, so they can
+  finally separate — but say so only once the sweep says so.
 
 ## Gates — every phase
 
