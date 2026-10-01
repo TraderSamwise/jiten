@@ -21,6 +21,18 @@ of argued about.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
   distinct `combined_kanji` forms and diff. This bounds any counter change
   exactly.
+- **Bookmark highlights.** `yarn why:highlight --list <export.jiten> --text
+<file> --json <out>` runs the shipping matcher and the shipping painter over
+  a whole text and reports every painted span with its provenance, plus
+  distinct surfaces, spans, boxes and the share of Japanese characters
+  covered. `--diff` compares two runs. Measure on both
+  `test/corpus/bocchan.txt` (1,926 surfaces against a real 8,586-entry list)
+  and the local page fixture. The labelled cases are
+  `test/fixtures/bookmark-highlight-cases.ts`, run by
+  `packages/japanese-reader/src/bookmarks.cases.test.ts`; expectations the
+  code does not meet yet are listed in each case's `knownRed` and run as
+  `it.fails`, so the suite is green today and goes red the moment one is
+  fixed.
 
 A change is shippable when the diff is enumerable and every entry in it is an
 improvement, neutral, or a regression named and accepted in this document. A
@@ -542,6 +554,94 @@ spelling, so よしみ and ひろみ float to the top everywhere.
 
 Do not rebuild it. It is cheap to try and it looks right on whichever case is
 being tested.
+
+### A deinflection the entry's part of speech cannot take is not a highlight
+
+The bookmark highlighter enumerates every substring of a slice, deinflects
+each, and paints anything whose deinflected form is a bookmarked entry. It
+never asked whether that entry could take the inflection, so a noun could be
+conjugated: している matched 汁 as a te-iru, く matched the noun 堰 as an
+adverbial, だち matched the **prefix** 脱 as a masu-stem.
+
+`deinflect` already carried the answer and nothing read it. Every rule records
+`typeOut`, and `DeinflectCandidate.typeMask` is the class the resulting word
+must belong to. `posTagsToTypeMask` maps JMdict's tags onto the same bits, and
+`explainBookmarkedWordSurfacesInHtml` now refuses a match whose entry does not
+admit the rule. The check is in the highlighter only; the tap path has its own
+scoring and is untouched.
+
+**Two things the obvious version gets wrong.**
+
+_Any sense is enough, not every sense._ JMdict tags part of speech per sense,
+and 勉強 is `n,vs`. Requiring every sense to admit the rule would delete every
+suru verb.
+
+_`typeOut` is what the next rule may accept, not what the entry must be, and
+one word is reachable by several rules._ `deinflect` keeps one candidate per
+output word — `seen` is keyed on the word — so when two rules reach the same
+word, the first rule in the table wins and the second is dropped. That was
+invisible while nothing read the class. It is not invisible now:
+
+- 叱られる is 叱ら + れる, and both the ichidan `られる` rule and the godan one
+  strip onto 叱る. The ichidan rule is listed first, so the candidate said
+  "ichidan" and a `v5r` entry was refused. Same for 受け取れば.
+- 来て, 来た, 来ない, 来ます, 来ました, 来ている all have a kuru rule **and** an
+  ichidan rule reaching 来る. The ichidan one is first, and 来る is `vk`, so a
+  bookmarked 来る lost every conjugation.
+
+So `DeinflectCandidate` now reports `entryMask` beside `typeMask`: the union
+over every rule that reached the word, where `typeMask` stays the first one
+and goes on governing which rule may chain next. Twelve more `entryType`
+exceptions would have been the wrong fix for the same bug.
+
+**Three kanji 来-rules were simply missing**, and the ichidan rules had been
+covering for them: 来なかった, 来れば, 来たら, 来られる, 来させる, 来よう, 来たり,
+来ている, 来てる. Each only adds `vk` to a candidate the other rules already
+produce, so the corpus tap diff over every position whose window contains 来
+(6,679 taps) is unchanged by them.
+
+**来い is deliberately not among them.** It has its own entry — 2742070, "come!"
+— and adding the rule did not add a reading, it replaced the exact one:
+tapping 来い then answered 来る and dropped 来い from the result entirely. The
+same diff showed the rule's only other effect was an improvement (意図 stopped
+swallowing the い of 来いと), and it was still not worth losing the headword. A
+bookmarked 来る therefore does not light up 来い; 来い can be bookmarked itself.
+
+**`exp` is read over the whole entry, not per sense.** 違う carries three
+`v5u` senses and one tagged only `exp`; mapping sense by sense would read that
+one sense as "no class recorded" and leave the whole verb unconstrained.
+
+Classical classes (`v2*`, `v4*`, `vn`, `vr`) and `vz` map to no bit on
+purpose: no rule in the table produces those forms, so admitting them could
+only let a wrong path through. They are still reachable as the surface as
+written. An entry tagged only `exp` is left unconstrained, because JMdict does
+not say which class its tail belongs to and かも知れない does take a past.
+
+**Measured.** Over `test/corpus/bocchan.txt` against a real 8,586-entry list:
+
+| measure                     | before | after |
+| --------------------------- | ------ | ----- |
+| distinct surfaces           | 1,926  | 1,641 |
+| painted boxes               | 4,298  | 3,375 |
+| share of characters painted | 30.5%  | 23.4% |
+
+**279 surfaces removed, none added.** 123 of the removals are cross-class —
+the entry is a verb or an adjective, so the drop could in principle be a real
+loss — and each was read individually: every one is an ichidan rule landing on
+a godan verb (はない on 張る, わない on 割る), an IKU rule landing on a plain
+`v5k` (やった on 焼く), or an imperative fragment (帰ろ, 力になろ). The other
+156 are inflections of nouns and prefixes, which is the point of the change.
+
+On the labelled page the same change takes 49 surfaces to 32, 31 boxes to 21,
+and coverage from 31.0% to 20.9%; 11 of the fixture's 25 red expectations go
+green. `yarn check:tap-consistency` is unchanged at 98.0% / 128 pairs.
+
+**Accepted regression: たいてい.** Removing the wrong span はたい exposes a
+wrong span under it. たいてい reaches 炊く through a three-step chain —
+masu-stem, te-iru, te-form — every step POS-legal, via an intermediate
+たいている that is not a word. Part of speech cannot refuse it; only a word
+boundary can. It is in `knownRed` and belongs to the boundary work. Nothing is
+worse than before: the character was painted either way.
 
 ## Rejected
 

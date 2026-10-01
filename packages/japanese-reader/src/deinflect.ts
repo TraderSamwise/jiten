@@ -305,6 +305,26 @@ const RULES: DeinflectRule[] = [
   { from: "来ます", to: "来る", typeIn: KURU, typeOut: KURU, reason: "polite" },
   { from: "来ました", to: "来る", typeIn: KURU, typeOut: KURU, reason: "past polite" },
   { from: "来ません", to: "来る", typeIn: KURU, typeOut: KURU, reason: "negative polite" },
+  // The kanji block mirrors the kana one above. These were missing, and an
+  // ichidan or godan rule reached 来る from them instead — harmless while
+  // nothing compared the rule's class against the entry's, and a lost
+  // highlight the moment something did, because 来る is vk. Each one only
+  // adds its class to a candidate the other rules already produced, so taps
+  // are unchanged.
+  //
+  // 来い is deliberately absent. It is its own entry (2742070, "come!"), and
+  // a rule for it does not add a reading — it replaces the exact one. With
+  // the rule, tapping 来い answered 来る and dropped 来い entirely.
+  { from: "来なかった", to: "来る", typeIn: KURU, typeOut: KURU, reason: "negative past" },
+  { from: "来られる", to: "来る", typeIn: KURU_OR_V1, typeOut: KURU, reason: "potential" },
+  { from: "来られる", to: "来る", typeIn: KURU_OR_V1, typeOut: KURU, reason: "passive" },
+  { from: "来させる", to: "来る", typeIn: KURU_OR_V1, typeOut: KURU, reason: "causative" },
+  { from: "来よう", to: "来る", typeIn: KURU, typeOut: KURU, reason: "volitional" },
+  { from: "来れば", to: "来る", typeIn: KURU, typeOut: KURU, reason: "conditional" },
+  { from: "来たら", to: "来る", typeIn: KURU, typeOut: KURU, reason: "conditional" },
+  { from: "来たり", to: "来る", typeIn: KURU, typeOut: KURU, reason: "tari" },
+  { from: "来ている", to: "来る", typeIn: KURU, typeOut: KURU, reason: "te-iru" },
+  { from: "来てる", to: "来る", typeIn: KURU, typeOut: KURU, reason: "te-iru (casual)" },
 
   // ── i-adjective ──
   { from: "くない", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "negative" },
@@ -517,15 +537,75 @@ const RULES: DeinflectRule[] = [
 
 // ─── Deinflection algorithm ───
 
+/**
+ * The mask an unconstrained candidate carries: the surface as written, and the
+ * handful of rules whose output is not a word class at all.
+ *
+ * Three rules emit it — stripping する off a suru-verb noun, ずに, and ている —
+ * so a constrained chain that ends at one of those is unconstrained from here
+ * on. Their outputs end in て, で or ず and are not headwords, so nothing is
+ * let through that a dictionary lookup would find anyway.
+ */
+export const ANY_TYPE_MASK = ANY;
+
+/**
+ * Which deinflection rules a dictionary entry's part of speech can accept.
+ *
+ * `DeinflectCandidate.typeMask` says what the word the rules landed on must
+ * be; this says what it actually is. Comparing them is how a highlighter
+ * refuses the masu-stem of a noun.
+ *
+ * Classical classes (`v2*`, `v4*`, `vn`, `vr`) and `vz` map to nothing on
+ * purpose: no rule in the table produces one of those forms, so admitting
+ * them could only let a wrong path through. They are still reachable as the
+ * surface as written, which carries `ANY_TYPE_MASK`.
+ */
+export function posTagsToTypeMask(tags: Iterable<string>): number {
+  let mask = 0;
+  let expression = false;
+  for (const tag of tags) {
+    if (tag.startsWith("v5")) {
+      // v5r-i (ある), v5aru (下さる), v5u-s, v5n and the rest all conjugate by
+      // the godan rules, so the prefix is the test, not a list of spellings.
+      mask |= V5;
+      if (tag === "v5k-s") mask |= IKU;
+    } else if (tag === "v1" || tag === "v1-s") mask |= V1;
+    else if (tag === "adj-i" || tag === "adj-ix" || tag === "aux-adj") mask |= ADJ;
+    else if (tag === "vs" || tag === "vs-i" || tag === "vs-s") mask |= SURU;
+    // A vs-c entry without v5s is still reached by the す-column godan rules.
+    else if (tag === "vs-c") mask |= SURU | V5;
+    else if (tag === "vk") mask |= KURU;
+    else if (tag === "exp") expression = true;
+  }
+  // An expression tagged only `exp` still inflects on its tail — かも知れない
+  // takes a past. JMdict does not say which class the tail belongs to, so the
+  // honest answer for those is to not constrain them.
+  if (mask === 0 && expression) return ANY_TYPE_MASK;
+  return mask;
+}
+
 export interface DeinflectCandidate {
   word: string;
+  /** What the next rule may accept as input. */
   typeMask: number;
+  /**
+   * What a dictionary entry for `word` may be for some path here to be real.
+   *
+   * Not the same question as `typeMask`. Several rules can reach one word
+   * from one surface — 来て undoes to 来る as an ichidan te-form and as the
+   * kuru te-form, 叱られる as an ichidan passive and as the godan passive —
+   * and the word is a legitimate reading under any of them. So this is the
+   * union over every rule that got here, while `typeMask` stays the first
+   * one, which is what governs chaining.
+   */
+  entryMask: number;
   reasons: string[];
 }
 
 export function deinflect(word: string): DeinflectCandidate[] {
-  const results: DeinflectCandidate[] = [{ word, typeMask: ANY, reasons: [] }];
-  const seen = new Set([word]);
+  const first: DeinflectCandidate = { word, typeMask: ANY, entryMask: ANY, reasons: [] };
+  const results: DeinflectCandidate[] = [first];
+  const seen = new Map<string, DeinflectCandidate>([[word, first]]);
 
   for (let i = 0; i < results.length; i++) {
     const current = results[i];
@@ -537,13 +617,23 @@ export function deinflect(word: string): DeinflectCandidate[] {
       if (!(current.typeMask & rule.typeIn)) continue;
 
       const base = current.word.slice(0, stemLen) + rule.to;
-      if (seen.has(base)) continue;
-      seen.add(base);
-      results.push({
+      const already = seen.get(base);
+      if (already) {
+        // A second rule reaching the same word is a second reading of the
+        // same characters, not a duplicate: 来て is the ichidan te-form rule
+        // and the kuru te-form rule, and 来る is kuru. Keeping only the first
+        // rule's class would refuse the entry that is actually there.
+        already.entryMask |= rule.typeOut;
+        continue;
+      }
+      const candidate: DeinflectCandidate = {
         word: base,
         typeMask: rule.typeOut,
+        entryMask: rule.typeOut,
         reasons: [...current.reasons, rule.reason],
-      });
+      };
+      seen.set(base, candidate);
+      results.push(candidate);
     }
   }
   return results;

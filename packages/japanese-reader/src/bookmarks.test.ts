@@ -12,6 +12,12 @@ function createBookmarkTestDb() {
     { text: "はやし", entry_id: 2 },
     { text: "のみ", entry_id: 3 },
   ];
+  // All three are nouns, so nothing here may be reached by an inflection.
+  const senseRows = [
+    { entry_id: 1, part_of_speech: '["n"]' },
+    { entry_id: 2, part_of_speech: '["n"]' },
+    { entry_id: 3, part_of_speech: '["n"]' },
+  ];
 
   return {
     async getAllAsync<T>(sql: string, params?: any[]): Promise<T[]> {
@@ -25,6 +31,9 @@ function createBookmarkTestDb() {
         return [...new Set(kanjiRows.map((row) => row.entry_id))]
           .filter((entryId) => params?.includes(entryId))
           .map((entry_id) => ({ entry_id })) as T[];
+      }
+      if (sql.includes("FROM senses WHERE entry_id IN")) {
+        return senseRows.filter((row) => params?.includes(row.entry_id)) as T[];
       }
       throw new Error(`Unexpected SQL in bookmark test db: ${sql}`);
     },
@@ -94,6 +103,13 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
         { text: "やりこめる", entry_id: 11 },
         { text: "こと", entry_id: 12 },
       ];
+      // The part of speech decides whether an inflection may be undone onto
+      // the entry at all: ある is godan, やり込める ichidan, 事 a noun.
+      const senses = [
+        { entry_id: 10, part_of_speech: '["exp","v5r-i"]' },
+        { entry_id: 11, part_of_speech: '["v1","vt"]' },
+        { entry_id: 12, part_of_speech: '["n"]' },
+      ];
       if (sql.includes("FROM kanji WHERE text IN"))
         return kanji.filter((row) => params?.includes(row.text)) as T[];
       if (sql.includes("FROM kana WHERE text IN"))
@@ -102,6 +118,8 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
         return [...new Set(kanji.map((row) => row.entry_id))]
           .filter((id) => params?.includes(id))
           .map((entry_id) => ({ entry_id })) as T[];
+      if (sql.includes("FROM senses WHERE entry_id IN"))
+        return senses.filter((row) => params?.includes(row.entry_id)) as T[];
       throw new Error(`Unexpected SQL: ${sql}`);
     },
     async getFirstAsync<T>(): Promise<T | null> {

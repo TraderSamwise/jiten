@@ -27,7 +27,11 @@ import {
   type BookmarkSurfaceProvenance,
   explainBookmarkedWordSurfacesInHtml,
 } from "../packages/japanese-reader/src/bookmarks";
-import { deinflect } from "../packages/japanese-reader/src/deinflect";
+import {
+  ANY_TYPE_MASK,
+  deinflect,
+  posTagsToTypeMask,
+} from "../packages/japanese-reader/src/deinflect";
 
 const DICT = resolve(__dirname, "..", "assets/dictionary.db");
 
@@ -115,9 +119,14 @@ function explainOne(db: Database.Database, bookmarked: Set<number>, surface: str
 
   console.log(`=== ${surface} ===`);
   let found = false;
-  for (const { word, reasons } of deinflect(surface)) {
+  for (const { word, reasons, entryMask } of deinflect(surface)) {
     for (const row of lookup.all(word, word) as EntryRow[]) {
       if (!bookmarked.has(row.id)) continue;
+      // The same check the painter makes, or this explains a highlight that
+      // is not there.
+      const tags = [...new Set([...(row.pos ?? "").matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]))];
+      const admitted = entryMask === ANY_TYPE_MASK || (entryMask & posTagsToTypeMask(tags)) !== 0;
+      if (!admitted) continue;
       found = true;
       console.log(
         `  entry ${row.id}  ${row.kanji ?? "(no kanji)"} [${row.kana}]${row.common ? "  common" : ""}`,

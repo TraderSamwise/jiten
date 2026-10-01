@@ -60,7 +60,6 @@ export interface HighlightCase {
 export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   {
     id: "1",
-    knownRed: ["はない"],
     text: "それは私の本ではない。",
     bookmarks: [1427900 /* 張る はる v5r */],
     mustHighlight: [],
@@ -86,7 +85,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "6, 9, 10, 11, 12",
-    knownRed: ["はたい"],
+    knownRed: ["たいてい"],
     text: "湯で汗を流し、しめくくりはたいてい緑茶を飲む。",
     bookmarks: [
       1436610 /* 締めくくる しめくくる v5r */, 1427900 /* 張る はる v5r */,
@@ -109,7 +108,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
       "し",
     ],
     undecided: ["流し"],
-    note: "The densest run on the page. しめくくり is right, via the masu-stem of 締めくくる. Everything else is an inflection of a word that is not here — たいてい from 炊く, しめく from the adverbial of the noun 指名. 流し is unruled: the owner has the noun 流し bookmarked and not 流す, and here 流し is 流す's stem, which cuts opposite to 励み.",
+    note: "The densest run on the page. たいてい is a POS-legal three-step chain onto 炊く (masu-stem, te-iru, te-form) that only a boundary can refuse; it was hidden behind はたい until part-of-speech validity removed that. しめくくり is right, via the masu-stem of 締めくくる. Everything else is an inflection of a word that is not here — たいてい from 炊く, しめく from the adverbial of the noun 指名. 流し is unruled: the owner has the noun 流し bookmarked and not 流す, and here 流し is 流す's stem, which cuts opposite to 励み.",
   },
   {
     id: "5 (phase 0)",
@@ -151,7 +150,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "14, 19",
-    knownRed: ["とい"],
     text: "というより、むしろ逆だと思う。",
     bookmarks: [1013190 /* より prt */, 1446740 /* 塔 とう n */],
     mustHighlight: ["より"],
@@ -169,7 +167,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "16",
-    knownRed: ["している"],
     text: "何をしている間も笑っていた。",
     bookmarks: [1335520 /* 汁 しる n */, 1400390 /* 巣 す n */, 2069220 /* 素 す n */],
     mustHighlight: [],
@@ -206,7 +203,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "20, 21",
-    knownRed: ["く"],
     text: "年の差とは関係なく、互いに引かれあう。",
     bookmarks: [1268780 /* 互いに たがいに adv */, 1955830 /* 堰/井堰 せき/いせき/い n */],
     mustHighlight: ["互いに"],
@@ -227,7 +223,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "23",
-    knownRed: ["だち", "欲し", "かった"],
+    knownRed: ["欲し", "かった"],
     text: "こういう女友だちが欲しかった。",
     bookmarks: [
       2601360 /* 脱 だつ pref */, 2410130 /* 欲す ほりす v5s */, 1208840 /* 且つ かつ conj */,
@@ -240,7 +236,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "25",
-    knownRed: ["わた"],
     text: "十数年にわたる結婚生活だった。",
     bookmarks: [1208000 /* 割る わる v5r */, 1580825 /* 数 すう pref,n,n-suf */],
     mustHighlight: [],
@@ -250,7 +245,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "27",
-    knownRed: ["きた", "して", "くて", "欲し"],
+    knownRed: ["欲し"],
     text: "欲しくても我慢してきたものがある。",
     bookmarks: [
       1247040 /* 繰る くる v5r */, 1585570 /* 抉る くる v5r */, 1335520 /* 汁 しる n */,
@@ -262,7 +257,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "28",
-    knownRed: ["はい", "く"],
+    knownRed: ["はい"],
     text: "我慢したものはいくつかあるだろう。",
     bookmarks: [
       1474200 /* 這う はう v5u */, 1955830 /* 堰/井堰 せき/いせき/い n */, 1201860 /* 灰 はい n */,

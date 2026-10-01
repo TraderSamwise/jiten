@@ -119,7 +119,7 @@ the findings say**, and green on the six accepted spans. A failing test that
 fails for the wrong reason is worse than none, so each red case is checked
 against its finding before moving on.
 
-## Phase 2 — POS validity
+## Phase 2 — POS validity — **done**
 
 A deinflection rule may only be accepted if the entry it landed on can take it.
 
@@ -132,6 +132,12 @@ A deinflection rule may only be accepted if the entry it landed on can take it.
 - The check belongs where the match is accepted, in
   `resolveBookmarkedWordSurfacesInHtml`, not inside `deinflect` — the tap path
   has its own scoring and must not change behaviour in this phase.
+
+**Done.** Measured in `reader-lookup-decisions.md` under "A deinflection the
+entry's part of speech cannot take is not a highlight": corpus 1,926 → 1,641
+surfaces with none added, coverage 30.5% → 23.4%, tap gate unchanged. 11 of
+the 25 red expectations went green. One new exposed span, たいてい, named and
+carried to phase 3.
 
 **Expected effect**: the six invalid-candidate findings go green. Nothing else
 changes.
@@ -335,3 +341,33 @@ And the framing that produced this plan:
 > to just that highlight so you can see stats on that highlighted word. and
 > ALSO we should make sure that the highlighted word IS ACTUALLY that word to
 > the best of our ability not just some pattern match."
+
+## Phase 3 cost, measured 2026-10-01 before building it
+
+The plan asked for this number before the approach was chosen. Measured on
+the labelled page (277 characters, 32 surfaces after phase 2), resolving
+`smartLookupWithOffset` once at every position where the matcher proposes a
+highlight, with a 24-character window either side:
+
+| step                               | cost                |
+| ---------------------------------- | ------------------- |
+| matching alone (what ships)        | 88 ms               |
+| confirming 34 positions            | 510 ms, ~15 ms each |
+| extrapolated to a 3,000-char slice | ~5.5 s              |
+
+Laptop numbers; a phone is several times worse. **As written this is too slow
+to put in front of a render**, but three things make it workable:
+
+1. Highlighting is already asynchronous — the surfaces go to the webview over
+   postMessage after the page is painted — and slice results are cached, so
+   the cost is once per slice, not per frame.
+2. `smartLookupWithOffset` builds its entry cache **per call**. Neighbouring
+   windows overlap almost completely, so hoisting that cache to the slice
+   should remove most of the cost. Measure it before anything else.
+3. Only proposed positions are resolved, and phase 2 already cut those by a
+   third.
+
+**The result that matters is not the timing.** The resolver confirms **6 of
+the 34** proposed positions — and six is exactly the number of spans Sam
+accepted when he walked the page. The approach picks out the right spans
+before a line of it has been written.
