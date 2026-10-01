@@ -142,6 +142,11 @@ type KanjiFormRow = {
   tags: string | null;
 };
 
+type EntryCommonRow = {
+  id: number;
+  common: number;
+};
+
 type SensePosRow = {
   entry_id: number;
   part_of_speech: string | null;
@@ -375,15 +380,43 @@ export async function explainBookmarkedWordSurfacesInHtml(
   const entryTypeMasks = new Map<number, number>();
   for (const [entryId, tags] of tagsByEntry) entryTypeMasks.set(entryId, posTagsToTypeMask(tags));
 
+  // Which entries the dictionary marks common. Used below to ask whether a
+  // run of kana is already an ordinary word as it stands.
+  const commonEntryIds = new Set<number>();
+  for (let i = 0; i < entryIdList.length; i += BATCH_SIZE) {
+    const batch = entryIdList.slice(i, i + BATCH_SIZE);
+    const ph = batch.map(() => "?").join(",");
+    const rows = await dictDb.getAllAsync<EntryCommonRow>(
+      `SELECT id, common FROM entries WHERE id IN (${ph})`,
+      batch,
+    );
+    for (const row of rows) if (row.common) commonEntryIds.add(row.id);
+  }
+
+  /**
+   * Are these characters already some OTHER common word, spelled exactly as
+   * they are?
+   *
+   * If they are, reading them instead as the kana spelling of a kanji word's
+   * inflection is the worse answer: だけ is the particle, not the imperative
+   * of 抱く, and いい is 良い, not the masu-stem of 結う. "Other" matters —
+   * ついている is its own entry written out in full, and the plain guard above
+   * has already taken the uninflected path away from it, so counting itself
+   * here would leave the word with no way to be painted at all.
+   */
+  const isOtherCommonWordAsWritten = (surface: string, entryId: number): boolean =>
+    (wordRows.get(surface) ?? []).some(
+      (row) => row.entryId !== entryId && commonEntryIds.has(row.entryId),
+    );
+
   // Which bookmarked entries the dictionary really writes in kanji. An entry
   // whose every kanji form is tagged rK or sK — rare, or search-only — is a
   // kana word with a historical spelling attached, and ひたすら is one: 只管,
   // 一向 and 頓 are all rK. Treating those as "written in kanji" is what let
   // ひた beat the ひたすら the reader had actually saved.
-  const bookmarkedEntryIds = entryIdList.filter((entryId) => bookmarks.hasEntryId(entryId));
   const entryIdsWithKanji = new Set<number>();
-  for (let i = 0; i < bookmarkedEntryIds.length; i += BATCH_SIZE) {
-    const batch = bookmarkedEntryIds.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < entryIdList.length; i += BATCH_SIZE) {
+    const batch = entryIdList.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
     const rows = await dictDb.getAllAsync<KanjiFormRow>(
       `SELECT entry_id, tags FROM kanji WHERE entry_id IN (${ph})`,
@@ -423,6 +456,15 @@ export async function explainBookmarkedWordSurfacesInHtml(
         // evidence the page means that word — a bookmarked 事 would light up
         // every こと. An undone inflection is.
         if (via === "kana" && entryIdsWithKanji.has(entryId) && !inflected) continue;
+        // …and an undone inflection is not evidence either, when the page's
+        // characters already spell a different common word as they stand.
+        if (
+          via === "kana" &&
+          entryIdsWithKanji.has(entryId) &&
+          isOtherCommonWordAsWritten(surface, entryId)
+        ) {
+          continue;
+        }
         if (!entryAdmitsInflection(typeMask, entryMask)) continue;
         // And the characters have to be a word HERE, not merely somewhere.
         if (!confirmed.has(surface)) continue;

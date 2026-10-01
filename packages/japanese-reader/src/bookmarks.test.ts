@@ -35,6 +35,9 @@ function createBookmarkTestDb() {
       if (sql.includes("FROM senses WHERE entry_id IN")) {
         return senseRows.filter((row) => params?.includes(row.entry_id)) as T[];
       }
+      if (sql.includes("SELECT id, common FROM entries WHERE id IN")) {
+        return (params ?? []).map((id) => ({ id, common: 0 })) as T[];
+      }
       throw new Error(`Unexpected SQL in bookmark test db: ${sql}`);
     },
     async getFirstAsync<T>(): Promise<T | null> {
@@ -120,6 +123,8 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
           .map((entry_id) => ({ entry_id, tags: null })) as T[];
       if (sql.includes("FROM senses WHERE entry_id IN"))
         return senses.filter((row) => params?.includes(row.entry_id)) as T[];
+      if (sql.includes("SELECT id, common FROM entries WHERE id IN"))
+        return (params ?? []).map((id) => ({ id, common: 0 })) as T[];
       throw new Error(`Unexpected SQL: ${sql}`);
     },
     async getFirstAsync<T>(): Promise<T | null> {

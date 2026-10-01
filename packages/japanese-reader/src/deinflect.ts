@@ -563,7 +563,10 @@ export const ANY_TYPE_MASK = ANY;
 export function posTagsToTypeMask(tags: Iterable<string>): number {
   let mask = 0;
   let expression = false;
+  let classed = false;
   for (const tag of tags) {
+    // Transitivity is not a word class, and `exp` is the absence of one.
+    if (tag !== "exp" && tag !== "vt" && tag !== "vi") classed = true;
     if (tag.startsWith("v5")) {
       // v5r-i (ある), v5aru (下さる), v5u-s, v5n and the rest all conjugate by
       // the godan rules, so the prefix is the test, not a list of spellings.
@@ -577,10 +580,12 @@ export function posTagsToTypeMask(tags: Iterable<string>): number {
     else if (tag === "vk") mask |= KURU;
     else if (tag === "exp") expression = true;
   }
-  // An expression tagged only `exp` still inflects on its tail — かも知れない
-  // takes a past. JMdict does not say which class the tail belongs to, so the
-  // honest answer for those is to not constrain them.
-  if (mask === 0 && expression) return ANY_TYPE_MASK;
+  // An expression with no word class of its own still inflects on its tail —
+  // かも知れない takes a past, and JMdict does not say which class that tail
+  // belongs to, so the honest answer is not to constrain it. It has to be the
+  // ONLY thing recorded, though: 棒 is `n,exp`, and reading that as "no class
+  // recorded" let the noun 棒 take a te-form.
+  if (mask === 0 && expression && !classed) return ANY_TYPE_MASK;
   return mask;
 }
 

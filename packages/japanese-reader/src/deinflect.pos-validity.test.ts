@@ -38,8 +38,16 @@ describe("posTagsToTypeMask", () => {
 
   it("does not constrain an expression with no word class of its own", () => {
     expect(posTagsToTypeMask(["exp"])).toBe(ANY_TYPE_MASK);
+    // Transitivity is not a word class.
+    expect(posTagsToTypeMask(["exp", "vt", "vi"])).toBe(ANY_TYPE_MASK);
     // But a real class on the same entry wins: the tail is known.
     expect(posTagsToTypeMask(["exp", "v5r"])).toBe(posTagsToTypeMask(["v5r"]));
+    // And a class that simply does not inflect is still a class. 棒 is
+    // `n,exp`; reading that as "nothing recorded" let the noun take a
+    // te-form, and ぼって was painted as 棒 across the corpus.
+    expect(posTagsToTypeMask(["exp", "n"])).toBe(0);
+    expect(posTagsToTypeMask(["exp", "adv"])).toBe(0);
+    expect(posTagsToTypeMask(["exp", "pref"])).toBe(0);
   });
 
   it("ignores the classical classes, which no rule produces", () => {

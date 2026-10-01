@@ -796,6 +796,66 @@ drawn in the page to that word — the pill press calls `animateToWordIndex` and
 sends no `highlight` message. Doing that needs the positional spans that are
 still not done.
 
+### A kanji word's kana reading loses to the word the characters already spell
+
+Found on a second page of the same novel, 2026-10-01. Four highlights, one
+cause:
+
+| painted            | matching                     | the page actually says |
+| ------------------ | ---------------------------- | ---------------------- |
+| 東京**だけ**でも   | 抱く (だく), imperative だけ | the particle だけ      |
+| 覗いていた**だけ** | the same                     | the same               |
+| 「**いい**わ」     | 結う (いう), masu-stem いい  | 良い                   |
+| 敷**きこんで**     | 着込む (きこむ), te-form     | 敷く + 込む            |
+
+Each is a kanji-written verb reached through its **kana** reading plus an
+inflection. The kana guard already refuses a bare kana match for a kanji word
+— that is why a bookmarked 事 does not light every こと — but it lets an
+inflected one through, because a page spelling a word in kana and inflecting
+it is real evidence: のめりこんだ really is のめり込む, ふくれている really is
+膨れている.
+
+**The exception now stops where the characters already spell a different
+common word.** だけ is the particle, いい is 良い, and reading either as the
+kana of some kanji verb's inflection is the worse answer. "Different" is load
+bearing: ついている is its own entry written out in full, the uninflected path
+to it is already gone to the guard, and counting the entry against itself
+would leave the word with no way to be painted at all.
+
+Measured over `test/corpus/bocchan.txt` with a real 8,586-entry list: **962 →
+919 surfaces, 44 removed and 1 added**, 2,757 → 2,141 painted boxes, 19.4% →
+15.4% of characters. Every removal was read: あまり matching 余る where the
+page means 余り, あれ matching 荒れる where it means 彼れ, かえって matching
+帰る where it means 却って, つもり matching 積もる where it means 積もり, くれる
+matching 繰る where it means 呉れる, いけない matching 逝く where it means
+行けない — forty-three more of the same. The labelled first page is unchanged
+at nine boxes.
+
+**A correction to the `exp` rule came out of the same measurement.** An entry
+with no word class of its own is left unconstrained, so that かも知れない can
+take a past. That was reading **any** entry with an `exp` sense as classless,
+and 棒 is `n,exp` — so ぼって was painted across the corpus as a te-form of the
+noun 棒. `exp` now has to be the only class recorded.
+
+### Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
+
+The fourth case above, 敷きこんで, is not the guard. The dictionary has no
+敷き込む, and きこんで (four characters, squared: 16) beats 敷き + こんで
+(4 + 9), so the boundary lands after the 敷 and the kanji is left outside its
+own highlight.
+
+Scoring such a token as one character shorter — `(n-1)²` — fixes it, keeps
+あぐらをかいた and もてあまし, and was still not worth shipping. On the corpus
+it split longer kana-spelled words into fragments: だまっていれば became
+まっていれば, ふくれている became くれている, 申し付けられた became けられ,
+構いません became いません, and 居させる became いさせる — nine new wrong spans
+against two fixed. The cheap variants are worse: weighting the token linearly
+instead loses あぐらをかいた and もてあまし, which are the same shape and are
+right.
+
+敷きこんで stays wrong, pinned as `knownRed` in the fixture with あぐらをかいた
+beside it as the case that rules the cheap fixes out.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first
