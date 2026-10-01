@@ -434,6 +434,89 @@ export async function explainBookmarkedWordSurfacesInHtml(
   return provenance;
 }
 
+export interface ContainedBookmark {
+  /** The characters as the page writes them. */
+  surface: string;
+  /** The dictionary form behind them — 励む for 励み. */
+  word: string;
+  /** How the one became the other. Empty when the page used the headword. */
+  reasons: string[];
+  entryIds: number[];
+}
+
+interface PaintedSpan {
+  start: number;
+  end: number;
+  surface: string;
+}
+
+/**
+ * Where the reader actually paints, over a piece of its visible text.
+ *
+ * This mirrors `findMatches` in `packages/reader-webview/src/bookmarks.ts` —
+ * greedy, longest first, never overlapping — because that is what the device
+ * does with the surface set. Asking "is this surface in the set" instead
+ * would offer a bookmark on a tap where no box is drawn, which is the
+ * incoherence this exists to remove. `bookmarks.painter-parity.test.ts` pins
+ * the two together; the webview is standalone by design and shares no code.
+ */
+export function paintedBookmarkSpans(text: string, surfaces: Iterable<string>): PaintedSpan[] {
+  const sorted = [...surfaces]
+    .filter((surface) => surface.length > 0)
+    .sort((a, b) => b.length - a.length);
+  const spans: PaintedSpan[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const matched = sorted.find((surface) => text.startsWith(surface, i));
+    if (!matched) {
+      i++;
+      continue;
+    }
+    spans.push({ start: i, end: i + matched.length, surface: matched });
+    i += matched.length;
+  }
+  return spans;
+}
+
+/**
+ * The bookmarked words painted inside one tapped span.
+ *
+ * Tapping resolves the longest thing it can and highlighting marks the
+ * smallest, so the two name different words on the same characters: the page
+ * says 励み, the tap answers the noun 励み, and the bookmark is the verb 励む.
+ * This is what lets the lookup offer the second one.
+ */
+export function bookmarksInsideSpan(
+  text: string,
+  spanStart: number,
+  spanEnd: number,
+  provenance: ReadonlyMap<string, BookmarkSurfaceProvenance[]>,
+): ContainedBookmark[] {
+  if (provenance.size === 0 || spanEnd <= spanStart) return [];
+  const contained: ContainedBookmark[] = [];
+  for (const span of paintedBookmarkSpans(text, provenance.keys())) {
+    if (span.start < spanStart || span.end > spanEnd) continue;
+    // One surface can stand for several words — group by the word, because
+    // that is what the lookup shows.
+    const byWord = new Map<string, ContainedBookmark>();
+    for (const entry of provenance.get(span.surface) ?? []) {
+      const found = byWord.get(entry.word);
+      if (found) {
+        if (!found.entryIds.includes(entry.entryId)) found.entryIds.push(entry.entryId);
+      } else {
+        byWord.set(entry.word, {
+          surface: span.surface,
+          word: entry.word,
+          reasons: entry.reasons,
+          entryIds: [entry.entryId],
+        });
+      }
+    }
+    contained.push(...byWord.values());
+  }
+  return contained;
+}
+
 export async function resolveBookmarkedWordSurfacesInHtml(
   dictDb: ReaderSqlDb,
   html: string,

@@ -223,6 +223,20 @@ async function getEntries(db: ReaderSqlDb, entryIds: number[]): Promise<ReaderDi
   return assembleEntries(entryIds, kanjiRows, kanaRows, senseRows, pitchRows, commonMap, jlptMap);
 }
 
+/**
+ * Entries by id. `db/search.ts` exports the same thing for the app, but this
+ * package cannot import app code, so the one line is repeated rather than the
+ * dependency inverted. Ids with no senses are dropped: `getEntries` returns a
+ * shell for an id the dictionary does not have.
+ */
+export async function lookupEntriesByIds(
+  db: ReaderSqlDb,
+  entryIds: readonly number[],
+): Promise<ReaderDictEntry[]> {
+  const entries = await getEntries(db, [...entryIds]);
+  return entries.filter((entry) => entry.senses.length > 0);
+}
+
 export async function lookupExactJapanese(
   db: ReaderSqlDb,
   text: string,

@@ -741,6 +741,57 @@ holds a DOM it splices during pagination — they disagree about entities,
 surrogate pairs, comments, and text outside `<p>`. It needs its own change,
 keyed per block rather than per slice.
 
+### A tap offers the bookmarked word inside its own span
+
+Tapping takes the longest match it can and highlighting marks the smallest, so
+the two routinely name different words on the same characters. The clearest
+case is the one the owner found: the page says 励み, the tap answers entry
+1557360 — the **noun** 励み, "encouragement" — and the bookmark is 1557390, the
+**verb** 励む. The box and the dictionary panel were looking at the same four
+pixels and disagreeing.
+
+The lookup now appends one more word to its result list for each bookmarked
+word painted inside the span it resolved. `DictionaryPopup` already renders
+the results as a row of pills to choose from, so there is no new interface;
+the pill is labelled with the **dictionary form**, not the page's spelling,
+because 励む is what was asked for and two pills both reading 励み say nothing.
+
+Two things make it honest rather than approximate:
+
+- **It asks where the reader painted, not what is in the set.** The device
+  paints greedily, longest first, never overlapping, so a surface in the set
+  can be unpainted at a given position because a longer neighbour took the
+  characters. `paintedBookmarkSpans` reproduces that scan.
+  `bookmarks.painter-parity.test.ts` runs it against the real webview painter
+  under jsdom on six shapes and asserts the same offsets — the webview has no
+  dependencies by design, so the two cannot share code and are pinned
+  together instead.
+
+  **What that parity does not cover**, and it is worth being exact: the two
+  run the same algorithm on different text. The device scans each `<p>` from
+  its first character; a tap carries a window of about 35 characters that
+  begins mid-paragraph. Greedy matching is not translation-invariant, so a
+  window starting inside what would have been a longer match can offer a
+  bookmark the device did not paint — surfaces 大人しい and しい, with the
+  window opening at 人, is the shape of it. Rare, and in the wrong direction
+  only (an offer with no box, never a box with no offer). Closing it needs the
+  absolute slice offsets, which is the same thing positional spans need.
+
+- **It costs the tap nothing.** The entry lookup runs after the results are
+  shown and appends to them, guarded by the tap's placement id, so an
+  overlapping tap cannot cross-contaminate. The provenance it reads is the
+  map the matcher already built for the current slice and the reader used to
+  throw away; it is cleared when highlighting is off.
+
+`results[0]` is never touched, so `yarn check:tap-consistency` cannot move,
+and it did not: 98.0% / 128 pairs.
+
+**Half-served, and worth knowing.** Choosing the pill opens that word's entry
+and its SRS stats, which is what was asked for, but it does not shrink the box
+drawn in the page to that word — the pill press calls `animateToWordIndex` and
+sends no `highlight` message. Doing that needs the positional spans that are
+still not done.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first

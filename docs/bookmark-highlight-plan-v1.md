@@ -233,7 +233,15 @@ Correct highlights can still be unreadable. With 8,586 bookmarks including あ�
 the result. There is no correct number to compute here — this one is taste, and
 it is his.
 
-## Phase 5 — The highlight inside the tap
+## Phase 5 — The highlight inside the tap — **done**
+
+Written up as "A tap offers the bookmarked word inside its own span" in
+`reader-lookup-decisions.md`. Tapping 励み now offers 励む, and a bookmarked
+word inside a longer idiom becomes another pill in the row the popup already
+draws. What is not done is shrinking the in-page box when that pill is
+chosen; that needs positional spans.
+
+## Phase 5 — The highlight inside the tap, as originally written
 
 Once the resolver owns both, the tap knows its span and can report which
 bookmarked tokens sit inside it.

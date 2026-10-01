@@ -102,4 +102,50 @@ describeWithDb("useJapaneseReader tap lookup", () => {
     await waitFor(() => expect(result.current.lookupResults.length).toBeGreaterThan(0));
     expect(result.current.lookupResults[0].matchedText).toBe("読む");
   });
+
+  /**
+   * Tapping takes the longest match and highlighting marks the smallest, so
+   * the two name different words on the same characters. The page says 励み;
+   * the tap answers 励み the noun (1557360); the bookmark is 励む the verb
+   * (1557390). The lookup has to offer the second one, or the highlight and
+   * the tap disagree about what is under the finger.
+   */
+  test("a tap offers the bookmarked word inside its own span", async () => {
+    const bookmarkPage = "毎朝励み、体を動かす。";
+    const bookmarked: ReaderBookRecord = {
+      ...book,
+      id: "b2",
+      rawContent: bookmarkPage,
+      totalChars: bookmarkPage.length,
+    };
+    const backend: JapaneseReaderBackend = {
+      dictDb,
+      extendedDb: null,
+      bookmarks: { version: "v1", hasEntryId: (entryId) => entryId === 1557390 },
+    };
+    const { result } = renderHook(() =>
+      useJapaneseReader({
+        bookId: "b2",
+        bookSource: { loadBook: async () => bookmarked, saveProgress: async () => {} },
+        backend,
+        settings: { ...SETTINGS, readerBookmarkHighlights: true },
+        settingsActions: SETTINGS_ACTIONS,
+        isDark: true,
+        initialLookupMode: "word",
+      }),
+    );
+    await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
+
+    await result.current.readerViewProps!.onMessage(
+      JSON.stringify({ type: "tap", text: bookmarkPage, tapOffset: bookmarkPage.indexOf("励") }),
+    );
+
+    await waitFor(() => expect(result.current.lookupResults.length).toBeGreaterThan(0));
+    expect(result.current.lookupResults[0].matchedText).toBe("励み");
+    await waitFor(() =>
+      expect(result.current.lookupResults.map((r) => r.matchedText)).toContain("励む"),
+    );
+    const offered = result.current.lookupResults.find((r) => r.matchedText === "励む");
+    expect(offered!.entries.map((entry) => entry.id)).toEqual([1557390]);
+  });
 });

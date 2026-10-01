@@ -15,7 +15,11 @@ import {
   type TextModel,
 } from "@tradersamwise/jiten-reader-core";
 import type { JapaneseReaderBackend, ReaderBookSource } from "./backend";
-import { resolveBookmarkedWordSurfacesInHtml } from "./bookmarks";
+import {
+  type BookmarkSurfaceProvenance,
+  bookmarksInsideSpan,
+  explainBookmarkedWordSurfacesInHtml,
+} from "./bookmarks";
 import {
   applyFuriganaToHtml,
   buildFuriganaKanjiSet,
@@ -36,6 +40,7 @@ import {
   smartLookup,
   smartLookupWithOffset,
 } from "./lookup";
+import { lookupEntriesByIds } from "./lookup-db";
 import type {
   LookupResult,
   ReaderBookRecord,
@@ -397,6 +402,12 @@ export function useJapaneseReader({
   const isDarkRef = useRef(isDark);
   const fontSizeRef = useRef(fontSize);
   const bookmarkMembershipRef = useRef<ReaderBookmarkMembership | null>(bookmarks ?? null);
+  /**
+   * Why each painted surface in the current slice is painted. The matcher
+   * works this out anyway and the reader used to keep only the keys; holding
+   * the rest is what lets a tap name the bookmarked word inside its span.
+   */
+  const bookmarkProvenanceRef = useRef<Map<string, BookmarkSurfaceProvenance[]>>(new Map());
 
   useEffect(() => {
     sourceFuriganaEnabledRef.current = sourceFuriganaEnabled;
@@ -444,6 +455,56 @@ export function useJapaneseReader({
       }, TAP_TOOLTIP_FALLBACK_MS);
     },
     [clearPendingTapTooltipTimer],
+  );
+
+  /**
+   * Offer the bookmarked words that sit inside the span a tap resolved.
+   *
+   * Tapping takes the longest match and highlighting marks the smallest, so
+   * the two routinely name different words on the same characters: the page
+   * says 励み, the tap answers the noun 励み, and the bookmark is the verb
+   * 励む. Each one becomes another word in the lookup, which the popup
+   * already renders as a row to choose from.
+   *
+   * It runs after the results are shown, so a tap never waits on it.
+   */
+  const appendBookmarkedWordsInSpan = useCallback(
+    async (placementId: number, text: string, tapOffset: number, results: LookupResult[]) => {
+      const provenance = bookmarkProvenanceRef.current;
+      const top = results[0];
+      if (!dictDb || provenance.size === 0 || !top) return;
+
+      const start = top.matchStart ?? tapOffset;
+      const contained = bookmarksInsideSpan(
+        text,
+        start,
+        start + top.matchedText.length,
+        provenance,
+      );
+      if (contained.length === 0) return;
+
+      const alreadyShown = new Set(results.flatMap((result) => result.entries.map((e) => e.id)));
+      const extra: LookupResult[] = [];
+      for (const bookmark of contained) {
+        const wanted = bookmark.entryIds.filter((id) => !alreadyShown.has(id));
+        if (wanted.length === 0) continue;
+        const entries = await lookupEntriesByIds(dictDb, wanted);
+        if (entries.length === 0) continue;
+        for (const entry of entries) alreadyShown.add(entry.id);
+        // Labelled with the dictionary form, not the page's spelling: 励む is
+        // the word asked for, and two pills both reading 励み say nothing.
+        extra.push({
+          matchedText: bookmark.word,
+          entries,
+          deinflectReasons: bookmark.reasons,
+          lookupKind: "word",
+        });
+      }
+      if (extra.length === 0) return;
+      if (highlightPlacementRequestRef.current !== placementId) return;
+      setLookupResults((prev) => [...prev, ...extra]);
+    },
+    [dictDb],
   );
 
   useEffect(() => {
@@ -593,6 +654,9 @@ export function useJapaneseReader({
   const syncBookmarkHighlights = useCallback(
     async (contentHtml = currentReaderContentHtmlRef.current) => {
       const token = ++bookmarkHighlightRequestRef.current;
+      // Dropped first: between a slice swapping and the matcher returning, a
+      // tap would otherwise be answered from the slice that just left.
+      bookmarkProvenanceRef.current = new Map();
       const enabled = readerBookmarkHighlightsRef.current;
       const membership = bookmarkMembershipRef.current;
       const version = enabled && membership ? membership.version : "";
@@ -604,13 +668,14 @@ export function useJapaneseReader({
         return;
       }
 
-      const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, contentHtml, membership);
+      const provenance = await explainBookmarkedWordSurfacesInHtml(dictDb, contentHtml, membership);
       if (bookmarkHighlightRequestRef.current !== token) return;
+      bookmarkProvenanceRef.current = provenance;
       readerViewRef.current?.postMessage(
         JSON.stringify({
           type: "setBookmarkHighlights",
           version,
-          surfaces: [...surfaces],
+          surfaces: [...provenance.keys()],
         }),
       );
     },
@@ -1318,6 +1383,9 @@ export function useJapaneseReader({
                   : await smartLookup(text, dictDb!, extendedDb);
 
             setLookupResults(results);
+            appendBookmarkedWordsInSpan(placementId, text, tapOffset ?? 0, results).catch((err) => {
+              console.error("[reader] could not offer the bookmarked words in a tap", err);
+            });
             scheduleTapTooltipFallback({
               placementId,
               text: results.length > 0 ? results[0].matchedText : text,
@@ -1463,6 +1531,7 @@ export function useJapaneseReader({
       } catch {}
     },
     [
+      appendBookmarkedWordsInSpan,
       clearPendingTapTooltip,
       clearPendingTapTooltipTimer,
       dictDb,
