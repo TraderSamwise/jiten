@@ -1,6 +1,7 @@
 import { type ReaderKanjiCharacter } from "@tradersamwise/jiten-reader-core";
 import { toHiragana } from "wanakana";
 import type { ReaderSqlDb } from "./backend";
+import { normalizeDigitsToKanji } from "./numerals";
 import { isKanjiNumeralRun } from "./numerals";
 import { hasNameFreqColumn } from "./ext-columns";
 import type {
@@ -63,33 +64,6 @@ interface KanjiReadingRow {
   readings_on: string | null;
   readings_kun: string | null;
   nanori: string | null;
-}
-
-const DIGIT_TO_KANJI: Record<string, string> = {
-  "0": "〇",
-  "\uff10": "〇",
-  "1": "一",
-  "\uff11": "一",
-  "2": "二",
-  "\uff12": "二",
-  "3": "三",
-  "\uff13": "三",
-  "4": "四",
-  "\uff14": "四",
-  "5": "五",
-  "\uff15": "五",
-  "6": "六",
-  "\uff16": "六",
-  "7": "七",
-  "\uff17": "七",
-  "8": "八",
-  "\uff18": "八",
-  "9": "九",
-  "\uff19": "九",
-};
-
-function normalizeDigitsToKanji(text: string): string {
-  return text.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
 }
 
 function parseGlosses(raw: string): ReaderGloss[] {

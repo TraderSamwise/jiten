@@ -19,6 +19,8 @@ export {
   defaultReaderFuriganaRuleLevels,
   defaultReaderFuriganaSettings,
 } from "./furigana-types";
+export { furiganaReadingCandidates } from "./furigana-pins";
+export type { FuriganaCandidateSource, FuriganaReadingCandidate } from "./furigana-pins";
 export { getSelectionToolbarPosition } from "@tradersamwise/jiten-reader-core";
 export {
   autoLookup,
@@ -40,6 +42,7 @@ export type {
   ReaderDictKana,
   ReaderDictKanji,
   ReaderDictSense,
+  ReaderFuriganaPins,
   ReaderGloss,
   LookupKind,
   LookupResult,

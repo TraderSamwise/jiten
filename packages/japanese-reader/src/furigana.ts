@@ -6,7 +6,7 @@ import {
   type AutoNameWordCandidate,
 } from "./auto-name";
 import { deinflect } from "./deinflect";
-import { isKanjiNumeralRun, kanjiNumeralReading } from "./numerals";
+import { isKanjiNumeralRun, kanjiNumeralReading, normalizeDigitsToKanji } from "./numerals";
 import { getKanjiBatchAsync, getKanjiLiteralsByJlptAsync } from "./furigana-db";
 import type { ReaderSqlDb } from "./backend";
 import { hasNameFreqColumn } from "./ext-columns";
@@ -84,33 +84,6 @@ function isDigit(ch: string): boolean {
   return (code >= 0x0030 && code <= 0x0039) || (code >= 0xff10 && code <= 0xff19);
 }
 
-const DIGIT_TO_KANJI: Record<string, string> = {
-  "0": "〇",
-  "\uff10": "〇",
-  "1": "一",
-  "\uff11": "一",
-  "2": "二",
-  "\uff12": "二",
-  "3": "三",
-  "\uff13": "三",
-  "4": "四",
-  "\uff14": "四",
-  "5": "五",
-  "\uff15": "五",
-  "6": "六",
-  "\uff16": "六",
-  "7": "七",
-  "\uff17": "七",
-  "8": "八",
-  "\uff18": "八",
-  "9": "九",
-  "\uff19": "九",
-};
-
-function normalizeDigitsToKanji(s: string): string {
-  return s.replace(/[0-9\uff10-\uff19]/g, (ch) => DIGIT_TO_KANJI[ch] ?? ch);
-}
-
 // ─── Okurigana stripping ───
 
 function isKana(ch: string): boolean {
@@ -118,7 +91,7 @@ function isKana(ch: string): boolean {
   return (code >= 0x3040 && code <= 0x309f) || (code >= 0x30a0 && code <= 0x30ff);
 }
 
-function stripOkurigana(
+export function stripOkurigana(
   kanjiForm: string,
   kanaForm: string,
 ): { kanjiPart: string; reading: string; kanjiPartLen: number } {
