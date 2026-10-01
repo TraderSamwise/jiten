@@ -2,7 +2,8 @@
 
 Real defects found while shipping the name-reading frequency work and
 diagnosing bookmark highlighting, which belong to neither. Written down so they
-are not rediscovered from scratch. **Nothing here is fixed.**
+are not rediscovered from scratch. **A heading says so where one has since been
+fixed; the rest are open.**
 
 Bookmark highlighting has its own files:
 [bookmark-highlight-bugs-v1.md](bookmark-highlight-bugs-v1.md) and
@@ -34,6 +35,15 @@ settings change (reusing the existing clear-then-`reloadAtChar` path, which is
 proven) or to add a separate effect. A boolean `!!extendedDb` is not enough —
 a v3→v4 swap is truthy both sides, so it needs the handle identity or a
 counter.
+
+**Still open, and the first option now has a worked example.** The pinned-reading
+work (`572f627`) needed the same thing for a different input: a pin is not a
+furigana setting, but it changes what the page shows, so it joins
+`ReaderTransformSettingsSnapshot` as `furiganaPinsKey` and the existing
+clear-then-reload effect does the rest. An extended-DB identity would go in the
+same place. Pins also give the user a way around this defect by hand — pin the
+reading and it appears whatever the DB is doing — which is a workaround, not a
+fix.
 
 ## 2. `publish-dict.sh` reports success without waiting when only a sub-tier changed
 

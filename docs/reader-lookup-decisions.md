@@ -14,8 +14,8 @@ of argued about.
   reader) before and after, and diff the matched span and top entry. ~11,250
   taps. `scripts/tap-consistency.ts` is the committed gate over the same corpus
   (`yarn check:tap-consistency`); it reports the share of taps that agree with
-  every other tap landing inside their own span, currently **97.9%** (3760 taps,
-  11343 pairwise checks, 129 disagreeing).
+  every other tap landing inside their own span, currently **98.0%** (11,130
+  agreeing, 128 disagreeing pairs).
 - **Furigana.** Resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus, up to 8 characters. ~54,900 surfaces.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
@@ -871,6 +871,81 @@ exposed is the cost of confirmation not being positional: put 敷きこんで an
 inside a token that is correct on its own, because the surface was confirmed
 somewhere else on the page. That half survives a dictionary fix. Case 37.
 
+### A reading the user pins, for one book, over everything the dictionary says
+
+**Taken 2026-10-01**, as
+[furigana-pin-plan-v1.md](furigana-pin-plan-v1.md).
+
+Some readings no ranking settles. 杏子 is きょうこ in the novel Sam is reading
+and the apricot in the next one; frequency got the automatic answer as far as
+it goes (above) and cannot go further, because the page carries no evidence
+either way. So the reader asks: long-press a kanji run, choose from every
+reading the dictionaries know, and that book remembers it.
+
+**The key is the kanji run as the page spells it** — the base of the ruby the
+press landed in, or the run of kanji around the character under the finger. Not
+an entry id: an id cannot say "show no furigana here", cannot hold a reading no
+entry carries, and is not what the user pressed. The value is the reading, and
+the empty reading is that suppression.
+
+**A pin ignores the furigana settings.** Names are off by default, so a pinned
+name reading that obeyed the filter would do nothing and look broken.
+
+**The picker offers; it does not choose.** Nothing in `furiganaReadingCandidates`
+filters a reading for being unlikely — that is the whole reason the user is
+being asked. What it does do is rank, and the one rule there matters: **a name
+reading leads only where the spelling has settled on it**, by the same two
+thresholds `isDominantNameReading` already uses (a 0.6 share of at least 5
+sightings). Without that floor every spelling that is also somebody's surname
+leads with the surname, and the first row is what the sheet preselects:
+
+| run  | first candidate without the floor | with it  |
+| ---- | --------------------------------- | -------- |
+| 杏子 | きょうこ (26 of 33)               | きょうこ |
+| 後味 | ごみ (surname, uncounted)         | あとあじ |
+| 大人 | やまと (1 sighting)               | おとな   |
+| 一日 | いちひ                            | いちにち |
+
+What the floor costs is 高遠: たかとお in 4 of 4 sightings, settled but under
+the minimum of 5, so the picker leads with こうえん — 高遠 is also a word. The
+_resolver_ still reads it たかとお; only the first row of the sheet differs, and
+the reading is one row below it. Raising the floor to catch it would let a
+single sighting decide, which is what the floor exists to prevent.
+
+**Every kana row of an entry is offered**, not the first: 今日 is きょう,
+こんにち, こんち and こんじつ, and the one the resolver picked is exactly what
+is being overruled. Katakana stays as written — 煙草 really is タバコ. What
+JMdict's kana column holds that is _not_ a reading is refused: 16,774 rows
+carry a non-kana character (粁 is listed キロ・メートル, and the interpunct
+U+30FB sits inside the katakana block), 日 carries んち from a compound, and
+JMnedict lists 日 as the place name にっ. The four single-kanji forms ending in
+っ — 叱, 𠮟, 突, 吹 — go with them; each is a reading that only exists inside a
+compound.
+
+**Accepted limits**, each pinned by a test:
+
+- JMdict restricts some readings to some spellings (`re_restr`) and
+  `scripts/build-dictionary.ts` drops the field, so the picker offers ひるこ
+  for 恵比寿 though it belongs to 蛭子. Harmless in a list the user chooses
+  from; fixing it means rebuilding the dictionary.
+- A pin matches its run **everywhere in that book**. 杏子 the character and 杏子
+  the apricot in one novel cannot differ. The same unbuilt positional work as
+  the bookmark spans above.
+- A re-imported copy of a book is a new id and starts with no pins.
+
+**The gate is `yarn sweep:render`**, added for this. `yarn sweep:furigana`
+resolves readings and cannot see a change to the code that turns them into
+ruby, which is where the pin pass lives. Over the whole corpus, with every rule
+on and names and counters off so that surfaces are rejected and cast their
+shadows, the pin pass changes **0 of 100 chunks** when no reading is pinned.
+`check:tap-consistency` unchanged at 98.0% / 128.
+
+Three things the renderer alone cannot get right, each with a test that fails
+without it: one pin makes the page carry furigana, so the line height and how
+many characters fit on a page change with it; the slice cache key and the
+re-render snapshot carry the pins, or a pinned page keeps serving the reading it
+had; and a slice with a pin but nothing extractable still has to be painted.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first
@@ -883,7 +958,8 @@ made that look like the same defect names had — an arbitrary pick among
 candidates — so it was checked rather than assumed.
 
 **It is not the same defect.** JMdict orders an entry's readings editorially,
-most prevalent first: 今日 is きょう / こんにち / こんち, 行く is いく / ゆく,
+most prevalent first: 今日 is きょう / こんにち / こんち / こんじつ, 行く is
+いく / ゆく,
 明日 is あした / あす, 昨日 is きのう / さくじつ. Taking the first inherits a
 human judgement. JMnedict orders a spelling's readings in gojūon — alphabetical
 — which inherits nothing, and that is the whole reason names needed a new data

@@ -1,6 +1,28 @@
 # Pinned furigana readings — plan v1
 
-**Status: planned, not started.** Queue item `0cfac0-11`.
+**Status: executed, 2026-10-01.** Queue item `0cfac0-11`. The decision, the
+numbers and every accepted limit are in
+[reader-lookup-decisions.md](reader-lookup-decisions.md); this file is the plan
+they were measured against, kept with each phase's outcome written against it.
+
+| phase            | outcome                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1 — storage      | `furigana_pins`, synced, deterministic id so two devices collapse to one row. `27e84e7`                          |
+| 2 — candidates   | Every reading a run can take, a name leading only where the spelling has settled. `6248ab3`                      |
+| 3 — rendering    | Pins beat every surface and the settings filter; `yarn sweep:render` 0 of 100 chunks changed unpinned. `572f627` |
+| 4 — gesture      | 500 ms press, hit-tested when the finger lands; `touchcancel` releases the click guard. `4c78b8a`, `d984774`     |
+| 5 — sheet        | `FuriganaPinSheet`, plus a clear-all for the book in the furigana settings. `8318b45`                            |
+| 6 — written down | This table and the decisions-doc section.                                                                        |
+
+**What the audits caught that the plan had wrong**, since that is the part worth
+keeping: the pin check had to sit above the `blockedVisibleChars` shadow and not
+behind the `tryMatch` gate; one pin has to make the whole page lay out for ruby
+or the ruby it has is clipped; a name reading with no count was leading over the
+word (後味 → ごみ, 大人 → やまと); the press had to read the whole paragraph
+rather than one text node, because bookmark spans and ruby split words; and the
+sheet is a native modal, so presenting it cancels the WebView touch — without a
+`touchcancel` handler the click guard stuck and every later tap in the book was
+swallowed.
 
 Long-press a kanji run in the reader, pick the reading you meant from a list of
 every reading the dictionaries know for it, and that book remembers the choice.
@@ -61,7 +83,7 @@ deleted_at TEXT` plus `CREATE INDEX … (book_id)` and
   (book_id, surface):** the deterministic id already enforces it, and a second
   constraint would abort a whole pull transaction if a row ever arrived under a
   different id.
-- **`id` is deterministic — `${book_id}${surface}`.** A random id would
+- **`id` is deterministic — the book id, `U+001F`, the surface.** A random id would
   let two devices create two rows for one pin and last-write-wins would never
   collapse them.
 - `db/schema.ts`: the drizzle table.
@@ -109,9 +131,17 @@ Gathered from, in order:
 
 1. The reading currently on the page, and the book's own ruby if it had one.
 2. **Names** — every `names` row whose `kanji` equals the run, ordered by the
-   `freq` column the name-frequency work added, annotated with the share
+   `name_freq` column the name-frequency work added, annotated with the share
    `nameReadingDominance` computes. This is the list the whole feature exists
    for: 杏子's thirteen readings, best first.
+
+   **Came out differently.** `lookupExactName` in `lookup-db.ts` already does
+   exactly this query, ordered that way and guarded for an extended DB that
+   predates the column, so the shipped code reuses it rather than asking the
+   names table a second way. And a name reading does not simply lead: it leads
+   only where the spelling has settled on it, or 後味 reads ごみ. See the
+   decisions doc.
+
 3. **Words** — entries whose kanji form equals the run exactly (kana form as
    the reading), and entries whose kanji form is the run followed only by kana
    (verbs and adjectives: 読み → 読 + み), reading via the existing
@@ -128,7 +158,7 @@ duplicate reading.
 
 ### Phase 3 — Rendering
 
-- `FuriganaPinMap = Map<string, string>` threaded into `applyFuriganaToHtml`
+- `ReaderFuriganaPinMap` threaded into `applyFuriganaToHtml`
   through its settings argument (new optional `pins` field, so no call site
   changes shape).
 - At each position, before the surface loop: longest matching pin wins. A
@@ -147,13 +177,17 @@ competing surface; a pin shows through a settings filter that would otherwise
 hide the word; the empty reading suppresses an annotation that would otherwise
 appear; a pin straddling an `<em>` is refused; a pin rewrites a source ruby.
 
-**Gate** — the furigana sweep over all 67,299 kanji-initial corpus surfaces
-with **no pins set: 0 changed**. That is the whole claim this phase has to make
-about the existing pipeline.
+**Gate** — **wrong as planned.** `yarn sweep:furigana` resolves readings and
+cannot see a change to `applyFuriganaToHtml`, which is where the pin pass lives,
+so it would have reported 0 changed whatever this phase did. `yarn sweep:render`
+was written for it: the whole corpus rendered chunk by chunk and each chunk's
+HTML hashed. 0 of 100 chunks changed with no pin set, measured by removing the
+pin branch and re-running.
 
 ### Phase 4 — The gesture
 
-`packages/reader-webview/src/touch.ts`:
+`packages/reader-webview/src/touch.ts`, with the run-finding in a new
+`furigana-pin.ts` beside it:
 
 - A 500 ms timer armed on `touchstart`, cancelled by `touchmove` past 10 px,
   by `touchend`, and by any page shift.
@@ -165,7 +199,13 @@ about the existing pipeline.
   - `kanjiRunAt(text, index)` → the contiguous kanji/digit run containing
     `index`, capped at 8 characters, empty when the character is not kanji.
 - `mouse.ts` gets the same on `contextmenu` (right-click) for the web reader.
-- Haptics fire on the native side when the message arrives, not in the webview.
+
+**Came out differently.** The run is read across the whole paragraph, not the
+pressed text node, because bookmark spans and ruby split words across nodes. The
+hit test happens at touchstart and only the paragraph walk waits for the timer.
+There is **no haptic**: the app has no haptics at all, and `expo-haptics` is a
+native dependency, which would end OTA releases for a vibration. The sheet
+appearing is the acknowledgement.
 
 **Tests** — `packages/reader-webview/src/furigana-pin.test.ts` (jsdom, the
 house pattern): `kanjiRunAt` at the run's start, middle, end, across a kana
@@ -191,7 +231,9 @@ a press on the base, on the `<rt>`, and outside any ruby.
   then **No furigana** and, when a pin exists, **Remove pin**. Choosing writes
   and closes.
 - The reader's furigana settings panel gains one line: _Pinned readings (n)_
-  with a clear-all, so a book can be reset without hunting for each run.
+  with a clear-all, so a book can be reset without hunting for each run. It asks
+  first — it is the one destructive row in the reader, and it sits inside a
+  Cancel/Apply sheet that cannot undo it.
 
 **Tests** — `use-japanese-reader.pins.test.tsx` alongside the existing
 `use-japanese-reader.tap.test.tsx`: the message produces candidates; choosing
@@ -210,7 +252,8 @@ changed when unset. Close `0cfac0-11` with that proof.
 
 - `yarn typecheck`, `yarn lint` 0 errors, prettier.
 - Scoped `vitest run <path>` only — never the full suite.
-- Furigana sweep: 0 of 67,299 changed with no pins set.
+- `yarn sweep:render`: 0 of 100 corpus chunks changed with no pin set. Not
+  `yarn sweep:furigana`, which resolves readings and cannot see this change.
 - `yarn check:tap-consistency` ≥ 98.0% / 128 pairs (pins do not touch the tap
   resolver; the gate is there to prove it).
 

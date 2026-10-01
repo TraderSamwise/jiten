@@ -218,10 +218,12 @@ The reader never holds a whole book. `sliceContent(model, startChar, cpp * 3)` c
 
 ```
 sliceText → getBaseSliceHtml      (aozora/markup → HTML)
-          → getFuriganaSliceHtml  (extractSurfacesFromHtml → resolveFuriganaBatch → inject <ruby>)
+          → getFuriganaSliceHtml  (extractSurfacesFromHtml → resolveFuriganaBatch → inject <ruby>,
+                                   with the book's pinned readings beating every surface)
 ```
 
-Slices are cached 48 deep, keyed on the slice and the furigana settings, and rendered
+Slices are cached 48 deep, keyed on the slice, the furigana settings and the book's
+pinned readings, and rendered
 **ahead** of the reader — `replaceOffscreenContent` swaps the next one in offscreen and
 `prependBackSlice` prepends for backward navigation. So anything that must annotate the
 page belongs in `renderSliceHtml` beside the furigana pass: it gets the raw slice text
@@ -232,17 +234,18 @@ pass to hook, by design.
 
 #### Key modules
 
-| File                                        | Purpose                                                                            |
-| ------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `packages/reader-webview/src/pagination.ts` | Page measurement, navigation, scroll alignment, streaming content swap             |
-| `packages/reader-webview/src/state.ts`      | Global state: current page, column width, char offsets, DOM refs                   |
-| `packages/reader-webview/src/highlight.ts`  | CSS Highlight API (with Safari `.highlight` class fallback) for word selection     |
-| `packages/reader-webview/src/text.ts`       | Tree walker for visible text (skips `<rt>`), caret resolution from tap position    |
-| `packages/reader-webview/src/touch.ts`      | Swipe detection (page turns), tap (dictionary lookup), long-press drag select      |
-| `packages/reader-webview/src/mouse.ts`      | Click select, drag select, alt-click for context menu                              |
-| `packages/reader-webview/src/bridge.ts`     | `postMessage` listener: font size changes, scroll-to, highlight, content streaming |
-| `packages/reader-webview/src/index.ts`      | Initialization: setup content, attach handlers, apply initial scroll               |
-| `packages/reader-webview/reader.css`        | Vertical writing mode, ruby styling, highlight pseudo-element, page controls       |
+| File                                          | Purpose                                                                                   |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `packages/reader-webview/src/pagination.ts`   | Page measurement, navigation, scroll alignment, streaming content swap                    |
+| `packages/reader-webview/src/state.ts`        | Global state: current page, column width, char offsets, DOM refs                          |
+| `packages/reader-webview/src/highlight.ts`    | CSS Highlight API (with Safari `.highlight` class fallback) for word selection            |
+| `packages/reader-webview/src/text.ts`         | Tree walker for visible text (skips `<rt>`), caret resolution from tap position           |
+| `packages/reader-webview/src/touch.ts`        | Swipe detection (page turns), tap (dictionary lookup), drag select, long press            |
+| `packages/reader-webview/src/furigana-pin.ts` | The run a long press is asking about: the ruby's base, or the kanji run around the finger |
+| `packages/reader-webview/src/mouse.ts`        | Click select, drag select, alt-click for context menu                                     |
+| `packages/reader-webview/src/bridge.ts`       | `postMessage` listener: font size changes, scroll-to, highlight, content streaming        |
+| `packages/reader-webview/src/index.ts`        | Initialization: setup content, attach handlers, apply initial scroll                      |
+| `packages/reader-webview/reader.css`          | Vertical writing mode, ruby styling, highlight pseudo-element, page controls              |
 
 ### Content pipeline
 
@@ -774,7 +777,7 @@ The `sync()` function runs a full bidirectional sync cycle:
 
 #### Conflict resolution
 
-**Mutable tables** (lists, list_entries, srs_cards, books, user_kanji_notes, confusion_pairs): Last-Write-Wins (LWW) based on `updated_at` timestamp. Both pull and push use `INSERT ... ON CONFLICT DO UPDATE SET` — this avoids DELETE+INSERT cycles that break FK cascades and preserves local-only columns (like `raw_content`) that aren't part of the regular sync.
+**Mutable tables** (lists, list_entries, srs_cards, books, furigana_pins, user_kanji_notes, confusion_pairs): Last-Write-Wins (LWW) based on `updated_at` timestamp. Both pull and push use `INSERT ... ON CONFLICT DO UPDATE SET` — this avoids DELETE+INSERT cycles that break FK cascades and preserves local-only columns (like `raw_content`) that aren't part of the regular sync.
 
 **Append-only tables** (review_logs, practice_events, practice_sessions, confusion_events, game_scores): `INSERT OR IGNORE` in both directions. Primary key ensures idempotency — no conflicts possible.
 
@@ -1003,15 +1006,15 @@ Available in Settings > Data when signed in. Wipes all local user data (`resetLo
 
 Users can selectively delete data by category from Settings:
 
-| Category   | Mutable tables      | Append tables                      |
-| ---------- | ------------------- | ---------------------------------- |
-| Lists      | lists, list_entries | —                                  |
-| Flashcards | srs_cards           | review_logs                        |
-| Books      | books               | —                                  |
-| Notes      | user_kanji_notes    | —                                  |
-| Practice   | —                   | practice_events, practice_sessions |
-| Games      | —                   | game_scores                        |
-| Confusion  | confusion_pairs     | confusion_events                   |
+| Category   | Mutable tables       | Append tables                      |
+| ---------- | -------------------- | ---------------------------------- |
+| Lists      | lists, list_entries  | —                                  |
+| Flashcards | srs_cards            | review_logs                        |
+| Books      | books, furigana_pins | —                                  |
+| Notes      | user_kanji_notes     | —                                  |
+| Practice   | —                    | practice_events, practice_sessions |
+| Games      | —                    | game_scores                        |
+| Confusion  | confusion_pairs      | confusion_events                   |
 
 Mutable tables are soft-deleted (syncs to remote). Append tables are hard-deleted locally. A sync runs after deletion to propagate changes.
 
