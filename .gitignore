@@ -79,3 +79,6 @@ lib/reader/bundle.ts
 # Standalone Phaser roguelite POC — local scaffolding only. The game it seeded
 # now lives in its own repo (TraderSamwise/kanji-arena).
 rtk-game/
+
+# Scratch measurement scripts (corpus dumps, benchmarks) — never committed
+.*.tmp.ts

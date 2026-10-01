@@ -110,7 +110,6 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
   };
   const bookmarked = (...ids: number[]) => ({
     version: "test",
-    size: ids.length,
     hasEntryId: (id: number) => ids.includes(id),
   });
 
@@ -152,30 +151,6 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
       bookmarked(12),
     );
     expect([...surfaces]).not.toContain("こと");
-  });
-
-  /**
-   * Deinflecting against every list at once marks 57% of a slice instead of
-   * 29%, so past a few thousand entries the page is better off literal.
-   */
-  it("stops deinflecting once the bookmarked set is too big to stay readable", async () => {
-    const huge = { version: "v", size: 12000, hasEntryId: (id: number) => id === 10 };
-    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
-      db,
-      "<p>どうせもう縁があったら、その時は</p>",
-      huge,
-    );
-    expect([...surfaces]).not.toContain("縁があったら");
-  });
-
-  it("stays literal when the caller does not say how big the set is", async () => {
-    const unsized = { version: "v", hasEntryId: (id: number) => id === 10 };
-    const surfaces = await resolveBookmarkedWordSurfacesInHtml(
-      db,
-      "<p>どうせもう縁があったら、その時は</p>",
-      unsized,
-    );
-    expect([...surfaces]).not.toContain("縁があったら");
   });
 
   it("finds nothing when the entry is not bookmarked", async () => {

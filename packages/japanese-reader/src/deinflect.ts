@@ -15,6 +15,11 @@ const IKU = 32; // iku verb (special te-form)
  * and must not be answered with 買い手.
  */
 export const TE_OKU_REASON = "te-oku (casual)";
+/**
+ * Stripping する leaves the noun the word was built from, and the reader marks
+ * a bookmark on just that noun: 勧誘される is highlighted on 勧誘.
+ */
+export const SURU_NOUN_REASON = "suru-verb noun";
 /** Same rule for ～ちゃう / ～じゃう, the contraction of ～てしまう / ～でしまう. */
 export const TE_SHIMAU_REASON = "te-shimau (casual)";
 /** Undoing any of these is a guess; a reading that needs no guess wins first. */
@@ -270,7 +275,7 @@ const RULES: DeinflectRule[] = [
   { from: "したり", to: "する", typeIn: SURU, typeOut: SURU, reason: "tari" },
   { from: "している", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru" },
   { from: "してる", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru (casual)" },
-  { from: "する", to: "", typeIn: SURU, typeOut: ANY, reason: "suru-verb noun" },
+  { from: "する", to: "", typeIn: SURU, typeOut: ANY, reason: SURU_NOUN_REASON },
 
   // ── 来る (kuru) irregular ──
   { from: "きた", to: "くる", typeIn: KURU, typeOut: KURU, reason: "past" },

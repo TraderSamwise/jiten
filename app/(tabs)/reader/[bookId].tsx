@@ -497,7 +497,6 @@ export default function BookReaderScreen() {
     const version = [...entryIds].sort((a, b) => a - b).join(",");
     return {
       version,
-      size: entryIds.size,
       hasEntryId: (entryId) => entryIds.has(entryId),
     };
   }, [bookmarkedIds, listIdsByKey, readerHighlightExcludedListIds]);

@@ -1,14 +1,8 @@
 import type { ReaderSqlDb } from "./backend";
-import { deinflect } from "./deinflect";
+import { SURU_NOUN_REASON, deinflect } from "./deinflect";
 import type { ReaderBookmarkMembership } from "./types";
 
 const BATCH_SIZE = 500;
-/**
- * Above this many bookmarked entries the page is already marked everywhere and
- * deinflecting doubles it — 12,000 entries go from 29.5% of a slice covered to
- * 57.1%. Below it the cost is a few points: 3,000 go from 13.5% to 18.8%.
- */
-const MAX_ENTRIES_FOR_DEINFLECTION = 3000;
 const MAX_SURFACE_LENGTH = 10;
 
 function isJapaneseTextChar(ch: string): boolean {
@@ -133,18 +127,26 @@ export async function resolveBookmarkedWordSurfacesInHtml(
 
   // A bookmark is nearly always saved from an inflected form, because that is
   // what the page says and what the tap resolved. Ask the dictionary about the
-  // forms behind each candidate, then highlight the candidate as written — but
-  // only while the set is small enough that the page stays readable.
-  const useDeinflection =
-    bookmarks.size !== undefined && bookmarks.size <= MAX_ENTRIES_FOR_DEINFLECTION;
+  // forms behind each candidate, then highlight the candidate as written.
   const wordToSurfaces = new Map<string, { surface: string; inflected: boolean }[]>();
   for (const candidate of candidates) {
-    const forms = useDeinflection
-      ? deinflect(candidate)
-      : [{ word: candidate, reasons: [] as string[] }];
-    for (const { word, reasons } of forms) {
+    for (const { word, reasons } of deinflect(candidate)) {
       const found = wordToSurfaces.get(word);
-      const entry = { surface: candidate, inflected: reasons.length > 0 };
+      // A noun that takes する keeps its own extent: 勧誘される is marked on 勧誘,
+      // because the word saved was the noun and the conjugation is not part of
+      // it. Only this reason, not any prefix: ている and でる also leave a
+      // prefix, and trimming those cuts 当|てる out of 当てる.
+      const trimmed =
+        reasons.includes(SURU_NOUN_REASON) &&
+        candidate.startsWith(word) &&
+        word.length < candidate.length;
+      // A trimmed surface IS the dictionary form, so it is not evidence of an
+      // inflection and must not bypass the kana guard below — ことにする would
+      // otherwise light every ことに on the page.
+      const entry = {
+        surface: trimmed ? word : candidate,
+        inflected: !trimmed && reasons.length > 0,
+      };
       if (found) found.push(entry);
       else wordToSurfaces.set(word, [entry]);
     }
