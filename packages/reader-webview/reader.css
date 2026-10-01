@@ -25,17 +25,31 @@ body {
   overflow: hidden;
   touch-action: none;
   position: relative;
-  /* Every selection in this reader is painted by us — the tap highlight, the
-     drag select, the long press. iOS otherwise answers a half-second press
-     with its own loupe and word selection, which lands on a different span
-     than the one the press is about. preventDefault on selectstart is not
-     enough: the loupe comes up before any selection starts.
+  -webkit-touch-callout: none;
+}
 
-     On #content and not on body, because copying goes through a hidden
-     textarea appended to body, and execCommand("copy") needs that selectable. */
+/**
+ * Only while a finger is held down.
+ *
+ * iOS answers a half-second press on text with its own loupe and word
+ * selection, which lands on a different span than the press is about, and
+ * `preventDefault` on `selectstart` is too late — the loupe comes up before any
+ * selection starts. `user-select: none` is what stops it.
+ *
+ * It cannot be always-on, which is what shipped in 23.22 and broke two things
+ * at once. `::highlight()` stops painting under it — a tap resolved its word and
+ * showed no purple, while a word carrying furigana still showed it, because
+ * ruby is painted with the `.highlight` CLASS instead (the Safari workaround
+ * below). And the long press stopped finding its run at all, which leaves
+ * `caretRangeFromPoint` as the only candidate.
+ *
+ * So the class goes on once the press has already resolved what it is on, and
+ * comes off before anything is painted.
+ */
+#content.suppress-native-selection {
+  /* Both inherit, so the whole page is covered. */
   -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none;
 }
 
 p {

@@ -413,6 +413,45 @@ describe("the long press itself", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  /**
+   * The class is what stops iOS showing its own loupe. It must be on while the
+   * finger is down and off whenever the reader resolves or paints anything —
+   * `user-select: none` breaks both of those. Leaving it on is what broke the
+   * tap highlight and the long press in 23.22.
+   */
+  it("suppresses the platform's selection only while the finger is down", () => {
+    setupPage();
+    const classes = () => state.contentEl!.classList.contains("suppress-native-selection");
+    expect(classes()).toBe(false);
+
+    touch("touchstart", 10, 10);
+    expect(classes()).toBe(true);
+
+    // Off again before the run is painted.
+    vi.advanceTimersByTime(500);
+    expect(classes()).toBe(false);
+  });
+
+  it("stops suppressing when the press is abandoned", () => {
+    setupPage();
+    const suppressed = () => state.contentEl!.classList.contains("suppress-native-selection");
+
+    touch("touchstart", 10, 10);
+    expect(suppressed()).toBe(true);
+    touch("touchmove", 25, 10);
+    expect(suppressed()).toBe(false);
+
+    touch("touchstart", 10, 10);
+    expect(suppressed()).toBe(true);
+    touch("touchend", 10, 10);
+    expect(suppressed()).toBe(false);
+
+    touch("touchstart", 10, 10);
+    expect(suppressed()).toBe(true);
+    touch("touchcancel", 10, 10);
+    expect(suppressed()).toBe(false);
+  });
+
   /** Swallowing every later tap is how a gesture like this breaks a reader. */
   it("lets go of the click guard when the finger lifts", () => {
     setupPage();

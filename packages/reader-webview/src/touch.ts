@@ -44,7 +44,18 @@ export function setupTouchHandlers(): void {
   /** A finger is never still; this is the slack a press gets before it is a drag. */
   const LONG_PRESS_SLACK = 10;
 
+  /**
+   * iOS's own press gesture is what this turns off, and only while a finger is
+   * down: `user-select: none` also stops `::highlight()` painting and stops
+   * `caretRangeFromPoint` answering with a text node, so it must not be on when
+   * the reader resolves a tap or paints anything.
+   */
+  function suppressNativeSelection(on: boolean): void {
+    state.contentEl!.classList.toggle("suppress-native-selection", on);
+  }
+
   function cancelLongPress(): void {
+    suppressNativeSelection(false);
     pressTarget = null;
     if (longPressTimer === null) return;
     clearTimeout(longPressTimer);
@@ -97,8 +108,11 @@ export function setupTouchHandlers(): void {
       releaseLongPressClickGuard();
       // A second finger is a pinch or a stray thumb, not a press.
       if (e.touches.length > 1) return;
+      // Resolved BEFORE the class goes on, because the class is what would stop
+      // it resolving.
       pressTarget = pressTargetAt(touchStartX, touchStartY, caret);
       if (!pressTarget) return;
+      suppressNativeSelection(true);
       const pressX = touchStartX;
       const pressY = touchStartY;
       longPressTimer = setTimeout(function () {
@@ -107,6 +121,9 @@ export function setupTouchHandlers(): void {
         if (!pressTarget) return;
         const pressed = resolvePressedRun(pressTarget);
         if (!pressed) return;
+        // iOS has already decided not to show its loupe for this touch, and the
+        // highlight below cannot paint while the class is on.
+        suppressNativeSelection(false);
         postFuriganaPinTarget(pressed, pressX, pressY);
         longPressFired = true;
         // The finger is still down; the click it ends with would otherwise
@@ -250,6 +267,7 @@ export function setupTouchHandlers(): void {
     "touchcancel",
     function () {
       cancelLongPress();
+      suppressNativeSelection(false);
       dragStartAbs = -1;
       dragEndAbs = -1;
       state.swipeHandled = false;

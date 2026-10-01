@@ -28,16 +28,25 @@ const PART_SELECTORS = [
 /**
  * Half a second of holding a finger on text is iOS's own gesture too, and it
  * answers with a loupe and a word selection that lands on a different span than
- * the press is about. Only `user-select: none` on the text itself stops it;
- * `preventDefault` on `selectstart` is too late, because the loupe comes up
- * before any selection starts.
+ * the press is about. `user-select: none` is what stops it, and `preventDefault`
+ * on `selectstart` is too late — the loupe comes up before any selection starts.
+ *
+ * But it has to be scoped to a class the press turns on, not left on #content.
+ * Always-on shipped in 23.22 and broke two things: `::highlight()` stopped
+ * painting (a tap found its word and showed no purple, except on words carrying
+ * furigana, which are painted with a class instead), and the long press stopped
+ * finding its run at all.
  */
 describe("the reader refuses the platform's own text selection", () => {
-  it("turns off native selection on the text, not only the page number", () => {
-    const rule = ruleFor("#content");
-    expect(rule).toMatch(/-webkit-user-select:\s*none/);
-    expect(rule).toMatch(/[^-]user-select:\s*none/);
-    expect(rule).toMatch(/-webkit-touch-callout:\s*none/);
+  it("turns native selection off only under a class, never on #content itself", () => {
+    const pressing = ruleFor("#content.suppress-native-selection");
+    expect(pressing).toMatch(/-webkit-user-select:\s*none/);
+    expect(pressing).toMatch(/[^-]user-select:\s*none/);
+
+    const always = ruleFor("#content");
+    expect(always).not.toMatch(/user-select/);
+    // The callout menu is a different gesture and is safe to refuse always.
+    expect(always).toMatch(/-webkit-touch-callout:\s*none/);
   });
 });
 

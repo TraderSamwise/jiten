@@ -90,6 +90,33 @@ describeWithDb("useJapaneseReader tap lookup", () => {
     );
   };
 
+  /**
+   * The highlight the reader paints under a tap is posted back to the webview
+   * after the lookup resolves, guarded on the placement counter so a second tap
+   * supersedes the first. A guard that is wrong by one drops every highlight
+   * and the tap silently stops painting.
+   */
+  test("a tap posts the highlight for the word it found", async () => {
+    const { result } = render();
+    await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
+    const posted: string[] = [];
+    result.current.readerViewRef.current = {
+      postMessage: (message: string) => posted.push(message),
+      injectJavaScript: () => {},
+    } as never;
+
+    await result.current.readerViewProps!.onMessage(
+      JSON.stringify({ type: "tap", text: PAGE, tapOffset: PAGE.indexOf("読") }),
+    );
+
+    await waitFor(() => expect(result.current.lookupResults.length).toBeGreaterThan(0));
+    const highlights = posted
+      .map((message) => JSON.parse(message) as { type: string; length?: number })
+      .filter((message) => message.type === "highlight");
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0].length).toBe("読む".length);
+  });
+
   test("a tap message resolves the word under the offset", async () => {
     const { result } = render();
     await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
