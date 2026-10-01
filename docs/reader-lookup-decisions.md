@@ -275,6 +275,23 @@ reach it**, so a bookmarked 事 does not light up every こと.
 Cost on the per-slice render path: 25ms and 71 queries literal, 71ms and 109
 deinflected.
 
+### A contraction fires on the surface as written, never on a rule's output
+
+よっぽどほっとかれるか resolved as 弩砲, a crossbow. The span started inside よっぽど and
+the chain ran どほっとかれる → passive → どほっとく → te-oku → どほって → te-form →
+どほう. Three rules deep, each legal on its own.
+
+Every contraction rule now carries `typeIn: RAW`, a bit only the untouched
+surface has — every rule types its output as a real verb class, so nothing a
+rule produces can satisfy it. Their own inflected forms are spelled out
+instead: 置いといた, 置いといて, 置いとけ, 置いとこう, and the ～ちゃう equivalents.
+This replaces the narrower `NOT_MASU_STEM` guard, which only closed the
+masu-stem path and left passive open.
+
+Zero corpus taps change, gate unmoved at 98.0% / 128. Checked directly:
+よっぽどほっとかれるか now reads よっぽど and ほっとかれる → 放っとく, and 置いとく,
+飼っとく, 読んどく, 見とく, 置いといた and 買っとこう all still resolve.
+
 ## Rejected
 
 ### Alternatives weighed on 2026-09-28 and not taken
