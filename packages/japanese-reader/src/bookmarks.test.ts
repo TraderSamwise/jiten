@@ -27,10 +27,10 @@ function createBookmarkTestDb() {
       if (sql.includes("SELECT text, entry_id FROM kana WHERE text IN")) {
         return kanaRows.filter((row) => params?.includes(row.text)) as T[];
       }
-      if (sql.includes("SELECT DISTINCT entry_id FROM kanji WHERE entry_id IN")) {
+      if (sql.includes("SELECT entry_id, tags FROM kanji WHERE entry_id IN")) {
         return [...new Set(kanjiRows.map((row) => row.entry_id))]
           .filter((entryId) => params?.includes(entryId))
-          .map((entry_id) => ({ entry_id })) as T[];
+          .map((entry_id) => ({ entry_id, tags: null })) as T[];
       }
       if (sql.includes("FROM senses WHERE entry_id IN")) {
         return senseRows.filter((row) => params?.includes(row.entry_id)) as T[];
@@ -114,10 +114,10 @@ describe("resolveBookmarkedWordSurfacesInHtml, inflected", () => {
         return kanji.filter((row) => params?.includes(row.text)) as T[];
       if (sql.includes("FROM kana WHERE text IN"))
         return kana.filter((row) => params?.includes(row.text)) as T[];
-      if (sql.includes("SELECT DISTINCT entry_id FROM kanji WHERE entry_id IN"))
+      if (sql.includes("SELECT entry_id, tags FROM kanji WHERE entry_id IN"))
         return [...new Set(kanji.map((row) => row.entry_id))]
           .filter((id) => params?.includes(id))
-          .map((entry_id) => ({ entry_id })) as T[];
+          .map((entry_id) => ({ entry_id, tags: null })) as T[];
       if (sql.includes("FROM senses WHERE entry_id IN"))
         return senses.filter((row) => params?.includes(row.entry_id)) as T[];
       throw new Error(`Unexpected SQL: ${sql}`);

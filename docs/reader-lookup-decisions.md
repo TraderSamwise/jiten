@@ -643,6 +643,104 @@ masu-stem, te-iru, te-form — every step POS-legal, via an intermediate
 boundary can. It is in `knownRed` and belongs to the boundary work. Nothing is
 worse than before: the character was painted either way.
 
+### A highlight has to be a word the page says, not one its characters spell
+
+Part of speech removed the impossible candidates. What was left was worse to
+look at: real inflections of real bookmarked verbs, in the wrong place. はない
+inside ではない is a legal negative of 張る. からず inside からずっと is a legal
+negative of 刈る. 緒 inside 一緒, かし inside 何かしら, ひた inside ひたすら,
+欲し and かった inside 欲しかった, おい and しい inside おいしい. Every one is a
+word. None of them is the word there.
+
+**Segment the slice, and keep a bookmark only where the segmentation agrees.**
+
+The segmenter costs almost nothing, because the matcher already does the
+expensive part. It enumerates every substring of the slice up to ten
+characters, deinflects each, and asks the dictionary about every result — then
+throws away everything that is not bookmarked. Keeping those rows instead, and
+fetching `part_of_speech` for **every** entry reached rather than only the
+bookmarked ones, is enough to know what is a word anywhere on the page.
+
+A run of Japanese characters is then split by a one-pass dynamic program that
+maximises the sum of the **square** of each token's length, with an unknown
+character scoring −1. Plain longest-match is not enough: からず is a word, so
+it wins the first three characters and leaves っ and と behind. Squaring makes
+から + ずっと (4 + 9) beat からず + っ + と (9 + 1 + 1), and the preference
+generalises — in a dictionary of 170,000 entries almost any two characters are
+_something_, and the square is what stops those somethings from winning. A tie
+goes to the longer token: 台所 + で and 台 + 所で score the same, and the page
+means 台所.
+
+A bookmark is painted where it is a token, where it is the noun a suru verb
+was built from (勧誘 in 勧誘される — the bookmark the reader saved), or where it
+is the leading half of an all-kanji compound. That last rule is what keeps
+岩盤 inside 岩盤浴 while refusing 欲し inside 欲しかった: a kanji compound
+decomposes into words, an inflected adjective does not, and requiring both the
+token and the head to be entirely kanji separates them. The head must be at
+least **two** characters — allowing one put a bookmarked single kanji back
+inside every compound beginning with it (弱 in 弱虫, 数 in 数学, 病 in 病気),
+118 boxes of the corpus, which is the noise this whole change exists to stop.
+
+**The tap resolver was tried first and is both slower and worse.** Calling
+`smartLookupWithOffset` once per proposed position costs ~5 ms, which is
+1.5–2 s for a real slice (`calcCharsPerPage * 13` ≈ 3,350 characters, and it
+grows as the reader prefetches); a slice-wide query memo saved 13%, dropping
+the extended DB 25%, narrowing the window from 24 to 8 half. Matching **and**
+confirming the same slice costs 105 ms end to end, of which the segmentation
+pass is about 2 ms — and the SQL round trips went _down_, from ~366 to ~132,
+because the sense fetch moved out of the per-word batch loop. And the resolver is the worse judge: it rejects 励み,
+帰り and しめくくり, because tapping 励み answers entry 1557360, the **noun**
+励み, while the bookmark is 1557390, the **verb** 励む. Demanding the tap's
+entry id would delete the highlight that was explicitly accepted.
+
+**The kana guard had to be narrowed at the same time.** It drops a kana match
+for an entry the dictionary writes in kanji, so that a bookmarked 事 does not
+light every こと — segmentation does not fix that, because こと is a token. But
+ひたすら's only kanji forms are 只管, 一向 and 頓, every one tagged `rK`:
+JMdict is saying the word is written in kana. The guard now ignores an entry
+whose kanji forms are all `rK` or `sK`. That is 1,128 of 174,388 entries with
+kanji (0.6%), and 116 of the 8,586 bookmarks measured against.
+
+**Measured** over `test/corpus/bocchan.txt` with a real 8,586-entry list:
+
+| measure                     | before phase 2 | after phase 2 | after this |
+| --------------------------- | -------------- | ------------- | ---------- |
+| distinct surfaces           | 1,926          | 1,647         | 962        |
+| painted boxes               | 4,298          | 3,375         | 2,757      |
+| share of characters painted | 30.5%          | 23.4%         | 19.4%      |
+
+699 surfaces removed and 14 added. Every addition is the kana guard: ようやく,
+わざわざ, どころか, ついでに, ちっとも, よっぽど, とうとう, において, はたと,
+わざと, ずるい, しかも, けち, バッタ — kana words whose only kanji spellings
+are rare. Removals were read in two samples, longest and shortest. The long
+ones are all a truncation replaced by the whole word — 考え込んで by
+考え込んでいる, 腰をかけて by 腰をかけている, 減りました by 腹が減りました. The
+short ones are all a single character inside a real word — 泉 in 温泉, 鉄 in
+無鉄砲, 験 in 経験, 腰 in 腰を抜かした, 詩 in 新体詩.
+
+On the labelled page it goes from 21 painted boxes to 9, and from 31% of the
+characters to 10.5%. What is left is 励み, 帰り, 岩盤, 流し, しめくくり, 夜更け,
+ひたすら, 飽きない, 互いに — every span the owner accepted, the two that were
+right but unremarked, and ひたすら, which he had asked for. **Nothing wrong is
+left on that page.** `yarn check:tap-consistency` is unchanged at 98.0% / 128
+pairs; this touches no part of the tap path.
+
+**Accepted regression: より.** The page says というより, which is one token, and
+より is not its head, so the one span the owner accepted that boundary
+confirmation takes away is this one. Whether より is worth highlighting was
+already an open question — it is a particle, it appears constantly, and it was
+listed under density rather than correctness.
+
+**Not done: positional spans.** Confirmation is positional but the protocol
+still ships a set of surfaces, so a surface confirmed in one place is painted
+in every place. On the labelled page only two surfaces recur at all and both
+were already wrong, but the slice is twelve times the page and short kana
+surfaces will recur. Making it positional means agreeing on character offsets
+between the React Native side, which holds slice HTML, and the webview, which
+holds a DOM it splices during pagination — they disagree about entities,
+surrogate pairs, comments, and text outside `<p>`. It needs its own change,
+keyed per block rather than per slice.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first

@@ -76,7 +76,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "4",
-    knownRed: ["通"],
     text: "妹はヨガのスタジオに通い、汗を流す。",
     bookmarks: [1432840 /* 通 つう n */],
     mustHighlight: [],
@@ -85,7 +84,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "6, 9, 10, 11, 12",
-    knownRed: ["たいてい"],
     text: "湯で汗を流し、しめくくりはたいてい緑茶を飲む。",
     bookmarks: [
       1436610 /* 締めくくる しめくくる v5r */, 1427900 /* 張る はる v5r */,
@@ -112,7 +110,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "5 (phase 0)",
-    knownRed: ["おい", "しい"],
     text: "ネットでおいしい店を調べる。",
     bookmarks: [
       1432410 /* 追う おう v5u */, 1497930 /* 負う おう v5u */, 1378480 /* 生う おう v2h-k */,
@@ -125,7 +122,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "2 (phase 0)",
-    knownRed: ["緒"],
     text: "友達と一緒に出かける。",
     bookmarks: [1311470 /* 糸口/緒 いとぐち n */],
     mustHighlight: [],
@@ -150,15 +146,15 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "14, 19",
+    knownRed: ["より"],
     text: "というより、むしろ逆だと思う。",
     bookmarks: [1013190 /* より prt */, 1446740 /* 塔 とう n */],
     mustHighlight: ["より"],
     mustNotHighlight: ["とい"],
-    note: "より is correctly matched and bookmarked. とい is the masu-stem of the noun 塔 — an inflection a noun cannot take. Whether より is worth highlighting at all is a density question, not a correctness one.",
+    note: "とい is the masu-stem of the noun 塔 — an inflection a noun cannot take. より is correctly matched and bookmarked, and segmentation now refuses it: the page says というより, one token, and より is not its head. That is the one span the owner accepted which boundary confirmation takes away. Whether より is worth highlighting at all was already an open question — it is a particle that appears constantly.",
   },
   {
     id: "15",
-    knownRed: ["からず"],
     text: "会ってからずっと喋っている。",
     bookmarks: [1209540 /* 刈る かる v5r */],
     mustHighlight: [],
@@ -175,7 +171,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "17",
-    knownRed: ["ひたすら", "ひた"],
     text: "朝からひたすら歩き続けた。",
     bookmarks: [1010530 /* 只管 ひたすら adv */, 1212010 /* 干る ひる v1 */],
     mustHighlight: ["ひたすら"],
@@ -211,7 +206,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "22",
-    knownRed: ["かし"],
     text: "何かしら理由があるのだろう。",
     bookmarks: [
       1195720 /* 課す かす v5s */, 1568780 /* 滓 かす n */, 1577030 /* 化す かす v5s */,
@@ -223,7 +217,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "23",
-    knownRed: ["欲し", "かった"],
     text: "こういう女友だちが欲しかった。",
     bookmarks: [
       2601360 /* 脱 だつ pref */, 2410130 /* 欲す ほりす v5s */, 1208840 /* 且つ かつ conj */,
@@ -245,7 +238,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "27",
-    knownRed: ["欲し"],
     text: "欲しくても我慢してきたものがある。",
     bookmarks: [
       1247040 /* 繰る くる v5r */, 1585570 /* 抉る くる v5r */, 1335520 /* 汁 しる n */,
@@ -257,7 +249,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "28",
-    knownRed: ["はい"],
     text: "我慢したものはいくつかあるだろう。",
     bookmarks: [
       1474200 /* 這う はう v5u */, 1955830 /* 堰/井堰 せき/いせき/い n */, 1201860 /* 灰 はい n */,
@@ -269,7 +260,6 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
   },
   {
     id: "29",
-    knownRed: ["けれ"],
     text: "面倒だけれど、やるしかない。",
     bookmarks: [1333400 /* 蹴る ける v5r */],
     mustHighlight: [],

@@ -150,15 +150,25 @@ noun and a verb (`vs` entries especially — 勉強 is `n,vs`). The check must p
 if **any** sense admits the rule, or it will delete legitimate suru-verb
 matches.
 
-## Phase 3 — Boundaries, by confirming with the resolver
+## Phase 3 — Boundaries — **done, by segmentation rather than the resolver**
 
 The remaining bad spans are well-formed inflections of real verbs in the wrong
 place. Only knowing where the word boundary is removes them.
 
-Chosen approach: **matcher proposes, resolver confirms.** Keep the cheap
-substring scan to find candidate positions; at each one, run the same
-resolution the tap uses, and keep the highlight only if the word the resolver
-settles on is the bookmarked one.
+**Done, but not this way.** The resolver was measured first and rejected on
+both counts — see "A highlight has to be a word the page says, not one its
+characters spell" in `reader-lookup-decisions.md`. What shipped is a
+segmentation built from the rows the matcher already fetches: 14 ms a page
+against the resolver's 168 ms, and it keeps 励み, 帰り and しめくくり, which
+the resolver refuses. The kana guard was narrowed at the same time, which
+restores ひたすら. Corpus 1,647 → 994 surfaces, coverage 23.4% → 19.6%; the
+labelled page 21 boxes → 9, with nothing wrong left on it. One accepted
+regression, より. Positional spans are **not** done and are written up there.
+
+Original approach, kept for the record: **matcher proposes, resolver
+confirms.** Keep the cheap substring scan to find candidate positions; at each
+one, run the same resolution the tap uses, and keep the highlight only if the
+word the resolver settles on is the bookmarked one.
 
 Why this rather than guards or full segmentation:
 
@@ -371,3 +381,64 @@ to put in front of a render**, but three things make it workable:
 the 34** proposed positions — and six is exactly the number of spans Sam
 accepted when he walked the page. The approach picks out the right spans
 before a line of it has been written.
+
+### What the resolver and a segmenter each answer, measured
+
+Both were run over the labelled page (277 characters, 34 proposed positions
+after phase 2, against the real 8,586-entry list).
+
+| judge                                                  | cost   | keeps |
+| ------------------------------------------------------ | ------ | ----- |
+| `smartLookupWithOffset` at each position               | 168 ms | 6     |
+| greedy longest match, proposal must be exactly a token | 14 ms  | 8     |
+| …proposal is a token head whose remainder is a word    | 14 ms  | 17    |
+| …proposal merely starts at a token start               | 14 ms  | 19    |
+
+**The resolver is the worse judge, not just the slower one.** It rejects
+励み, 帰り and しめくくり. Tapping 励み resolves to entry 1557360 — the **noun**
+励み — while the bookmark is 1557390, the **verb** 励む. That is precisely the
+incoherence Sam described: the highlight and the tap are looking at the same
+characters and naming different entries. A rule that demands the tap's entry
+id would delete the highlight he explicitly accepted.
+
+So the confirmation is about the **span**, not the entry. Token-exact keeps:
+
+| span       | verdict                                 |
+| ---------- | --------------------------------------- |
+| 励み       | accepted                                |
+| しめくくり | accepted                                |
+| 夜更け     | accepted                                |
+| 互いに     | accepted                                |
+| 飽きない   | correct                                 |
+| 帰り       | correct, and not among the walked spans |
+| 流し       | unruled                                 |
+| からず     | **still wrong** — から + ずっと         |
+
+and loses two Sam accepted: 岩盤, because the token there is 岩盤浴, and より.
+Both are the "proposal is the head of a longer token" case, and every rule
+that recovers them also lets 通, おい, しめ, ひた, 欲 and 欲し back in — so the
+trade is two mild spans against six wrong ones.
+
+### The other half of finding 17: the kana guard and rare kanji
+
+Segmentation refuses ひた, because the token at that position is ひたすら. It
+does not bring ひたすら **back** — the kana guard still drops it, because
+entry 1010530 has kanji forms and the page used kana.
+
+But look at what those forms are:
+
+```
+1010530  只管  tags ["rK"]
+1010530  一向  tags ["rK"]
+1010530  頓    tags ["rK"]
+```
+
+Every one is `rK`, JMdict's rare-kanji tag. The dictionary is saying this word
+is written in kana. The guard exists so that a bookmarked 事 does not light
+every こと — a real case, and one segmentation does **not** fix, since こと is
+a token. It was never meant for a word that has no ordinary kanji spelling.
+
+So the guard should ignore an entry whose kanji forms are all `rK` or `sK`.
+Scope, measured: **1,128 of 174,388** entries with kanji forms (0.6%), and
+**116 of the owner's 8,586 bookmarks**. `kanji.tags` already carries the JSON
+array; nothing needs rebuilding.
