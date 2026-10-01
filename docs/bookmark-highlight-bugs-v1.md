@@ -506,3 +506,44 @@ the word actually on the page, is not what is marked — the auxiliary tail is.
 ```
 
 けれど read as 蹴れ, the imperative "kick!".
+
+## Phase 0 resolution — 一緒 and おいしい are not a membership bug
+
+Measured 2026-10-01 by running the real `resolveBookmarkedWordSurfacesInHtml`
+over the page with Sam's Common list, and separately enumerating every
+(candidate, deinflection, entry) that could produce each span.
+
+**一緒 is not highlighted. `緒` is.** The only entry that can paint `緒` and is
+in Common is 1311470 糸口/緒 [いとぐち], matched as written via the kanji table.
+Nothing produces the surface `一緒`: entry 1163400 一緒 would, but it is in no
+exported list. The box read as 一緒 on screen because the span sits against 一.
+
+**おいしい is not one highlight. It is two: `おい` + `しい`.**
+
+- `おい` — masu-stem of 追う (1432410), 負う (1497930), 生う (1378480), and of
+  老いる (1560990). All four are in Common.
+- `しい` — masu-stem of 強いる (1236100), in Common.
+
+Adjacent `<span class="bookmarked-word">` elements have no gap between them, so
+two spans render as one continuous box.
+
+**Two consequences.**
+
+1. Neither is a membership bug. `hasEntryId` is correct; both spans are the
+   already-identified wrong-place-inflection class (an entirely legal masu-stem
+   of a real verb, in a position where that verb is not what the text says).
+   The fixture is valid as planned.
+2. **The instrument must count spans, not boxes.** The page's full surface set
+   is 49 entries, against the 29 boxes Sam walked. Short spans that abut are
+   invisible as separate highlights, so the visual count understates the
+   damage, and a fix that merges two wrong spans into one looks like progress
+   while changing nothing.
+
+The 49 surfaces resolved on this page, longest first:
+
+```
+しめくくり しかった している たいてい 飽きない かった しくて してい はない
+はたい 夜更け いてい からず くくり しめく たいて 互いに 励み くて おい しく
+しい して はた 岩盤 帰り 流し いて くく くり きた しめ とい ひた より 飽き
+かし だち 欲し けれ はい わた 緒 通 く し 岩 数 欲
+```
