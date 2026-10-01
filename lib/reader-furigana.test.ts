@@ -1288,6 +1288,14 @@ describe.skipIf(!hasBothDbs)("furigana over a book's own ruby", () => {
     expect(out).toContain("<ruby>喝采<rt>かっさい</rt></ruby>");
   });
 
+  /** Any inline tag, not just ruby: an EPUB puts <em> and <span> mid-sentence. */
+  it("leaves no orphan close tag when a word spans any inline markup", async () => {
+    const out = await render("<p>つまみ、拍手<b>喝采</b>に応える</p>");
+    // The bold stays wrapped around its own text, each half annotated apart.
+    expect(out).toContain("<b><ruby>喝采<rt>かっさい</rt></ruby></b>");
+    expect((out.match(/<ruby>/g) ?? []).length).toBe((out.match(/<\/ruby>/g) ?? []).length);
+  });
+
   it("still annotates a compound with no ruby in the way", async () => {
     const out = await render("<p>つまみ、拍手喝采に応える</p>");
     expect(out).toContain("<ruby>拍手喝采<rt>はくしゅかっさい</rt></ruby>");

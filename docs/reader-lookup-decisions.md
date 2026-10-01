@@ -304,23 +304,36 @@ the tap ranking has used since `3046072`.
 Only for compounds. Every single-kanji entry is headed by its own kanji, so the
 term is noise at length 1 and just reorders: unrestricted it turned 勢 from
 いきおい into ぜい and 取 from とり into しゅ. With the restriction the sweep over
-all 67,299 kanji-initial corpus substrings moves 14: 一二 じゅうに→いちに,
-一向 ひたすら→いっこう, 一時 ひととき→いちじ, 二度 ふたたび→にど, 御影 ごえい→みかげ,
-極めた き→きわ, 目標 めじるし→もくひょう, 言付けた いいつ→ことづ, 黒人 くろうと→こくじん.
+all 67,299 kanji-initial corpus substrings moves exactly 14 surfaces, 12 of
+them better: 一二 じゅうに→いちに, 一向 ひたすら→いっこう, 一時 ひととき→いちじ,
+上って あが→のぼ, 二度 ふたたび→にど, 御影 ごえい→みかげ, 極めた・極めてい・極めている
+き→きわ, 目標 めじるし→もくひょう, 言付けた いいつ→ことづ, 黒人 くろうと→こくじん.
+
+上って is a fix, not a wash: 上がる conjugates to 上**が**って, so the bare
+string 上って can only be のぼって.
 
 **Accepted regressions:** 真直 ますぐ→しんちょく and 身体 からだ→しんたい. In both
 the rival entry genuinely uses that spelling — 身体 is a listed spelling of
 体/からだ — so heading an entry is the wrong signal there, and in fiction からだ
-is the commoner reading. 上って あが→のぼ is a wash; both are real.
+is the commoner reading. 真直's true answer, まっすぐ, is unreachable either way.
+
+76 multi-character spellings in the dictionary head two or more common entries,
+so that many surfaces are still decided by row order. Not a problem anyone has
+reported; recorded so the next person knows the term is a tiebreak, not a sort.
 
 **Source ruby.** An imported EPUB brings its own `<ruby>`, and a surface could
 match across one: 拍手`<ruby>`喝采`<rt>`かっさい`</rt></ruby>` matches 拍手喝采.
 `advanceHtmlPastChars` skips tags while counting visible characters, so the
 replacement swallowed the source `<ruby>` open tag and left `<rt>かっさい</rt>`
 `</ruby>` dangling — stray kana on the page, reported as 拍手喝采 being
-furigana'd っさい. `spanCrossesRuby` now refuses such a surface and a shorter
-one that stops before the ruby is annotated instead. The book's own reading
-wins. Zero sweep changes: the corpus has no source ruby.
+furigana'd っさい. `spanCrossesMarkup` now refuses any surface whose characters
+straddle a tag, and a shorter one that stops before it is annotated instead —
+拍手<b>喝采</b> gets 拍手 and 喝采 separately, with the bold intact. Ruby was
+only the case that was reported; an EPUB puts `<em>`, `<span>` and `<a>`
+mid-sentence and every one of them orphaned its close tag the same way. The
+check runs before the settings filter so a span that will never be annotated
+cannot mark shorter ones blocked on its way past. Zero sweep changes: the
+corpus is plain text.
 
 ### Two furigana readings the dictionaries cannot settle
 

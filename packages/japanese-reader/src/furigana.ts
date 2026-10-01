@@ -1108,19 +1108,16 @@ export function applyFuriganaToHtml(
           continue;
         }
 
+        // Checked before the settings filter: a span we will never annotate
+        // must not mark shorter ones blocked on its way past.
+        if (spanCrossesMarkup(html, i, surfaceChars.length)) continue;
+
         if (!shouldShowFuriganaForSurface(surfaceChars, entry, kanjiSet, settings)) {
           if (!longestRejectedSurfaceChars) {
             longestRejectedSurfaceChars = surfaceChars;
           }
           continue;
         }
-
-        // An imported book brings its own <ruby>, and a surface can span one:
-        // 拍手<ruby>喝采<rt>かっさい</rt></ruby> matches 拍手喝采. Annotating it
-        // swallowed the source <ruby> open tag and left its <rt> dangling,
-        // which rendered as stray kana. The book's own reading wins; a shorter
-        // surface that stops before the ruby is tried next.
-        if (spanCrossesRuby(html, i, surfaceChars.length)) continue;
 
         const baseText = surfaceChars.slice(0, entry.kanjiPartLen).join("");
         out += `<ruby>${baseText}<rt>${entry.reading}</rt></ruby>`;
@@ -1190,22 +1187,23 @@ function getVisibleCharsFrom(html: string, start: number): string[] {
  * skipping over any tags encountered along the way.
  */
 /**
- * True when the next `count` visible characters are not all plain text — a
- * <ruby> the book supplied starts or ends inside them. advanceHtmlPastChars
- * skips tags while counting, so wrapping such a span would consume the markup
- * and orphan whatever followed it.
+ * True when the next `count` visible characters are not all plain text — any
+ * tag the book supplied opens or closes inside them. advanceHtmlPastChars
+ * skips tags while counting, so wrapping such a span consumes the markup and
+ * orphans whatever followed: 拍手<ruby>喝采<rt>かっさい</rt></ruby> left a
+ * dangling <rt>, and 拍手<b>喝采</b> leaves a dangling </b> the same way. An
+ * EPUB puts <em>, <span> and <a> mid-sentence, so this refuses all of them
+ * rather than naming ruby.
  */
-function spanCrossesRuby(html: string, start: number, count: number): boolean {
+function spanCrossesMarkup(html: string, start: number, count: number): boolean {
   let i = start;
   let consumed = 0;
   while (i < html.length && consumed < count) {
     const ch = html[i];
     if (ch === "<") {
+      // A block boundary ends the span rather than crossing it.
       if (html.startsWith("</p>", i) || html.startsWith("</div>", i)) return false;
-      if (html.startsWith("<ruby", i) || html.startsWith("</ruby>", i)) return true;
-      const close = html.indexOf(">", i);
-      i = close >= 0 ? close + 1 : i + 1;
-      continue;
+      return true;
     }
     if (ch === "&") {
       const semi = html.indexOf(";", i);
