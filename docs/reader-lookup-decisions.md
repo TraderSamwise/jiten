@@ -545,6 +545,52 @@ being tested.
 
 ## Rejected
 
+### Ranking a word's readings by frequency instead of taking JMdict's first
+
+**Measured 2026-10-01 and rejected. `yarn check:reading-order` re-runs it.**
+
+36,954 entries list more than one reading and the furigana pass always prints
+the first row (`entryKana` keeps the first by rowid). The name-frequency work
+made that look like the same defect names had — an arbitrary pick among
+candidates — so it was checked rather than assumed.
+
+**It is not the same defect.** JMdict orders an entry's readings editorially,
+most prevalent first: 今日 is きょう / こんにち / こんち, 行く is いく / ゆく,
+明日 is あした / あす, 昨日 is きのう / さくじつ. Taking the first inherits a
+human judgement. JMnedict orders a spelling's readings in gojūon — alphabetical
+— which inherits nothing, and that is the whole reason names needed a new data
+source and words do not.
+
+Two measurements:
+
+- **Against JMdict's own per-reading `common` flags.** Of 36,954 multi-reading
+  entries, **35** have a first row that is not common while a later one is, and
+  all but a handful of those are the same reading written in two scripts —
+  ズキズキ/ずきずき, クジラ/くじら, タコ/たこ, アジ/あじ. The ordering agrees
+  with the flags 99.9% of the time.
+- **Against usage**, via the JPDB frequency list (anime, novels, visual novels)
+  already cached for `yarn build:jlpt`. Of 1,858 common multi-reading entries
+  JPDB can speak to, the first-listed reading is the one it records in **1,809
+  (97.4%)**. 29 of the rest differ only in script. That leaves **20 genuine
+  disagreements, and they are the argument against switching**, not for it:
+  JPDB records こかくまんぞく for 顧客満足 (こきゃく is correct), すいちょう for
+  水鳥 (みずとり is far commoner), ろうまん for 浪漫 (ロマン, the ateji's whole
+  point), けんきゅうしょ for 経済研究所 and しんりょうしょ for 診療所 (じょ in
+  both). Ranking by it would regress every one of those.
+
+**The data cannot answer the question anyway.** JPDB records exactly one reading
+per spelling, so it can never say reading B beats reading A — only which reading
+it happens to hold. For 水鳥 it holds すいちょう and nothing for みずとり. A
+per-reading comparison needs a source that counts both, and no such source is in
+the repo.
+
+Where JPDB does have a point — 七 なな over しち, 四 よん over し, 皆 みんな over
+みな — the right reading depends on whether the character stands alone or heads a
+compound, which a fixed per-entry ranking cannot express either way.
+
+**Do not re-derive this.** The first-listed reading is a real signal, the
+obvious replacement is measurably worse, and the measurement is one command.
+
 ### Alternatives weighed on 2026-09-28 and not taken
 
 Four reader bugs were fixed that day, and each had a wider option that was put

@@ -61,7 +61,8 @@
     "build:primitive-font": "node scripts/kanji/build-primitive-font.mjs",
     "build:name-freq": "tsx scripts/build-name-frequency.ts",
     "sweep:furigana": "tsx scripts/furigana-sweep.ts",
-    "probe:names": "tsx scripts/probe-name-furigana.ts"
+    "probe:names": "tsx scripts/probe-name-furigana.ts",
+    "check:reading-order": "tsx scripts/reading-order-check.ts"
   },
   "dependencies": {
     "@tradersamwise/jiten-reader-react-native": "0.1.0",
