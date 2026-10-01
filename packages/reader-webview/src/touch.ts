@@ -91,10 +91,13 @@ export function setupTouchHandlers(): void {
 
       // Hold still on a kanji run to be asked which reading it should carry.
       cancelLongPress();
-      longPressFired = false;
+      // A press that fired and never saw its own touchend — a second finger
+      // arrived, or the platform swallowed it — must not leave the guard set,
+      // or every later tap in the book is swallowed with it.
+      releaseLongPressClickGuard();
       // A second finger is a pinch or a stray thumb, not a press.
       if (e.touches.length > 1) return;
-      pressTarget = pressTargetAt(touchStartX, touchStartY);
+      pressTarget = pressTargetAt(touchStartX, touchStartY, caret);
       if (!pressTarget) return;
       const pressX = touchStartX;
       const pressY = touchStartY;

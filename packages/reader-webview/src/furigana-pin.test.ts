@@ -99,6 +99,36 @@ describe("rubyUnder", () => {
   });
 });
 
+describe("pressedRunAt and the page's visible column", () => {
+  /**
+   * Pagination keeps the neighbouring columns laid out and clipped, so a caret
+   * can resolve to text nobody can see. jsdom has no layout, so the rects are
+   * stubbed per element — without that every rect is 0×0 at the origin and the
+   * refusal can never be exercised.
+   */
+  it("refuses a press that resolves to a clipped column", () => {
+    document.body.innerHTML = `<div id="page"><p>杏子は帰った</p></div>`;
+    const page = document.getElementById("page")!;
+    state.pageEl = page;
+    state.contentEl = page;
+    const node = document.querySelector("p")!.firstChild as Text;
+    document.caretRangeFromPoint = () => {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      return range;
+    };
+    document.elementFromPoint = () => document.querySelector("p");
+
+    page.getBoundingClientRect = () => new DOMRect(0, 0, 100, 500);
+    Range.prototype.getBoundingClientRect = () => new DOMRect(40, 0, 10, 20);
+    expect(pressedRunAt(45, 10)).toEqual({ run: "杏子", currentReading: "" });
+
+    // The same caret, now measured outside the page's own box.
+    Range.prototype.getBoundingClientRect = () => new DOMRect(400, 0, 10, 20);
+    expect(pressedRunAt(45, 10)).toBeNull();
+  });
+});
+
 describe("pressedRunAt", () => {
   function pressOn(html: string): ReturnType<typeof pressedRunAt> {
     document.body.innerHTML = `<div id="page">${html}</div>`;
@@ -247,6 +277,38 @@ describe("the long press itself", () => {
     touch("touchcancel", 10, 10);
     vi.advanceTimersByTime(100);
     expect(state.suppressClick).toBe(false);
+  });
+
+  /**
+   * The press has fired and the finger is still down when a second one arrives.
+   * The touchend that follows belongs to a gesture the press no longer owns, so
+   * nothing was releasing the guard — and a stuck guard kills every later tap.
+   */
+  it("lets go of the click guard when a second finger interrupts a fired press", () => {
+    setupPage();
+    touch("touchstart", 10, 10);
+    vi.advanceTimersByTime(500);
+    expect(state.suppressClick).toBe(true);
+
+    touchWith("touchstart", [
+      { x: 10, y: 10 },
+      { x: 200, y: 200 },
+    ]);
+    vi.advanceTimersByTime(100);
+    expect(state.suppressClick).toBe(false);
+  });
+
+  /**
+   * Bookmark and tap highlighting both splitText, which shortens the pressed
+   * node in place. The stored offset then points at a different character.
+   */
+  it("says nothing when the pressed character has moved within its node", () => {
+    const post = setupPage();
+    touch("touchstart", 10, 10);
+    // Still a kanji at the same offset, so only the character check can tell.
+    (document.querySelector("p")!.firstChild as Text).data = "別の話";
+    vi.advanceTimersByTime(500);
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("does not fire with a second finger down", () => {

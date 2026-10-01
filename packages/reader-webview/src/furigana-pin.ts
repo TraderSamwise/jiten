@@ -142,25 +142,45 @@ export interface PressTarget {
   ruby: PressedRun | null;
   caretNode: Node | null;
   caretOffset: number;
+  /** The character that was there, so a repaint cannot move the offset under it. */
+  caretChar: string;
 }
 
-export function pressTargetAt(x: number, y: number): PressTarget | null {
+export function pressTargetAt(
+  x: number,
+  y: number,
+  caret?: { node: Node; offset: number } | null,
+): PressTarget | null {
   const element = document.elementFromPoint(x, y);
-  const fromRuby = rubyUnder(element);
-  if (fromRuby) {
-    if (!isOnVisiblePage(element!.getBoundingClientRect())) return null;
-    return { ruby: fromRuby, caretNode: null, caretOffset: 0 };
+  const inRuby = element?.closest("ruby") ?? null;
+  if (inRuby) {
+    // Either the ruby answers or nothing does. Falling through to the text
+    // under a ruby this refused would pin a run that cannot line up with the
+    // reading the page is already showing over it.
+    const fromRuby = rubyUnder(inRuby);
+    if (!fromRuby) return null;
+    if (!isOnVisiblePage(inRuby.getBoundingClientRect())) return null;
+    return { ruby: fromRuby, caretNode: null, caretOffset: 0, caretChar: "" };
   }
 
-  const caret = resolveCaretAt(x, y);
-  if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return null;
+  // The caller has usually resolved this already for its own gesture.
+  const resolved = caret ?? resolveCaretAt(x, y);
+  if (!resolved || resolved.node.nodeType !== Node.TEXT_NODE) return null;
+
+  const text = resolved.node.textContent ?? "";
+  if (resolved.offset >= text.length) return null;
 
   const charRange = document.createRange();
-  charRange.setStart(caret.node, caret.offset);
-  charRange.setEnd(caret.node, Math.min(caret.offset + 1, caret.node.textContent!.length));
+  charRange.setStart(resolved.node, resolved.offset);
+  charRange.setEnd(resolved.node, resolved.offset + 1);
   if (!isOnVisiblePage(charRange.getBoundingClientRect())) return null;
 
-  return { ruby: null, caretNode: caret.node, caretOffset: caret.offset };
+  return {
+    ruby: null,
+    caretNode: resolved.node,
+    caretOffset: resolved.offset,
+    caretChar: text.charAt(resolved.offset),
+  };
 }
 
 /**
@@ -177,6 +197,12 @@ export function resolvePressedRun(target: PressTarget): PressedRun | null {
   // swapped in. The node is then detached and still carries its old text, so
   // the run would be one the page no longer shows.
   if (!state.pageEl?.contains(target.caretNode)) return null;
+  // Bookmark highlighting and tap highlighting both splitText, which shortens
+  // the node in place while it is still attached. The offset would then point
+  // at a different character, or past the end.
+  if ((target.caretNode.textContent ?? "").charAt(target.caretOffset) !== target.caretChar) {
+    return null;
+  }
   const { text, index } = paragraphTextAroundCaret(target.caretNode, target.caretOffset);
   const run = kanjiRunAt(text, index);
   if (run.length === 0) return null;
