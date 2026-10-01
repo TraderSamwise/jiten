@@ -75,6 +75,34 @@ ruby rt {
   box-decoration-break: clone;
 }
 
+/* A word split by its own furigana is several spans, and the ring above would
+   part it from itself — 飽きない painted as 飽 | きない. Text runs top to
+   bottom here (vertical-rl), so the joining edge is the bottom of one part
+   and the top of the next: drop the ring and the corner rounding there, keep
+   them on the outside of the word. */
+.bookmarked-word-start {
+  border-radius: 2px 2px 0 0;
+  box-shadow:
+    inset 0 1px 0 0 var(--reader-bg),
+    inset 1px 0 0 0 var(--reader-bg),
+    inset -1px 0 0 0 var(--reader-bg);
+}
+
+.bookmarked-word-middle {
+  border-radius: 0;
+  box-shadow:
+    inset 1px 0 0 0 var(--reader-bg),
+    inset -1px 0 0 0 var(--reader-bg);
+}
+
+.bookmarked-word-end {
+  border-radius: 0 0 2px 2px;
+  box-shadow:
+    inset 0 -1px 0 0 var(--reader-bg),
+    inset 1px 0 0 0 var(--reader-bg),
+    inset -1px 0 0 0 var(--reader-bg);
+}
+
 /* Safari: ::highlight() doesn't paint inside <ruby>, so we add .highlight
    class directly. Height won't be perfect but avoids DOM manipulation bugs. */
 ruby.highlight {

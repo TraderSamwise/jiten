@@ -35,11 +35,14 @@ export interface HighlightCase {
   /** Spans that must not be painted. */
   mustNotHighlight: string[];
   /**
-   * Must be painted as ONE span, not merely as a run of abutting ones. Only
-   * worth stating where a word is split by its own ruby: the characters are
-   * contiguous, so the box test passes while the reader still sees a seam.
+   * Must be painted without a seam running through it.
+   *
+   * A word whose kanji carries furigana cannot be one span — the kanji is
+   * inside the <ruby> element and the okurigana after it — so this is not
+   * about the span count. It is about the 1px ring that parts two adjacent
+   * bookmarked words: drawn on every span, it parts a word from itself.
    */
-  mustBeOneSpan?: string[];
+  mustHaveNoSeam?: string[];
   /**
    * Spans the owner has not ruled on. Asserted neither way, listed so that a
    * later change to one of them is a deliberate decision and not a surprise.
@@ -52,8 +55,6 @@ export interface HighlightCase {
    * from `mustHighlight` and `mustNotHighlight`; a name appears in only one.
    */
   knownRed?: string[];
-  /** As `knownRed`, for the single `mustBeOneSpan` expectation of a case. */
-  knownRedSeam?: boolean;
   note: string;
 }
 
@@ -192,9 +193,8 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     bookmarks: [1586250 /* 飽きる あきる v1 */],
     mustHighlight: ["飽きない"],
     mustNotHighlight: [],
-    mustBeOneSpan: ["飽きない"],
-    knownRedSeam: true,
-    note: "Same span, with furigana on 飽. The renderer currently flushes the highlight chunk at every <rt>, so the one word is painted as 飽 + きない and shows a seam.",
+    mustHaveNoSeam: ["飽きない"],
+    note: "Same span, with furigana on 飽. The word is necessarily two spans — 飽 inside the ruby, きない after it — so what matters is that the separator between adjacent bookmarked words is not drawn between them.",
   },
   {
     id: "20, 21",

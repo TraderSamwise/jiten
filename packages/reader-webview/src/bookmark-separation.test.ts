@@ -9,12 +9,21 @@
 import { describe, expect, it } from "vitest";
 import { readerCss } from "../bundle";
 
-const bookmarkRule = () => {
-  const at = readerCss.indexOf(".bookmarked-word");
-  expect(at, ".bookmarked-word rule missing from reader.css").toBeGreaterThan(-1);
+const ruleFor = (selector: string) => {
+  const at = readerCss.indexOf(`${selector} {`);
+  expect(at, `${selector} rule missing from reader.css`).toBeGreaterThan(-1);
   // Declarations only — a comment mentioning margin is not a margin.
   return readerCss.slice(at, readerCss.indexOf("}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
 };
+
+const bookmarkRule = () => ruleFor(".bookmarked-word");
+
+/** The three rules for a word that furigana split into several spans. */
+const PART_SELECTORS = [
+  ".bookmarked-word-start",
+  ".bookmarked-word-middle",
+  ".bookmarked-word-end",
+];
 
 describe("bookmark highlight separation", () => {
   it("separates adjacent highlights with a ring of page background", () => {
@@ -37,5 +46,45 @@ describe("bookmark highlight separation", () => {
 
   it("keeps the highlight itself", () => {
     expect(bookmarkRule()).toContain("var(--reader-bookmark-bg)");
+  });
+
+  /**
+   * A word whose kanji carries furigana is painted as several spans, because
+   * the kanji is inside the <ruby> element and the okurigana after it. With
+   * the ring on every span the word was parted from itself — 飽 | きない. The
+   * parts drop the ring on the edge they join along, and text runs top to
+   * bottom here, so that edge is the bottom of one and the top of the next.
+   */
+  it("does not ring the edge where two parts of one word meet", () => {
+    const shadow = (selector: string) => {
+      const rule = ruleFor(selector);
+      const at = rule.indexOf("box-shadow:");
+      expect(at, `${selector} draws no ring`).toBeGreaterThan(-1);
+      return rule.slice(at, rule.indexOf(";", at));
+    };
+    // `inset 0 1px` is the top edge, `inset 0 -1px` the bottom.
+    expect(shadow(".bookmarked-word-start")).toContain("inset 0 1px");
+    expect(shadow(".bookmarked-word-start")).not.toContain("inset 0 -1px");
+    expect(shadow(".bookmarked-word-end")).toContain("inset 0 -1px");
+    expect(shadow(".bookmarked-word-end")).not.toContain("inset 0 1px");
+    expect(shadow(".bookmarked-word-middle")).not.toMatch(/inset 0 -?1px/);
+    // All three keep the sides, so the word still has an outline.
+    for (const selector of PART_SELECTORS) {
+      expect(shadow(selector)).toContain("inset 1px 0");
+      expect(shadow(selector)).toContain("inset -1px 0");
+    }
+  });
+
+  it("moves no text in the part rules either", () => {
+    const moves = /^(margin|padding|border(?!-radius)|letter-spacing|word-spacing|inset|translate)/;
+    for (const selector of PART_SELECTORS) {
+      const declared = ruleFor(selector)
+        .split(";")
+        .map((declaration) => declaration.split(":")[0].trim())
+        .filter(Boolean);
+      for (const property of declared) {
+        expect(property, `${selector} ${property} would shift the pagination`).not.toMatch(moves);
+      }
+    }
   });
 });

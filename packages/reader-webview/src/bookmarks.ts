@@ -71,7 +71,18 @@ function findMatches(text: string, surfaces: string[]): BookmarkMatch[] {
   return matches;
 }
 
-function wrapTextSlice(node: Text, start: number, end: number): void {
+/**
+ * Where a span sits in the word it belongs to, so the ring that parts two
+ * adjacent words is not drawn through the middle of one.
+ *
+ * A word is more than one span whenever furigana splits it: the kanji is
+ * inside the <ruby> element and the okurigana after it, so 飽きない is 飽 and
+ * きない. With the ring on every span that word was painted with a seam down
+ * the middle of itself.
+ */
+type MatchPart = "only" | "start" | "middle" | "end";
+
+function wrapTextSlice(node: Text, start: number, end: number, part: MatchPart): void {
   if (end <= start) return;
 
   let target = node;
@@ -80,18 +91,34 @@ function wrapTextSlice(node: Text, start: number, end: number): void {
   if (length < target.textContent!.length) target.splitText(length);
 
   const span = document.createElement("span");
-  span.className = "bookmarked-word";
+  span.className = part === "only" ? "bookmarked-word" : `bookmarked-word bookmarked-word-${part}`;
   target.parentNode!.insertBefore(span, target);
   span.appendChild(target);
 }
 
 function applyMatch(match: BookmarkMatch, runs: TextRun[]): void {
-  for (let i = runs.length - 1; i >= 0; i--) {
+  const touched: number[] = [];
+  for (let i = 0; i < runs.length; i++) {
     const run = runs[i];
     if (run.end <= match.start || run.start >= match.end) continue;
+    touched.push(i);
+  }
+
+  // Back to front, because wrapping splits the text node and would move every
+  // offset after it.
+  for (let at = touched.length - 1; at >= 0; at--) {
+    const run = runs[touched[at]];
     const start = Math.max(0, match.start - run.start);
     const end = Math.min(run.end, match.end) - run.start;
-    wrapTextSlice(run.node, start, end);
+    const part: MatchPart =
+      touched.length === 1
+        ? "only"
+        : at === 0
+          ? "start"
+          : at === touched.length - 1
+            ? "end"
+            : "middle";
+    wrapTextSlice(run.node, start, end, part);
   }
 }
 

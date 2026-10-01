@@ -26,6 +26,12 @@ What is deliberately **not** done, and written up in the decisions doc:
 positional spans (a surface confirmed in one place is still painted in every
 place), and shrinking the in-page box when a contained bookmark is chosen.
 
+**Afterwards**: the ruby seam turned out not to be a renderer bug at all. The
+1px ring that parts two adjacent bookmarked words was being drawn on every
+span, and a word whose kanji carries furigana is necessarily several spans —
+so 飽きない, 励み, 夜更け, 互いに and 流し were all parted from themselves. The
+ring is now drawn only on the outside of a word.
+
 Written 2026-10-01 from the 29 findings in
 [bookmark-highlight-bugs-v1.md](bookmark-highlight-bugs-v1.md), all diagnosed
 against one real page of ダブル・ファンタジー 上 at 6.9% and Sam's "Common"

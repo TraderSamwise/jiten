@@ -54,10 +54,20 @@ function ancestor(node: Node, test: (el: Element) => boolean): Element | null {
  * merges spans with no unpainted character between them, because abutting
  * spans have no visible gap and read as a single highlight.
  */
-function readPaintedText(root: Element): { spans: string[]; boxes: string[] } {
-  const spans = Array.from(root.querySelectorAll("span.bookmarked-word")).map(
-    (el) => el.textContent ?? "",
-  );
+function readPaintedText(root: Element): {
+  spans: string[];
+  boxes: string[];
+  parts: { text: string; part: string }[];
+} {
+  const painted = Array.from(root.querySelectorAll("span.bookmarked-word"));
+  const spans = painted.map((el) => el.textContent ?? "");
+  // Which edges of a span carry the ring that parts two adjacent words.
+  const parts = painted.map((el) => ({
+    text: el.textContent ?? "",
+    part:
+      ["start", "middle", "end"].find((name) => el.classList.contains(`bookmarked-word-${name}`)) ??
+      "only",
+  }));
 
   const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const boxes: string[] = [];
@@ -87,10 +97,10 @@ function readPaintedText(root: Element): { spans: string[]; boxes: string[] } {
   }
   if (current.length > 0) boxes.push(current);
 
-  return { spans, boxes };
+  return { spans, boxes, parts };
 }
 
-async function paint(testCase: HighlightCase): Promise<{ spans: string[]; boxes: string[] }> {
+async function paint(testCase: HighlightCase): Promise<ReturnType<typeof readPaintedText>> {
   const html = testCase.html ?? `<p>${testCase.text}</p>`;
   const page = document.createElement("div");
   page.innerHTML = html;
@@ -133,14 +143,30 @@ describe.skipIf(!hasDictDb)("bookmark highlighting, labelled cases", () => {
         });
       }
 
-      for (const expected of testCase.mustBeOneSpan ?? []) {
-        (testCase.knownRedSeam ? it.fails : it)(
-          `highlights ${expected} without a seam`,
-          async () => {
-            const { spans } = await paint(testCase);
-            expect(spans).toContain(expected);
-          },
-        );
+      for (const expected of testCase.mustHaveNoSeam ?? []) {
+        check(expected)(`highlights ${expected} without a seam`, async () => {
+          const { parts } = await paint(testCase);
+          // The consecutive spans that together spell the word.
+          const from = parts.findIndex((p) => expected.startsWith(p.text));
+          expect(from).toBeGreaterThanOrEqual(0);
+          let to = from;
+          let spelled = "";
+          while (to < parts.length && spelled.length < expected.length) {
+            spelled += parts[to].text;
+            to++;
+          }
+          expect(spelled).toBe(expected);
+
+          const covering = parts.slice(from, to);
+          const shape = covering.map((p) => p.part);
+          // One span carries the whole ring; several carry it only on the
+          // outside, so no edge of the ring falls inside the word.
+          expect(shape).toEqual(
+            covering.length === 1
+              ? ["only"]
+              : ["start", ...Array(covering.length - 2).fill("middle"), "end"],
+          );
+        });
       }
 
       for (const forbidden of testCase.mustNotHighlight) {
