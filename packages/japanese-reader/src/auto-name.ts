@@ -132,19 +132,22 @@ export function computeAutoNameConfidence(
 
   const settled = isDominantNameReading(name.dominance);
 
-  // A spelling whose readings have been counted, and settled on one, is not
-  // made doubtful by how many the dictionary also lists — 杏子's thirteen are
-  // the dictionary being thorough, not the name being uncertain.
+  // How many readings the dictionary lists is a measure of doubt, and a
+  // spelling whose readings have been counted and settled on one is not made
+  // doubtful by it — 杏子's thirteen are the dictionary being thorough, not the
+  // name being uncertain.
   //
-  // Worth 4, the same as a name with two or three readings and no evidence.
-  // That is the smallest value that settles 杏子, measured: 0 leaves it at 87
-  // against a threshold of 90, and 10 changes nothing 4 does not. The counts
-  // say WHICH reading, so they earn little on the separate question of whether
-  // a name is what is on the page.
-  if (settled) confidence += 4;
-  else if (name.candidateCount === 1) confidence += 10;
-  else if (name.candidateCount <= 3) confidence += 4;
-  else if (name.candidateCount > 4) confidence -= Math.min(name.candidateCount - 4, 6) * 4;
+  // A floor rather than a replacement, so a settled name with a single reading
+  // keeps the 10 it already earned. 4 is the smallest floor that settles 杏子,
+  // measured: 0 leaves it at 87 against a threshold of 90, and 10 changes
+  // nothing 4 does not. The counts say WHICH reading, so they earn little on
+  // the separate question of whether a name is what is on the page.
+  let candidateTerm = 0;
+  if (name.candidateCount === 1) candidateTerm = 10;
+  else if (name.candidateCount <= 3) candidateTerm = 4;
+  else if (name.candidateCount > 4) candidateTerm = -Math.min(name.candidateCount - 4, 6) * 4;
+  if (settled) candidateTerm = Math.max(candidateTerm, 4);
+  confidence += candidateTerm;
 
   if (name.hasTranslation) confidence += 4;
 

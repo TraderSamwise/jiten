@@ -393,13 +393,21 @@ rare spelling of the common word あんず — which is written 杏. A word is o
 treated as exactly-and-commonly spelled this way when the form itself is
 common; where it is not, and the name reading is settled, the −28 becomes −8.
 
-Both conditions are required, and that is the whole safety argument:
+Three conditions, and all three are load-bearing:
 
 - A **settled name alone** cannot beat a commonly-spelled word. 希望 stays
   きぼう however many people are called のぞみ.
 - A **rare spelling alone** cannot hand the surface to a name. 真面 stays
   まとも rather than becoming the surname さなつら, which has one listing and
   no sightings.
+- The word must be **common in the first place** (`isExactRareForm`). A word
+  JMdict marks common nowhere has no common spelling to be a rare variant of,
+  so without this the test reduces to "not a common word" and quietly discounts
+  every exact match. It cost 和音 かずね for the musical chord, 一矢 かずや and
+  一花 いちか out of their idioms, 古池 こいけ, 土方 ひじかた and 真平 しんぺい
+  before it was caught — 258 spellings' worth.
+
+Removing any of the three fails a test.
 
 #### Measured
 
@@ -407,28 +415,44 @@ Furigana resolved over all 67,299 kanji-initial corpus substrings up to 8
 characters, before and after, by `yarn sweep:furigana` — now a committed
 harness rather than a script rewritten every time.
 
-**70 of 67,299 surfaces changed. None gained a reading and none lost one**; the
+**68 of 67,299 surfaces changed. None gained a reading and none lost one**; the
 change is always which reading. 67 are name-to-name corrections — 吉川 きかわ→
 よしかわ, 多田 おいだ→ただ, 小倉 おくら→おぐら, 小日向 おひなた→こひなた,
 徹 あきら→とおる, 渡 とさき→わたる, 遥 うらら→はるか, 潔 いさお→きよし,
 見上 けんじょう→みかみ. The rest swap one obscure reading of a single kanji for
-another, where neither was right before.
+another, where neither was right before. Exactly one touches a word: 容子
+ようす→ようこ, and ようす is written 様子.
 
-One novel is a weak bound for this, so the same sweep was run over **every
-multi-character name spelling that is also a written word — all 9,110**. 269
-change, again none gained or lost: 72 keep their reading and are only tagged as
-a name, and 197 read differently. The bulk is the ことも/-子 class finally
-reading as names — 光子 こうし→みつこ, 冬子 どんこ→ふゆこ, 和子 わこ→かずこ,
-伸子 しんし→のぶこ, 塔子 ターツ→とうこ, 俊彦 しゅんげん→としひこ.
+One novel is a weak bound for the name-against-word half, so the same sweep ran
+over **every multi-character name spelling that is also a written word — all
+9,110**. **11 change**, none gaining or losing a reading, and they are the whole
+exposure:
 
-**Accepted regressions.** A minority of those 197 are genuine compound words
-that now read as names because JMdict does not mark them common: 和音 かずね
-for the musical chord, 和洋 かずひろ, 一矢 かずや and 一花 いちか out of their
-idioms, 古池 こいけ, 土方 ひじかた. In the corpus the same trade shows as
-真平 まっぴら→しんぺい. Each needs word-frequency data the dictionary does not
-carry — JMdict's common flag is the only signal available, and it says these
-are not common. 容子 ようす→ようこ is in the same class and is an improvement:
-ようす is written 様子.
+| surface            | was        | now        |                                  |
+| ------------------ | ---------- | ---------- | -------------------------------- |
+| 杏子               | あんず     | きょうこ   | the target                       |
+| 容子               | ようす     | ようこ     | ようす is written 様子           |
+| 梨子               | なし       | りこ       | なし is written 梨               |
+| 貴男               | あなた     | たかお     | あなた for 貴男 is archaic       |
+| 風太郎             | ぷうたろう | ふうたろう | ぷうたろう is slang              |
+| 愛敬 / 智恵 / 澁谷 | —          | —          | same reading, only tagged a name |
+| 小形               | こがた     | おがた     | accepted regression              |
+| 真白               | まっしろ   | ましろ     | accepted regression              |
+| 米蔵               | こめぐら   | よねぞう   | accepted regression              |
+
+**Accepted regressions: those three.** 小形 (small size), 真白 (a variant of
+真っ白) and 米蔵 (rice storehouse) are real words that JMdict marks common as
+entries but not in these spellings, and each has a settled surname reading.
+Separating them needs evidence about how often a spelling is a WORD, which is a
+different corpus from the one derived here.
+
+**Not taken: the -子 class.** An earlier, broader version of the rare-form test
+also fixed 光子 こうし→みつこ, 冬子 どんこ→ふゆこ, 和子 わこ→かずこ, 伸子
+しんし→のぶこ and 塔子 ターツ→とうこ — 197 changes, and real improvements for
+reading novels. They are gone, because they rode on the broken condition above
+rather than on anything true: every one of those entries is not common, so the
+test that was supposed to mean "a rare spelling of a common word" was only
+saying "not common". Getting them back honestly needs word-frequency data.
 
 `yarn check:tap-consistency` unchanged at 98.0% / 128 disagreeing pairs.
 
@@ -446,17 +470,19 @@ evidence about how often a spelling is a WORD, which is a different corpus.
 furigana said きょうこ. It orders by `name_freq` now, readings with no count
 keeping their existing order behind the counted ones, and the tap's
 name-against-word contest is handed the same dominance and rare-spelling
-evidence as the furigana pass so the two cannot reason from different pictures.
+evidence as the furigana pass, so the two cannot reason from different pictures.
 That second part is **neutral on measurement** — no change across the 37,411
-corpus taps — because the two paths deliberately hold different bars: a tap
-needs 96 when an exact same-span word competes
-(`AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE`) where furigana needs 90.
+corpus taps.
 
-So a tap and the furigana can still disagree: 伸子 is furigana'd のぶこ and taps
-as the weaving tool しんし, as do 光子 こうし, 冬子 どんこ and 和子 わこ. That
-gap is the threshold, not the counts, and closing it means lowering the tap's
-bar for every name — a wider change than this, and unmeasured. Left alone
-deliberately.
+The ordering applies to a **kanji query only**, where every row returned is the
+same spelling. A kana query matches several spellings at once and the counts say
+nothing across spellings, so ranking あゆみ's 歩美 against 亜由美 by them would
+be comparing two different measurements.
+
+The two paths still hold different bars deliberately: a tap needs 96 when an
+exact same-span word competes (`AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE`)
+where furigana needs 90. Nothing in the probe set disagrees because of it, but
+that is where a disagreement would come from, not from the counts.
 
 #### The column may not be there
 

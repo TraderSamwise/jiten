@@ -18,10 +18,15 @@ const probes = new WeakMap<object, Promise<boolean>>();
 export function hasNameFreqColumn(extDb: ReaderSqlDb): Promise<boolean> {
   let probe = probes.get(extDb);
   if (!probe) {
+    // A failed probe is not cached: the answer would be wrong for the life of
+    // the handle on one unlucky query.
     probe = extDb
       .getAllAsync<{ name: string }>("PRAGMA table_info(names)")
       .then((columns) => columns.some((column) => column.name === "name_freq"))
-      .catch(() => false);
+      .catch(() => {
+        probes.delete(extDb);
+        return false;
+      });
     probes.set(extDb, probe);
   }
   return probe;

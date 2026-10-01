@@ -148,7 +148,7 @@ let hasJlptCol: boolean | null = null;
 type KanjiInfo = Awaited<ReturnType<typeof getKanjiBatchAsync>>[number];
 const kanjiInfoCache = new Map<string, KanjiInfo>();
 
-interface DictMatch {
+export interface DictMatch {
   kanjiForm: string;
   kanaForm: string;
   common: boolean;
@@ -419,6 +419,7 @@ async function batchLookupNames(
   }
 
   const formList = [...allForms];
+  const pushed = new Set<string>();
   for (let i = 0; i < formList.length; i += BATCH_SIZE) {
     const batch = formList.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
@@ -444,6 +445,13 @@ async function batchLookupNames(
       }
 
       for (const surface of matchedSurfaces) {
+        // A row matching one surface by kanji and another by kana comes back in
+        // both their batches, and the surfaces are resolved globally, so the
+        // same reading can be pushed twice. Dominance sums these, and a
+        // double-counted total halves the winner's share.
+        const seen = `${surface}\u0000${row.kanji ?? ""}\u0000${row.kana}`;
+        if (pushed.has(seen)) continue;
+        pushed.add(seen);
         if (!result.has(surface)) result.set(surface, []);
         result.get(surface)!.push({
           kanjiForm: row.kanji ?? surface,
@@ -537,6 +545,22 @@ function scoreFuriganaNameMatch(surface: string, match: NameMatch): number {
   if (types.length === 1 && types[0] === "unclass") score -= 25;
   if (hasKanjiText(surface) && !hasKana(surface)) score += 80;
   return score;
+}
+
+/**
+ * The surface is a spelling of this word that JMdict does not mark common.
+ *
+ * 杏子 belongs to the common entry for あんず, whose common spelling is 杏.
+ * Only meaningful for a COMMON entry: a word marked common nowhere has no
+ * common form to be a rare variant of, so without that condition this reduces
+ * to "not a common word" and quietly discounts every exact match — which read
+ * 和音 as かずね and 一矢 as かずや.
+ */
+export function isExactRareForm(
+  match: Pick<DictMatch, "common" | "commonForm" | "kanjiForm">,
+  surface: string,
+): boolean {
+  return match.common && match.kanjiForm === surface && !match.commonForm;
 }
 
 /**
@@ -753,8 +777,7 @@ export async function resolveFuriganaBatch(
                 bestWordMatch.match.common &&
                 (bestWordMatch.match.kanjiForm === surface ||
                   bestWordMatch.match.kanaForm === surface),
-              exactRareForm:
-                bestWordMatch.match.kanjiForm === surface && !bestWordMatch.match.commonForm,
+              exactRareForm: isExactRareForm(bestWordMatch.match, surface),
               commonWord: bestWordMatch.match.common,
               deinflected: bestWordMatch.deinflectedWord !== surface,
             } satisfies AutoNameWordCandidate,

@@ -339,7 +339,13 @@ export async function lookupExactName(db: ReaderSqlDb, text: string): Promise<Re
     // 杏子 leads with きょうこ like its furigana does rather than with
     // whichever of thirteen rows SQLite returned first. Readings with no count
     // keep their existing order behind the counted ones.
-    const freq = await hasNameFreqColumn(db);
+    //
+    // Only for a kanji query, where every row is the same spelling. A kana
+    // query matches several spellings at once, and the counts are undercounts
+    // that say nothing across spellings — ordering あゆみ's 歩美 against 亜由美
+    // by them would be comparing two different measurements.
+    const freq =
+      (await hasNameFreqColumn(db)) && /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(text);
     const rows = await db.getAllAsync<NameRow>(
       `SELECT id, kanji, kana, name_type, translation${freq ? ", name_freq" : ""} FROM names
        WHERE kanji = ? OR kana = ? OR kana = ?

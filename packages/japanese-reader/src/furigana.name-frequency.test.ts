@@ -16,7 +16,12 @@
  *     would write furigana over a common noun.
  */
 import { describe, expect, it } from "vitest";
-import { pickBestNameMatch, nameReadingDominance, type NameMatch } from "./furigana";
+import {
+  isExactRareForm,
+  nameReadingDominance,
+  pickBestNameMatch,
+  type NameMatch,
+} from "./furigana";
 import {
   AUTO_NAME_ONLY_CONFIDENCE,
   computeAutoNameConfidence,
@@ -84,6 +89,35 @@ describe("pickBestNameMatch", () => {
       { ...name("杏子", "ももこ", 1), translation: "Momoko" },
     ];
     expect(pickBestNameMatch("杏子", matches)?.kanaForm).toBe("ももこ");
+  });
+});
+
+describe("isExactRareForm", () => {
+  const word = (common: boolean, commonForm: boolean, kanjiForm: string) => ({
+    common,
+    commonForm,
+    kanjiForm,
+  });
+
+  it("holds for a rare spelling of a common word", () => {
+    // 杏子 belongs to the common entry for あんず, written 杏.
+    expect(isExactRareForm(word(true, false, "杏子"), "杏子")).toBe(true);
+  });
+
+  it("does not hold when the spelling is the common one", () => {
+    expect(isExactRareForm(word(true, true, "希望"), "希望")).toBe(false);
+  });
+
+  it("does not hold for a word that is not common at all", () => {
+    // This is the one that matters. A word JMdict marks common nowhere has no
+    // common form to be a rare variant of, so without the `common` test this
+    // reduces to "not a common word" and discounts every exact match — which
+    // read 和音 as かずね, 一矢 as かずや and 古池 as こいけ.
+    expect(isExactRareForm(word(false, false, "和音"), "和音")).toBe(false);
+  });
+
+  it("does not hold when the surface is not the matched spelling", () => {
+    expect(isExactRareForm(word(true, false, "杏"), "杏子")).toBe(false);
   });
 });
 

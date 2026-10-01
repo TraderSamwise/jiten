@@ -97,7 +97,11 @@ async function sweep(out: string) {
 
   const listPath = arg("--surfaces");
   const surfaces = listPath
-    ? readFileSync(listPath, "utf-8").split("\n").filter(Boolean).sort()
+    ? readFileSync(listPath, "utf-8")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .sort()
     : corpusSurfaces(readFileSync(CORPUS, "utf-8"));
   console.log(
     listPath
