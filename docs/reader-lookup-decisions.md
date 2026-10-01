@@ -292,6 +292,48 @@ Zero corpus taps change, gate unmoved at 98.0% / 128. Checked directly:
 よっぽどほっとかれるか now reads よっぽど and ほっとかれる → 放っとく, and 置いとく,
 飼っとく, 読んどく, 見とく, 置いといた and 買っとこう all still resolve.
 
+### Furigana picks the entry a word heads, and never writes over the book's own ruby
+
+**Entry choice.** `batchLookup` took the first entry it found for a word, or
+the first common one, with no ranking at all. 二度 is the headword kanji of にど
+and a second spelling of ふたたび, whose headword is 再び; both are common, so
+the tie fell to row order and the page read ふたたび in 二度くらいのペースで.
+Entries are now ranked `common` then `heads this spelling` — the same evidence
+the tap ranking has used since `3046072`.
+
+Only for compounds. Every single-kanji entry is headed by its own kanji, so the
+term is noise at length 1 and just reorders: unrestricted it turned 勢 from
+いきおい into ぜい and 取 from とり into しゅ. With the restriction the sweep over
+all 67,299 kanji-initial corpus substrings moves 14: 一二 じゅうに→いちに,
+一向 ひたすら→いっこう, 一時 ひととき→いちじ, 二度 ふたたび→にど, 御影 ごえい→みかげ,
+極めた き→きわ, 目標 めじるし→もくひょう, 言付けた いいつ→ことづ, 黒人 くろうと→こくじん.
+
+**Accepted regressions:** 真直 ますぐ→しんちょく and 身体 からだ→しんたい. In both
+the rival entry genuinely uses that spelling — 身体 is a listed spelling of
+体/からだ — so heading an entry is the wrong signal there, and in fiction からだ
+is the commoner reading. 上って あが→のぼ is a wash; both are real.
+
+**Source ruby.** An imported EPUB brings its own `<ruby>`, and a surface could
+match across one: 拍手`<ruby>`喝采`<rt>`かっさい`</rt></ruby>` matches 拍手喝采.
+`advanceHtmlPastChars` skips tags while counting visible characters, so the
+replacement swallowed the source `<ruby>` open tag and left `<rt>かっさい</rt>`
+`</ruby>` dangling — stray kana on the page, reported as 拍手喝采 being
+furigana'd っさい. `spanCrossesRuby` now refuses such a surface and a shorter
+one that stops before the ruby is annotated instead. The book's own reading
+wins. Zero sweep changes: the corpus has no source ruby.
+
+### Two furigana readings the dictionaries cannot settle
+
+- **後味 reads the surname ごみ** instead of あとあじ. The name scores 2455 and
+  the word 2260, and the word is not common. But 高遠→たかとお, which is wanted,
+  scores identically — non-common word, strong-type name, kanji-only surface.
+  No feature in JMdict or JMnedict separates them.
+- **杏子 should read きょうこ**, a character's name, and reads あんず. JMnedict
+  lists 13 female readings for 杏子 with no frequency data, so they tie exactly
+  and `pickBestNameMatch` keeps whichever row SQLite returns first. きょうこ is
+  not derivable from the dictionaries; only book-local evidence — source ruby
+  at first occurrence, or a per-book override — could pick it.
+
 ## Rejected
 
 ### Alternatives weighed on 2026-09-28 and not taken

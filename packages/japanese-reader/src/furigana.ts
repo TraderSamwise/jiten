@@ -339,7 +339,7 @@ async function batchLookup(
 
   for (const [word, ids] of wordToEntryIds) {
     let bestMatch: DictMatch | null = null;
-    let bestCommon = false;
+    let bestRank = -1;
 
     for (const id of ids) {
       const kana = entryKana.get(id);
@@ -347,8 +347,19 @@ async function batchLookup(
       const common = entryCommon.get(id) ?? false;
       const kanjiTexts = entryKanji.get(id) ?? [];
       const kanjiForm = kanjiTexts.find((k) => k === word) || kanjiTexts[0] || word;
+      // JMdict lists an entry's spellings most-prevalent first, so a word that
+      // is an entry's headword is better evidence than the same word listed as
+      // someone else's variant. 二度 heads にど and is a second spelling of
+      // ふたたび, whose headword is 再び; both are common, so without this the
+      // tie fell to whichever row came back first. The tap ranking has carried
+      // the same term since 3046072.
+      // Only for a compound. Every single-kanji entry is headed by its own
+      // kanji, so the term carries no information there and just reorders —
+      // it turned 勢 from いきおい into ぜい and 取 from とり into しゅ.
+      const headsEntry = [...word].length > 1 && kanjiTexts[0] === word;
+      const rank = (common ? 2 : 0) + (headsEntry ? 1 : 0);
 
-      if (!bestMatch || (common && !bestCommon)) {
+      if (rank > bestRank) {
         bestMatch = {
           kanjiForm,
           kanaForm: kana,
@@ -356,9 +367,9 @@ async function batchLookup(
           jlptLevel: entryJlpt.get(id) ?? null,
           irregularReading: entryIrregular.get(id) ?? false,
         };
-        bestCommon = common;
+        bestRank = rank;
       }
-      if (bestCommon) break;
+      if (bestRank === 3) break;
     }
 
     if (bestMatch) result.set(word, bestMatch);
@@ -1104,6 +1115,13 @@ export function applyFuriganaToHtml(
           continue;
         }
 
+        // An imported book brings its own <ruby>, and a surface can span one:
+        // 拍手<ruby>喝采<rt>かっさい</rt></ruby> matches 拍手喝采. Annotating it
+        // swallowed the source <ruby> open tag and left its <rt> dangling,
+        // which rendered as stray kana. The book's own reading wins; a shorter
+        // surface that stops before the ruby is tried next.
+        if (spanCrossesRuby(html, i, surfaceChars.length)) continue;
+
         const baseText = surfaceChars.slice(0, entry.kanjiPartLen).join("");
         out += `<ruby>${baseText}<rt>${entry.reading}</rt></ruby>`;
 
@@ -1171,6 +1189,38 @@ function getVisibleCharsFrom(html: string, start: number): string[] {
  * Advance position in HTML past `count` visible characters,
  * skipping over any tags encountered along the way.
  */
+/**
+ * True when the next `count` visible characters are not all plain text — a
+ * <ruby> the book supplied starts or ends inside them. advanceHtmlPastChars
+ * skips tags while counting, so wrapping such a span would consume the markup
+ * and orphan whatever followed it.
+ */
+function spanCrossesRuby(html: string, start: number, count: number): boolean {
+  let i = start;
+  let consumed = 0;
+  while (i < html.length && consumed < count) {
+    const ch = html[i];
+    if (ch === "<") {
+      if (html.startsWith("</p>", i) || html.startsWith("</div>", i)) return false;
+      if (html.startsWith("<ruby", i) || html.startsWith("</ruby>", i)) return true;
+      const close = html.indexOf(">", i);
+      i = close >= 0 ? close + 1 : i + 1;
+      continue;
+    }
+    if (ch === "&") {
+      const semi = html.indexOf(";", i);
+      if (semi >= 0 && semi - i <= 8) {
+        consumed++;
+        i = semi + 1;
+        continue;
+      }
+    }
+    consumed++;
+    i++;
+  }
+  return false;
+}
+
 function advanceHtmlPastChars(html: string, start: number, count: number): number {
   let i = start;
   let consumed = 0;

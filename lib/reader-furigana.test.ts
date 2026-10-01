@@ -722,6 +722,17 @@ describe.skipIf(!hasBothDbs)("resolveFuriganaBatch compound resolution", () => {
   });
 
   /**
+   * 二度 is にど's headword spelling but only a second spelling of ふたたび,
+   * whose headword is 再び. Both entries are common, so without a headword
+   * term the tie fell to whichever came back first and the page read ふたたび
+   * in 二度くらいのペースで.
+   */
+  it("reads 二度 as にど, the entry it heads", async () => {
+    const result = await resolveFuriganaBatch(["二度"], dictDb, extDb);
+    expect(result["二度"]?.reading).toBe("にど");
+  });
+
+  /**
    * JMdict stops carrying numbers long before prose does, and JMnedict picks up
    * where it stops: 四十三 and 五十八 are real given names, and a sentence
    * counting someone's age was furigana'd よそぞう.
@@ -1217,5 +1228,68 @@ describe.skipIf(!hasBothDbs)("counter readings against the real dictionary", () 
     );
     expect(result[surface]?.reading).toBe(reading);
     expect(result[surface]?.isCounter).toBe(true);
+  });
+});
+
+/**
+ * An imported EPUB brings its own <ruby>. Injected furigana used to match
+ * straight across one — 拍手<ruby>喝采<rt>かっさい</rt></ruby> matched the
+ * surface 拍手喝采 — and the character walk skipped the <ruby> open tag while
+ * counting, so the replacement swallowed it and left <rt>かっさい</rt></ruby>
+ * dangling after. That orphan is what rendered as a stray っさい on the page.
+ */
+describe.skipIf(!hasBothDbs)("furigana over a book's own ruby", () => {
+  let rawDb: Database.Database;
+  let dictDb: SQLiteDatabase;
+  let rawExtDb: Database.Database;
+  let extDb: SQLiteDatabase;
+
+  beforeAll(() => {
+    rawDb = new Database(DB_PATH, { readonly: true });
+    dictDb = wrapBetterSqlite(rawDb);
+    rawExtDb = new Database(EXT_DB_PATH, { readonly: true });
+    extDb = wrapBetterSqlite(rawExtDb);
+  });
+
+  afterAll(() => {
+    rawDb.close();
+    rawExtDb.close();
+  });
+
+  const render = async (html: string) => {
+    const kanjiSet = { all: true, chars: new Set<string>() };
+    const surfaces = extractSurfacesFromHtml(html, kanjiSet);
+    const map = new Map(Object.entries(await resolveFuriganaBatch(surfaces, dictDb, extDb)));
+    const levels = { n5: true, n4: true, n3: true, n2: true, n1: true, nonJouyou: true };
+    const off = { n5: false, n4: false, n3: false, n2: false, n1: false, nonJouyou: false };
+    return applyFuriganaToHtml(html, map, kanjiSet, {
+      sourceDefault: true,
+      showNames: true,
+      showCounters: true,
+      ruleLevels: {
+        matchAnyKanji: levels,
+        matchWordLevel: off,
+        matchIrregularReading: off,
+        matchMostlyKunyomi: off,
+        matchMostlyOnyomi: off,
+        matchMixedOnKun: off,
+      },
+    });
+  };
+
+  it("leaves no orphan <rt> when a word spans the book's ruby", async () => {
+    const out = await render("<p>つまみ、拍手<ruby>喝采<rt>かっさい</rt></ruby>に応える</p>");
+    expect(out).not.toMatch(/<\/ruby><rt>/);
+    expect((out.match(/<ruby>/g) ?? []).length).toBe((out.match(/<\/ruby>/g) ?? []).length);
+  });
+
+  it("keeps the book's own reading and annotates around it", async () => {
+    const out = await render("<p>つまみ、拍手<ruby>喝采<rt>かっさい</rt></ruby>に応える</p>");
+    expect(out).toContain("<ruby>喝采<rt>かっさい</rt></ruby>");
+  });
+
+  it("still annotates a compound with no ruby in the way", async () => {
+    const out = await render("<p>つまみ、拍手喝采に応える</p>");
+    expect(out).toContain("<ruby>拍手喝采<rt>はくしゅかっさい</rt></ruby>");
   });
 });
