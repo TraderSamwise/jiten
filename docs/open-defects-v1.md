@@ -63,11 +63,24 @@ comparing local file sizes against the published manifest to confirm nothing
 else has drifted locally — on 2026-10-01 only `dictionary-extended.db` differed
 and the other four matched byte counts exactly.
 
-## 3. Lists are lazy, and the reader depends on them
+## 3. Lists are lazy, and the reader depends on them — **fixed**
 
-Recorded in full under "Related observations" in
-[bookmark-highlight-bugs-v1.md](bookmark-highlight-bugs-v1.md). In short:
-`app/(tabs)/reader/[bookId].tsx:479` reads `useListsStore`, but only the Lists
-tab hydrates it, so the reader's list-exclusion chips are invisible until that
-tab has been visited. `highlightableLists` additionally filters out the default
-list, so a single-list user has nothing to exclude even once it hydrates.
+`app/(tabs)/reader/[bookId].tsx` reads `useListsStore` for the chips that let a
+list be left out of highlighting, and only the Lists tab hydrated it, so the
+chips were invisible until that tab had been visited.
+
+**One part of the original note was wrong**: bookmarks were never affected.
+`app/(tabs)/_layout.tsx` has always loaded `useBookmarkStore` in an effect
+keyed on the user database, and the tab layout is an ancestor of the reader —
+so highlighting itself worked on a cold start. Only the lists were missing.
+
+Fixed by `lib/hydrate-user-stores.ts`, which loads both, called from that same
+effect and from `db/sync-provider.tsx` in place of its own copy of the pair.
+Pinned by `lib/hydrate-user-stores.test.ts` (prove-failed).
+
+**Still open, and the owner's call**: `highlightableLists` filters out the
+default list, and `useBookmarkStore.load` filters `l.is_default = 0`, so words
+saved only to the default list are never highlighted and nothing says why. The
+two filters agree with each other, so this is a deliberate design that has
+never been stated rather than a bug — but a user with one list, the default
+one, sees a highlighting setting that does nothing at all.

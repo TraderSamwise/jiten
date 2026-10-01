@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { resetLocalUserData } from "@/db/sync-helpers";
-import { useBookmarkStore } from "@/stores/bookmarks";
-import { useListsStore } from "@/stores/lists";
+import { hydrateUserStores } from "@/lib/hydrate-user-stores";
 import { alert } from "@/lib/confirm";
 
 interface HardSyncModalProps {
@@ -24,8 +23,7 @@ export function HardSyncModal({ visible, onClose }: HardSyncModalProps) {
     setSyncing(true);
     try {
       await resetLocalUserData(userDb);
-      useBookmarkStore.getState().load(userDb);
-      useListsStore.getState().load(userDb);
+      await hydrateUserStores(userDb);
       await triggerSync();
       onClose();
     } catch (err) {

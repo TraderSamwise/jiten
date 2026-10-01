@@ -5,7 +5,9 @@ import { useNavigation, CommonActions } from "@react-navigation/native";
 import { useColorScheme } from "nativewind";
 import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
 import { useUserDb } from "@/db/user-provider";
-import { useBookmarkStore } from "@/stores/bookmarks";
+import { isClosedUserDbConnectionError } from "@/db/db-errors";
+import { hydrateUserStores } from "@/lib/hydrate-user-stores";
+import { captureException } from "@/lib/sentry";
 import { webHeaderStyle } from "@/lib/navigation";
 import { markSessionNavigated } from "@/lib/session-navigation";
 import { SyncButton } from "@/components/SyncButton";
@@ -16,10 +18,20 @@ const isWeb = Platform.OS === "web";
 
 export default function TabLayout() {
   const userDb = useUserDb();
-  const loadBookmarks = useBookmarkStore((s) => s.load);
 
   useEffect(() => {
-    if (userDb) loadBookmarks(userDb);
+    if (!userDb) return;
+    // On a user switch a slow load of the old database must not land last and
+    // leave the previous account's words in the store.
+    let current = true;
+    hydrateUserStores(userDb).catch((err) => {
+      if (!current || isClosedUserDbConnectionError(err)) return;
+      console.error("[TabLayout] could not load saved words and lists", err);
+      captureException(err, { tags: { type: "store-hydration" } });
+    });
+    return () => {
+      current = false;
+    };
   }, [userDb]);
 
   // Note: the has-navbar body class (web tab bar backdrop) is toggled in

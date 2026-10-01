@@ -161,7 +161,7 @@ characters spell" in `reader-lookup-decisions.md`. What shipped is a
 segmentation built from the rows the matcher already fetches: 14 ms a page
 against the resolver's 168 ms, and it keeps 励み, 帰り and しめくくり, which
 the resolver refuses. The kana guard was narrowed at the same time, which
-restores ひたすら. Corpus 1,647 → 994 surfaces, coverage 23.4% → 19.6%; the
+restores ひたすら. Corpus 1,647 → 962 surfaces, coverage 23.4% → 19.4%; the
 labelled page 21 boxes → 9, with nothing wrong left on it. One accepted
 regression, より. Positional spans are **not** done and are written up there.
 
@@ -192,7 +192,30 @@ cost is per slice, not per frame.
 still green; the page instrument shows the coverage drop; resolution time per
 slice recorded in the decisions doc.
 
-## Phase 4 — Density
+## Phase 4 — Density — **mostly answered by phases 2 and 3**
+
+The number phase 4 existed to move has moved without a density rule being
+written. On the labelled page, characters painted went **31.0% → 20.9% → 10.5%**
+across phases 2 and 3; on `test/corpus/bocchan.txt` against the same 8,586
+bookmarks, **30.5% → 23.4% → 19.4%**. The page now carries nine boxes where it
+carried thirty-one, and all nine are right.
+
+The suru rule asked for below is already there, and predates this work: the
+suru-noun trim marks 我慢 rather than して or きた, and
+`bookmarks.suru.test.ts` pins it. Phase 3's confirmation keeps it, because the
+trim of a token counts as confirmed.
+
+What was left of phase 4 was that **the lever the setting offers did not
+work**, and that is now fixed: see defect 3 in
+[open-defects-v1.md](open-defects-v1.md). The chips appeared only after the
+Lists tab had been visited, because the lists store was hydrated nowhere else.
+Both stores now load together from `lib/hydrate-user-stores.ts`.
+
+The original note on this was half wrong and the correction is worth keeping:
+bookmarks were always hydrated at boot by `app/(tabs)/_layout.tsx`, so
+highlighting worked on a cold start. Only the lists were missing.
+
+## Phase 4 — Density, as originally written
 
 Correct highlights can still be unreadable. With 8,586 bookmarks including ある,
 より and する, a page is carpeted even when every span is right.

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useCallback, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useUserDb } from "./user-provider";
-import type { WrappedUserDb } from "./user-db";
 import { isClosedUserDbConnectionError } from "./db-errors";
 import { useDatabase } from "./provider";
 import { createTursoClient, isSyncEnabled } from "./turso-client";
@@ -9,18 +8,9 @@ import { getTursoToken } from "@/lib/turso-token";
 import { env } from "@/lib/env";
 import { sync, isNetworkError, type SyncResult } from "./sync-engine";
 import { resetLocalUserData, hasLocalData } from "./sync-helpers";
-import { useBookmarkStore } from "@/stores/bookmarks";
-import { useListsStore } from "@/stores/lists";
+import { hydrateUserStores } from "@/lib/hydrate-user-stores";
 import { getLastUser, setLastUser } from "@/lib/last-user";
 import type { Client } from "@libsql/client/web";
-
-/** Reload all in-memory stores from the database after sync or data reset. */
-async function reloadStores(userDb: WrappedUserDb) {
-  await Promise.all([
-    useBookmarkStore.getState().load(userDb),
-    useListsStore.getState().load(userDb),
-  ]);
-}
 
 interface SyncContextType {
   syncStatus: "disabled" | "idle" | "syncing" | "error";
@@ -232,7 +222,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (proceed && userDb) {
         await resetLocalUserData(userDb);
         await setLastUser(userId);
-        await reloadStores(userDb);
+        await hydrateUserStores(userDb);
         setNeedsReconciliation(false);
         setReconciled(true);
       } else {
@@ -249,7 +239,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
       if (choice === "use-cloud") {
         // Wipe local, pull from cloud
         await resetLocalUserData(userDb);
-        await reloadStores(userDb);
+        await hydrateUserStores(userDb);
       } else if (choice === "use-local") {
         // Reset sync cursors so canonical state pushes fresh without keeping stale windows
         await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?, ?, ?)", [
@@ -284,7 +274,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
         dirtyRef.current = false;
         setIsDirtyState(false);
         await userDb.runAsync("DELETE FROM sync_meta WHERE key = ?", ["sync_dirty"]);
-        await reloadStores(userDb);
+        await hydrateUserStores(userDb);
       } else if (choice === "use-local") {
         // Reset sync cursors so everything pushes fresh
         await userDb.runAsync("DELETE FROM sync_meta WHERE key IN (?, ?, ?, ?)", [
@@ -354,7 +344,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           setSyncLabel,
           async (pulledRows) => {
             pulledRowsAppliedDuringSync = pulledRows;
-            await reloadStores(userDb);
+            await hydrateUserStores(userDb);
           },
         );
         if (result.ok) {
@@ -375,7 +365,7 @@ export function SyncProvider({ userId, onSignOut, getToken, children }: SyncProv
           // Blob pulls happen later in the sync cycle, so do one final reload only if
           // more rows were pulled after the initial download-phase refresh.
           if (result.pulled > pulledRowsAppliedDuringSync) {
-            await reloadStores(userDb);
+            await hydrateUserStores(userDb);
           }
         } else {
           // Classify error: network errors are silent, others show banner
