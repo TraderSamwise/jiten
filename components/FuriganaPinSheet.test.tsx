@@ -41,8 +41,17 @@ vi.mock("@/lib/icons", () => ({
 afterEach(cleanup);
 
 const CANDIDATES: FuriganaReadingCandidate[] = [
-  { reading: "きょうこ", source: "name", label: "fem", note: "26 of 33 sightings" },
-  { reading: "あんず", source: "word", label: "apricot" },
+  { reading: "きょうこ", source: "name", kind: "name", label: "fem", note: "26 of 33 sightings" },
+  { reading: "あんず", source: "word", kind: "word", label: "apricot" },
+];
+
+/**
+ * What the page is already showing ranks as "current" and is still a word or a
+ * name — `kind` is what the row says it is, so the active row keeps its category.
+ */
+const WITH_ACTIVE: FuriganaReadingCandidate[] = [
+  { reading: "あんず", source: "current", kind: "word", label: "apricot" },
+  { reading: "きょうこ", source: "name", kind: "name", label: "fem" },
 ];
 
 function sheet(props: Partial<React.ComponentProps<typeof FuriganaPinSheet>> = {}) {
@@ -74,6 +83,29 @@ describe("FuriganaPinSheet", () => {
     expect(screen.getAllByText("CHECK")).toHaveLength(1);
   });
 
+  /**
+   * Which furigana is active is shown by marking its row, not by writing "on
+   * the page" in the row's detail line — the mark says it in the place the eye
+   * is already looking.
+   */
+  it("marks the reading the page is showing, with nothing pinned", () => {
+    sheet({ candidates: WITH_ACTIVE, pinnedReading: null });
+    expect(screen.getAllByText("CHECK")).toHaveLength(1);
+    expect(screen.queryByText(/On the page/)).toBeNull();
+    // And it still says what it is, rather than only that it is active.
+    expect(screen.getByText(/Word · apricot/)).toBeTruthy();
+  });
+
+  it("marks nothing when the run carries no furigana at all", () => {
+    sheet({ candidates: CANDIDATES, pinnedReading: null });
+    expect(screen.queryAllByText("CHECK")).toHaveLength(0);
+  });
+
+  it("marks one row when the pin is also what the page shows", () => {
+    sheet({ candidates: WITH_ACTIVE, pinnedReading: "あんず" });
+    expect(screen.getAllByText("CHECK")).toHaveLength(1);
+  });
+
   /** The whole point of the distinction. */
   it("marks No furigana when the pin is the empty reading, and still offers removal", () => {
     sheet({ pinnedReading: "" });
@@ -85,6 +117,19 @@ describe("FuriganaPinSheet", () => {
     sheet({ pinnedReading: null });
     expect(screen.queryByText("Remove pinned reading")).toBeNull();
     expect(screen.queryAllByText("CHECK")).toHaveLength(0);
+  });
+
+  /** A row with a reading and nothing else does not tell the user anything. */
+  it("gives every row a category", () => {
+    sheet({
+      candidates: [
+        ...CANDIDATES,
+        { reading: "みっか", source: "counter", kind: "counter", label: "counter for days" },
+      ],
+    });
+    expect(screen.getByText(/^Name · /)).toBeTruthy();
+    expect(screen.getByText(/^Word · /)).toBeTruthy();
+    expect(screen.getByText("Counter · counter for days")).toBeTruthy();
   });
 
   it("always offers to show no furigana", () => {

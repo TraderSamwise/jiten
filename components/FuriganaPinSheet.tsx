@@ -19,9 +19,14 @@ export interface FuriganaPinSheetProps {
   onClose: () => void;
 }
 
-/** Where a reading came from, in the words the rest of the app uses. */
-const SOURCE_LABELS: Record<FuriganaReadingCandidate["source"], string> = {
-  current: "On the page",
+/**
+ * Where a reading came from, in the words the rest of the app uses.
+ *
+ * `current` has no words: the reading the page is already showing is marked by
+ * the row being selected, which says the same thing without spending a line on
+ * it.
+ */
+const KIND_LABELS: Record<NonNullable<FuriganaReadingCandidate["kind"]>, string> = {
   source: "From the book",
   name: "Name",
   word: "Word",
@@ -56,16 +61,25 @@ export function FuriganaPinSheet({
           style={{ paddingBottom: insets.bottom + 8 }}
           className="max-h-[70%] rounded-t-2xl border-t border-border bg-background"
         >
-          <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-            <View className="flex-1">
-              <Text className="text-xl font-semibold text-foreground" numberOfLines={1}>
-                {run}
-              </Text>
-              <Text className="text-xs text-muted-foreground">Reading for this book</Text>
+          {/* A header, not a row. The rows below are a reading with its detail
+              under it on a plain background; this is a grab handle, a section
+              label in the app's own uppercase style, and the run large under
+              it — so it cannot be mistaken for something to tap. */}
+          <View className="rounded-t-2xl bg-muted/40 pb-4 pt-2">
+            <View className="mx-auto h-1 w-10 rounded-full bg-muted-foreground/30" />
+            <View className="flex-row items-start justify-between gap-3 px-4 pt-3">
+              <View className="flex-1">
+                <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Reading for this book
+                </Text>
+                <Text className="pt-1 text-2xl font-semibold text-foreground" numberOfLines={1}>
+                  {run}
+                </Text>
+              </View>
+              <Pressable onPress={onClose} hitSlop={8} className="p-1">
+                <X size={18} className="text-muted-foreground" />
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} hitSlop={8} className="p-1">
-              <X size={18} className="text-muted-foreground" />
-            </Pressable>
           </View>
 
           <ScrollView>
@@ -79,22 +93,40 @@ export function FuriganaPinSheet({
               </Text>
             ) : (
               candidates.map((candidate) => {
-                const isPinned = pinnedReading === candidate.reading;
+                // The reading the page is showing right now, whether it got
+                // there from a pin or from the dictionary.
+                const isActive =
+                  candidate.source === "current" || pinnedReading === candidate.reading;
+                const detail = [
+                  candidate.kind ? KIND_LABELS[candidate.kind] : undefined,
+                  candidate.label,
+                  candidate.note,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 return (
                   <Pressable
                     key={candidate.reading}
                     onPress={() => onChoose(candidate.reading)}
-                    className="flex-row items-center gap-3 border-b border-border/50 px-4 py-3"
+                    className={`flex-row items-center gap-3 border-b border-border/50 px-4 py-3 ${
+                      isActive ? "bg-primary/10" : ""
+                    }`}
                   >
                     <View className="flex-1">
-                      <Text className="text-base text-foreground">{candidate.reading}</Text>
-                      <Text className="text-xs text-muted-foreground" numberOfLines={2}>
-                        {[SOURCE_LABELS[candidate.source], candidate.label, candidate.note]
-                          .filter(Boolean)
-                          .join(" · ")}
+                      <Text
+                        className={`text-base ${
+                          isActive ? "font-medium text-primary" : "text-foreground"
+                        }`}
+                      >
+                        {candidate.reading}
                       </Text>
+                      {detail.length > 0 ? (
+                        <Text className="text-xs text-muted-foreground" numberOfLines={2}>
+                          {detail}
+                        </Text>
+                      ) : null}
                     </View>
-                    {isPinned ? <Check size={18} className="text-primary" /> : null}
+                    {isActive ? <Check size={18} className="text-primary" /> : null}
                   </Pressable>
                 );
               })
@@ -106,9 +138,17 @@ export function FuriganaPinSheet({
           <View className="border-t border-border">
             <Pressable
               onPress={() => onChoose("")}
-              className="flex-row items-center gap-3 px-4 py-3"
+              className={`flex-row items-center gap-3 px-4 py-3 ${
+                pinnedReading === "" ? "bg-primary/10" : ""
+              }`}
             >
-              <Text className="flex-1 text-base text-foreground">No furigana</Text>
+              <Text
+                className={`flex-1 text-base ${
+                  pinnedReading === "" ? "font-medium text-primary" : "text-foreground"
+                }`}
+              >
+                No furigana
+              </Text>
               {pinnedReading === "" ? <Check size={18} className="text-primary" /> : null}
             </Pressable>
 

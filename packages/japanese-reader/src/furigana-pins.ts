@@ -19,6 +19,13 @@ export type FuriganaCandidateSource = "current" | "source" | "name" | "word" | "
 export interface FuriganaReadingCandidate {
   reading: string;
   source: FuriganaCandidateSource;
+  /**
+   * What this reading IS — a name, a word, a counter — as against `source`,
+   * which is how it earned its place in the order. The reading already on the
+   * page ranks as "current" and is still a word or a name, and the row has to
+   * be able to say so.
+   */
+  kind?: Exclude<FuriganaCandidateSource, "current">;
   /** The name type, or the word's first glosses — what makes two readings tellable apart. */
   label?: string;
   /** How settled a name reading is: "26 of 33 sightings". */
@@ -146,6 +153,7 @@ async function nameCandidates(
     const candidate: FuriganaReadingCandidate = {
       reading: row.kana,
       source: "name",
+      kind: "name",
       label: nameLabel(row.nameType, row.translation),
       // Zero is not evidence against a reading — an uncounted one has not been
       // observed, not observed never. So it carries no count at all.
@@ -181,7 +189,7 @@ async function exactWordCandidates(
     // is overruling. Katakana stays as written — 煙草 really is タバコ.
     for (const kana of entry.kana) {
       if (isImpossibleReading(kana.text)) continue;
-      out.push({ reading: kana.text, source: "word", label, common: entry.common });
+      out.push({ reading: kana.text, source: "word", kind: "word", label, common: entry.common });
     }
   }
   return out.sort((a, b) => Number(b.common) - Number(a.common));
@@ -227,7 +235,13 @@ async function okuriganaWordCandidates(
     if (!chars.slice(runChars.length).every(isHiragana)) continue;
     const { kanjiPart, reading } = stripOkurigana(row.text, row.kana);
     if (kanjiPart !== run || isImpossibleReading(reading)) continue;
-    out.push({ reading, source: "word", label: row.text, common: row.common === 1 });
+    out.push({
+      reading,
+      source: "word",
+      kind: "word",
+      label: row.text,
+      common: row.common === 1,
+    });
   }
   return out.sort((a, b) => Number(b.common) - Number(a.common));
 }
@@ -240,11 +254,17 @@ async function counterCandidates(
   // counter_readings is keyed on the kanji numeral, and a page writes ３日 as
   // often as 三日 — the same normalization batchLookupCounters applies.
   const normalized = normalizeDigitsToKanji(run);
-  const rows = await extendedDb.getAllAsync<{ reading: string }>(
-    `SELECT DISTINCT reading FROM counter_readings WHERE combined_kanji IN (?, ?)`,
+  const rows = await extendedDb.getAllAsync<{ reading: string; counter_gloss: string | null }>(
+    `SELECT DISTINCT reading, counter_gloss FROM counter_readings WHERE combined_kanji IN (?, ?)`,
     [run, normalized],
   );
-  return rows.map((row) => ({ reading: row.reading, source: "counter" as const }));
+  return rows.map((row) => ({
+    reading: row.reading,
+    source: "counter" as const,
+    kind: "counter" as const,
+    // "counter for days" — a counter row would otherwise carry no definition.
+    label: row.counter_gloss ?? undefined,
+  }));
 }
 
 /**
@@ -262,7 +282,9 @@ export async function furiganaReadingCandidates(
 ): Promise<FuriganaReadingCandidate[]> {
   const given: FuriganaReadingCandidate[] = [];
   if (options.currentReading) given.push({ reading: options.currentReading, source: "current" });
-  if (options.sourceReading) given.push({ reading: options.sourceReading, source: "source" });
+  if (options.sourceReading) {
+    given.push({ reading: options.sourceReading, source: "source", kind: "source" });
+  }
 
   // A digit run like ３日 has kanji after normalization even when it has none
   // as written, and that is exactly a counter.
@@ -320,6 +342,7 @@ function dedupe(candidates: FuriganaReadingCandidate[]): FuriganaReadingCandidat
           ? `${parts.slice(0, MAX_LABEL_PARTS).join(" · ")} …`
           : parts.join(" · ");
     }
+    already.kind ??= candidate.kind;
     already.note ??= candidate.note;
     already.common ||= candidate.common;
   }

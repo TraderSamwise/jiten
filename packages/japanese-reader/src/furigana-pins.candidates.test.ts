@@ -179,6 +179,44 @@ describe.skipIf(!hasBothDbs)("furiganaReadingCandidates", () => {
     expect(await readings("ひらがな")).toEqual([]);
   });
 
+  /**
+   * A row that says only "きょうこ" tells the user nothing to choose on. Every
+   * candidate has to carry what it IS — name, word, counter — and, where the
+   * dictionary has one, a short definition.
+   */
+  it("gives every candidate a category", async () => {
+    for (const run of ["杏子", "後味", "日", "一日", "三日", "読", "今日", "高遠", "煙草"]) {
+      for (const candidate of await furiganaReadingCandidates(run, dict!.wrapped, ext!.wrapped)) {
+        expect(candidate.kind, `${run} → ${candidate.reading}`).toBeDefined();
+      }
+    }
+  });
+
+  /**
+   * counter_readings carries a gloss; a counter row used to show none. Written
+   * in digits, because 三日 is a JMnedict place name too and the row then keeps
+   * the name's category — only a digit run reaches the counter table alone.
+   */
+  it("gives a counter reading its gloss", async () => {
+    const counters = (await furiganaReadingCandidates("3日", dict!.wrapped, ext!.wrapped)).filter(
+      (candidate) => candidate.kind === "counter",
+    );
+    expect(counters.length).toBeGreaterThan(0);
+    expect(counters[0].label).toMatch(/counter for days/);
+  });
+
+  /**
+   * The reading already on the page ranks first as "current", but it is still a
+   * word or a name and its row has to say which.
+   */
+  it("keeps the category of the reading already on the page", async () => {
+    const candidates = await furiganaReadingCandidates("杏子", dict!.wrapped, ext!.wrapped, {
+      currentReading: "あんず",
+    });
+    expect(candidates[0]).toMatchObject({ reading: "あんず", source: "current", kind: "word" });
+    expect(candidates[0].label).toMatch(/apricot/);
+  });
+
   it("labels where each reading came from", async () => {
     const candidates = await furiganaReadingCandidates("杏子", dict!.wrapped, ext!.wrapped);
     const kyouko = candidates.find((candidate) => candidate.reading === "きょうこ");
