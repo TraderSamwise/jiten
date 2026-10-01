@@ -28,8 +28,13 @@ export function setupMouseHandlers(): void {
   // The web reader has no long press. Right-click is what asks the same thing.
   state.contentEl!.addEventListener("contextmenu", function (e: MouseEvent) {
     if (state.dragMode === "selecting" || state.dragMode === "swiping") return;
-    if (!reportFuriganaPinTarget(e.clientX, e.clientY)) return;
+    const pressed = reportFuriganaPinTarget(e.clientX, e.clientY);
+    if (!pressed) return;
     e.preventDefault();
+    clearHighlight();
+    if (pressed.absEnd > pressed.absStart) {
+      highlightAbsRange(pressed.absStart, pressed.absEnd);
+    }
     state.suppressClick = true;
     setTimeout(function () {
       state.suppressClick = false;

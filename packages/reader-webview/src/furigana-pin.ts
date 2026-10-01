@@ -1,5 +1,5 @@
 import { isDigit, isKanji } from "./japanese";
-import { resolveCaretAt, textWalker } from "./text";
+import { nodeOffsetToAbsolute, resolveCaretAt, textWalker } from "./text";
 import { state } from "./state";
 
 declare const window: Window & {
@@ -22,19 +22,26 @@ export interface PressedRun {
   run: string;
   /** The reading the page is showing over it, if any. */
   currentReading: string;
+  /** Where the run sits, so the reader can paint it while the sheet is open. */
+  absStart: number;
+  absEnd: number;
 }
 
 /**
- * The kanji run containing `index`, or "" when that character is not kanji.
+ * Where the kanji run containing `index` begins and ends, in code points, or
+ * null when that character is not kanji.
  *
  * Digits count as part of a run because the reader's own furigana does the
  * same — ３日 is a counter, and its reading belongs to the whole thing.
  */
-export function kanjiRunAt(text: string, index: number): string {
+export function kanjiRunRangeAt(
+  text: string,
+  index: number,
+): { start: number; end: number } | null {
   const chars = [...text];
-  if (index < 0 || index >= chars.length) return "";
+  if (index < 0 || index >= chars.length) return null;
   const inRun = (ch: string) => isKanji(ch) || isDigit(ch);
-  if (!inRun(chars[index])) return "";
+  if (!inRun(chars[index])) return null;
 
   let start = index;
   while (start > 0 && inRun(chars[start - 1])) start--;
@@ -49,7 +56,14 @@ export function kanjiRunAt(text: string, index: number): string {
     start = Math.max(start, Math.min(index - half, end - MAX_RUN_LENGTH + 1));
     end = start + MAX_RUN_LENGTH - 1;
   }
-  return chars.slice(start, end + 1).join("");
+  return { start, end: end + 1 };
+}
+
+/** The kanji run containing `index`, or "" when that character is not kanji. */
+export function kanjiRunAt(text: string, index: number): string {
+  const range = kanjiRunRangeAt(text, index);
+  if (!range) return "";
+  return [...text].slice(range.start, range.end).join("");
 }
 
 /** The base text and reading of the ruby an element sits in, if it sits in one. */
@@ -59,15 +73,27 @@ export function rubyUnder(element: Element | null): PressedRun | null {
 
   let base = "";
   let reading = "";
+  let firstBaseText: Node | null = null;
+  let lastBaseText: Node | null = null;
   for (const node of Array.from(ruby.childNodes)) {
     if (node.nodeType === Node.TEXT_NODE) {
       base += node.textContent ?? "";
+      // Same reason as textNodesIn: the newline between <ruby> and its base is
+      // not part of the run.
+      if ((node.textContent ?? "").trim().length === 0) continue;
+      firstBaseText ??= node;
+      lastBaseText = node;
       continue;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) continue;
     const tag = (node as Element).tagName;
     if (tag === "RT") reading += node.textContent ?? "";
-    else if (tag !== "RP") base += node.textContent ?? "";
+    else if (tag !== "RP") {
+      const inner = firstTextNodeIn(node);
+      firstBaseText ??= inner;
+      lastBaseText = lastTextNodeIn(node) ?? lastBaseText;
+      base += node.textContent ?? "";
+    }
   }
   base = base.trim();
   // The same two limits the plain-text path enforces. Aozora's 群ルビ puts a
@@ -75,7 +101,53 @@ export function rubyUnder(element: Element | null): PressedRun | null {
   const baseChars = [...base];
   if (baseChars.length === 0 || baseChars.length > MAX_RUN_LENGTH) return null;
   if (!baseChars.some((ch) => isKanji(ch) || isDigit(ch))) return null;
-  return { run: base, currentReading: reading.trim() };
+
+  // -1 means "nowhere to paint": the run is still reported, it just carries no
+  // range. Absolute offsets are measured from the page element.
+  const canMeasure =
+    firstBaseText != null && lastBaseText != null && state.pageEl?.contains(firstBaseText) === true;
+  if (!canMeasure) {
+    return { run: base, currentReading: reading.trim(), absStart: -1, absEnd: -1 };
+  }
+  // From the first base character to the last, rather than start + length: a
+  // mono-ruby base is several nodes with the fallback parentheses between them,
+  // so the base's characters are not contiguous in the page's offsets. Those
+  // parentheses are hidden whenever ruby renders at all, so spanning them shows
+  // nothing extra.
+  // Trimmed at each end, so a node of "  杏子 " contributes only its characters.
+  const firstText = firstBaseText!.textContent ?? "";
+  const lastText = lastBaseText!.textContent ?? "";
+  const absStart = nodeOffsetToAbsolute(
+    firstBaseText!,
+    firstText.length - firstText.trimStart().length,
+  );
+  const absEnd = nodeOffsetToAbsolute(lastBaseText!, lastText.trimEnd().length);
+  return { run: base, currentReading: reading.trim(), absStart, absEnd };
+}
+
+/**
+ * Text nodes that hold something, in document order.
+ *
+ * Whitespace-only nodes are skipped: `base` is trimmed, so counting the newline
+ * an EPUB puts between `<ruby>` and its base would paint a cell either side of
+ * the run.
+ */
+function textNodesIn(root: Node): Node[] {
+  const walker = textWalker(root);
+  const nodes: Node[] = [];
+  while (walker.nextNode()) {
+    if ((walker.currentNode.textContent ?? "").trim().length > 0) nodes.push(walker.currentNode);
+  }
+  return nodes;
+}
+
+function firstTextNodeIn(root: Node): Node | null {
+  return textNodesIn(root)[0] ?? null;
+}
+
+function lastTextNodeIn(root: Node): Node | null {
+  const nodes = textNodesIn(root);
+  return nodes[nodes.length - 1] ?? null;
 }
 
 /** The paragraph a text node sits in. A run never crosses one. */
@@ -204,9 +276,17 @@ export function resolvePressedRun(target: PressTarget): PressedRun | null {
     return null;
   }
   const { text, index } = paragraphTextAroundCaret(target.caretNode, target.caretOffset);
-  const run = kanjiRunAt(text, index);
-  if (run.length === 0) return null;
-  return { run, currentReading: "" };
+  const range = kanjiRunRangeAt(text, index);
+  if (!range) return null;
+  const chars = [...text];
+  const run = chars.slice(range.start, range.end).join("");
+
+  // The range is in code points within the paragraph; the reader paints by
+  // UTF-16 offset across the whole page. Measure the gap in UTF-16 units so a
+  // surrogate pair earlier in the paragraph cannot shift the highlight.
+  const beforeRun = chars.slice(range.start, index).join("").length;
+  const absStart = nodeOffsetToAbsolute(target.caretNode, target.caretOffset) - beforeRun;
+  return { run, currentReading: "", absStart, absEnd: absStart + run.length };
 }
 
 /** Both halves at once, for the mouse path where nothing is held. */
@@ -232,9 +312,9 @@ export function postFuriganaPinTarget(pressed: PressedRun, x: number, y: number)
  * Resolve and report in one go. Only for the mouse path, where the gesture is
  * a right-click and nothing has moved between press and report.
  */
-export function reportFuriganaPinTarget(x: number, y: number): boolean {
+export function reportFuriganaPinTarget(x: number, y: number): PressedRun | null {
   const pressed = pressedRunAt(x, y);
-  if (!pressed) return false;
+  if (!pressed) return null;
   postFuriganaPinTarget(pressed, x, y);
-  return true;
+  return pressed;
 }

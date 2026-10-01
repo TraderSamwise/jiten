@@ -72,19 +72,19 @@ describe("rubyUnder", () => {
 
   it("reads the base and the reading from the ruby a press landed in", () => {
     const ruby = render("<ruby>杏子<rt>きょうこ</rt></ruby>");
-    expect(rubyUnder(ruby)).toEqual({ run: "杏子", currentReading: "きょうこ" });
+    expect(rubyUnder(ruby)).toMatchObject({ run: "杏子", currentReading: "きょうこ" });
   });
 
   it("finds the ruby from a press on the reading itself", () => {
     render("<ruby>杏子<rt>きょうこ</rt></ruby>");
     const rt = document.querySelector("rt")!;
-    expect(rubyUnder(rt)).toEqual({ run: "杏子", currentReading: "きょうこ" });
+    expect(rubyUnder(rt)).toMatchObject({ run: "杏子", currentReading: "きょうこ" });
   });
 
   /** An EPUB writes the fallback parentheses a browser without ruby shows. */
   it("leaves the rp fallback parentheses out of both", () => {
     const ruby = render("<ruby>杏子<rp>(</rp><rt>きょうこ</rt><rp>)</rp></ruby>");
-    expect(rubyUnder(ruby)).toEqual({ run: "杏子", currentReading: "きょうこ" });
+    expect(rubyUnder(ruby)).toMatchObject({ run: "杏子", currentReading: "きょうこ" });
   });
 
   it("has nothing to say outside a ruby", () => {
@@ -96,6 +96,69 @@ describe("rubyUnder", () => {
   it("refuses a ruby with no base text", () => {
     const ruby = render("<ruby><rt>きょうこ</rt></ruby>");
     expect(rubyUnder(ruby)).toBeNull();
+  });
+});
+
+describe("the run a press reports is also the run it paints", () => {
+  function pressInPage(html: string, pressSelector = "[data-press]") {
+    document.body.innerHTML = `<div id="page">${html}</div>`;
+    const page = document.getElementById("page")!;
+    state.pageEl = page;
+    state.contentEl = page;
+    const target = document.querySelector(pressSelector) as HTMLElement;
+    const node = target.firstChild as Text;
+    document.caretRangeFromPoint = () => {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      return range;
+    };
+    document.elementFromPoint = () => target;
+    Range.prototype.getBoundingClientRect = () => new DOMRect();
+    return pressedRunAt(1, 1);
+  }
+
+  /**
+   * The reader paints by absolute offset across the whole page, and the run is
+   * found by walking one paragraph. A range that does not line up highlights
+   * the wrong characters, which is worse than highlighting none.
+   */
+  it("reports where the run is, measured from the page", () => {
+    // 杏子 starts at offset 3 of the page's text.
+    const pressed = pressInPage("<p>それで<span data-press>杏</span>子は帰った</p>");
+    expect(pressed).toMatchObject({ run: "杏子", absStart: 3, absEnd: 5 });
+  });
+
+  it("measures from the run's start even when the press landed mid-run", () => {
+    const pressed = pressInPage("<p>それで杏<span data-press>子</span>は帰った</p>");
+    expect(pressed).toMatchObject({ run: "杏子", absStart: 3, absEnd: 5 });
+  });
+
+  /**
+   * Aozora writes mono-ruby as several `<rb>`s with the fallback parentheses
+   * between them, so the base's own characters are not contiguous in the page's
+   * offsets. Measuring start + length would paint the parenthesis instead of
+   * the second kanji.
+   */
+  it("spans a ruby base that the fallback parentheses split", () => {
+    const pressed = pressInPage(
+      "<p>それで<ruby data-press><rb>親</rb><rp>（</rp><rt>おや</rt><rp>）</rp>" +
+        "<rb>方</rb><rp>（</rp><rt>かた</rt><rp>）</rp></ruby>は</p>",
+    );
+    // 親 ( ) 方 — the page's offsets run 3,4,5,6, so the base spans 3..7.
+    expect(pressed).toMatchObject({ run: "親方", absStart: 3, absEnd: 7 });
+  });
+
+  /** An EPUB puts a newline between `<ruby>` and its base. It is not the run. */
+  it("does not count the whitespace an EPUB wraps a ruby base in", () => {
+    const pressed = pressInPage(
+      "<p>それで<ruby data-press>\n  杏子\n  <rt>きょうこ</rt></ruby>は</p>",
+    );
+    expect(pressed).toMatchObject({ run: "杏子", absStart: 6, absEnd: 8 });
+  });
+
+  it("reports where a ruby's base is", () => {
+    const pressed = pressInPage("<p>それで<ruby data-press>杏子<rt>きょうこ</rt></ruby>は</p>");
+    expect(pressed).toMatchObject({ run: "杏子", absStart: 3, absEnd: 5 });
   });
 });
 
@@ -121,7 +184,7 @@ describe("pressedRunAt and the page's visible column", () => {
 
     page.getBoundingClientRect = () => new DOMRect(0, 0, 100, 500);
     Range.prototype.getBoundingClientRect = () => new DOMRect(40, 0, 10, 20);
-    expect(pressedRunAt(45, 10)).toEqual({ run: "杏子", currentReading: "" });
+    expect(pressedRunAt(45, 10)).toMatchObject({ run: "杏子", currentReading: "" });
 
     // The same caret, now measured outside the page's own box.
     Range.prototype.getBoundingClientRect = () => new DOMRect(400, 0, 10, 20);
@@ -157,20 +220,35 @@ describe("pressedRunAt", () => {
   it("reads a run that a bookmark span has split in two", () => {
     expect(
       pressOn('<p><span class="bookmarked-word">杏</span><span data-press>子</span>は</p>'),
-    ).toEqual({ run: "杏子", currentReading: "" });
+    ).toMatchObject({ run: "杏子", currentReading: "" });
   });
 
   it("does not read across a paragraph boundary", () => {
-    expect(pressOn("<p>帰国</p><p><span data-press>家</span>へ</p>")).toEqual({
+    expect(pressOn("<p>帰国</p><p><span data-press>家</span>へ</p>")).toMatchObject({
       run: "家",
       currentReading: "",
     });
   });
 
   it("prefers the ruby's own base when the press lands in one", () => {
-    expect(pressOn("<p><ruby data-press>杏子<rt>きょうこ</rt></ruby>は</p>")).toEqual({
+    expect(pressOn("<p><ruby data-press>杏子<rt>きょうこ</rt></ruby>は</p>")).toMatchObject({
       run: "杏子",
       currentReading: "きょうこ",
+    });
+  });
+
+  /**
+   * The run is still worth reporting when it cannot be located — the sheet only
+   * needs the characters. -1 says "nowhere to paint" so the caller does not
+   * highlight from offset zero.
+   */
+  it("reports a run with no range when it is not on the page", () => {
+    document.body.innerHTML = "<ruby>杏子<rt>きょうこ</rt></ruby>";
+    state.pageEl = null;
+    expect(rubyUnder(document.querySelector("ruby"))).toMatchObject({
+      run: "杏子",
+      absStart: -1,
+      absEnd: -1,
     });
   });
 

@@ -130,6 +130,7 @@ describeWithDb("useJapaneseReader furigana pins", () => {
       postMessage: (message: string) => posted.push(message),
       injectJavaScript: () => {},
     } as never;
+    const posted_ = () => posted.map((message) => JSON.parse(message) as { type: string });
     const reloadedContent = () => {
       for (const message of [...posted].reverse()) {
         const parsed = JSON.parse(message) as { type: string; html?: string };
@@ -137,7 +138,7 @@ describeWithDb("useJapaneseReader furigana pins", () => {
       }
       return null;
     };
-    return { ...hook, reloadedContent };
+    return { ...hook, reloadedContent, posted: posted_ };
   };
 
   test("paints a reading that was already pinned when the book opened", async () => {
@@ -309,8 +310,13 @@ describeWithDb("useJapaneseReader furigana pins", () => {
     expect(result.current.furiganaPinTarget!.candidates!.map((c) => c.reading)).toContain("あんず");
   });
 
-  test("closing the sheet forgets what it was asking about", async () => {
-    const { result } = render(fakePins());
+  /**
+   * The press paints the run it is asking about, in the reader's own highlight
+   * colour. Nothing in the webview clears it, so closing the sheet has to — or
+   * the page keeps a purple block over a word nobody is looking at.
+   */
+  test("closing the sheet forgets what it was asking about, and unpaints it", async () => {
+    const { result, posted } = render(fakePins());
     await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
     await act(async () => {
       await result.current.readerViewProps!.onMessage(
@@ -321,6 +327,7 @@ describeWithDb("useJapaneseReader furigana pins", () => {
 
     act(() => result.current.closeFuriganaPinSheet());
     expect(result.current.furiganaPinTarget).toBeNull();
+    expect(posted().map((message) => message.type)).toContain("clearHighlight");
   });
 
   test("a long press on something with no run says nothing", async () => {

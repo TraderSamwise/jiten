@@ -25,6 +25,22 @@ const PART_SELECTORS = [
   ".bookmarked-word-end",
 ];
 
+/**
+ * Half a second of holding a finger on text is iOS's own gesture too, and it
+ * answers with a loupe and a word selection that lands on a different span than
+ * the press is about. Only `user-select: none` on the text itself stops it;
+ * `preventDefault` on `selectstart` is too late, because the loupe comes up
+ * before any selection starts.
+ */
+describe("the reader refuses the platform's own text selection", () => {
+  it("turns off native selection on the text, not only the page number", () => {
+    const rule = ruleFor("#content");
+    expect(rule).toMatch(/-webkit-user-select:\s*none/);
+    expect(rule).toMatch(/[^-]user-select:\s*none/);
+    expect(rule).toMatch(/-webkit-touch-callout:\s*none/);
+  });
+});
+
 describe("bookmark highlight separation", () => {
   it("separates adjacent highlights with a ring of page background", () => {
     const rule = bookmarkRule();

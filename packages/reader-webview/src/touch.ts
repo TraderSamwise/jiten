@@ -113,6 +113,12 @@ export function setupTouchHandlers(): void {
         // open the tap lookup on top of the picker.
         state.suppressClick = true;
         state.dragMode = "idle";
+        // Paint the run the sheet is about, in the same colour a tap and a drag
+        // select use. The app clears it when the sheet closes.
+        clearHighlight();
+        if (pressed.absEnd > pressed.absStart) {
+          highlightAbsRange(pressed.absStart, pressed.absEnd);
+        }
       }, LONG_PRESS_MS);
     },
     { passive: true },

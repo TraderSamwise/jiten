@@ -1006,6 +1006,8 @@ export function useJapaneseReader({
   const openFuriganaPinSheet = useCallback(
     async (run: string, currentReading: string) => {
       if (!furiganaPins || !dictDb || run.length === 0) return;
+      // Claims the highlight: a tap lookup still resolving must not refine it.
+      highlightPlacementRequestRef.current++;
       const requestId = ++furiganaPinRequestRef.current;
       const pinned = furiganaPinsRef.current.get(run);
       setFuriganaPinTarget({
@@ -1025,6 +1027,8 @@ export function useJapaneseReader({
   const closeFuriganaPinSheet = useCallback(() => {
     furiganaPinRequestRef.current++;
     setFuriganaPinTarget(null);
+    // The press painted the run it was asking about. Nothing else clears it.
+    readerViewRef.current?.postMessage(JSON.stringify({ type: "clearHighlight" }));
   }, []);
 
   const cycleLookupMode = useCallback(() => {
@@ -1586,7 +1590,11 @@ export function useJapaneseReader({
               y: msg.y ?? 0,
             });
 
-            if (results.length > 0) {
+            // A long press that fired while this lookup was in flight has
+            // bumped the counter and painted its own run. Refining the tap's
+            // highlight now would wipe it and paint a different word under the
+            // open sheet.
+            if (results.length > 0 && placementId === highlightPlacementRequestRef.current) {
               const matchStart = results[0].matchStart ?? (tapOffset || 0);
               const startDelta = matchStart - (tapOffset || 0);
               readerViewRef.current?.postMessage(
