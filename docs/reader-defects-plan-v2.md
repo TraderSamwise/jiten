@@ -165,7 +165,13 @@ change at a time and ask.
    as fixture case 42.
 3. **The iOS callout** (`0cfac0-18`) — `suppressMenuItems` shipped; the ladder
    above is what to try if it is not enough.
-4. **The furigana name floor** (`0cfac0-16`, `0cfac0-10`). Unchanged from v1.
+4. ~~**The furigana name floor**~~ (`0cfac0-16`, `0cfac0-10`) — **done, but
+   not the way v1 expected.** The floor was measured and refused: 0.6 over 5
+   sightings rejects 高遠 too, and the only test that separates it from 後味 is
+   "has any count at all", which a standing decision forbids. 後味 is fixed by
+   an exact-spelling tie-break instead, which needs no counts. Both the fix and
+   the two refusals are in
+   [reader-lookup-decisions.md](reader-lookup-decisions.md).
 
 `0cfac0-13` and `0cfac0-17` are answered rather than fixed, and both are pinned
 as fixture cases so that a later change to either is a decision and not a

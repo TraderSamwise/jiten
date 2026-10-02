@@ -931,10 +931,17 @@ leads with the surname, and the first row is what the sheet preselects:
 | 一日 | いちひ                            | いちにち |
 
 What the floor costs is 高遠: たかとお in 4 of 4 sightings, settled but under
-the minimum of 5, so the picker leads with こうえん — 高遠 is also a word. The
-_resolver_ still reads it たかとお; only the first row of the sheet differs, and
-the reading is one row below it. Raising the floor to catch it would let a
-single sighting decide, which is what the floor exists to prevent.
+the minimum of 5, so the picker leads with こうえん — 高遠 is also a word — and
+たかとお is one row below it. Raising the floor to catch it would let a single
+sighting decide, which is what the floor exists to prevent.
+
+(**Corrected 2026-10-02**: this paragraph used to say the resolver still read
+高遠 as たかとお. It does not, and had already stopped when the sentence was
+written — `resolveFuriganaBatch` answers こうえん. The reason is the ordinary
+scoring, not the multi-type hole recorded under "Rejected" below: with its
+`surname` term restored 高遠 reaches 83, still under 90, because four listed
+readings earn nothing on the question of whether a name is what is on the
+page.)
 
 **Every kana row of an entry is offered**, not the first: 今日 is きょう,
 こんにち, こんち and こんじつ, and the one the resolver picked is exactly what
@@ -1070,7 +1077,353 @@ The ~8,500-id version string the reader rebuilt on every toggle — sorted and
 joined, about 60KB — is now a 32-bit mix summed over the ids with the count in
 front, one walk and no array.
 
+### A word spelled exactly as the page spells it keeps the page
+
+後味が悪い is the set phrase and ごみ is a JMnedict surname nobody has been
+observed to use, and the reader printed ごみ over it. Queue `0cfac0-16`, which
+is `0cfac0-10` met a second time.
+
+The name wins on its type alone — `surname` is worth 18 — and the only thing
+standing against it is the discount a word earns for being spelled exactly the
+way the page spells it. That was 16, which left 後味 at exactly 93 against a
+threshold of 90 — and the threshold is inclusive, so 17, 18 and 19 all still
+print ごみ. It is now **20**, which lands 後味 at 89, and 20 only when the
+counts have NOT settled on the name.
+
+**The condition is what keeps this a tie-break.** 109 is the most this branch
+can score — both candidates' matched text is the surface, so the length terms
+never fire — so a flat 20 would mean no name could ever again beat a
+non-common exact word in the furigana path, and the dominance floor above would
+have nothing left to decide. A flat 20 was measured and rejected for that
+reason, and because it cost 丸木: a real surname in the corpus
+(丸木が芝の写真師で) that lost a `[name]` tag it should have kept.
+
+Measured over all **67,299** corpus surfaces, **33 change**, none gained or
+lost a reading, and every one was read:
+
+- **19 only lose a `[name]` tag they should never have carried**, the reading
+  unchanged: 万両 まんりょう, 別段 べつだん, 団子 だんご, 小間物 こまもの,
+  敷石 しきいし, 旗本 はたもと, 木鉢 きばち, 毛頭 もうとう, 沙汰 さた,
+  沙門 しゃもん, 沢庵 たくあん, 潮水 しおみず, 談義 だんぎ, 道楽 どうらく,
+  釣竿 つりざお, 錠前 じょうまえ, 随行 ずいこう, 頭巾 ずきん, 鬼瓦 おにがわら.
+- **10 change the printed reading to the word**: 人声 じんせい → ひとごえ,
+  仰山 おおやま → ぎょうさん (無暗に仰山な音), 依怙 えご → えこ (依怙贔負),
+  出立 でだち → しゅったつ, 田楽 たらが → でんがく, 船中 ふななか →
+  せんちゅう, 船端 ふなば → ふなばた, 西日 にしにち → にしび, 遠国 とおくに →
+  えんごく, 金満 かねみつ → きんまん (金満家).
+- **3 are substring artefacts**, where the sweep's surface is not a word on the
+  page at all: 本立 (the corpus says 栗の木が一本立っている), 階下
+  (二階下に居た) and 間物 (inside 小間物). Neither reading is right because
+  neither spelling is there.
+- **One regression, named and accepted**: 肋骨 ろっこつ → あばらぼね. ろっこつ
+  is the reading in practice and it was reaching it through JMnedict. The word
+  entry lists あばらぼね first and the build keeps JMdict's order, so taking the
+  word hands back the rarer of its two readings. The cause is the kana order,
+  not this discount.
+
+杏子 is unmoved at きょうこ — the frequency work's own case, and safe because
+あんず is common, which takes the deeper `exactCommonWord` branch instead.
+
+**The tap shares this scorer**, and `check:tap-consistency` cannot see a chip
+appearing or disappearing — it counts whether two taps agree on a span. So the
+354 surfaces the corpus reads as names were resolved through
+`autoLookupWithOffset` before and after: **none of them changed**, in content
+or order. Not a proof that no tap can move, but none does here.
+`check:tap-consistency` itself is unmoved at 98.0% / 128, and `sweep:render`
+moves 30 of 100 chunks, which is the 33 readings reaching the page.
+
+## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
+
+The fourth case above, 敷きこんで, is not the guard. The dictionary has no
+敷き込む, and きこんで (four characters, squared: 16) beats 敷き + こんで
+(4 + 9), so the boundary lands after the 敷 and the kanji is left outside its
+own highlight.
+
+Scoring such a token as one character shorter — `(n-1)²` — fixes it, keeps
+あぐらをかいた and もてあまし, and was still not worth shipping. On the corpus
+it split longer kana-spelled words into fragments: だまっていれば became
+まっていれば, ふくれている became くれている, 申し付けられた became けられ,
+構いません became いません, and 居させる became いさせる — nine new wrong spans
+against two fixed. The cheap variants are worse: weighting the token linearly
+instead loses あぐらをかいた and もてあまし, which are the same shape and are
+right.
+
+敷きこんで stays wrong, pinned as `knownRed` in the fixture with あぐらをかいた
+beside it as the case that rules the cheap fixes out.
+
+**It is a dictionary gap, and that is checkable.** The same shape with the
+compound present is right:
+
+| text       | compound in JMdict | きこんで painted |
+| ---------- | ------------------ | ---------------- |
+| 敷きこんで | no 敷き込む        | **yes**          |
+| 書きこんで | 書き込む           | no               |
+| 持ちこんで | 持ち込む           | no               |
+
+So nothing here needs a cleverer rule; it needs the entry. What it also
+exposed is the cost of confirmation not being positional: put 敷きこんで and
+書きこんで in one sentence and きこんで is painted **twice**, the second time
+inside a token that is correct on its own, because the surface was confirmed
+somewhere else on the page. That half survives a dictionary fix. Case 37.
+
+### A reading the user pins, for one book, over everything the dictionary says
+
+**Taken 2026-10-01**, as
+[furigana-pin-plan-v1.md](furigana-pin-plan-v1.md).
+
+Some readings no ranking settles. 杏子 is きょうこ in the novel Sam is reading
+and the apricot in the next one; frequency got the automatic answer as far as
+it goes (above) and cannot go further, because the page carries no evidence
+either way. So the reader asks: long-press a kanji run, choose from every
+reading the dictionaries know, and that book remembers it.
+
+**The key is the kanji run as the page spells it** — the base of the ruby the
+press landed in, or the run of kanji around the character under the finger. Not
+an entry id: an id cannot say "show no furigana here", cannot hold a reading no
+entry carries, and is not what the user pressed. The value is the reading, and
+the empty reading is that suppression.
+
+**A pin ignores the furigana settings.** Names are off by default, so a pinned
+name reading that obeyed the filter would do nothing and look broken.
+
+**The picker offers; it does not choose.** Nothing in `furiganaReadingCandidates`
+filters a reading for being unlikely — that is the whole reason the user is
+being asked. What it does do is rank, and the one rule there matters: **a name
+reading leads only where the spelling has settled on it**, by the same two
+thresholds `isDominantNameReading` already uses (a 0.6 share of at least 5
+sightings). Without that floor every spelling that is also somebody's surname
+leads with the surname, and the first row is what the sheet preselects:
+
+| run  | first candidate without the floor | with it  |
+| ---- | --------------------------------- | -------- |
+| 杏子 | きょうこ (26 of 33)               | きょうこ |
+| 後味 | ごみ (surname, uncounted)         | あとあじ |
+| 大人 | やまと (1 sighting)               | おとな   |
+| 一日 | いちひ                            | いちにち |
+
+What the floor costs is 高遠: たかとお in 4 of 4 sightings, settled but under
+the minimum of 5, so the picker leads with こうえん — 高遠 is also a word — and
+たかとお is one row below it. Raising the floor to catch it would let a single
+sighting decide, which is what the floor exists to prevent.
+
+(**Corrected 2026-10-02**: this paragraph used to say the resolver still read
+高遠 as たかとお. It does not, and had already stopped when the sentence was
+written — `resolveFuriganaBatch` answers こうえん. The reason is the ordinary
+scoring, not the multi-type hole recorded under "Rejected" below: with its
+`surname` term restored 高遠 reaches 83, still under 90, because four listed
+readings earn nothing on the question of whether a name is what is on the
+page.)
+
+**Every kana row of an entry is offered**, not the first: 今日 is きょう,
+こんにち, こんち and こんじつ, and the one the resolver picked is exactly what
+is being overruled. Katakana stays as written — 煙草 really is タバコ. What
+JMdict's kana column holds that is _not_ a reading is refused: 16,774 rows
+carry a non-kana character (粁 is listed キロ・メートル, and the interpunct
+U+30FB sits inside the katakana block), 日 carries んち from a compound, and
+JMnedict lists 日 as the place name にっ. The four single-kanji forms ending in
+っ — 叱, 𠮟, 突, 吹 — go with them; each is a reading that only exists inside a
+compound.
+
+**Accepted limits**, each pinned by a test:
+
+- JMdict restricts some readings to some spellings (`re_restr`) and
+  `scripts/build-dictionary.ts` drops the field, so the picker offers ひるこ
+  for 恵比寿 though it belongs to 蛭子. Harmless in a list the user chooses
+  from; fixing it means rebuilding the dictionary.
+- A pin matches its run **everywhere in that book**. 杏子 the character and 杏子
+  the apricot in one novel cannot differ. The same unbuilt positional work as
+  the bookmark spans above.
+- A re-imported copy of a book is a new id and starts with no pins.
+
+**The gate is `yarn sweep:render`**, added for this. `yarn sweep:furigana`
+resolves readings and cannot see a change to the code that turns them into
+ruby, which is where the pin pass lives. Over the whole corpus, with every rule
+on and names and counters off so that surfaces are rejected and cast their
+shadows, the pin pass changes **0 of 100 chunks** when no reading is pinned.
+`check:tap-consistency` unchanged at 98.0% / 128.
+
+Three things the renderer alone cannot get right, each with a test that fails
+without it: one pin makes the page carry furigana, so the line height and how
+many characters fit on a page change with it; the slice cache key and the
+re-render snapshot carry the pins, or a pinned page keeps serving the reading it
+had; and a slice with a pin but nothing extractable still has to be painted.
+
+### A bookmark is painted where it was confirmed, not wherever its characters appear
+
+The matcher used to hand the painter a flat SET of surfaces, and the painter
+painted every occurrence of each. So a word confirmed in one place lit up in
+another: つい, confirmed as the adverb at the head of a sentence, was painted
+again inside について further along the same line; きこんで, confirmed inside
+敷きこんで because the dictionary has no 敷き込む, was painted inside 書きこんで
+as well. That was fixture case 37, named and left unbuilt since
+2026-10-01.
+
+The matcher now emits positions. `confirmRuns` records where each confirmable
+surface sits inside its run, `placeAccepted` keeps the ones the accept loop
+admitted — longest first at a shared start, so 助手席 still beats 助手 — and
+the painter paints those offsets and nothing else.
+
+**Positions are keyed by the run's text, not by a character index into the
+page.** The matcher scans an HTML string and the painter walks the DOM, and
+the two will not reliably count to the same number — one sees `&amp;amp;`, the
+other sees `&amp;`; one sees the chunk the reader prefetched, the other the
+part of it that is laid out. They do agree on what the characters ARE.
+`segmentRun` is a pure function of the run, so identical run text always
+segments identically and a lookup by text is exact wherever it succeeds.
+
+Two consequences had to be handled rather than hoped away:
+
+- **The tap's text window cannot be used to find a placement.** It is fifteen
+  characters back and twenty forward and it concatenates across paragraphs, so
+  the run it contains is clipped at both ends or fused with another. The
+  webview now reports the tapped run and the tap's offset within it
+  (`tappedRun`), and `bookmarksInsideSpan` takes run coordinates.
+- **The matcher's copy of the page has to be cut where the DOM is cut.** The
+  reader appended prefetched HTML to its copy while `replaceOffscreenContent`
+  deleted the DOM from the last laid-out character, so the paragraph at the
+  seam was a truncated prefix in the page and whole in the matcher — and an
+  exact lookup silently drops every highlight in it. `truncateHtmlAtVisibleChars`
+  makes the two the same string. Guessing instead — falling back to a
+  placement whose run merely STARTS with the one on the page — was written and
+  thrown away: a truncated 助手 prefix-matches an unrelated 助手を呼ぶ and
+  paints a span the matcher never placed, which is the bug this whole change
+  exists to remove.
+
+Measured over `test/corpus/bocchan.txt` against the proxy list
+(`yarn proxy:bookmarks` — the reader's own list is on the device):
+**11,074 → 7,078 painted characters, 29.7% → 19.0%**, 5,655 → 3,592 boxes. The
+accepted surface set is unchanged at 1,267; only where they are painted moved.
+Every one of the 328 "added" boxes is the surviving half of a box that lost its
+neighbour, and exactly **three characters** are newly painted, all three
+extensions of a span that was being cut short: 正直 → 正直に twice, and
+一つつい → 一つついて.
+
+`check:tap-consistency` unchanged at 98.0% / 128. `sweep:furigana` and
+`sweep:render` byte-identical.
+
+**One trade, named and accepted.** 年 in 八つという年の差 is no longer painted,
+because the page's segmentation reads 年の差 as the word. The 年 inside
+十数年にわたる still is, because 十数年 is not in the dictionary and 十数 + 年
+is how that run segments. The rule — the characters have to be a word HERE —
+is the one that was already decided; positions are what finally enforce it.
+
+### Saving a word shows it before it is written
+
+Bookmarking in the reader got slow when highlighting learned to read the
+page: every toggle re-ran the whole matcher, and the matcher is ~130ms per
+4,000 characters on a laptop with a synchronous dictionary. Measured where it
+goes: deinflecting every substring of the page is ~51ms and the four batched
+SQL passes ~47ms, and **none of it depends on what is bookmarked**.
+
+So the pass is split. `analyseHtmlForBookmarks` reads the page — what each
+stretch of characters could be, which entries those words belong to, and
+where the page says a word — and `matchAnalysedBookmarks` is the synchronous
+remainder that asks which of them are saved. The reader holds the analysis
+against the HTML it was taken from, so a toggle repaints without re-reading.
+A test counts the queries: zero after the first pass.
+
+That left the part the user was actually looking at. The button could not
+change until the write had landed — a MAX(position), two INSERTs, and on the
+way out two UPDATEs and a SELECT — so the stores now move first and an undo
+puts them back if the write throws. The same for the list popover's tick,
+which is the control that actually un-bookmarks.
+
+Two things that forced themselves out of hiding:
+
+- **The store had to learn which lists hold a key.** `remove` used to drop a
+  key outright and a separate COUNT decided whether it should; now
+  `listIdsByKey` is maintained on every add and remove, and a key stops being
+  bookmarked when the last list lets it go. That also closed a quieter bug:
+  the old COUNT spanned default and soft-deleted lists, which `load()`
+  excludes, so an entry in a default list stayed "bookmarked" until the next
+  hydrate silently flipped it off.
+- **Reconciling against the database is only safe when nothing else is in
+  flight.** Tap-remove from one list and tap-add to another, and the first
+  write's reconcile reads the database before the second's insert lands and
+  deletes a membership the user just asked for. A per-key in-flight count
+  skips it; the test watches every store transition and fails if the word
+  blinks off.
+
+The ~8,500-id version string the reader rebuilt on every toggle — sorted and
+joined, about 60KB — is now a 32-bit mix summed over the ids with the count in
+front, one walk and no array.
+
+### A word spelled exactly as the page spells it keeps the page
+
+後味が悪い is the set phrase and ごみ is a JMnedict surname nobody has been
+observed to use, and the reader printed ごみ over it. Queue `0cfac0-16`, which
+is `0cfac0-10` met a second time.
+
+The name wins on its type alone — `surname` is worth 18 — and the only thing
+standing against it is the discount a word earns for being spelled exactly the
+way the page spells it. That was 16, which left 後味 at exactly 93 against a
+threshold of 90 — and the threshold is inclusive, so 17, 18 and 19 all still
+print ごみ. **20** is the smallest number that fixes it, and it lands 後味 at 89.
+
+That is a tie-break, not a rule about frequency. What it moves are spellings
+where JMdict has an exact kanji form for a word and JMnedict has a name with no
+observed use. Measured over all **67,299** corpus surfaces, **34 change**, none
+gained or lost a reading, and every one was read:
+
+- **16 only lose a `[name]` tag they should never have carried**, the reading
+  unchanged: 団子 だんご, 沙汰 さた, 鬼瓦 おにがわら, 敷石 しきいし, 旗本
+  はたもと, 沢庵 たくあん, 頭巾 ずきん, 道楽 どうらく, 釣竿 つりざお, 錠前
+  じょうまえ, 談義 だんぎ, 潮水 しおみず, 沙門 しゃもん, 毛頭 もうとう, 木鉢
+  きばち, 小間物 こまもの, 別段 べつだん, 万両 まんりょう, 丸木 まるき.
+- **15 change the printed reading, all of them to the word**: 人声 じんせい →
+  ひとごえ, 出立 でだち → しゅったつ, 田楽 たらが → でんがく, 階下 かいした →
+  かいか, 西日 にしにち → にしび, 本立 もとだつ → ほんたて, 船中 ふななか →
+  せんちゅう, 船端 ふなば → ふなばた, 遠国 とおくに → えんごく, 金満 かねみつ
+  → きんまん, 仰山 おおやま → ぎょうさん, 依怙 えご → えこ.
+- **One regression, named and accepted**: 肋骨 ろっこつ → あばらぼね. ろっこつ
+  is the reading in practice and it was reaching it through JMnedict. The word
+  entry lists あばらぼね first and the build keeps JMdict's order, so taking the
+  word hands back the rarer of its two readings. The cause is the kana order,
+  not this discount.
+- **One artefact**: 間物 まもの → あいだもの, a substring of 小間物 that is not
+  a word either way.
+
+杏子 is unmoved at きょうこ — the frequency work's own case — and
+`check:tap-consistency` is unmoved at 98.0% / 128. `sweep:render` moves 30 of
+100 chunks, which is the 34 readings reaching the page.
+
 ## Rejected
+
+### Rejected: a name-frequency floor in the furigana resolver
+
+The standing ruling on 後味 was that nothing separated a name that should win
+from one that should lose, because 高遠 → たかとお scored identically and had
+to keep working. The frequency column built since looked like the missing
+discriminator: 後味 → ごみ has no count at all, 高遠 → たかとお has 4 of 4.
+
+It is not. The picker's floor is 0.6 share over 5 sightings, and **4 is under
+5**, so the same floor rejects 高遠 as well. The only test that separates them
+is "has any count at all", and that is the one thing already refused above:
+zero is the absence of evidence, not evidence against a reading. Fixing 後味
+this way would have been a single sighting deciding a reading.
+
+What fixed it instead was the exact-spelling tie-break recorded above, which
+needs no counts.
+
+### Rejected: reading `name_type` as the comma-separated list it is
+
+`computeAutoNameConfidence` compares JMnedict's `name_type` against one type at
+a time — `topType === "surname"` — but the column holds every type the entry
+carries. 23,669 of 743,184 rows are multi-typed, and 15,392 of those are
+`place,surname`, so the commonest ambiguous shape in the dictionary scores as
+though its type were unknown. `scoreFuriganaNameMatch` in `furigana.ts` splits the same
+field correctly, so the two scorers disagree about the same data.
+
+Correcting it, taking the lowest applicable term because a spelling that is both
+a place and a surname is less certainly a person's name here: **one** of 67,299
+surfaces changes, and it changes for the worse — 右左 みぎひだり → うさ, whose
+type is `surname,given` and so earns the full 18 it was accidentally being
+denied. Nothing improves.
+
+So the zero a multi-typed name gets by accident is load-bearing, and the honest
+state is a known inconsistency left in place. Whoever fixes it properly will
+need the evidence this scoring does not have: 右左's うさ, like 後味's ごみ, has
+no observed use, and that is the test nothing here is allowed to make.
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first
 

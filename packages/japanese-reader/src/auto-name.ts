@@ -164,7 +164,13 @@ export function computeAutoNameConfidence(
   const wordSpelledRarely = settled && word.exactRareForm === true;
   if (word.exactCommonWord && !wordSpelledRarely) confidence -= 28;
   else if (wordSpelledRarely) confidence -= 8;
-  else if (word.exactSurface) confidence -= 16;
+  // Deeper when the name is UNSETTLED. 16 left 後味 at exactly 93 against a
+  // threshold of 90, and the reader printed the surname ごみ over 後味が悪い;
+  // 20 lands it at 89. Only for a name the counts have not settled on, or this
+  // stops being a tie-break: 109 is the most this branch can score, so a flat
+  // 20 would mean no name ever again beating a non-common exact word, and the
+  // dominance floor above would have nothing left to decide.
+  else if (word.exactSurface) confidence -= settled ? 16 : 20;
   else if (word.commonWord) confidence -= 8;
 
   if (word.deinflected) confidence += 10;
