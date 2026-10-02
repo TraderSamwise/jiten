@@ -196,9 +196,33 @@ Two guards, both from measured failures:
 - **The te-stem kana is part of the pattern** (いとく, っとく, んどく), not left to a
   stem-length floor. A bare ～とく also matches the _output_ of the masu-stem
   rules, which turned のとき into 乗る and 行くとき into 行い. The ichidan form
-  sits straight on the stem (見とく, 食べとく) and is typed `V1` for the same
-  reason — the masu-stem rules type their output `V5`, so the chain cannot reach
-  it.
+  sits straight on the stem (見とく, 食べとく). Three flags do three jobs:
+  `typeIn: RAW` fires the rule only on the untouched surface, so it cannot
+  chain off the masu-stem rules' output; `typeOut: V1` types what it produces,
+  so only the ichidan chain continues from it; `minStem` stops it stripping the
+  contraction off nothing.
+
+  **Its imperative needed the same treatment, and the order matters.** The
+  godan stems spell theirs out (いとけ, っとけ, んどけ) but the bare ichidan one
+  was missing, so やめとけ was not a word at all, `segmentRun` read it as
+  やめ + とけ — both real tokens — and a bookmarked 解ける lit up on the second
+  half. The bare rule has to sit BELOW the godan ones: the first rule to reach
+  a word owns its type, so placed above them it typed 置いとけ as ichidan and
+  置いて never finished the journey to 置く. That regression passed every gate
+  — the corpus has no とけ, so the tap sweep cannot see any of this — and was
+  caught only by reading 置いとけ, やっとけ and 待っとけ by hand. They are now
+  assertions in `deinflect.te-oku.test.ts`.
+
+  **The price, accepted and pinned as case 42.** Making やめとけ a word also
+  makes はやめとけ one — 早める contracted — and `segmentRun` maximises the
+  square of each token's length, so one 5-character token (25) beats
+  は + やめとけ (1 + 16) and the particle is swallowed. Nothing in the kana
+  distinguishes the two. A tap is protected, because a reading that needs no
+  guess wins first; the highlighter has no such guard, so a bookmarked 早める
+  paints a box across the は. That is narrower than what it replaces — 解ける
+  and 溶ける are commoner words than 早める, and both were painting on every
+  ～とけ in the book.
+
 - **A reading that needs no guess wins.** 書いとく is an entry of its own, and
   undoing the contraction reaches かいて → 買い手, the commoner of the two. The
   lookup already defers particle swaps to a literal reading; the contraction

@@ -357,8 +357,16 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     ],
     mustHighlight: [],
     mustNotHighlight: ["とけ"],
-    knownRed: ["とけ"],
-    note: "0cfac0-14. やめとけ is やめておけ contracted, and `deinflect` models ～とく everywhere except here: いとけ, っとけ and んどけ carry the godan te-stems and a bare とく typed V1 carries the ichidan ones, but the bare とけ of that pair is missing. So やめとけ reaches no word, segmentRun reads やめ + とけ, and both halves are real tokens.",
+    note: "0cfac0-14. やめとけ is やめておけ contracted, and `deinflect` modelled ～とく everywhere except here: いとけ, っとけ and んどけ carried the godan te-stems and a bare とく carried the ichidan ones, but the bare とけ of that pair was missing. So やめとけ reached no word, segmentRun read it as やめ + とけ, and both halves were real tokens. Fixed by the bare とけ rule.",
+  },
+  {
+    id: "42",
+    text: "そんなことはやめとけと言われた。",
+    bookmarks: [1601080 /* 早める はやめる v1 */],
+    mustHighlight: [],
+    mustNotHighlight: ["はやめとけ"],
+    knownRed: ["はやめとけ"],
+    note: "The price of case 38. Making やめとけ a word also makes はやめとけ one — 早める contracted — and segmentRun maximises the square of each token's length, so a single 5-character token (25) beats は + やめとけ (1 + 16). The particle is swallowed. Nothing distinguishes the two readings in kana; a tap is protected because a reading that needs no guess wins first, but the highlighter has no such guard. Reported as the cost of 0cfac0-14, not fixed.",
   },
   {
     id: "39",

@@ -388,8 +388,10 @@ const RULES: DeinflectRule[] = [
   { from: "っとく", to: "って", typeIn: RAW, typeOut: V5, reason: TE_OKU_REASON },
   { from: "んどく", to: "んで", typeIn: RAW, typeOut: V5, reason: TE_OKU_REASON },
   // An ichidan te-form is just the stem plus て, so ～とく sits straight on the
-  // stem: 見とく, 食べとく. typeIn V1 is what keeps this off the masu-stem rules'
-  // output, which they type V5 — that path is how のとき reached 乗る.
+  // stem: 見とく, 食べとく. `typeIn: RAW` keeps it off the masu-stem rules'
+  // output — that path is how のとき reached 乗る — `typeOut: V1` types what it
+  // produces so only the ichidan chain continues from it, and `minStem` stops
+  // it stripping ～とく off nothing.
   { from: "とく", to: "て", typeIn: RAW, typeOut: V1, reason: TE_OKU_REASON, minStem: 1 },
 
   // ～とく's own inflections, spelled out because the chain that used to reach
@@ -412,6 +414,13 @@ const RULES: DeinflectRule[] = [
   { from: "んどこう", to: "んで", typeIn: RAW, typeOut: V5, reason: TE_OKU_REASON },
   { from: "んどいたら", to: "んで", typeIn: RAW, typeOut: V5, reason: TE_OKU_REASON },
   { from: "んどきます", to: "んで", typeIn: RAW, typeOut: V5, reason: TE_OKU_REASON },
+
+  // The bare ichidan imperative, AFTER the godan ones above: the first rule to
+  // reach a word owns its type, so placed before them this would type 置いとけ
+  // as ichidan and 置いて would never finish the journey to 置く. Without it
+  // やめとけ is no word at all, and a page that says it is read as やめ + とけ —
+  // two real tokens, so a bookmarked 解ける lights up on the second half.
+  { from: "とけ", to: "て", typeIn: RAW, typeOut: V1, reason: TE_OKU_REASON, minStem: 1 },
 
   // ── ～ちゃう / ～じゃう: the spoken contraction of ～てしまう ──
   // Same shape and the same reason for it as ～とく above: the te-stem kana is in
