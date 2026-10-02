@@ -14,13 +14,15 @@ import {
   stripAozoraBoilerplate,
   type TextModel,
 } from "@tradersamwise/jiten-reader-core";
-import type { JapaneseReaderBackend, ReaderBookSource } from "./backend";
+import type { JapaneseReaderBackend, ReaderBookSource, ReaderSqlDb } from "./backend";
 import { truncateHtmlAtVisibleChars } from "./html-slice";
 import {
+  type BookmarkAnalysis,
   type BookmarkRunPlacements,
   type BookmarkSurfaceProvenance,
+  analyseHtmlForBookmarks,
   bookmarksInsideSpan,
-  matchBookmarksInHtml,
+  matchAnalysedBookmarks,
 } from "./bookmarks";
 import {
   applyFuriganaToHtml,
@@ -456,6 +458,16 @@ export function useJapaneseReader({
    */
   const bookmarkProvenanceRef = useRef<Map<string, BookmarkSurfaceProvenance[]>>(new Map());
   const bookmarkPlacementsRef = useRef<BookmarkRunPlacements[]>([]);
+  /**
+   * The matcher's reading of the page it last read, so that saving a word
+   * repaints instead of re-reading. Only the HTML can invalidate it: the
+   * analysis does not know what is bookmarked.
+   */
+  const bookmarkAnalysisRef = useRef<{
+    html: string;
+    dictDb: ReaderSqlDb;
+    analysis: BookmarkAnalysis;
+  } | null>(null);
   /** Readings this book has been told to use, keyed on the run the page spells. */
   const furiganaPinsRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [furiganaPinsKey, setFuriganaPinsKey] = useState("");
@@ -752,12 +764,15 @@ export function useJapaneseReader({
         return;
       }
 
-      const { provenance, placements } = await matchBookmarksInHtml(
-        dictDb,
-        contentHtml,
-        membership,
-      );
+      const cached = bookmarkAnalysisRef.current;
+      const analysis =
+        cached && cached.html === contentHtml && cached.dictDb === dictDb
+          ? cached.analysis
+          : await analyseHtmlForBookmarks(dictDb, contentHtml);
       if (bookmarkHighlightRequestRef.current !== token) return;
+      bookmarkAnalysisRef.current = { html: contentHtml, dictDb, analysis };
+
+      const { provenance, placements } = matchAnalysedBookmarks(analysis, membership);
       bookmarkProvenanceRef.current = provenance;
       bookmarkPlacementsRef.current = placements;
       readerViewRef.current?.postMessage(

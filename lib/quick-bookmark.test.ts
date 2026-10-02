@@ -22,7 +22,7 @@ beforeEach(() => {
   rawDb = createTestDb();
   db = getUserDrizzle(rawDb);
   // Reset bookmark store
-  useBookmarkStore.setState({ bookmarkedIds: new Set() });
+  useBookmarkStore.setState({ bookmarkedIds: new Set(), listIdsByKey: new Map() });
 });
 
 afterAll(() => {
@@ -149,5 +149,133 @@ describe("removeKanjiFromList", () => {
 
     await removeKanjiFromList(db, "食", "my-list");
     expect(useBookmarkStore.getState().bookmarkedIds.has("k:食")).toBe(false);
+  });
+});
+
+// ─── Showing the bookmark before the write lands ───
+
+/**
+ * Saving a word used to wait on a MAX(position), two INSERTs and, on the way
+ * out, two UPDATEs and a SELECT before the button could change. These pin the
+ * order: the store moves first, and goes back if the write throws.
+ */
+describe("the store moves before the database does", () => {
+  test("an entry is bookmarked before its insert finishes", async () => {
+    await createList("my-list", "My List");
+    let bookmarkedDuringWrite = false;
+    const watched = new Proxy(db, {
+      get(target, prop, receiver) {
+        bookmarkedDuringWrite ||= useBookmarkStore.getState().bookmarkedIds.has("e:1001");
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    }) as UserDrizzle;
+
+    await addEntryToList(watched, 1001, "my-list");
+    expect(bookmarkedDuringWrite).toBe(true);
+  });
+
+  test("a failed insert puts the store back", async () => {
+    await createList("my-list", "My List");
+    const broken = {
+      insert: () => {
+        throw new Error("no room on disk");
+      },
+      select: db.select.bind(db),
+    } as unknown as UserDrizzle;
+
+    await expect(addEntryToList(broken, 1001, "my-list")).rejects.toThrow("no room on disk");
+    expect(useBookmarkStore.getState().bookmarkedIds.has("e:1001")).toBe(false);
+  });
+
+  test("a failed removal puts the store back", async () => {
+    await createList("my-list", "My List");
+    await addEntryToList(db, 1001, "my-list");
+    const broken = {
+      update: () => {
+        throw new Error("database is locked");
+      },
+    } as unknown as UserDrizzle;
+
+    await expect(removeEntryFromList(broken, 1001, "my-list")).rejects.toThrow(
+      "database is locked",
+    );
+    expect(useBookmarkStore.getState().bookmarkedIds.has("e:1001")).toBe(true);
+  });
+});
+
+describe("which lists hold a key", () => {
+  test("an entry in two lists stays bookmarked after leaving one", async () => {
+    await createList("one", "One");
+    await createList("two", "Two");
+    await addEntryToList(db, 1001, "one");
+    await addEntryToList(db, 1001, "two");
+
+    await removeEntryFromList(db, 1001, "one");
+
+    expect(useBookmarkStore.getState().bookmarkedIds.has("e:1001")).toBe(true);
+    expect([...(useBookmarkStore.getState().listIdsByKey.get("e:1001") ?? [])]).toEqual(["two"]);
+  });
+
+  test("it stops being bookmarked when the last list lets it go", async () => {
+    await createList("one", "One");
+    await addEntryToList(db, 1001, "one");
+
+    await removeEntryFromList(db, 1001, "one");
+
+    expect(useBookmarkStore.getState().bookmarkedIds.has("e:1001")).toBe(false);
+    expect(useBookmarkStore.getState().listIdsByKey.has("e:1001")).toBe(false);
+  });
+});
+
+/**
+ * Two toggles of the same word in flight at once: the first to finish must
+ * not reconcile against a database that has not yet heard about the second.
+ */
+describe("two saves of the same word at once", () => {
+  test("the later one survives the earlier one's reconcile", async () => {
+    await createList("one", "One");
+    await createList("two", "Two");
+    await addEntryToList(db, 1001, "one");
+
+    // An insert that does not land until we say so.
+    let release!: () => void;
+    const landed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop !== "insert") return Reflect.get(target, prop, receiver) as unknown;
+        return (...args: unknown[]) => {
+          const builder = (target.insert as (...a: unknown[]) => unknown)(...args) as {
+            values: (...a: unknown[]) => { onConflictDoNothing: () => Promise<unknown> };
+          };
+          return {
+            values: (...rows: unknown[]) => ({
+              onConflictDoNothing: async () => {
+                await landed;
+                return builder.values(...rows).onConflictDoNothing();
+              },
+            }),
+          };
+        };
+      },
+    }) as UserDrizzle;
+
+    // What the button would show, every time the store moves.
+    const shown: boolean[] = [];
+    const unsubscribe = useBookmarkStore.subscribe((state) =>
+      shown.push(state.bookmarkedIds.has("e:1001")),
+    );
+
+    const adding = addEntryToList(held, 1001, "two");
+    await removeEntryFromList(db, 1001, "one");
+    release();
+    await adding;
+    unsubscribe();
+
+    expect(useBookmarkStore.getState().bookmarkedIds.has("e:1001")).toBe(true);
+    expect([...(useBookmarkStore.getState().listIdsByKey.get("e:1001") ?? [])]).toEqual(["two"]);
+    // And it never blinked off on the way: the word was saved throughout.
+    expect(shown).not.toContain(false);
   });
 });

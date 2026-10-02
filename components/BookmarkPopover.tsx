@@ -77,29 +77,43 @@ export function BookmarkPopover({
     }
   }
 
+  /**
+   * The tick moves first and the write follows it.
+   *
+   * Saving is several statements against the user database, and this row is
+   * what the finger is on — waiting for them is what made it feel slow. If
+   * the write fails the tick goes back, and the error reaches the recovery UI
+   * through the database wrapper.
+   */
   async function toggleList(listId: string) {
     if (!drizzleDb) return;
+    const adding = !membershipMap.has(listId);
 
-    if (membershipMap.has(listId)) {
-      // Remove
-      if (isKanji) {
-        await removeKanjiFromList(drizzleDb, kanjiLiteral!, listId);
-      } else if (entryId != null) {
-        await removeEntryFromList(drizzleDb, entryId, listId);
+    setMembershipMap((prev) => {
+      const next = new Set(prev);
+      if (adding) next.add(listId);
+      else next.delete(listId);
+      return next;
+    });
+    onListToggled?.(listId, adding);
+
+    try {
+      if (adding) {
+        if (isKanji) await addKanjiToList(drizzleDb, kanjiLiteral!, listId);
+        else if (entryId != null) await addEntryToList(drizzleDb, entryId, listId);
+      } else {
+        if (isKanji) await removeKanjiFromList(drizzleDb, kanjiLiteral!, listId);
+        else if (entryId != null) await removeEntryFromList(drizzleDb, entryId, listId);
       }
-      const newMap = new Set(membershipMap);
-      newMap.delete(listId);
-      setMembershipMap(newMap);
-      onListToggled?.(listId, false);
-    } else {
-      // Add
-      if (isKanji) {
-        await addKanjiToList(drizzleDb, kanjiLiteral!, listId);
-      } else if (entryId != null) {
-        await addEntryToList(drizzleDb, entryId, listId);
-      }
-      setMembershipMap((prev) => new Set(prev).add(listId));
-      onListToggled?.(listId, true);
+    } catch (err) {
+      setMembershipMap((prev) => {
+        const next = new Set(prev);
+        if (adding) next.delete(listId);
+        else next.add(listId);
+        return next;
+      });
+      onListToggled?.(listId, !adding);
+      throw err;
     }
     markDirty();
   }

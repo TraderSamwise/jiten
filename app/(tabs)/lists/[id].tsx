@@ -464,13 +464,9 @@ export default function ListDetailScreen() {
       const literal = item.kanji.literal;
       await softDelete(userDb, "list_entries", "list_id = ? AND kanji_literal = ?", [id, literal]);
       await softDelete(userDb, "srs_cards", "list_id = ? AND kanji_literal = ?", [id, literal]);
-      const remaining = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM list_entries WHERE kanji_literal = ? AND deleted_at IS NULL",
-        [literal],
-      );
-      if (!remaining || remaining.count === 0) {
-        useBookmarkStore.getState().remove(`k:${literal}`);
-      }
+      // The store knows which lists hold it, so it decides whether this was
+      // the last one — no second count query on the way out.
+      useBookmarkStore.getState().remove(`k:${literal}`, id);
     } else {
       const entryId = item.entry.id;
       await softDelete(
@@ -485,13 +481,7 @@ export default function ListDetailScreen() {
         "list_id = ? AND entry_id = ? AND kanji_literal IS NULL",
         [id, entryId],
       );
-      const remaining = await userDb.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) as count FROM list_entries WHERE entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL",
-        [entryId],
-      );
-      if (!remaining || remaining.count === 0) {
-        useBookmarkStore.getState().remove(`e:${entryId}`);
-      }
+      useBookmarkStore.getState().remove(`e:${entryId}`, id);
     }
 
     // Update local state

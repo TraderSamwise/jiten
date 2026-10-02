@@ -1005,6 +1005,47 @@ because the page's segmentation reads 年の差 as the word. The 年 inside
 is how that run segments. The rule — the characters have to be a word HERE —
 is the one that was already decided; positions are what finally enforce it.
 
+### Saving a word shows it before it is written
+
+Bookmarking in the reader got slow when highlighting learned to read the
+page: every toggle re-ran the whole matcher, and the matcher is ~130ms per
+4,000 characters on a laptop with a synchronous dictionary. Measured where it
+goes: deinflecting every substring of the page is ~51ms and the four batched
+SQL passes ~47ms, and **none of it depends on what is bookmarked**.
+
+So the pass is split. `analyseHtmlForBookmarks` reads the page — what each
+stretch of characters could be, which entries those words belong to, and
+where the page says a word — and `matchAnalysedBookmarks` is the synchronous
+remainder that asks which of them are saved. The reader holds the analysis
+against the HTML it was taken from, so a toggle repaints without re-reading.
+A test counts the queries: zero after the first pass.
+
+That left the part the user was actually looking at. The button could not
+change until the write had landed — a MAX(position), two INSERTs, and on the
+way out two UPDATEs and a SELECT — so the stores now move first and an undo
+puts them back if the write throws. The same for the list popover's tick,
+which is the control that actually un-bookmarks.
+
+Two things that forced themselves out of hiding:
+
+- **The store had to learn which lists hold a key.** `remove` used to drop a
+  key outright and a separate COUNT decided whether it should; now
+  `listIdsByKey` is maintained on every add and remove, and a key stops being
+  bookmarked when the last list lets it go. That also closed a quieter bug:
+  the old COUNT spanned default and soft-deleted lists, which `load()`
+  excludes, so an entry in a default list stayed "bookmarked" until the next
+  hydrate silently flipped it off.
+- **Reconciling against the database is only safe when nothing else is in
+  flight.** Tap-remove from one list and tap-add to another, and the first
+  write's reconcile reads the database before the second's insert lands and
+  deletes a membership the user just asked for. A per-key in-flight count
+  skips it; the test watches every store transition and fails if the word
+  blinks off.
+
+The ~8,500-id version string the reader rebuilt on every toggle — sorted and
+joined, about 60KB — is now a 32-bit mix summed over the ids with the count in
+front, one walk and no array.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first

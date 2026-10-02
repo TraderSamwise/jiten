@@ -319,21 +319,50 @@ export interface BookmarkMatch {
 const noMatch = (): BookmarkMatch => ({ provenance: new Map(), placements: [] });
 
 /**
- * The matcher, with its reasoning. Everything else in this file is a view of
- * it — one implementation, so a tool that explains a highlight cannot drift
- * from the one that paints it.
+ * Everything about one piece of the page that does not depend on what is
+ * bookmarked: what each stretch of characters could be, which entries those
+ * words belong to, and where the page says a word.
+ *
+ * Working this out is nearly the whole cost of a match — deinflecting every
+ * substring of the page is ~50ms per 4,000 characters before a single row is
+ * read — and none of it changes when a bookmark is added or removed. Holding
+ * it is what lets the reader repaint on a toggle instead of re-reading the
+ * page.
  */
-export async function matchBookmarksInHtml(
+export interface BookmarkAnalysis {
+  wordRows: Map<string, { entryId: number; via: "kanji" | "kana" }[]>;
+  wordToSurfaces: Map<
+    string,
+    { surface: string; inflected: boolean; reasons: string[]; typeMask: number }[]
+  >;
+  entryTypeMasks: Map<number, number>;
+  commonEntryIds: Set<number>;
+  entryIdsWithKanji: Set<number>;
+  confirmed: Set<string>;
+  occurrences: Map<string, RunOccurrence[]>;
+}
+
+const emptyAnalysis = (): BookmarkAnalysis => ({
+  wordRows: new Map(),
+  wordToSurfaces: new Map(),
+  entryTypeMasks: new Map(),
+  commonEntryIds: new Set(),
+  entryIdsWithKanji: new Set(),
+  confirmed: new Set(),
+  occurrences: new Map(),
+});
+
+/**
+ * The matcher's reading of the page, before anything is known about what is
+ * saved. `matchAnalysedBookmarks` turns it into highlights.
+ */
+export async function analyseHtmlForBookmarks(
   dictDb: ReaderSqlDb,
   html: string,
-  bookmarks: ReaderBookmarkMembership | null | undefined,
-): Promise<BookmarkMatch> {
-  if (!bookmarks) return noMatch();
-
+): Promise<BookmarkAnalysis> {
   const runs = extractVisibleRuns(html);
   const candidates = [...extractBookmarkCandidateSurfaces(runs)];
-  if (candidates.length === 0) return noMatch();
-
+  if (candidates.length === 0) return emptyAnalysis();
   // A bookmark is nearly always saved from an inflected form, because that is
   // what the page says and what the tap resolved. Ask the dictionary about the
   // forms behind each candidate, then highlight the candidate as written.
@@ -437,22 +466,6 @@ export async function matchBookmarksInHtml(
     for (const row of rows) if (row.common) commonEntryIds.add(row.id);
   }
 
-  /**
-   * Are these characters already some OTHER common word, spelled exactly as
-   * they are?
-   *
-   * If they are, reading them instead as the kana spelling of a kanji word's
-   * inflection is the worse answer: だけ is the particle, not the imperative
-   * of 抱く, and いい is 良い, not the masu-stem of 結う. "Other" matters —
-   * ついている is its own entry written out in full, and the plain guard above
-   * has already taken the uninflected path away from it, so counting itself
-   * here would leave the word with no way to be painted at all.
-   */
-  const isOtherCommonWordAsWritten = (surface: string, entryId: number): boolean =>
-    (wordRows.get(surface) ?? []).some(
-      (row) => row.entryId !== entryId && commonEntryIds.has(row.entryId),
-    );
-
   // Which bookmarked entries the dictionary really writes in kanji. An entry
   // whose every kanji form is tagged rK or sK — rare, or search-only — is a
   // kana word with a historical spelling attached, and ひたすら is one: 只管,
@@ -483,6 +496,54 @@ export async function matchBookmarksInHtml(
   };
 
   const { confirmed, occurrences } = confirmRuns(runs, isWord);
+
+  return {
+    wordRows,
+    wordToSurfaces,
+    entryTypeMasks,
+    commonEntryIds,
+    entryIdsWithKanji,
+    confirmed,
+    occurrences,
+  };
+}
+
+/**
+ * The highlights, with their reasoning. Everything else in this file is a
+ * view of this — one implementation, so a tool that explains a highlight
+ * cannot drift from the one that paints it.
+ *
+ * Synchronous, and the cheap half: given the analysis, this is a walk over
+ * the words the page could hold, asking which of them are saved.
+ */
+export function matchAnalysedBookmarks(
+  analysis: BookmarkAnalysis,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
+): BookmarkMatch {
+  if (!bookmarks) return noMatch();
+  const {
+    wordRows,
+    wordToSurfaces,
+    entryTypeMasks,
+    commonEntryIds,
+    entryIdsWithKanji,
+    confirmed,
+    occurrences,
+  } = analysis;
+
+  /**
+   * Are these characters already some OTHER common word, spelled exactly as
+   * they are? If they are, reading them instead as the kana spelling of a
+   * kanji word's inflection is the worse answer: だけ is the particle, not
+   * the imperative of 抱く, and いい is 良い, not the masu-stem of 結う.
+   * "Other" matters — ついている is its own entry written out in full, and the
+   * plain guard below has already taken the uninflected path away from it, so
+   * counting itself here would leave the word with no way to be painted.
+   */
+  const isOtherCommonWordAsWritten = (surface: string, entryId: number): boolean =>
+    (wordRows.get(surface) ?? []).some(
+      (row) => row.entryId !== entryId && commonEntryIds.has(row.entryId),
+    );
 
   const provenance = new Map<string, BookmarkSurfaceProvenance[]>();
   const record = (surface: string, entry: BookmarkSurfaceProvenance) => {
@@ -518,6 +579,15 @@ export async function matchBookmarksInHtml(
   }
 
   return { provenance, placements: placeAccepted(occurrences, new Set(provenance.keys())) };
+}
+
+export async function matchBookmarksInHtml(
+  dictDb: ReaderSqlDb,
+  html: string,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
+): Promise<BookmarkMatch> {
+  if (!bookmarks) return noMatch();
+  return matchAnalysedBookmarks(await analyseHtmlForBookmarks(dictDb, html), bookmarks);
 }
 
 /**

@@ -41,6 +41,7 @@ import {
   requestReaderSentenceExplanation,
   type ReaderSentenceExplanationState,
 } from "@/lib/reader-explain";
+import { bookmarkSetVersion } from "@/lib/bookmark-set-version";
 import { useBookmarkStore } from "@/stores/bookmarks";
 import { useListsStore } from "@/stores/lists";
 import { readerHighlightEntryIds } from "@/lib/reader-highlight-lists";
@@ -497,7 +498,7 @@ export default function BookReaderScreen() {
       listIdsByKey,
       readerHighlightExcludedListIds,
     );
-    const version = [...entryIds].sort((a, b) => a - b).join(",");
+    const version = bookmarkSetVersion(entryIds);
     return {
       version,
       hasEntryId: (entryId) => entryIds.has(entryId),

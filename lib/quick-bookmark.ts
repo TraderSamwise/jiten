@@ -26,6 +26,58 @@ export function setLastQuickActionKanjiLiteral(literal: string | null) {
   lastQuickActionKanjiLiteral = literal;
 }
 
+/**
+ * Show the bookmark before writing it.
+ *
+ * The button and the reader's highlight both read the stores, and the write
+ * underneath is several statements — a MAX(position), two INSERTs, and on the
+ * way out two UPDATEs. Waiting for them is what made saving a word feel slow.
+ * So the stores move first and the returned undo puts them back if the write
+ * does not land; nothing here swallows the error.
+ */
+function showBookmarkNow(key: string, listId: string, added: boolean): () => void {
+  const lists = useListsStore.getState();
+  const before = lists.lists.find((list) => list.id === listId)?.entryCount;
+
+  const step = added ? 1 : -1;
+  if (before !== undefined) {
+    lists.updateList(listId, { entryCount: Math.max(0, before + step) });
+  }
+  if (added) useBookmarkStore.getState().add(key, listId);
+  else useBookmarkStore.getState().remove(key, listId);
+
+  return () => {
+    // Relative, not back to what it was: another save may have landed in
+    // between, and this one only ever moved the count by one.
+    const now = useListsStore.getState().lists.find((list) => list.id === listId)?.entryCount;
+    if (now !== undefined) {
+      useListsStore.getState().updateList(listId, { entryCount: Math.max(0, now - step) });
+    }
+    if (added) useBookmarkStore.getState().remove(key, listId);
+    else useBookmarkStore.getState().add(key, listId);
+  };
+}
+
+/**
+ * How many writes are in flight for each key.
+ *
+ * Reconciling against the database is only safe when nothing else is still
+ * moving: tap-remove from one list and tap-add to another, and the first
+ * write's reconcile would read the database before the second's insert
+ * landed and delete a membership the user had just asked for.
+ */
+const writesInFlight = new Map<string, number>();
+
+function beginWrite(key: string): void {
+  writesInFlight.set(key, (writesInFlight.get(key) ?? 0) + 1);
+}
+
+function endWrite(key: string): void {
+  const left = (writesInFlight.get(key) ?? 1) - 1;
+  if (left > 0) writesInFlight.set(key, left);
+  else writesInFlight.delete(key);
+}
+
 /** Next append position for a list (MAX(position) + 1, or 0 for an empty list). */
 async function nextListPosition(db: UserDrizzle, listId: string): Promise<number> {
   const [row] = await db
@@ -41,7 +93,26 @@ async function nextListPosition(db: UserDrizzle, listId: string): Promise<number
 
 export async function addEntryToList(db: UserDrizzle, entryId: number, listId: string) {
   const now = new Date().toISOString();
+  const key = `e:${entryId}`;
+  const undo = showBookmarkNow(key, listId, true);
+  beginWrite(key);
+  try {
+    await writeEntryToList(db, entryId, listId, now);
+  } catch (err) {
+    undo();
+    throw err;
+  } finally {
+    endWrite(key);
+  }
+  reconcileBookmark(key, await getEntryListIds(db, entryId));
+}
 
+async function writeEntryToList(
+  db: UserDrizzle,
+  entryId: number,
+  listId: string,
+  now: string,
+): Promise<void> {
   await db
     .insert(listEntries)
     .values({
@@ -76,14 +147,24 @@ export async function addEntryToList(db: UserDrizzle, entryId: number, listId: s
       updatedAt: now,
     })
     .onConflictDoNothing();
-
-  // Update stores
-  const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-  if (cur) useListsStore.getState().updateList(listId, { entryCount: (cur.entryCount ?? 0) + 1 });
-  useBookmarkStore.getState().add(`e:${entryId}`);
 }
 
 export async function removeEntryFromList(db: UserDrizzle, entryId: number, listId: string) {
+  const key = `e:${entryId}`;
+  const undo = showBookmarkNow(key, listId, false);
+  beginWrite(key);
+  try {
+    await unwriteEntryFromList(db, entryId, listId);
+  } catch (err) {
+    undo();
+    throw err;
+  } finally {
+    endWrite(key);
+  }
+  reconcileBookmark(key, await getEntryListIds(db, entryId));
+}
+
+async function unwriteEntryFromList(db: UserDrizzle, entryId: number, listId: string) {
   await db
     .update(listEntries)
     .set(withSoftDelete())
@@ -104,18 +185,20 @@ export async function removeEntryFromList(db: UserDrizzle, entryId: number, list
         isNull(srsCards.kanjiLiteral),
       ),
     );
+}
 
-  // Update list entry count
-  const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-  if (cur)
-    useListsStore
-      .getState()
-      .updateList(listId, { entryCount: Math.max(0, (cur.entryCount ?? 1) - 1) });
-
-  // Only remove from bookmark store if entry is no longer in any list
-  const remaining = await getEntryListIds(db, entryId);
-  if (remaining.length === 0) {
-    useBookmarkStore.getState().remove(`e:${entryId}`);
+/**
+ * Put the store's idea of which lists hold a key back onto the database's.
+ *
+ * Skipped while another write for the same key is still in flight, because
+ * the database cannot yet be telling the truth about it.
+ */
+function reconcileBookmark(key: string, listIds: readonly string[]): void {
+  if (writesInFlight.has(key)) return;
+  const held = useBookmarkStore.getState().listIdsByKey.get(key) ?? new Set<string>();
+  for (const listId of listIds) if (!held.has(listId)) useBookmarkStore.getState().add(key, listId);
+  for (const listId of held) {
+    if (!listIds.includes(listId)) useBookmarkStore.getState().remove(key, listId);
   }
 }
 
@@ -142,7 +225,26 @@ export async function getEntryListIds(db: UserDrizzle, entryId: number): Promise
 
 export async function addKanjiToList(db: UserDrizzle, kanjiLiteral: string, listId: string) {
   const now = new Date().toISOString();
+  const key = `k:${kanjiLiteral}`;
+  const undo = showBookmarkNow(key, listId, true);
+  beginWrite(key);
+  try {
+    await writeKanjiToList(db, kanjiLiteral, listId, now);
+  } catch (err) {
+    undo();
+    throw err;
+  } finally {
+    endWrite(key);
+  }
+  reconcileBookmark(key, await getKanjiListIds(db, kanjiLiteral));
+}
 
+async function writeKanjiToList(
+  db: UserDrizzle,
+  kanjiLiteral: string,
+  listId: string,
+  now: string,
+): Promise<void> {
   await db
     .insert(listEntries)
     .values({
@@ -179,14 +281,24 @@ export async function addKanjiToList(db: UserDrizzle, kanjiLiteral: string, list
       updatedAt: now,
     })
     .onConflictDoNothing();
-
-  // Update stores
-  const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-  if (cur) useListsStore.getState().updateList(listId, { entryCount: (cur.entryCount ?? 0) + 1 });
-  useBookmarkStore.getState().add(`k:${kanjiLiteral}`);
 }
 
 export async function removeKanjiFromList(db: UserDrizzle, kanjiLiteral: string, listId: string) {
+  const key = `k:${kanjiLiteral}`;
+  const undo = showBookmarkNow(key, listId, false);
+  beginWrite(key);
+  try {
+    await unwriteKanjiFromList(db, kanjiLiteral, listId);
+  } catch (err) {
+    undo();
+    throw err;
+  } finally {
+    endWrite(key);
+  }
+  reconcileBookmark(key, await getKanjiListIds(db, kanjiLiteral));
+}
+
+async function unwriteKanjiFromList(db: UserDrizzle, kanjiLiteral: string, listId: string) {
   await db
     .update(listEntries)
     .set(withSoftDelete())
@@ -195,19 +307,6 @@ export async function removeKanjiFromList(db: UserDrizzle, kanjiLiteral: string,
     .update(srsCards)
     .set(withSoftDelete())
     .where(and(eq(srsCards.kanjiLiteral, kanjiLiteral), eq(srsCards.listId, listId)));
-
-  // Update list entry count
-  const cur = useListsStore.getState().lists.find((l) => l.id === listId);
-  if (cur)
-    useListsStore
-      .getState()
-      .updateList(listId, { entryCount: Math.max(0, (cur.entryCount ?? 1) - 1) });
-
-  // Only remove from bookmark store if kanji is no longer in any list
-  const remaining = await getKanjiListIds(db, kanjiLiteral);
-  if (remaining.length === 0) {
-    useBookmarkStore.getState().remove(`k:${kanjiLiteral}`);
-  }
 }
 
 export async function getKanjiListIds(db: UserDrizzle, kanjiLiteral: string): Promise<string[]> {
