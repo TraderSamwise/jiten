@@ -3,6 +3,29 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import type { ReaderViewProps, ReaderViewRef } from "./types";
 
+/**
+ * Everything WebKit offers to put in the bar a long press raises.
+ *
+ * A second line of defence only: `suppressMenuItems` is a `canPerformAction:`
+ * filter over a fixed selector map, so it reaches Copy, Cut and Paste but not
+ * Look Up, Explain or Open in, which are menu elements rather than actions.
+ * `textInteractionEnabled` below is the one that should settle it.
+ */
+const SUPPRESSED_MENU_ITEMS = [
+  "cut",
+  "copy",
+  "paste",
+  "replace",
+  "bold",
+  "italic",
+  "underline",
+  "select",
+  "selectAll",
+  "translate",
+  "lookup",
+  "share",
+] as const;
+
 export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(
   ({ html, onMessage, onContentProcessTerminated }, ref) => {
     const webViewRef = useRef<WebView>(null);
@@ -36,6 +59,10 @@ export const ReaderView = forwardRef<ReaderViewRef, ReaderViewProps>(
         onMessage={handleMessage}
         onContentProcessDidTerminate={handleContentProcessDidTerminate}
         onRenderProcessGone={handleContentProcessDidTerminate}
+        // No selection for iOS to raise a bar over. A WKPreferences value, so
+        // `caretRangeFromPoint` and the reader's own selection are untouched.
+        textInteractionEnabled={false}
+        suppressMenuItems={[...SUPPRESSED_MENU_ITEMS]}
         scrollEnabled={false}
         bounces={false}
         showsHorizontalScrollIndicator={false}

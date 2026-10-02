@@ -107,6 +107,53 @@ which is a different entry and is not saved. Working as designed, and the
 general form of it — a painted span whose provenance entry is not the tap's top
 entry — is the coherence gap `paintedBookmarkSpans` was written to narrow.
 
+## The iOS callout — `0cfac0-18`
+
+Four things have now been tried, and the first two are written down so they
+are not tried again.
+
+- **23.22 — `user-select: none` always on `#content`.** Killed the bar and
+  broke two things: a tap found its word and showed no purple, except on words
+  carrying furigana, and the long press stopped finding its run at all. The
+  purple half points at `::highlight()`, because ruby is painted with a
+  `.highlight` CLASS instead and ruby kept working. The long-press half is
+  **not** explained by that, and is not explained by the caret either — the
+  tap uses the same `resolveCaretAt`, and the tap still found its word.
+  Neither half was ever proven.
+- **23.23 — the same rule behind a class the press turns on.** Tap, highlight
+  and long press came back; the bar did not go away. The class goes on at
+  `touchstart`, and WebKit has decided on its gesture before that runs — the
+  page's touch listeners are all `{ passive: true }`, so it could not have
+  refused the gesture even if it had been in time.
+- **Now — `textInteractionEnabled={false}`.** WebKit's own text interaction,
+  off at the preference: no selection, so no bar to raise over one. This is a
+  `WKPreferences` value rather than a style, so `caretRangeFromPoint` is
+  untouched — which is what 23.22 was approximating and getting wrong — and
+  the reader's selection is its own code and untouched with it.
+- **Also `suppressMenuItems`.** Second line of defence. It is a
+  `canPerformAction:` filter over a fixed selector map, so it reaches Copy,
+  Cut and Paste but not Look Up, Explain or Open in, which are menu elements
+  rather than actions. On its own it would not have been enough.
+
+**If the bar still comes, in order:**
+
+1. **`menuItems={[]}`.** Makes `canPerformAction:` refuse everything and
+   strips `UIMenuLookup` — but the library also installs its own long-press
+   recogniser when it is set, which presents an edit menu of its own, so this
+   is not the first thing to reach for.
+2. **A non-passive `touchstart` with `preventDefault()`.** The mechanical
+   reason 23.23 was too late. The risk is the synthetic `click` the reader's
+   tap depends on, so the tap has to be re-checked on the device.
+3. **Always-on `user-select: none`, with the caret fallback widened first.**
+   `resolveCaretAt` rescues an element container only for `.bookmarked-word`
+   and `ruby`; it would have to descend to the text node under the point.
+   Only then is 23.22's arrangement survivable, and only then is it worth
+   settling whether `::highlight()` really stops painting — which desktop
+   Safari can answer from this machine, since the bundle is a plain page.
+
+**Verification is Sam's device.** jsdom has no gesture recogniser. Ship one
+change at a time and ask.
+
 ## Order
 
 1. ~~**Positional spans**~~ (`0cfac0-15`, fixture case 37) — **done**. The
@@ -114,11 +161,10 @@ entry — is the coherence gap `paintedBookmarkSpans` was written to narrow.
    set. Written up in
    [reader-lookup-decisions.md](reader-lookup-decisions.md), "A bookmark is
    painted where it was confirmed".
-2. **The missing `とけ`** (`0cfac0-14`). One rule, measured against
-   `yarn check:tap-consistency`.
-3. **The iOS callout** (`0cfac0-18`). Unchanged from v1: invert the
-   suppression so the rule is on by default and lifted where the reader resolves
-   a caret or paints a highlight.
+2. ~~**The missing `とけ`**~~ (`0cfac0-14`) — **done**, with its cost pinned
+   as fixture case 42.
+3. **The iOS callout** (`0cfac0-18`) — `suppressMenuItems` shipped; the ladder
+   above is what to try if it is not enough.
 4. **The furigana name floor** (`0cfac0-16`, `0cfac0-10`). Unchanged from v1.
 
 `0cfac0-13` and `0cfac0-17` are answered rather than fixed, and both are pinned
