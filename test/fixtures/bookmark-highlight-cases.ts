@@ -60,8 +60,10 @@ export interface HighlightCase {
   /**
    * Expectations the shipping code does NOT meet yet. They run as `it.fails`,
    * so the suite is green while the bug stands AND goes red the moment the bug
-   * is fixed — which is the prompt to delete the entry. Names here are taken
-   * from `mustHighlight` and `mustNotHighlight`; a name appears in only one.
+   * is fixed — which is the prompt to delete the entry. A name here is taken
+   * from one of the expectation fields and marks every assertion about it;
+   * `<field>:<name>` marks only that field's, for a surface that is painted in
+   * the right place and the wrong one at once.
    */
   knownRed?: string[];
   note: string;
@@ -342,8 +344,9 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     bookmarks: [1423040 /* 着込む きこむ v5m */],
     mustHighlight: [],
     mustNotHighlight: ["きこんで"],
-    knownRed: ["きこんで"],
-    note: "Two bugs in one sentence, and only the first is about 敷き込む missing from the dictionary. 書きこんで on its own is a single token and paints nothing — but confirmation still ships a SET of surfaces rather than positions, so きこんで confirmed over by 敷きこんで is painted inside 書きこんで as well. That half stays wrong even if the dictionary gains 敷き込む; it is the positional-spans work.",
+    spanCounts: { きこんで: 1 },
+    knownRed: ["mustNotHighlight:きこんで"],
+    note: "Two bugs in one sentence, and only the first is about 敷き込む missing from the dictionary. 書きこんで on its own is a single token and paints nothing — but confirmation still ships a SET of surfaces rather than positions, so きこんで confirmed over by 敷きこんで is painted inside 書きこんで as well. That half is fixed: placements paint きこんで only where it was confirmed, so the count is 1 and the remaining span is the one inside 敷きこんで, which only the missing dictionary entry can take away.",
   },
   {
     id: "38",
@@ -367,8 +370,7 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     mustHighlight: [],
     mustNotHighlight: [],
     spanCounts: { つい: 1 },
-    knownRed: ["つい"],
-    note: "0cfac0-15, which is case 37 met a second time. The first つい is the adverb and is painted correctly; the second is the first half of について and is painted only because the matcher ships a SET of surfaces with no positions. Drop the first sentence and the second つい is not painted at all — which is why this needs a count and not a forbidden span.",
+    note: "0cfac0-15, which is case 37 met a second time. The first つい is the adverb and is painted correctly; the second was the first half of について and was painted only because the matcher shipped a SET of surfaces with no positions. Drop the first sentence and the second つい is not painted at all — which is why this needs a count and not a forbidden span. Fixed by placements.",
   },
   {
     id: "40",

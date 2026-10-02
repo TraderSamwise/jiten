@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bookmarksInsideSpan, paintedBookmarkSpans } from "./bookmarks";
+import { type BookmarkRunPlacements, bookmarksInsideSpan, paintedBookmarkSpans } from "./bookmarks";
 
 import { state } from "@tradersamwise/jiten-reader-webview/src/state";
 import {
@@ -18,14 +18,17 @@ import {
 } from "@tradersamwise/jiten-reader-webview/src/bookmarks";
 
 /** Paint with the device's painter and read back where the boxes landed. */
-function paintedByTheDevice(text: string, surfaces: string[]): { start: number; text: string }[] {
+function paintedByTheDevice(
+  text: string,
+  placements: BookmarkRunPlacements[],
+): { start: number; text: string }[] {
   const page = document.createElement("div");
   page.innerHTML = `<p>${text}</p>`;
   document.body.replaceChildren(page);
   state.pageEl = page;
   state.contentEl = page;
   resetBookmarkHighlightState();
-  setBookmarkHighlights({ version: `${Math.random()}`, surfaces });
+  setBookmarkHighlights({ version: `${Math.random()}`, runs: placements });
 
   const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
   const spans: { start: number; text: string }[] = [];
@@ -41,29 +44,61 @@ function paintedByTheDevice(text: string, surfaces: string[]): { start: number; 
   return spans;
 }
 
-const CASES: { text: string; surfaces: string[] }[] = [
-  // Longest first, so 助手席 wins over 助手 at the same position.
-  { text: "助手席に座る。", surfaces: ["助手", "助手席"] },
-  // Non-overlapping: once おい is taken, い is not available to start しい.
-  { text: "ネットでおいしい店を調べる。", surfaces: ["おい", "しい", "いし"] },
-  // A surface that only appears inside a longer one is never painted.
-  { text: "十数年にわたる結婚生活。", surfaces: ["数", "十数年", "わた"] },
-  // Repeats.
-  { text: "ここでもここでも。", surfaces: ["ここ", "でも"] },
-  // Nothing matches.
-  { text: "何も光らない。", surfaces: ["存在しない"] },
-  // The empty surface must not wedge the scan.
-  { text: "短い文。", surfaces: ["", "短い"] },
+const CASES: { name: string; text: string; placements: BookmarkRunPlacements[] }[] = [
+  {
+    name: "a span inside a run that starts further back",
+    text: "助手席に座る。",
+    placements: [{ run: "助手席に座る", spans: [[0, 3]] }],
+  },
+  {
+    name: "two spans in one run",
+    text: "ネットでおいしい店を調べる。",
+    placements: [
+      {
+        run: "ネットでおいしい店を調べる",
+        spans: [
+          [4, 2],
+          [9, 2],
+        ],
+      },
+    ],
+  },
+  {
+    name: "a run that is only part of the text",
+    text: "十数年にわたる、結婚生活。",
+    placements: [{ run: "結婚生活", spans: [[0, 2]] }],
+  },
+  {
+    name: "the same run twice",
+    text: "ここでも。ここでも。",
+    placements: [{ run: "ここでも", spans: [[0, 2]] }],
+  },
+  {
+    name: "a run the text does not contain",
+    text: "何も光らない。",
+    placements: [{ run: "存在しない", spans: [[0, 5]] }],
+  },
+  { name: "nothing placed", text: "短い文。", placements: [] },
+  {
+    name: "a span past the end of its run",
+    text: "短い文。",
+    placements: [{ run: "短い文", spans: [[1, 9]] }],
+  },
+  {
+    name: "a zero-length span",
+    text: "短い文。",
+    placements: [{ run: "短い文", spans: [[0, 0]] }],
+  },
 ];
 
 describe("paintedBookmarkSpans agrees with the webview painter", () => {
-  for (const { text, surfaces } of CASES) {
-    it(`${text} with [${surfaces.join(", ")}]`, () => {
-      const mine = paintedBookmarkSpans(text, surfaces).map((span) => ({
+  for (const { name, text, placements } of CASES) {
+    it(name, () => {
+      const mine = paintedBookmarkSpans(text, placements).map((span) => ({
         start: span.start,
         text: span.surface,
       }));
-      expect(mine).toEqual(paintedByTheDevice(text, surfaces));
+      expect(mine).toEqual(paintedByTheDevice(text, placements));
     });
   }
 });
@@ -74,22 +109,29 @@ describe("bookmarksInsideSpan", () => {
     ["流し", [{ entryId: 1552100, word: "流し", reasons: [], via: "kanji" as const }]],
   ]);
 
+  const placements: BookmarkRunPlacements[] = [{ run: "毎朝励み", spans: [[2, 2]] }];
+
   it("names the bookmarked word inside a tapped span", () => {
     // The page says 励み, the tap answers the noun 励み, the bookmark is 励む.
-    expect(bookmarksInsideSpan("毎朝励み、", 2, 4, provenance)).toEqual([
+    expect(bookmarksInsideSpan("毎朝励み、", 2, 4, provenance, placements)).toEqual([
       { surface: "励み", word: "励む", reasons: ["masu-stem"], entryIds: [1557390] },
     ]);
   });
 
   it("ignores a bookmark that falls outside the span", () => {
-    expect(bookmarksInsideSpan("毎朝励み、", 0, 2, provenance)).toEqual([]);
+    expect(bookmarksInsideSpan("毎朝励み、", 0, 2, provenance, placements)).toEqual([]);
   });
 
   it("ignores a bookmark the span only partly covers", () => {
-    expect(bookmarksInsideSpan("毎朝励み、", 0, 3, provenance)).toEqual([]);
+    expect(bookmarksInsideSpan("毎朝励み、", 0, 3, provenance, placements)).toEqual([]);
   });
 
   it("has nothing to say when nothing is bookmarked", () => {
-    expect(bookmarksInsideSpan("毎朝励み、", 0, 5, new Map())).toEqual([]);
+    expect(bookmarksInsideSpan("毎朝励み、", 0, 5, new Map(), placements)).toEqual([]);
+  });
+
+  /** The surface is bookmarked, but not painted at this place on the page. */
+  it("has nothing to say where nothing was placed", () => {
+    expect(bookmarksInsideSpan("毎朝励み、", 2, 4, provenance, [])).toEqual([]);
   });
 });

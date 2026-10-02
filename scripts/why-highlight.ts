@@ -24,8 +24,9 @@ import { JSDOM } from "jsdom";
 import { resolve } from "path";
 
 import {
+  type BookmarkRunPlacements,
   type BookmarkSurfaceProvenance,
-  explainBookmarkedWordSurfacesInHtml,
+  matchBookmarksInHtml,
 } from "../packages/japanese-reader/src/bookmarks";
 import {
   ANY_TYPE_MASK,
@@ -168,7 +169,7 @@ function isJapanese(ch: string): boolean {
  * Paint with the device's own painter. It needs a DOM, so the webview module
  * is imported only after jsdom has installed the globals it reads at load.
  */
-async function paintPage(html: string, surfaces: string[]): Promise<PageReport> {
+async function paintPage(html: string, placements: BookmarkRunPlacements[]): Promise<PageReport> {
   const dom = new JSDOM(`<body><div id="page">${html}</div></body>`);
   const globals = globalThis as Record<string, unknown>;
   globals.window = dom.window;
@@ -190,7 +191,7 @@ async function paintPage(html: string, surfaces: string[]): Promise<PageReport> 
   state.pageEl = page as unknown as HTMLElement;
   state.contentEl = page as unknown as HTMLElement;
   resetBookmarkHighlightState();
-  setBookmarkHighlights({ version: "instrument", surfaces });
+  setBookmarkHighlights({ version: "instrument", runs: placements });
 
   const walker = dom.window.document.createTreeWalker(page, dom.window.NodeFilter.SHOW_TEXT);
   let text = "";
@@ -262,11 +263,11 @@ async function reportPage(
   textPath: string,
 ): Promise<void> {
   const html = readPageText(textPath);
-  const provenance = await explainBookmarkedWordSurfacesInHtml(asReaderDb(db), html, {
+  const { provenance, placements } = await matchBookmarksInHtml(asReaderDb(db), html, {
     version: "instrument",
     hasEntryId: (entryId: number) => bookmarked.has(entryId),
   });
-  const report = await paintPage(html, [...provenance.keys()]);
+  const report = await paintPage(html, placements);
 
   const describeProvenance = (entries: BookmarkSurfaceProvenance[] | undefined): string[] =>
     (entries ?? []).map(

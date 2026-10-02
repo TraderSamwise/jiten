@@ -946,6 +946,65 @@ many characters fit on a page change with it; the slice cache key and the
 re-render snapshot carry the pins, or a pinned page keeps serving the reading it
 had; and a slice with a pin but nothing extractable still has to be painted.
 
+### A bookmark is painted where it was confirmed, not wherever its characters appear
+
+The matcher used to hand the painter a flat SET of surfaces, and the painter
+painted every occurrence of each. So a word confirmed in one place lit up in
+another: つい, confirmed as the adverb at the head of a sentence, was painted
+again inside について further along the same line; きこんで, confirmed inside
+敷きこんで because the dictionary has no 敷き込む, was painted inside 書きこんで
+as well. That was fixture case 37, named and left unbuilt since
+2026-10-01.
+
+The matcher now emits positions. `confirmRuns` records where each confirmable
+surface sits inside its run, `placeAccepted` keeps the ones the accept loop
+admitted — longest first at a shared start, so 助手席 still beats 助手 — and
+the painter paints those offsets and nothing else.
+
+**Positions are keyed by the run's text, not by a character index into the
+page.** The matcher scans an HTML string and the painter walks the DOM, and
+the two will not reliably count to the same number — one sees `&amp;amp;`, the
+other sees `&amp;`; one sees the chunk the reader prefetched, the other the
+part of it that is laid out. They do agree on what the characters ARE.
+`segmentRun` is a pure function of the run, so identical run text always
+segments identically and a lookup by text is exact wherever it succeeds.
+
+Two consequences had to be handled rather than hoped away:
+
+- **The tap's text window cannot be used to find a placement.** It is fifteen
+  characters back and twenty forward and it concatenates across paragraphs, so
+  the run it contains is clipped at both ends or fused with another. The
+  webview now reports the tapped run and the tap's offset within it
+  (`tappedRun`), and `bookmarksInsideSpan` takes run coordinates.
+- **The matcher's copy of the page has to be cut where the DOM is cut.** The
+  reader appended prefetched HTML to its copy while `replaceOffscreenContent`
+  deleted the DOM from the last laid-out character, so the paragraph at the
+  seam was a truncated prefix in the page and whole in the matcher — and an
+  exact lookup silently drops every highlight in it. `truncateHtmlAtVisibleChars`
+  makes the two the same string. Guessing instead — falling back to a
+  placement whose run merely STARTS with the one on the page — was written and
+  thrown away: a truncated 助手 prefix-matches an unrelated 助手を呼ぶ and
+  paints a span the matcher never placed, which is the bug this whole change
+  exists to remove.
+
+Measured over `test/corpus/bocchan.txt` against the proxy list
+(`yarn proxy:bookmarks` — the reader's own list is on the device):
+**11,074 → 7,078 painted characters, 29.7% → 19.0%**, 5,655 → 3,592 boxes. The
+accepted surface set is unchanged at 1,267; only where they are painted moved.
+Every one of the 328 "added" boxes is the surviving half of a box that lost its
+neighbour, and exactly **three characters** are newly painted, all three
+extensions of a span that was being cut short: 正直 → 正直に twice, and
+一つつい → 一つついて.
+
+`check:tap-consistency` unchanged at 98.0% / 128. `sweep:furigana` and
+`sweep:render` byte-identical.
+
+**One trade, named and accepted.** 年 in 八つという年の差 is no longer painted,
+because the page's segmentation reads 年の差 as the word. The 年 inside
+十数年にわたる still is, because 十数年 is not in the dictionary and 十数 + 年
+is how that run segments. The rule — the characters have to be a word HERE —
+is the one that was already decided; positions are what finally enforce it.
+
 ## Rejected
 
 ### Ranking a word's readings by frequency instead of taking JMdict's first

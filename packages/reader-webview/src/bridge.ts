@@ -140,7 +140,7 @@ export function setupMessageListener(): void {
         if (!msg.theme) return;
         applyTheme(msg.theme);
       } else if (msg.type === "setBookmarkHighlights") {
-        setBookmarkHighlights({ version: msg.version, surfaces: msg.surfaces });
+        setBookmarkHighlights({ version: msg.version, runs: msg.runs });
       } else if (msg.type === "copyToClipboard") {
         const text = msg.text as string;
         const ta = document.createElement("textarea");

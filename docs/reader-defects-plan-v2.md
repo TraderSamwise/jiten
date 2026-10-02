@@ -55,6 +55,7 @@ are comparable within it.
 | `yarn sweep:furigana --out <f>`                                     | 5,282 of 67,299 surfaces annotated |
 | `yarn sweep:render --out <f>`                                       | 100 chunk hashes                   |
 | `yarn why:highlight --list .cache/proxy-list.jiten --text <corpus>` | 1,267 surfaces, 5,655 boxes, 29.7% |
+| …after positional spans                                             | 1,267 surfaces, 3,592 boxes, 19.0% |
 | `yarn vitest run packages/japanese-reader/src/bookmarks`            | 96 tests                           |
 
 ### `0cfac0-14` とけ — reproduces
@@ -108,10 +109,11 @@ entry — is the coherence gap `paintedBookmarkSpans` was written to narrow.
 
 ## Order
 
-1. **Positional spans** (`0cfac0-15`, fixture case 37). The matcher stops
-   handing the painter a bare set and hands it offsets within each visible run.
-   This is the one piece of v1's plan that survived measurement unchanged, and
-   it is now reproducible rather than inferred.
+1. ~~**Positional spans**~~ (`0cfac0-15`, fixture case 37) — **done**. The
+   matcher hands the painter offsets within each visible run instead of a bare
+   set. Written up in
+   [reader-lookup-decisions.md](reader-lookup-decisions.md), "A bookmark is
+   painted where it was confirmed".
 2. **The missing `とけ`** (`0cfac0-14`). One rule, measured against
    `yarn check:tap-consistency`.
 3. **The iOS callout** (`0cfac0-18`). Unchanged from v1: invert the

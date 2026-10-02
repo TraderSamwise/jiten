@@ -3,9 +3,10 @@ export {
   applyBookmarkHighlightsToHtml,
   applyResolvedBookmarkHighlightsToHtml,
   explainBookmarkedWordSurfacesInHtml,
+  matchBookmarksInHtml,
   resolveBookmarkedWordSurfacesInHtml,
 } from "./bookmarks";
-export type { BookmarkSurfaceProvenance } from "./bookmarks";
+export type { BookmarkMatch, BookmarkRunPlacements, BookmarkSurfaceProvenance } from "./bookmarks";
 export {
   applyFuriganaToHtml,
   buildFuriganaKanjiSet,

@@ -163,8 +163,16 @@ describeWithDb("useJapaneseReader tap lookup", () => {
     );
     await waitFor(() => expect(result.current.readerViewProps).not.toBeNull());
 
+    // The webview sends the tapped RUN alongside its clipped text window,
+    // because a placement is looked up by the run it belongs to.
     await result.current.readerViewProps!.onMessage(
-      JSON.stringify({ type: "tap", text: bookmarkPage, tapOffset: bookmarkPage.indexOf("励") }),
+      JSON.stringify({
+        type: "tap",
+        text: bookmarkPage,
+        tapOffset: bookmarkPage.indexOf("励"),
+        run: "毎朝励み",
+        runOffset: 2,
+      }),
     );
 
     await waitFor(() => expect(result.current.lookupResults.length).toBeGreaterThan(0));

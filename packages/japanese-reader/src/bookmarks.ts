@@ -16,47 +16,14 @@ function isJapaneseTextChar(ch: string): boolean {
   );
 }
 
-function getVisibleCharsSkippingRt(html: string, start: number, maxChars: number): string[] {
-  const chars: string[] = [];
-  let i = start;
-  let rtDepth = 0;
-
-  while (i < html.length && chars.length < maxChars) {
-    const ch = html[i];
-    if (ch === "<") {
-      if (html.startsWith("</p>", i) || html.startsWith("</div>", i)) break;
-      if (html.startsWith("<rt>", i) || html.startsWith("<rt ", i)) {
-        const close = html.indexOf(">", i);
-        i = close >= 0 ? close + 1 : i + 1;
-        rtDepth++;
-        continue;
-      }
-      if (html.startsWith("</rt>", i)) {
-        i += 5;
-        rtDepth = Math.max(0, rtDepth - 1);
-        continue;
-      }
-      const close = html.indexOf(">", i);
-      i = close >= 0 ? close + 1 : i + 1;
-      continue;
-    }
-    if (rtDepth > 0) {
-      i++;
-      continue;
-    }
-    if (ch === "&") {
-      const semi = html.indexOf(";", i);
-      if (semi >= 0 && semi - i <= 8) {
-        chars.push(html.slice(i, semi + 1));
-        i = semi + 1;
-        continue;
-      }
-    }
-    chars.push(ch);
-    i++;
-  }
-
-  return chars;
+/**
+ * One run of visible Japanese characters, and where each of them starts in
+ * the HTML. The indices are what lets a placement be rendered back into the
+ * markup it came from.
+ */
+interface VisibleRun {
+  chars: string[];
+  at: number[];
 }
 
 /**
@@ -64,17 +31,20 @@ function getVisibleCharsSkippingRt(html: string, start: number, maxChars: number
  *
  * A run stops at a non-Japanese character and at the end of a block, because
  * no word crosses either. `<rt>` is skipped — furigana is not text on the
- * page — and an entity counts as the one character it renders as.
+ * page — and an entity ends a run, because the character it renders as is not
+ * one this scanner can see.
  */
-function extractVisibleRuns(html: string): string[][] {
-  const runs: string[][] = [];
+function extractVisibleRuns(html: string): VisibleRun[] {
+  const runs: VisibleRun[] = [];
   let run: string[] = [];
+  let at: number[] = [];
   let rtDepth = 0;
   let i = 0;
 
   const endRun = () => {
-    if (run.length > 0) runs.push(run);
+    if (run.length > 0) runs.push({ chars: run, at });
     run = [];
+    at = [];
   };
 
   while (i < html.length) {
@@ -114,6 +84,7 @@ function extractVisibleRuns(html: string): string[][] {
       continue;
     }
     run.push(ch);
+    at.push(i);
     i++;
   }
   endRun();
@@ -121,12 +92,12 @@ function extractVisibleRuns(html: string): string[][] {
   return runs;
 }
 
-function extractBookmarkCandidateSurfaces(runs: string[][]): Set<string> {
+function extractBookmarkCandidateSurfaces(runs: VisibleRun[]): Set<string> {
   const surfaces = new Set<string>();
-  for (const run of runs) {
-    for (let i = 0; i < run.length; i++) {
-      const end = Math.min(run.length, i + MAX_SURFACE_LENGTH);
-      for (let j = i + 1; j <= end; j++) surfaces.add(run.slice(i, j).join(""));
+  for (const { chars } of runs) {
+    for (let i = 0; i < chars.length; i++) {
+      const end = Math.min(chars.length, i + MAX_SURFACE_LENGTH);
+      for (let j = i + 1; j <= end; j++) surfaces.add(chars.slice(i, j).join(""));
     }
   }
   return surfaces;
@@ -214,28 +185,50 @@ export function segmentRun(run: string[], isWord: (surface: string) => boolean):
   return lengths;
 }
 
+/** Where in its run a confirmable surface sits. Offsets are UTF-16 units. */
+interface RunOccurrence {
+  start: number;
+  length: number;
+  surface: string;
+}
+
 /**
- * The surfaces the page actually says, as opposed to the ones its characters
- * could spell.
+ * Where the page actually says a word, as opposed to where its characters
+ * could spell one.
  *
- * A bookmark is painted only if it is one of these. Three shapes count: the
- * word itself; the noun a suru verb was built from, because that is the
- * bookmark the reader saved (勧誘 in 勧誘される); and the leading half of an
- * all-kanji compound, because 岩盤浴 contains the word 岩盤 while 欲しかった
- * does not contain 欲し.
+ * A bookmark is painted only at one of these. Three shapes count: the word
+ * itself; the noun a suru verb was built from, because that is the bookmark
+ * the reader saved (勧誘 in 勧誘される); and the leading half of an all-kanji
+ * compound, because 岩盤浴 contains the word 岩盤 while 欲しかった does not
+ * contain 欲し.
+ *
+ * Keyed by the run's text rather than by a position on the page: `segmentRun`
+ * is a pure function of the run, so the same characters always segment the
+ * same way, and the painter can look its own runs up by text instead of
+ * trusting that two different scanners counted to the same number.
  */
-function confirmableSurfaces(runs: string[][], isWord: (surface: string) => boolean): Set<string> {
+function confirmRuns(
+  runs: VisibleRun[],
+  isWord: (surface: string) => boolean,
+): { confirmed: Set<string>; occurrences: Map<string, RunOccurrence[]> } {
   const confirmed = new Set<string>();
-  for (const run of runs) {
+  const occurrences = new Map<string, RunOccurrence[]>();
+  for (const { chars: run } of runs) {
+    const runText = run.join("");
+    if (occurrences.has(runText)) continue;
+    const found: RunOccurrence[] = [];
     let at = 0;
     for (const length of segmentRun(run, isWord)) {
       const token = run.slice(at, at + length).join("");
-      at += length;
       confirmed.add(token);
+      found.push({ start: at, length, surface: token });
 
       for (const { word, reasons } of deinflect(token)) {
         if (!reasons.includes(SURU_NOUN_REASON)) continue;
-        if (token.startsWith(word) && word.length < token.length) confirmed.add(word);
+        if (token.startsWith(word) && word.length < token.length) {
+          confirmed.add(word);
+          found.push({ start: at, length: word.length, surface: word });
+        }
       }
 
       // From two characters, never one: a single bookmarked kanji would
@@ -244,12 +237,53 @@ function confirmableSurfaces(runs: string[][], isWord: (surface: string) => bool
       if (length > 2 && [...token].every(isKanjiChar)) {
         for (let head = 2; head < length; head++) {
           const prefix = token.slice(0, head);
-          if (isWord(prefix)) confirmed.add(prefix);
+          if (!isWord(prefix)) continue;
+          confirmed.add(prefix);
+          found.push({ start: at, length: head, surface: prefix });
         }
       }
+
+      at += length;
     }
+    occurrences.set(runText, found);
   }
-  return confirmed;
+  return { confirmed, occurrences };
+}
+
+/** The spans to paint inside one visible run, disjoint and left to right. */
+export interface BookmarkRunPlacements {
+  run: string;
+  /** `[start, length]` pairs in UTF-16 units from the start of the run. */
+  spans: [number, number][];
+}
+
+/**
+ * The occurrences of the surfaces the accept loop admitted, as spans.
+ *
+ * Longest first where two start at the same character, which is what the
+ * painter used to do with a surface list sorted by length: 助手席 beats 助手.
+ * Filtering BEFORE this, not after, is what stops an unsaved 岩盤浴 from
+ * covering the 岩盤 that is saved.
+ */
+function placeAccepted(
+  occurrences: Map<string, RunOccurrence[]>,
+  accepted: ReadonlySet<string>,
+): BookmarkRunPlacements[] {
+  const placements: BookmarkRunPlacements[] = [];
+  for (const [run, found] of occurrences) {
+    const wanted = found
+      .filter((occurrence) => accepted.has(occurrence.surface))
+      .sort((a, b) => a.start - b.start || b.length - a.length);
+    const spans: [number, number][] = [];
+    let painted = 0;
+    for (const occurrence of wanted) {
+      if (occurrence.start < painted) continue;
+      spans.push([occurrence.start, occurrence.length]);
+      painted = occurrence.start + occurrence.length;
+    }
+    if (spans.length > 0) placements.push({ run, spans });
+  }
+  return placements;
 }
 
 /** Why one surface is highlighted: the bookmarked entry and the path to it. */
@@ -274,21 +308,31 @@ function entryAdmitsInflection(candidateMask: number, entryMask: number): boolea
   return candidateMask === ANY_TYPE_MASK || (candidateMask & entryMask) !== 0;
 }
 
+/** Everything one pass of the matcher found: what to paint, and why. */
+export interface BookmarkMatch {
+  /** Why each surface is painted — the bookmarked entry and the path to it. */
+  provenance: Map<string, BookmarkSurfaceProvenance[]>;
+  /** Where to paint, per visible run. */
+  placements: BookmarkRunPlacements[];
+}
+
+const noMatch = (): BookmarkMatch => ({ provenance: new Map(), placements: [] });
+
 /**
- * The matcher, with its reasoning. `resolveBookmarkedWordSurfacesInHtml` is
- * this function's keys — one implementation, so a tool that explains a
- * highlight cannot drift from the one that paints it.
+ * The matcher, with its reasoning. Everything else in this file is a view of
+ * it — one implementation, so a tool that explains a highlight cannot drift
+ * from the one that paints it.
  */
-export async function explainBookmarkedWordSurfacesInHtml(
+export async function matchBookmarksInHtml(
   dictDb: ReaderSqlDb,
   html: string,
   bookmarks: ReaderBookmarkMembership | null | undefined,
-): Promise<Map<string, BookmarkSurfaceProvenance[]>> {
-  if (!bookmarks) return new Map();
+): Promise<BookmarkMatch> {
+  if (!bookmarks) return noMatch();
 
   const runs = extractVisibleRuns(html);
   const candidates = [...extractBookmarkCandidateSurfaces(runs)];
-  if (candidates.length === 0) return new Map();
+  if (candidates.length === 0) return noMatch();
 
   // A bookmark is nearly always saved from an inflected form, because that is
   // what the page says and what the tap resolved. Ask the dictionary about the
@@ -438,7 +482,7 @@ export async function explainBookmarkedWordSurfacesInHtml(
     return false;
   };
 
-  const confirmed = confirmableSurfaces(runs, isWord);
+  const { confirmed, occurrences } = confirmRuns(runs, isWord);
 
   const provenance = new Map<string, BookmarkSurfaceProvenance[]>();
   const record = (surface: string, entry: BookmarkSurfaceProvenance) => {
@@ -473,7 +517,19 @@ export async function explainBookmarkedWordSurfacesInHtml(
     }
   }
 
-  return provenance;
+  return { provenance, placements: placeAccepted(occurrences, new Set(provenance.keys())) };
+}
+
+/**
+ * Why each surface is painted. The placements are what says WHERE, so this
+ * answers a tap, never a painter.
+ */
+export async function explainBookmarkedWordSurfacesInHtml(
+  dictDb: ReaderSqlDb,
+  html: string,
+  bookmarks: ReaderBookmarkMembership | null | undefined,
+): Promise<Map<string, BookmarkSurfaceProvenance[]>> {
+  return (await matchBookmarksInHtml(dictDb, html, bookmarks)).provenance;
 }
 
 export interface ContainedBookmark {
@@ -493,29 +549,54 @@ interface PaintedSpan {
 }
 
 /**
+ * The visible runs of one piece of plain text, with where each begins.
+ *
+ * The same rule `extractVisibleRuns` applies to HTML and the painter applies
+ * to the DOM: a run is a maximal stretch of Japanese characters, and nothing
+ * else can be part of a word.
+ */
+function textRuns(text: string): { run: string; start: number }[] {
+  const runs: { run: string; start: number }[] = [];
+  let at = 0;
+  while (at < text.length) {
+    if (!isJapaneseTextChar(text[at])) {
+      at++;
+      continue;
+    }
+    let end = at;
+    while (end < text.length && isJapaneseTextChar(text[end])) end++;
+    runs.push({ run: text.slice(at, end), start: at });
+    at = end;
+  }
+  return runs;
+}
+
+/**
  * Where the reader actually paints, over a piece of its visible text.
  *
  * This mirrors `findMatches` in `packages/reader-webview/src/bookmarks.ts` —
- * greedy, longest first, never overlapping — because that is what the device
- * does with the surface set. Asking "is this surface in the set" instead
- * would offer a bookmark on a tap where no box is drawn, which is the
- * incoherence this exists to remove. `bookmarks.painter-parity.test.ts` pins
- * the two together; the webview is standalone by design and shares no code.
+ * same runs, same offsets — because that is what the device does with the
+ * placements. `bookmarks.painter-parity.test.ts` pins the two together; the
+ * webview is standalone by design and shares no code.
  */
-export function paintedBookmarkSpans(text: string, surfaces: Iterable<string>): PaintedSpan[] {
-  const sorted = [...surfaces]
-    .filter((surface) => surface.length > 0)
-    .sort((a, b) => b.length - a.length);
+export function paintedBookmarkSpans(
+  text: string,
+  placements: Iterable<BookmarkRunPlacements>,
+): PaintedSpan[] {
+  const byRun = new Map<string, [number, number][]>();
+  for (const placement of placements) byRun.set(placement.run, placement.spans);
+  if (byRun.size === 0) return [];
+
   const spans: PaintedSpan[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const matched = sorted.find((surface) => text.startsWith(surface, i));
-    if (!matched) {
-      i++;
-      continue;
+  for (const { run, start } of textRuns(text)) {
+    for (const [at, length] of byRun.get(run) ?? []) {
+      if (length <= 0 || at + length > run.length) continue;
+      spans.push({
+        start: start + at,
+        end: start + at + length,
+        surface: run.slice(at, at + length),
+      });
     }
-    spans.push({ start: i, end: i + matched.length, surface: matched });
-    i += matched.length;
   }
   return spans;
 }
@@ -527,16 +608,22 @@ export function paintedBookmarkSpans(text: string, surfaces: Iterable<string>): 
  * smallest, so the two name different words on the same characters: the page
  * says 励み, the tap answers the noun 励み, and the bookmark is the verb 励む.
  * This is what lets the lookup offer the second one.
+ *
+ * The span is given in offsets within the tapped RUN, not within the tap's
+ * text window: the window is clipped to fifteen characters back and twenty
+ * forward and can fuse two paragraphs, and a placement cannot be found in
+ * either shape. `tappedRun` in the webview reports the run.
  */
 export function bookmarksInsideSpan(
-  text: string,
+  run: string,
   spanStart: number,
   spanEnd: number,
   provenance: ReadonlyMap<string, BookmarkSurfaceProvenance[]>,
+  placements: Iterable<BookmarkRunPlacements>,
 ): ContainedBookmark[] {
   if (provenance.size === 0 || spanEnd <= spanStart) return [];
   const contained: ContainedBookmark[] = [];
-  for (const span of paintedBookmarkSpans(text, provenance.keys())) {
+  for (const span of paintedBookmarkSpans(run, placements)) {
     if (span.start < spanStart || span.end > spanEnd) continue;
     // One surface can stand for several words — group by the word, because
     // that is what the lookup shows.
@@ -572,9 +659,9 @@ export async function applyResolvedBookmarkHighlightsToHtml(
   html: string,
   bookmarks: ReaderBookmarkMembership | null | undefined,
 ): Promise<string> {
-  const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, html, bookmarks);
-  if (surfaces.size === 0) return html;
-  return applyBookmarkHighlightsToHtml(html, surfaces);
+  const { placements } = await matchBookmarksInHtml(dictDb, html, bookmarks);
+  if (placements.length === 0) return html;
+  return applyBookmarkHighlightsToHtml(html, placements);
 }
 
 function wrapHighlightedChunk(chunk: string): string {
@@ -650,10 +737,34 @@ function renderHighlightedVisibleSegment(
   return { html: out, end: i };
 }
 
-export function applyBookmarkHighlightsToHtml(html: string, surfaces: Set<string>): string {
-  if (surfaces.size === 0) return html;
+/**
+ * Where in the markup each placement begins, and how many visible characters
+ * it covers. The runs carry their own HTML indices, so this is a lookup
+ * rather than a second scan that could disagree with the first.
+ */
+function placementStartsInHtml(
+  runs: VisibleRun[],
+  placements: Iterable<BookmarkRunPlacements>,
+): Map<number, number> {
+  const byRun = new Map<string, [number, number][]>();
+  for (const placement of placements) byRun.set(placement.run, placement.spans);
+  const starts = new Map<number, number>();
+  for (const { chars, at } of runs) {
+    for (const [start, length] of byRun.get(chars.join("")) ?? []) {
+      if (length <= 0 || start + length > chars.length) continue;
+      starts.set(at[start], length);
+    }
+  }
+  return starts;
+}
 
-  const sortedSurfaces = [...surfaces].sort((a, b) => [...b].length - [...a].length);
+export function applyBookmarkHighlightsToHtml(
+  html: string,
+  placements: Iterable<BookmarkRunPlacements>,
+): string {
+  const starts = placementStartsInHtml(extractVisibleRuns(html), placements);
+  if (starts.size === 0) return html;
+
   let out = "";
   let i = 0;
   let rtDepth = 0;
@@ -687,24 +798,14 @@ export function applyBookmarkHighlightsToHtml(html: string, surfaces: Set<string
       continue;
     }
 
-    let matched: string | null = null;
-    for (const surface of sortedSurfaces) {
-      const chars = [...surface];
-      const visible = getVisibleCharsSkippingRt(html, i, chars.length);
-      if (visible.length !== chars.length) continue;
-      if (visible.join("") === surface) {
-        matched = surface;
-        break;
-      }
-    }
-
-    if (!matched) {
+    const matched = starts.get(i);
+    if (matched === undefined) {
       out += ch;
       i++;
       continue;
     }
 
-    const rendered = renderHighlightedVisibleSegment(html, i, [...matched].length);
+    const rendered = renderHighlightedVisibleSegment(html, i, matched);
     out += rendered.html;
     i = rendered.end;
   }

@@ -21,6 +21,7 @@ import {
 import { setupTouchHandlers } from "./touch";
 import { setupMouseHandlers } from "./mouse";
 import { setupMessageListener } from "./bridge";
+import { tappedRun } from "./bookmarks";
 
 declare const window: Window & {
   __READER_CONFIG__: {
@@ -128,6 +129,9 @@ declare const window: Window & {
 
     const text = before + after;
     const tapOffset = before.length; // index of tapped char within combined window
+    // The whole run as well: the window above clips runs at both ends and
+    // fuses paragraphs, so a bookmark placement cannot be looked up in it.
+    const run = tappedRun(node, offset);
 
     // Instant heuristic highlight
     const wordStart = guessWordStart(text, tapOffset);
@@ -139,6 +143,8 @@ declare const window: Window & {
         type: "tap",
         text: text,
         tapOffset: tapOffset,
+        run: run ? run.run : null,
+        runOffset: run ? run.offset : null,
         x: e.clientX,
         y: e.clientY,
       }),

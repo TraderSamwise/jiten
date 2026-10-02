@@ -19,7 +19,7 @@ import {
   BOOKMARK_HIGHLIGHT_CASES,
   type HighlightCase,
 } from "../../../test/fixtures/bookmark-highlight-cases";
-import { resolveBookmarkedWordSurfacesInHtml } from "./bookmarks";
+import { matchBookmarksInHtml } from "./bookmarks";
 
 import { state } from "@tradersamwise/jiten-reader-webview/src/state";
 import {
@@ -109,13 +109,13 @@ async function paint(testCase: HighlightCase): Promise<ReturnType<typeof readPai
   state.contentEl = page;
 
   const bookmarked = new Set(testCase.bookmarks);
-  const surfaces = await resolveBookmarkedWordSurfacesInHtml(dictDb, html, {
+  const { placements } = await matchBookmarksInHtml(dictDb, html, {
     version: testCase.id,
     hasEntryId: (entryId) => bookmarked.has(entryId),
   });
 
   resetBookmarkHighlightState();
-  setBookmarkHighlights({ version: testCase.id, surfaces: [...surfaces] });
+  setBookmarkHighlights({ version: testCase.id, runs: placements });
   return readPaintedText(page);
 }
 
@@ -131,11 +131,14 @@ describe.skipIf(!hasDictDb)("bookmark highlighting, labelled cases", () => {
     // take the name out of `knownRed`, and it is why the fixture can be
     // committed before the repair.
     const red = new Set(testCase.knownRed ?? []);
-    const check = (name: string) => (red.has(name) ? it.fails : it);
+    // A name alone marks every assertion about it red. `kind:name` marks one,
+    // for a surface that is painted in the right place AND the wrong one.
+    const check = (kind: string, name: string) =>
+      red.has(name) || red.has(`${kind}:${name}`) ? it.fails : it;
 
     describe(`finding ${testCase.id} — ${testCase.text}`, () => {
       for (const expected of testCase.mustHighlight) {
-        check(expected)(`highlights ${expected}`, async () => {
+        check("mustHighlight", expected)(`highlights ${expected}`, async () => {
           // A word split by its own ruby is several spans with no gap, which
           // the reader shows as one highlight — so either shape counts here.
           const { spans, boxes } = await paint(testCase);
@@ -144,7 +147,7 @@ describe.skipIf(!hasDictDb)("bookmark highlighting, labelled cases", () => {
       }
 
       for (const expected of testCase.mustHaveNoSeam ?? []) {
-        check(expected)(`highlights ${expected} without a seam`, async () => {
+        check("mustHaveNoSeam", expected)(`highlights ${expected} without a seam`, async () => {
           const { parts } = await paint(testCase);
           // The consecutive spans that together spell the word.
           const from = parts.findIndex((p) => expected.startsWith(p.text));
@@ -170,14 +173,14 @@ describe.skipIf(!hasDictDb)("bookmark highlighting, labelled cases", () => {
       }
 
       for (const [expected, times] of Object.entries(testCase.spanCounts ?? {})) {
-        check(expected)(`paints ${expected} ${times}x`, async () => {
+        check("spanCounts", expected)(`paints ${expected} ${times}x`, async () => {
           const { spans } = await paint(testCase);
           expect(spans.filter((span) => span === expected)).toHaveLength(times);
         });
       }
 
       for (const forbidden of testCase.mustNotHighlight) {
-        check(forbidden)(`does not highlight ${forbidden}`, async () => {
+        check("mustNotHighlight", forbidden)(`does not highlight ${forbidden}`, async () => {
           const { spans, boxes } = await paint(testCase);
           expect(spans).not.toContain(forbidden);
           expect(boxes).not.toContain(forbidden);

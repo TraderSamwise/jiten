@@ -15,10 +15,12 @@ import {
   type TextModel,
 } from "@tradersamwise/jiten-reader-core";
 import type { JapaneseReaderBackend, ReaderBookSource } from "./backend";
+import { truncateHtmlAtVisibleChars } from "./html-slice";
 import {
+  type BookmarkRunPlacements,
   type BookmarkSurfaceProvenance,
   bookmarksInsideSpan,
-  explainBookmarkedWordSurfacesInHtml,
+  matchBookmarksInHtml,
 } from "./bookmarks";
 import {
   applyFuriganaToHtml,
@@ -453,6 +455,7 @@ export function useJapaneseReader({
    * the rest is what lets a tap name the bookmarked word inside its span.
    */
   const bookmarkProvenanceRef = useRef<Map<string, BookmarkSurfaceProvenance[]>>(new Map());
+  const bookmarkPlacementsRef = useRef<BookmarkRunPlacements[]>([]);
   /** Readings this book has been told to use, keyed on the run the page spells. */
   const furiganaPinsRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [furiganaPinsKey, setFuriganaPinsKey] = useState("");
@@ -532,17 +535,32 @@ export function useJapaneseReader({
    * It runs after the results are shown, so a tap never waits on it.
    */
   const appendBookmarkedWordsInSpan = useCallback(
-    async (placementId: number, text: string, tapOffset: number, results: LookupResult[]) => {
+    async (
+      placementId: number,
+      tapOffset: number,
+      results: LookupResult[],
+      run: string | null,
+      runOffset: number | null,
+    ) => {
       const provenance = bookmarkProvenanceRef.current;
       const top = results[0];
       if (!dictDb || provenance.size === 0 || !top) return;
+      // Without the run there is nowhere to look the placement up, and a tap
+      // that landed on no Japanese character has no bookmark under it anyway.
+      if (run === null || runOffset === null) return;
 
-      const start = top.matchStart ?? tapOffset;
+      // The tap reports offsets in its own clipped window; the placements are
+      // offsets in the run. The tapped character is the fixed point of both.
+      const start = (top.matchStart ?? tapOffset) - tapOffset + runOffset;
+      // The window fuses paragraphs, so a match can begin outside the run the
+      // tap landed in. Nothing painted there belongs to this word.
+      if (start < 0 || start + top.matchedText.length > run.length) return;
       const contained = bookmarksInsideSpan(
-        text,
+        run,
         start,
         start + top.matchedText.length,
         provenance,
+        bookmarkPlacementsRef.current,
       );
       if (contained.length === 0) return;
 
@@ -722,26 +740,28 @@ export function useJapaneseReader({
       // Dropped first: between a slice swapping and the matcher returning, a
       // tap would otherwise be answered from the slice that just left.
       bookmarkProvenanceRef.current = new Map();
+      bookmarkPlacementsRef.current = [];
       const enabled = readerBookmarkHighlightsRef.current;
       const membership = bookmarkMembershipRef.current;
       const version = enabled && membership ? membership.version : "";
 
       if (!enabled || !dictDb || !membership || !contentHtml) {
         readerViewRef.current?.postMessage(
-          JSON.stringify({ type: "setBookmarkHighlights", version, surfaces: [] }),
+          JSON.stringify({ type: "setBookmarkHighlights", version, runs: [] }),
         );
         return;
       }
 
-      const provenance = await explainBookmarkedWordSurfacesInHtml(dictDb, contentHtml, membership);
+      const { provenance, placements } = await matchBookmarksInHtml(
+        dictDb,
+        contentHtml,
+        membership,
+      );
       if (bookmarkHighlightRequestRef.current !== token) return;
       bookmarkProvenanceRef.current = provenance;
+      bookmarkPlacementsRef.current = placements;
       readerViewRef.current?.postMessage(
-        JSON.stringify({
-          type: "setBookmarkHighlights",
-          version,
-          surfaces: [...provenance.keys()],
-        }),
+        JSON.stringify({ type: "setBookmarkHighlights", version, runs: placements }),
       );
     },
     [dictDb],
@@ -1580,7 +1600,13 @@ export function useJapaneseReader({
                   : await smartLookup(text, dictDb!, extendedDb);
 
             setLookupResults(results);
-            appendBookmarkedWordsInSpan(placementId, text, tapOffset ?? 0, results).catch((err) => {
+            appendBookmarkedWordsInSpan(
+              placementId,
+              tapOffset ?? 0,
+              results,
+              (msg.run as string | null) ?? null,
+              (msg.runOffset as number | null) ?? null,
+            ).catch((err) => {
               console.error("[reader] could not offer the bookmarked words in a tap", err);
             });
             scheduleTapTooltipFallback({
@@ -1668,7 +1694,15 @@ export function useJapaneseReader({
               includeNames: readerNameFuriganaRef.current,
             });
             fwdLoadedEndRef.current = newEnd;
-            currentReaderContentHtmlRef.current += nextHtml;
+            // The WebView deletes everything after this character before it
+            // appends, so the matcher's copy is cut at the same place. Left
+            // whole it would describe a paragraph the page no longer shows,
+            // and a bookmark placement is keyed by the text of its run.
+            currentReaderContentHtmlRef.current =
+              truncateHtmlAtVisibleChars(
+                currentReaderContentHtmlRef.current,
+                msg.lastCharIndex + 1,
+              ) + nextHtml;
             readerViewRef.current?.postMessage(
               JSON.stringify({
                 type: "setNextContent",
