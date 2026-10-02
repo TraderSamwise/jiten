@@ -44,6 +44,15 @@ export interface HighlightCase {
    */
   mustHaveNoSeam?: string[];
   /**
+   * How many painted spans must carry exactly this text.
+   *
+   * The only way to say that a surface is right in one place and wrong in
+   * another. つい is the adverb at the head of a sentence AND the first half
+   * of について; both paint a span reading つい, so neither `mustHighlight`
+   * nor `mustNotHighlight` can tell them apart — only the count can.
+   */
+  spanCounts?: Record<string, number>;
+  /**
    * Spans the owner has not ruled on. Asserted neither way, listed so that a
    * later change to one of them is a deliberate decision and not a surprise.
    */
@@ -335,6 +344,47 @@ export const BOOKMARK_HIGHLIGHT_CASES: HighlightCase[] = [
     mustNotHighlight: ["きこんで"],
     knownRed: ["きこんで"],
     note: "Two bugs in one sentence, and only the first is about 敷き込む missing from the dictionary. 書きこんで on its own is a single token and paints nothing — but confirmation still ships a SET of surfaces rather than positions, so きこんで confirmed over by 敷きこんで is painted inside 書きこんで as well. That half stays wrong even if the dictionary gains 敷き込む; it is the positional-spans work.",
+  },
+  {
+    id: "38",
+    text: "そんなことはやめとけと言われた。",
+    bookmarks: [
+      1198890 /* 解く とく v5k */, 1198910 /* 解ける とける v1 */, 1546050 /* 溶く とく v5k */,
+      1546070 /* 溶ける とける v1 */,
+    ],
+    mustHighlight: [],
+    mustNotHighlight: ["とけ"],
+    knownRed: ["とけ"],
+    note: "0cfac0-14. やめとけ is やめておけ contracted, and `deinflect` models ～とく everywhere except here: いとけ, っとけ and んどけ carry the godan te-stems and a bare とく typed V1 carries the ichidan ones, but the bare とけ of that pair is missing. So やめとけ reaches no word, segmentRun reads やめ + とけ, and both halves are real tokens.",
+  },
+  {
+    id: "39",
+    text: "つい笑ってしまった。その件について話をした。",
+    bookmarks: [1008030 /* つい adv */],
+    // Not `mustHighlight`: つい IS painted, twice, and one of the two is
+    // right. Only the count separates them, and `knownRed` is keyed by name,
+    // so naming つい in both places would mark the passing one red as well.
+    mustHighlight: [],
+    mustNotHighlight: [],
+    spanCounts: { つい: 1 },
+    knownRed: ["つい"],
+    note: "0cfac0-15, which is case 37 met a second time. The first つい is the adverb and is painted correctly; the second is the first half of について and is painted only because the matcher ships a SET of surfaces with no positions. Drop the first sentence and the second つい is not painted at all — which is why this needs a count and not a forbidden span.",
+  },
+  {
+    id: "40",
+    text: "胃袋の飢えにも似た躯の渇きを、いつものごとくもてあましてはいた。",
+    bookmarks: [1315750 /* もて余す もてあます v5s */],
+    mustHighlight: ["もてあまして"],
+    mustNotHighlight: [],
+    note: "0cfac0-17, reported as not painting and painting. The kana guard refuses an UNinflected kana surface of an entry the dictionary writes in kanji; the page writes the te-form, so the guard never sees it. Kept as the regression net a change to that guard has to clear.",
+  },
+  {
+    id: "41",
+    text: "たまに行く。魂とタマの話もした。",
+    bookmarks: [1579170 /* 魂 たましい/たま */, 1240530 /* 玉 たま */],
+    mustHighlight: ["魂"],
+    mustNotHighlight: ["タマ"],
+    note: "0cfac0-13, which does not reproduce. 魂 has the kana rows たましい and たま, and a surface is painted as the page WRITES it, so a katakana タマ is never produced by a hiragana kana row — not even with たま confirmed earlier in the same run. What is painted is 魂, correctly. Kept as a net, not as a reproduction.",
   },
   {
     id: "24",

@@ -64,7 +64,8 @@
     "sweep:render": "tsx scripts/render-sweep.ts",
     "probe:names": "tsx scripts/probe-name-furigana.ts",
     "check:reading-order": "tsx scripts/reading-order-check.ts",
-    "why:highlight": "tsx scripts/why-highlight.ts"
+    "why:highlight": "tsx scripts/why-highlight.ts",
+    "proxy:bookmarks": "tsx scripts/make-proxy-bookmarks.ts"
   },
   "dependencies": {
     "@tradersamwise/jiten-reader-react-native": "0.1.0",

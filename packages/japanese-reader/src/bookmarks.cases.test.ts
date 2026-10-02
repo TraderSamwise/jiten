@@ -169,6 +169,13 @@ describe.skipIf(!hasDictDb)("bookmark highlighting, labelled cases", () => {
         });
       }
 
+      for (const [expected, times] of Object.entries(testCase.spanCounts ?? {})) {
+        check(expected)(`paints ${expected} ${times}x`, async () => {
+          const { spans } = await paint(testCase);
+          expect(spans.filter((span) => span === expected)).toHaveLength(times);
+        });
+      }
+
       for (const forbidden of testCase.mustNotHighlight) {
         check(forbidden)(`does not highlight ${forbidden}`, async () => {
           const { spans, boxes } = await paint(testCase);
