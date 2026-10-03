@@ -50,6 +50,40 @@ export async function loadUnitFrames(
   }));
 }
 
+/**
+ * Path frames that look like this one, most alike first — the distractors for a
+ * choice drill. Restricted to path frames because a distractor needs a keyword
+ * to show; `idx_ks_literal_rank` covers the lookup.
+ */
+export async function loadSimilarPathFrames(
+  dictDb: SQLite.SQLiteDatabase,
+  literal: string,
+  limit = 20,
+): Promise<CourseFrame[]> {
+  const rows = await dictDb.getAllAsync<{
+    literal: string;
+    heisig_index: number;
+    heisig_keyword: string | null;
+    heisig_lesson: number;
+  }>(
+    `SELECT k.literal, k.heisig_index, k.heisig_keyword, k.heisig_lesson
+       FROM kanji_similarity s
+       JOIN kanji_characters k ON k.literal = s.similar
+      WHERE s.literal = ?
+        AND k.heisig_lesson IS NOT NULL
+        AND k.heisig_index IS NOT NULL
+      ORDER BY s.rank
+      LIMIT ?`,
+    [literal, limit],
+  );
+  return rows.map((row) => ({
+    literal: row.literal,
+    index: row.heisig_index,
+    keyword: row.heisig_keyword ?? "",
+    lesson: row.heisig_lesson,
+  }));
+}
+
 /** The five frames of one node, in Heisig order. Empty when the node is past the unit. */
 export async function loadNodeFrames(
   dictDb: SQLite.SQLiteDatabase,

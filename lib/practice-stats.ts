@@ -695,6 +695,10 @@ export function practiceModeLabel(mode: string): string {
       return "Type Flash";
     case "voice":
       return "Voice";
+    case "rtk_recognise":
+      return "RTK Recognise";
+    case "rtk_identify":
+      return "RTK Identify";
     default:
       return mode;
   }

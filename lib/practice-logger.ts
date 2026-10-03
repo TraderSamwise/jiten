@@ -9,7 +9,11 @@ export type PracticeMode =
   | "typing_flashcard"
   | "voice"
   | "context_game"
-  | "fill_blank_game";
+  | "fill_blank_game"
+  // The RTK course's drills (app/(tabs)/learn): one mode per exercise, so the
+  // practice history separates recognising a frame from producing it.
+  | "rtk_recognise"
+  | "rtk_identify";
 
 interface PracticeEvent {
   entryId: number;

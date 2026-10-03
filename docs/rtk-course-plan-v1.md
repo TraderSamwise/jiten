@@ -223,18 +223,39 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 4 — Recognise and identify
 
+- `lib/rtk-distractors.ts` (pure): lookalikes in rank order, then the unit's nearest frames by
+  frame number, deduped on the literal, returning fewer rather than padding with something
+  arbitrary. `buildChoices` adds the answer and places it by seed, because a fixed position is
+  learnable in a session or two.
 - Measured: all 2,200 path frames have at least three `kanji_similarity` rows, but a distractor
-  also needs a keyword, so it must itself be a path frame — and on that basis 7 frames have
-  **no** usable lookalike and 43 have fewer than three. The same-unit top-up is therefore
-  load-bearing, not insurance (9.2 of a frame's top 20 qualify on average).
-- No two of the 2,200 keywords are the same (measured), so a 4-way choice can never be
-  ambiguous and the picker needs to dedupe on the literal only.
-- `lib/rtk-distractors.ts`: pick N distractors for a frame, similarity-first, unit-topped-up,
-  never equal to the answer, deterministic under a seed so a test can pin it.
-- `components/rtk/ChoiceDrill.tsx`: both directions, `practice_events` logging, `confusion_events`
-  on a wrong pick.
-- Gates: typecheck, lint, `yarn vitest run lib/rtk-distractors.test.ts` — including a frame with
-  zero similarity rows and a unit with fewer than four frames.
+  also needs a keyword, so it must itself be a path frame — and on that basis 7 frames have **no**
+  usable lookalike and 43 have fewer than three. The same-unit top-up is therefore load-bearing,
+  not insurance (9.2 of a frame's top 20 qualify on average).
+- No two of the 2,200 keywords are the same (measured), so a 4-way choice can never be ambiguous
+  and the picker dedupes on the literal only.
+- `db/rtk-frames.ts`'s `loadSimilarPathFrames` joins `kanji_similarity` to `kanji_characters` and
+  keeps only path frames; `idx_ks_literal_rank` covers the lookup.
+- `components/rtk/ChoiceDrill.tsx`: one component, both directions. A right answer is shown for a
+  moment and then moves on; a wrong one waits for a tap, because that is when the learner's own
+  story is worth reading. Two taps in one batch count once — a ref, not state. Below two options
+  there is no question, so the step is handed back and skipped.
+- **No new telemetry module.** `lib/practice-logger.ts` already has `logPracticeEvent` and
+  `recordConfusion` (which keeps the synced `confusion_pairs` as well as the local event); the
+  `PracticeMode` union and `practiceModeLabel` gain the two modes, or the stats screen would print
+  `rtk_recognise` verbatim. `recordConfusion` orders a pair by entry id and every kanji card's id
+  is the 0 sentinel, so the runner sorts the two literals first — otherwise (A,B) and (B,A) make
+  two rows.
+- The session id is the node plus a timestamp: the node id alone would collapse every pass over it,
+  on every day, into one pseudo-session.
+- `app/(tabs)/learn/node.test.tsx` tests the runner with the drills stubbed, because the queue is
+  what goes wrong there and the drills have their own tests. It immediately earned its keep:
+  it caught an answer advancing the queue twice (which made the pause and the reveal
+  unreachable in the app), a choice drill mounted before its options loaded (which skipped
+  every question in the node), and — found by the test, not by review — `onSeen` clearing the
+  result ref before the state updater read it, so **every miss counted as a hit**.
+- Gates: typecheck, lint, check-safe-inserts, and 201 tests. Prove-failed three ways: removing
+  the double-tap ref (which only fails when both taps land inside one `act()`, as a real
+  double-tap does), clearing the result ref before the updater, and the distractor count.
 
 ### Phase 5 — Assemble
 
@@ -263,8 +284,10 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 7 — Graduation, cloze, and the archive in context
 
-- Cracking a node creates `srs_cards` rows (`entry_id = 0`, `kanji_literal`, the existing kanji
-  front/back modes) so retention lands in `study.tsx`.
+- Cracking a node creates the cards through the function that already does it:
+  `addKanjiToList(drizzle, literal, listId)` in `lib/quick-bookmark.ts` writes the
+  `list_entries` row and an FSRS card from `createNewCard()`, with `entry_id = 0` and the
+  kanji literal. No new SQL, and retention lands in `study.tsx`.
 - **The one place the course touches a deck — and it already exists.**
   `lib/seed-default-lists.ts`'s `seedRtkLessonsIfNeeded` already seeds **56 default lists named
   `RTK Lesson 1..56`** (`default-rtk-lesson-<n>`), each holding that lesson's kanji in

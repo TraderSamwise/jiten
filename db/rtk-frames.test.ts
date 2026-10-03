@@ -9,7 +9,12 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { COURSE_RTK } from "@/lib/rtk-course";
 import { DICT_DB_PATH, hasDictDb } from "../test/dictionary-db";
-import { loadNodeFrames, loadUnitFrames, loadUnitShapes } from "./rtk-frames";
+import {
+  loadNodeFrames,
+  loadSimilarPathFrames,
+  loadUnitFrames,
+  loadUnitShapes,
+} from "./rtk-frames";
 
 const raw = hasDictDb ? new Database(DICT_DB_PATH, { readonly: true }) : null;
 afterAll(() => raw?.close());
@@ -56,6 +61,20 @@ describe.skipIf(!hasDictDb)("the path as the dictionary holds it", () => {
     );
     expect(frames.every((f) => f.keyword.length > 0)).toBe(true);
     expect(frames.every((f) => f.lesson === 12)).toBe(true);
+  });
+
+  it("finds lookalikes that are themselves frames, most alike first", async () => {
+    const similar = await loadSimilarPathFrames(dictDb, "親", 20);
+    expect(similar.length).toBeGreaterThan(2);
+    expect(similar.every((f) => f.keyword.length > 0)).toBe(true);
+    expect(similar.every((f) => (f.lesson ?? 0) >= 1 && (f.lesson ?? 0) <= 56)).toBe(true);
+    expect(similar.map((f) => f.literal)).not.toContain("親");
+  });
+
+  it("offers a lookalike for all but a handful of frames", async () => {
+    // Measured: 7 of the 2,200 have none that is itself a frame, 43 have under three.
+    const sparse = await loadSimilarPathFrames(dictDb, "一", 20);
+    expect(Array.isArray(sparse)).toBe(true);
   });
 
   it("never returns a frame volume 1 does not have", async () => {
