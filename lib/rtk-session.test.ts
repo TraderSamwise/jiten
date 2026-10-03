@@ -112,6 +112,15 @@ describe("skipping", () => {
     expect(sessionTotal(after)).toBe(20);
   });
 
+  it("leaves out a step the runner cannot render yet", () => {
+    // A phase that only implements Meet runs a coherent session whose progress
+    // bar counts five items, not twenty with fifteen pre-skipped.
+    const state = startSession(FRAMES, 0, ["meet"]);
+    expect(stepsOf(state)).toEqual(Array(5).fill("meet"));
+    expect(sessionTotal(state)).toBe(5);
+    expect(state.skipped).toHaveLength(0);
+  });
+
   it("leaves a session alone when the step is not in it", () => {
     const start = startSession(FRAMES, 0);
     expect(dropStep(start, "write")).toEqual(start);

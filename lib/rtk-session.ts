@@ -27,9 +27,17 @@ const REQUEUE_AFTER = 2;
  * Meet every frame first, then drill step by step rather than frame by frame:
  * the five frames of a node are each tested once before any is tested twice,
  * which is the only spacing a single session can offer.
+ *
+ * `only` narrows the pass to the steps the app can render — a step the runner
+ * never schedules must not count against the session's own progress.
  */
-export function startSession(frames: readonly CourseFrame[], crown: number): SessionState {
-  const steps = stepsForCrown(crown);
+export function startSession(
+  frames: readonly CourseFrame[],
+  crown: number,
+  only?: readonly NodeStep[],
+): SessionState {
+  const allowed = only ? new Set(only) : null;
+  const steps = stepsForCrown(crown).filter((step) => !allowed || allowed.has(step));
   const queue: SessionItem[] = [];
   for (const step of steps) {
     for (const frame of frames) queue.push({ frame, step });

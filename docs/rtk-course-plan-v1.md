@@ -27,6 +27,7 @@ the work is the delta, so this list is the part that must **not** be rebuilt.
 | Per-item telemetry                                                 | `practice_events` (`practice_mode`, `assisted`, `response_ms`), `practice_sessions` | —                                           |
 | Streak, daily activity, leeches, confusion pairs, card states      | `lib/practice-stats.ts` + `app/(tabs)/lists/stats.tsx`                              | —                                           |
 | Lesson retrieval                                                   | `getKanjiByLessonAsync` in `db/kanji-search.ts`                                     | —                                           |
+| 56 default `RTK Lesson N` lists, kanji in frame order              | `seedRtkLessonsIfNeeded` in `lib/seed-default-lists.ts`                             | 56 lists                                    |
 | Primitive lookup, stroke paths, synonyms, similar kanji            | `db/kanji-search.ts`                                                                | —                                           |
 | Story editor with ambient auto-linking                             | `components/MnemonicEditor.tsx`, `hooks/useMnemonicSuggestor`                       | —                                           |
 | Story rendering with tappable primitive glyphs                     | `components/MnemonicText.tsx`, `PrimitiveGlyph`, `PrimitiveChips`                   | —                                           |
@@ -181,28 +182,53 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 3 — The node runner and the Meet step
 
-- `lib/rtk-session.ts` (new, pure): the queue — the node's frames crossed with
-  `stepsForCrown`, the re-queue on a miss, and when the node is done. Phase 2 showed the
-  value: with the arithmetic in `lib/`, the screen needs no render test to be covered.
-- `app/(tabs)/learn/node.tsx` replaces the Phase 2 placeholder (which listed the node's frames
-  and recorded it seen) with the session container — frame queue, re-queue on miss, node
-  completion writing `crown` and `cracked_at`.
-- `components/rtk/MeetFrame.tsx`: kanji, `PrimitiveChips`, editable keyword, **Write it** /
-  **Generate** / **Skip**.
-- Generate calls the adopted `requestKanjiMnemonic` and prefills `MnemonicEditor`; Regenerate
-  re-rolls; Save writes `user_kanji_notes` and runs `updateAssociationsForNote`.
-- After the node's first Generate, prefetch the remaining four in the background. Nothing is
-  prefetched before the user has asked for one — `kanji_mnemonic` costs 1 against the shared `ai`
-  bucket, which defaults to 500 per user per day and 2,000 across all users
-  (`api/_shared/rate-limit.ts`), so one 142-frame unit prefetched ahead would be 28% of a personal
-  day in a single tap.
-- Gates: typecheck, lint, tests for choose-write / choose-generate / skip / regenerate / quota
-  error surfacing (never a silent failure).
+- `lib/rtk-session.ts` (pure): the queue — the node's frames crossed with `stepsForCrown`, the
+  re-queue on a miss two items later, and when the node is done. `startSession`'s `only` argument
+  narrows a pass to the steps the runner can render, so the progress count is never pre-inflated by
+  steps it will not ask. Phase 2 showed the value: with the arithmetic in `lib/`, the screen needs
+  no render test to be covered.
+- `lib/rtk-prompt.ts` (pure): what the generator is told, honouring
+  `kanjiMnemonicRequestSchema`'s caps (8 / 120 / 12×120) where they can be seen rather than
+  letting the server truncate a primitive out of the story silently. Its cap tests measure
+  **through the schema** — an earlier version asserted against its own constant and a prove-fail
+  caught the tautology.
+- `hooks/useMnemonicGeneration.ts`: adopts `requestKanjiMnemonic`. Its state is a flat record,
+  not a union, because **dropping the story while a regenerate is in flight unmounts the editor
+  holding it and takes the learner's tweaks with it** — so a regenerate keeps the story and the
+  attempt until a new story actually lands, and keeps them on a refusal too. The cache is keyed
+  on frame _and keyword_ (a story written for Heisig's keyword is not a story for the learner's
+  own), an in-flight map means a warm-ahead racing a tap is charged once, and the hook lives in
+  the **runner** rather than the step — inside the step it remounts per frame, which would make
+  the cache and the prefetch dead code.
+- `components/rtk/MeetFrame.tsx`: the kanji, `PrimitiveChips`, a tappable keyword, then
+  **Write it** / **Generate** / **Skip**. Both paths land in the same `MnemonicEditor`, which reads
+  `initialValue` once — so a regenerate remounts it by key, and that deliberately replaces the
+  draft. Nothing is generated before the learner asks, and Generate is disabled until the strokes
+  tier is present, because a prompt with no primitives produces a worthless story.
+- The keyword override writes through a new `saveNote(mnemonic, keyword)`: `saveMnemonic` and
+  `saveKeyword` each carry the other value from their render closure, so calling both in one
+  handler writes a stale one over the fresh one. It commits on blur as well as submit, and a
+  keyword equal to Heisig's is stored as none, the rule `KanjiDetail` already applies.
+- `app/(tabs)/learn/node.tsx`: the runner. `IMPLEMENTED_STEPS` names the steps it can render — one
+  per later phase — and a pass with none of them says so instead of landing instantly on a
+  summary. No crown is awarded while nothing is tested; `markNodeSeen` stays the only write, and
+  only once the node's frames are known to exist.
+- Gates: typecheck, lint, and 106 tests, including `hooks/useMnemonicGeneration.test.ts` —
+  the quota is charged before the model is called, so that one pins that the hook never
+  spends a unit the learner did not ask for: cached frames cost nothing, a regenerate counts
+  a fresh attempt, the warm-ahead stops at two and after one refusal, and a node the learner
+  has left warms nothing, and `components/rtk/MeetFrame.test.tsx`, which pins the editor's
+  identity across a regenerate. Prove-failed by raising each prompt cap, by raising the
+  prefetch cap, and by making the hook drop its story while loading (2 tests fail).
 
 ### Phase 4 — Recognise and identify
 
-- Measured: **all 2,200 path frames have at least three `kanji_similarity` rows**, none has
-  zero, so the similarity source alone can fill a 4-way choice; the unit top-up is insurance.
+- Measured: all 2,200 path frames have at least three `kanji_similarity` rows, but a distractor
+  also needs a keyword, so it must itself be a path frame — and on that basis 7 frames have
+  **no** usable lookalike and 43 have fewer than three. The same-unit top-up is therefore
+  load-bearing, not insurance (9.2 of a frame's top 20 qualify on average).
+- No two of the 2,200 keywords are the same (measured), so a 4-way choice can never be
+  ambiguous and the picker needs to dedupe on the literal only.
 - `lib/rtk-distractors.ts`: pick N distractors for a frame, similarity-first, unit-topped-up,
   never equal to the answer, deterministic under a seed so a test can pin it.
 - `components/rtk/ChoiceDrill.tsx`: both directions, `practice_events` logging, `confusion_events`
@@ -215,6 +241,8 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - Measured: 2,194 of the 2,200 path frames have a decomposition (2.19 components on average,
   8 at most); 隙 匕 喩 嗅 惧 箋 have none and 170 more have a single component, so the drill is
   skipped below two components rather than asking the learner to assemble one piece.
+- The decoy pool is measured: 869 distinct components carry a keyword (244 of them RTK's
+  invented primitives), so decoys come from the whole pool rather than the unit.
 - `components/rtk/AssembleDrill.tsx`: tap the primitives in `position` order, decoys drawn from
   other frames' primitives, rendered with `PrimitiveGlyph` so invented primitives show their
   substitute glyph and keyword.
@@ -237,13 +265,13 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 - Cracking a node creates `srs_cards` rows (`entry_id = 0`, `kanji_literal`, the existing kanji
   front/back modes) so retention lands in `study.tsx`.
-- **The one place the course touches a deck.** `study.tsx` is only ever entered as
-  `/lists/study?listId=…` — even `SmartReviewModal` builds an ephemeral list rather than studying
-  list-less cards — so graduated frames need a list to live in. They get exactly one, auto-seeded
-  like the JLPT lists: `makeDefaultListId("RTK")` → `default-rtk`, `is_default = 1`. The user never
-  curates it. The list shell does not sync (`MUTABLE_TABLES`' `lists` pushFilter excludes
-  `is_default = 1`) and is re-seeded deterministically per device; the `srs_cards` in it do sync,
-  so scheduling state crosses devices. Same posture as `JLPT N5 Kanji`.
+- **The one place the course touches a deck — and it already exists.**
+  `lib/seed-default-lists.ts`'s `seedRtkLessonsIfNeeded` already seeds **56 default lists named
+  `RTK Lesson 1..56`** (`default-rtk-lesson-<n>`), each holding that lesson's kanji in
+  `heisig_index` order. So graduation does not invent a list: a cracked node writes `srs_cards`
+  rows against `default-rtk-lesson-<unit>`, whose `list_entries` already name the frame. The list
+  shell does not sync (`lists`' pushFilter excludes `is_default = 1`) and is re-seeded
+  deterministically per device; the cards in it do sync, so scheduling state crosses devices.
 - `components/rtk/ClozeDrill.tsx`: the saved story with the keyword blanked, typed answer accepted
   through `keyword_synonyms` and `canonicalStem`.
 - `lib/api-contract.ts` + `server/routes/kanjiMnemonic.ts`: extend the request with the user's

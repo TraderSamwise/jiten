@@ -16,6 +16,9 @@ export function useKanjiMnemonic(literal: string) {
   const { markDirty } = useSync();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [keyword, setKeyword] = useState<string | null>(null);
+  // Until this is true, `mnemonic` being null means "not read yet", not "none" —
+  // and a caller that writes both fields would erase a story it never saw.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!userDb || !literal) return;
@@ -28,6 +31,7 @@ export function useKanjiMnemonic(literal: string) {
       .then((row: KanjiNotesRow | null) => {
         setMnemonic(row?.mnemonic || null);
         setKeyword(row?.keyword ?? null);
+        setLoaded(true);
       })
       .catch(() => {
         setMnemonic(null);
@@ -76,5 +80,21 @@ export function useKanjiMnemonic(literal: string) {
     [upsertOrDelete, mnemonic],
   );
 
-  return { mnemonic, keyword, saveMnemonic, saveKeyword };
+  /**
+   * Both at once. saveMnemonic and saveKeyword each carry the other value from
+   * their render closure, so calling them in one handler writes a stale one
+   * over the fresh one — a caller that changes both needs this instead.
+   */
+  const saveNote = useCallback(
+    async (text: string, keywordText: string) => {
+      const newMnemonic = text.trim() || null;
+      const newKeyword = keywordText.trim() || null;
+      setMnemonic(newMnemonic);
+      setKeyword(newKeyword);
+      await upsertOrDelete(newMnemonic, newKeyword);
+    },
+    [upsertOrDelete],
+  );
+
+  return { mnemonic, keyword, loaded, saveMnemonic, saveKeyword, saveNote };
 }
