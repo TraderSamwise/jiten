@@ -12,6 +12,7 @@ export default function LearnLayout() {
   return (
     <Stack screenOptions={{ headerLeft: backButton, headerStyle: webHeaderStyle }}>
       <Stack.Screen name="index" options={{ title: "Learn", headerLeft: () => null }} />
+      <Stack.Screen name="rtk" options={{ title: "Remembering the Kanji" }} />
       <Stack.Screen name="node" options={{ title: "Node", headerShown: false }} />
       <Stack.Screen name="word/[id]" options={{ title: "Word" }} />
       <Stack.Screen name="kanji/[literal]" options={{ title: "Kanji" }} />

@@ -1,156 +1,72 @@
-import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
-import { FlashList } from "@shopify/flash-list";
-import { useFocusEffect, useRouter } from "expo-router";
+import React from "react";
+import { Pressable, ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
 
-import { Card } from "@/components/ui/card";
+import { PressableCard } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useDatabase } from "@/db/provider";
-import { useUserDb } from "@/db/user-provider";
-import { loadUnitShapes } from "@/db/rtk-frames";
-import { crownsFromProgress, loadCourseProgress } from "@/db/rtk-progress";
-import { pathSummary, type PathSummary, type UnitShape } from "@/lib/rtk-course";
+import { ChevronRight, GraduationCap } from "@/lib/icons";
+import { useRtkPath } from "@/hooks/useRtkPath";
 
 /**
- * The 56 unit shapes never change, so the path pays for them once per database.
- * Keyed by the db object, so reopening it re-reads; and the mini and full
- * dictionaries agree on the shape anyway (both 56 units, 2,200 frames).
+ * The Learn tab's root. Today it holds one course; it is a hub rather than the
+ * RTK path itself so a second course is another card, not a rewrite.
  */
-const shapeCache = new WeakMap<object, UnitShape[]>();
-
-async function unitShapes(dictDb: Parameters<typeof loadUnitShapes>[0]): Promise<UnitShape[]> {
-  const cached = shapeCache.get(dictDb);
-  if (cached) return cached;
-  const shapes = await loadUnitShapes(dictDb);
-  shapeCache.set(dictDb, shapes);
-  return shapes;
-}
-
-const DOT_BY_CROWN = [
-  "bg-secondary border border-border",
-  "bg-primary/30",
-  "bg-primary/60",
-  "bg-primary",
-] as const;
-
-function NodeDot({ crown, onPress }: { crown: number; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={4}
-      className={`h-6 w-6 rounded-md ${DOT_BY_CROWN[crown] ?? DOT_BY_CROWN[0]}`}
-    />
-  );
-}
-
-export default function LearnPath() {
-  const { dictDb } = useDatabase();
-  const userDb = useUserDb();
+export default function LearnHome() {
   const router = useRouter();
-  const [summary, setSummary] = useState<PathSummary | null>(null);
-
-  const refresh = useCallback(
-    async (stillMounted: () => boolean = () => true) => {
-      if (!dictDb || !userDb) return;
-      const [shapes, progress] = await Promise.all([
-        unitShapes(dictDb),
-        loadCourseProgress(userDb),
-      ]);
-      // Filter before the summary, so the dots and Continue cannot disagree
-      // about which units exist.
-      const real = shapes.filter((shape) => shape.nodeCount > 0);
-      if (stillMounted()) setSummary(pathSummary(real, crownsFromProgress(progress)));
-    },
-    [dictDb, userDb],
-  );
-
-  // The only load: a focus effect already runs on first focus, and crowns earned
-  // inside a node have to show on the path the moment you come back.
-  useFocusEffect(
-    useCallback(() => {
-      let current = true;
-      refresh(() => current).catch((err) => console.warn("[learn] could not load the path", err));
-      return () => {
-        current = false;
-      };
-    }, [refresh]),
-  );
+  const { summary, unavailable } = useRtkPath();
 
   // Cast because expo-router's generated route union (.expo/types) only learns
   // about /learn once a dev server has regenerated it.
-  const openNode = (unit: number, node: number) =>
-    router.push(`/learn/node?unit=${unit}&node=${node}` as never);
+  const go = (path: string) => router.push(path as never);
 
-  // A missing dictionary is not a slow one: say so rather than spin forever.
-  if (!dictDb || summary?.rows.length === 0) {
-    return (
-      <View className="flex-1 items-center justify-center p-6">
-        <Text className="text-base text-muted-foreground">
-          The course needs the dictionary to be downloaded.
-        </Text>
-      </View>
-    );
-  }
-
-  if (!summary) {
-    return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  const { next, rows: units } = summary;
+  const next = summary?.next ?? null;
+  const pct = summary && summary.possible > 0 ? (summary.earned / summary.possible) * 100 : 0;
 
   return (
-    <FlashList
-      data={units}
-      keyExtractor={(row) => String(row.unit)}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-      ListHeaderComponent={
-        <View>
-          <Text className="text-2xl font-semibold text-foreground">Remembering the Kanji</Text>
-          <Text className="mt-1 text-sm text-muted-foreground">
-            {summary.earned} of {summary.possible} crowns · {units.length} lessons
-          </Text>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <Text className="text-sm text-muted-foreground">Courses that build your deck as you go.</Text>
 
-          {next ? (
-            <Pressable
-              onPress={() => openNode(next.unit, next.node)}
-              className="mt-4 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
-            >
-              <Text className="text-base font-semibold text-primary-foreground">Continue</Text>
-              <Text className="text-xs text-primary-foreground/80">
-                Lesson {next.unit} · node {next.node + 1}
-              </Text>
-            </Pressable>
-          ) : (
-            <Card className="mt-4 p-4">
-              <Text className="text-base font-semibold text-foreground">
-                Every frame is crowned
-              </Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                All 2,200 frames of volume 1, drilled to production.
-              </Text>
-            </Card>
-          )}
-        </View>
-      }
-      renderItem={({ item: row }) => (
-        <Card className="mt-3 p-3">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-semibold text-foreground">Lesson {row.unit}</Text>
+      <PressableCard onPress={() => go("/learn/rtk")} className="mt-3 p-4">
+        <View className="flex-row items-center">
+          <GraduationCap size={22} className="text-primary" />
+          <View className="ml-3 flex-1">
+            <Text className="text-base font-semibold text-foreground">Remembering the Kanji</Text>
             <Text className="text-xs text-muted-foreground">
-              {row.earned}/{row.possible}
+              Heisig volume 1 · 56 lessons · five frames at a time
             </Text>
           </View>
-          <View className="mt-2 flex-row flex-wrap gap-1.5">
-            {row.crowns.map((crown, node) => (
-              <NodeDot key={node} crown={crown} onPress={() => openNode(row.unit, node)} />
-            ))}
+          <ChevronRight size={20} className="text-muted-foreground" />
+        </View>
+
+        {/* No summary yet means the first read is still in flight — the card
+            still says what the course is, so nothing has to be hidden. */}
+        {summary ? (
+          <View className="mt-3">
+            <View className="h-1.5 overflow-hidden rounded-full bg-secondary">
+              <View className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+            </View>
+            <Text className="mt-1.5 text-xs text-muted-foreground">
+              {summary.earned} of {summary.possible} crowns
+            </Text>
           </View>
-        </Card>
-      )}
-    />
+        ) : null}
+      </PressableCard>
+
+      {unavailable ? (
+        <Text className="mt-3 text-sm text-muted-foreground">
+          The course needs the dictionary to be downloaded.
+        </Text>
+      ) : next ? (
+        <Pressable
+          onPress={() => go(`/learn/node?unit=${next.unit}&node=${next.node}`)}
+          className="mt-3 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
+        >
+          <Text className="text-base font-semibold text-primary-foreground">Continue</Text>
+          <Text className="text-xs text-primary-foreground/80">
+            Lesson {next.unit} · node {next.node + 1}
+          </Text>
+        </Pressable>
+      ) : null}
+    </ScrollView>
   );
 }

@@ -304,7 +304,7 @@ export default function LearnNodeScreen() {
   const { unit, node } = useLocalSearchParams<{ unit?: string; node?: string }>();
   const { dictDb, strokesDb } = useDatabase();
   const userDb = useUserDb();
-  const goBack = useSafeGoBack("/learn");
+  const goBack = useSafeGoBack("/learn/rtk");
   const { markDirty } = useSync();
   // Held by the runner, not the step: the story cache and the node-ahead
   // prefetch have to outlive the frame that asked for the first story.
