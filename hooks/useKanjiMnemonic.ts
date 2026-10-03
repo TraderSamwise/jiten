@@ -16,6 +16,11 @@ export function useKanjiMnemonic(literal: string) {
   const { markDirty } = useSync();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [keyword, setKeyword] = useState<string | null>(null);
+  // Until this is true, `mnemonic` being null means "not read yet", not "none" —
+  // and a caller that writes both fields would erase a story it never saw.
+  const [loaded, setLoaded] = useState(false);
+  // The read failed, so `mnemonic` being null means "unknown", not "none".
+  const [readFailed, setReadFailed] = useState(false);
 
   useEffect(() => {
     if (!userDb || !literal) return;
@@ -28,10 +33,15 @@ export function useKanjiMnemonic(literal: string) {
       .then((row: KanjiNotesRow | null) => {
         setMnemonic(row?.mnemonic || null);
         setKeyword(row?.keyword ?? null);
+        setLoaded(true);
       })
       .catch(() => {
         setMnemonic(null);
         setKeyword(null);
+        // Loaded, but NOT read: a caller that waits for `loaded` can act, and a
+        // caller that would write the story back must not — it never saw it.
+        setLoaded(true);
+        setReadFailed(true);
       });
   }, [userDb, literal]);
 
@@ -76,5 +86,56 @@ export function useKanjiMnemonic(literal: string) {
     [upsertOrDelete, mnemonic],
   );
 
-  return { mnemonic, keyword, saveMnemonic, saveKeyword };
+  /**
+   * The keyword alone, touching no other column. The whole-row upsert cannot be
+   * used for this: when the note read failed, `mnemonic` is null because it is
+   * unknown, and writing that back erases the learner's story — or, if the
+   * keyword matches Heisig's, soft-deletes the row on every device.
+   */
+  const saveKeywordOnly = useCallback(
+    async (keywordText: string) => {
+      if (!userDb || !literal) return;
+      const k = keywordText.trim() || null;
+      const now = new Date().toISOString();
+      setKeyword(k);
+      await userDb.runAsync(
+        `INSERT INTO user_kanji_notes (literal, mnemonic, keyword, updated_at)
+         VALUES (?, '', ?, ?)
+         ON CONFLICT(literal) DO UPDATE SET
+           keyword = excluded.keyword,
+           updated_at = excluded.updated_at,
+           deleted_at = NULL`,
+        [literal, k, now],
+      );
+      markDirty();
+    },
+    [userDb, literal, markDirty],
+  );
+
+  /**
+   * Both at once. saveMnemonic and saveKeyword each carry the other value from
+   * their render closure, so calling them in one handler writes a stale one
+   * over the fresh one — a caller that changes both needs this instead.
+   */
+  const saveNote = useCallback(
+    async (text: string, keywordText: string) => {
+      const newMnemonic = text.trim() || null;
+      const newKeyword = keywordText.trim() || null;
+      setMnemonic(newMnemonic);
+      setKeyword(newKeyword);
+      await upsertOrDelete(newMnemonic, newKeyword);
+    },
+    [upsertOrDelete],
+  );
+
+  return {
+    mnemonic,
+    keyword,
+    loaded,
+    readFailed,
+    saveMnemonic,
+    saveKeyword,
+    saveKeywordOnly,
+    saveNote,
+  };
 }

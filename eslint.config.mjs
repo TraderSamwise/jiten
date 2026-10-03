@@ -8,6 +8,8 @@ export default tseslint.config(
       "node_modules/",
       ".expo/",
       ".vercel/",
+      // Gitignored scratch output: sweep results and one-off probe scripts.
+      ".cache/",
       "dist/",
       "packages/*/dist/",
       // Standalone Vite POC sub-project with its own tooling.

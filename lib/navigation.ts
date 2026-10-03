@@ -110,6 +110,7 @@ function useTabPrefix(): string {
   const pathname = usePathname();
   if (pathname.startsWith("/lists")) return "/lists";
   if (pathname.startsWith("/reader")) return "/reader";
+  if (pathname.startsWith("/learn")) return "/learn";
   return "/dictionary";
 }
 

@@ -55,10 +55,13 @@ export default function ImportArticleScreen() {
               {
                 name: "(tabs)",
                 state: {
-                  index: 2, // reader tab
+                  // The reader's position in this list, which TabRouter remaps
+                  // by route name — so a tab added elsewhere cannot move it.
+                  index: 3,
                   routes: [
                     { name: "dictionary" },
                     { name: "lists" },
+                    { name: "learn" },
                     {
                       name: "reader",
                       state: {

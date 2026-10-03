@@ -111,6 +111,7 @@ describe("defaultSettings", () => {
       flashcardButtonAnimation: true,
       dayResetHour: 3,
       smartReviewDays: 7,
+      readerHighlightExcludedListIds: [],
     });
   });
 

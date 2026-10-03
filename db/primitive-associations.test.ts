@@ -149,3 +149,12 @@ describe("updateAssociationsForNote", () => {
     expect(home.get("p51")).toBe(2); // both 宣 and 安 still counted
   });
 });
+
+describe("the markup's own tokens are not the learner's words", () => {
+  it("never learns `self` from {self}", () => {
+    // Every generated story contains it, and `self` is not a stop word — left
+    // in, it becomes the strongest association with every primitive.
+    expect(extractAssocWords("a {self} with a needle")).not.toContain("self");
+    expect(extractAssocWords("a {self} with a needle")).toContain("needl");
+  });
+});

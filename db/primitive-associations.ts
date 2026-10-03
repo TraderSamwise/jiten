@@ -46,7 +46,13 @@ export function canonicalStem(word: string): string {
 /** Content-word stems of a mnemonic, deduped (stop words and <3-char tokens dropped). */
 export function extractAssocWords(text: string): string[] {
   const out = new Set<string>();
-  for (const raw of text.toLowerCase().split(/[^a-z]+/)) {
+  // `{self}` is the markup's name for the kanji's own keyword, not a word the
+  // learner chose. Left in, "self" becomes their strongest association with
+  // every primitive of every kanji whose story contains it.
+  for (const raw of text
+    .replace(/\{self\}/g, " ")
+    .toLowerCase()
+    .split(/[^a-z]+/)) {
     if (raw.length < 3 || STOP_WORDS.has(raw)) continue;
     out.add(canonicalStem(raw));
   }

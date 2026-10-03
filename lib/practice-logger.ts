@@ -9,7 +9,14 @@ export type PracticeMode =
   | "typing_flashcard"
   | "voice"
   | "context_game"
-  | "fill_blank_game";
+  | "fill_blank_game"
+  // The RTK course's drills (app/(tabs)/learn): one mode per exercise, so the
+  // practice history separates recognising a frame from producing it.
+  | "rtk_recognise"
+  | "rtk_identify"
+  | "rtk_assemble"
+  | "rtk_write"
+  | "rtk_cloze";
 
 interface PracticeEvent {
   entryId: number;
@@ -108,6 +115,8 @@ export async function recordConfusion(
       .set({
         confusionCount: sql`${confusionPairs.confusionCount} + 1`,
         lastConfusedAt: now,
+        // The table syncs on updated_at; left null the row never pushes.
+        updatedAt: now,
       })
       .where(eq(confusionPairs.id, existing[0].id));
   } else {
@@ -123,6 +132,7 @@ export async function recordConfusion(
         confusionCount: 1,
         lastConfusedAt: now,
         createdAt: now,
+        updatedAt: now,
       })
       .onConflictDoNothing();
   }

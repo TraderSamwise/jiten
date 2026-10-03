@@ -3,7 +3,7 @@ import { Platform, View } from "react-native";
 import { Tabs } from "expo-router";
 import { useNavigation, CommonActions } from "@react-navigation/native";
 import { useColorScheme } from "nativewind";
-import { Search, BookOpen, BookText, Settings } from "lucide-react-native";
+import { Search, BookOpen, BookText, GraduationCap, Settings } from "@/lib/icons";
 import { useUserDb } from "@/db/user-provider";
 import { isClosedUserDbConnectionError } from "@/db/db-errors";
 import { hydrateUserStores } from "@/lib/hydrate-user-stores";
@@ -113,6 +113,14 @@ export default function TabLayout() {
             title: "Lists",
             headerShown: false,
             tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="learn"
+          options={{
+            title: "Learn",
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => <GraduationCap color={color} size={size} />,
           }}
         />
         <Tabs.Screen
