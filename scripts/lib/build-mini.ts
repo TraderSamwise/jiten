@@ -141,6 +141,7 @@ export function buildMiniDb(fullDbPath: string, miniDbPath: string): MiniBuildRe
     "stroke_paths",
     "heisig_keyword",
     "heisig_lesson",
+    "glyph_origin",
   ];
 
   // Detect which columns actually exist in the source DB
@@ -171,7 +172,8 @@ export function buildMiniDb(fullDbPath: string, miniDbPath: string): MiniBuildRe
       unicode_codepoint TEXT NOT NULL,
       stroke_paths TEXT,
       heisig_keyword TEXT,
-      heisig_lesson INTEGER
+      heisig_lesson INTEGER,
+      glyph_origin TEXT
     );
 
     CREATE TABLE kanji_radicals (

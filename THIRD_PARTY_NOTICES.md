@@ -36,6 +36,16 @@ CC BY-SA and its own code under Apache-2.0.
 - <https://kanjivg.tagaini.net/>
 - <https://github.com/KanjiVG/kanjivg>
 
+## Glyph origins — English Wiktionary
+
+Each kanji's "Glyph origin" — where the character came from, as against a mnemonic invented
+for it — is extracted from the English Wiktionary by `scripts/kanji/fetch-glyph-origin.ts`
+and rendered to plain prose. The text is Wiktionary's, abridged.
+
+- Licence: **Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0)**
+- <https://en.wiktionary.org/>
+- <https://creativecommons.org/licenses/by-sa/4.0/>
+
 ## Pitch-accent data — Kanjium
 
 Pitch-accent information is derived from the **Kanjium** project by Toshiro Mifune (`mifunetoshiro`).

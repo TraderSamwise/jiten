@@ -20,4 +20,4 @@
  *   - scripts/check-dict-version.sh (compares base version against published)
  */
 export const DICT_BASE_VERSION = 23;
-export const DICT_VERSION = 23;
+export const DICT_VERSION = 24;

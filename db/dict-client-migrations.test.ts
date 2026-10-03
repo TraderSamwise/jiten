@@ -38,10 +38,24 @@ describe("runClientDictMigrations", () => {
     expect(result).toBe(14);
   });
 
-  it("returns fromVersion when CLIENT_DICT_MIGRATIONS is empty", async () => {
-    expect(CLIENT_DICT_MIGRATIONS).toHaveLength(0);
-    const result = await runClientDictMigrations(db, 14, 20);
-    expect(result).toBe(14);
+  it("skips every registered migration below the device's version", async () => {
+    const result = await runClientDictMigrations(db, DICT_VERSION, DICT_VERSION);
+    expect(result).toBe(DICT_VERSION);
+  });
+
+  it("adds the column each registered migration promises", async () => {
+    // The real list, not a fixture: a migration whose ALTER names a table or a
+    // column the dict does not have fails on every device at once.
+    rawDb.exec(
+      "CREATE TABLE kanji_characters (literal TEXT PRIMARY KEY, heisig_index INTEGER, heisig_keyword TEXT, heisig_lesson INTEGER)",
+    );
+    const lowest = Math.min(...CLIENT_DICT_MIGRATIONS.map((m) => m.version));
+    const result = await runClientDictMigrations(db, lowest - 1, DICT_VERSION);
+    expect(result).toBe(DICT_VERSION);
+    const cols = (rawDb.pragma("table_info(kanji_characters)") as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(cols).toContain("glyph_origin");
   });
 });
 

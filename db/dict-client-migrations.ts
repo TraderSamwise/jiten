@@ -22,14 +22,14 @@ export interface ClientDictMigration {
  * Each entry must have a unique version number greater than DICT_BASE_VERSION.
  */
 export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
-  // Example:
-  // {
-  //   version: 15,
-  //   description: "Add heisig_lesson column to kanji table",
-  //   sql: [
-  //     "ALTER TABLE kanji ADD COLUMN heisig_lesson INTEGER",
-  //   ],
-  // },
+  {
+    // The column only, not the prose: 2,200 glyph origins are too much to carry
+    // in the app bundle, so they ride the next published dict (base v25). This
+    // lets every query read the column in the meantime instead of probing for it.
+    version: 24,
+    description: "Add glyph_origin column to kanji_characters",
+    sql: ["ALTER TABLE kanji_characters ADD COLUMN glyph_origin TEXT"],
+  },
 ];
 
 /**
