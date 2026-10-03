@@ -170,6 +170,15 @@ function stripFileLinks(src: string): string {
   return out;
 }
 
+/**
+ * The "Glyph origin" section of a Wiktionary page's wikitext. It sits at
+ * several heading depths, and not every character has one.
+ */
+export function glyphOriginSection(source: string): string | null {
+  const match = /^=+\s*Glyph origin\s*=+[ \t]*$\n([\s\S]*?)(?=^=|$(?![\s\S]))/m.exec(source);
+  return match ? match[1].trim() : null;
+}
+
 export function wikitextToPlain(src: string): string {
   let text = stripFileLinks(src);
   text = text.replace(/<!--[\s\S]*?-->/g, "");

@@ -9,19 +9,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { wikitextToPlain } from "../../lib/wikitext";
+import { glyphOriginSection, wikitextToPlain } from "../../lib/wikitext";
 import { CACHE_DIR } from "../lib/download";
 
 const CACHE_PATH = path.join(CACHE_DIR, "wiktionary-glyph-origin.json");
 const ENDPOINT = "https://en.wiktionary.org/w/rest.php/v1/page/";
 const USER_AGENT = "jiten-dictionary-build/1.0 (https://github.com/TraderSamwise/jiten)";
 const CONCURRENCY = 4;
-
-/** The section sits at several heading depths, and not every kanji has one. */
-export function glyphOriginSection(source: string): string | null {
-  const match = /^=+\s*Glyph origin\s*=+[ \t]*$\n([\s\S]*?)(?=^=|$(?![\s\S]))/m.exec(source);
-  return match ? match[1].trim() : null;
-}
 
 async function fetchOne(literal: string): Promise<string | null> {
   const url = ENDPOINT + encodeURIComponent(literal);
