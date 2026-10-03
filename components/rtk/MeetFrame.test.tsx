@@ -347,6 +347,69 @@ describe("a refused regenerate", () => {
   });
 });
 
+describe("a story landing while the learner is writing their own", () => {
+  const props = (generation: GenerationState) => ({
+    frame,
+    primitives: [],
+    keyword: null,
+    story: null,
+    generation,
+    canGenerate: true,
+    onGenerate: () => {},
+    onSave: () => {},
+    onKeyword: () => {},
+    onKeep: () => {},
+    onSkip: () => {},
+  });
+
+  it("does not replace it", () => {
+    const loading: GenerationState = {
+      literal: "親",
+      story: null,
+      attempt: 0,
+      loading: true,
+      message: null,
+    };
+    const { rerender } = render(<MeetFrame {...props(loading)} />);
+
+    // They tapped Generate, then opened the editor themselves while it ran.
+    fireEvent.click(screen.getByText("Write it"));
+    expect(editor()).toBeTruthy();
+
+    rerender(
+      <MeetFrame
+        {...props({
+          literal: "親",
+          story: "the machine's",
+          attempt: 1,
+          loading: false,
+          message: null,
+        })}
+      />,
+    );
+    // The editor is not re-seeded with the machine's story, so whatever they
+    // typed is still what is in front of them.
+    expect(editor()).not.toContain("the machine's");
+  });
+
+  it("does replace it when they ask for a regenerate", () => {
+    const ready: GenerationState = {
+      literal: "親",
+      story: "the first",
+      attempt: 1,
+      loading: false,
+      message: null,
+    };
+    const { rerender } = render(<MeetFrame {...props(ready)} />);
+    const first = editor();
+
+    fireEvent.click(screen.getByText("Regenerate"));
+    rerender(<MeetFrame {...props({ ...ready, story: "the second", attempt: 2 })} />);
+    expect(editor()).not.toBe(first);
+    expect(editor()).toContain("the second");
+  });
+});
+
 describe("without the strokes tier", () => {
   it("will not generate a story with no primitives to weave", () => {
     render(

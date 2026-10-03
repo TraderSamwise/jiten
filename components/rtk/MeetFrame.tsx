@@ -25,6 +25,8 @@ interface Props {
   onKeyword: (keyword: string) => void;
   /** Moves on from a frame that already has a story: met, not skipped. */
   onKeep: () => void;
+  /** Shown when a save failed, so the learner knows their text is still here. */
+  saveError?: string | null;
   onSkip: () => void;
 }
 
@@ -84,6 +86,7 @@ export function MeetFrame({
   onKeyword,
   onKeep,
   onSkip,
+  saveError,
 }: Props) {
   // Only the learner's intent is state. The draft is derived, so no render ever
   // sets state and a regenerate cannot race the editor.
@@ -91,6 +94,8 @@ export function MeetFrame({
   // The editor instance the learner dismissed; a new one reopens on its own.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [keywordDraft, setKeywordDraft] = useState<string | null>(null);
+  // Set by Regenerate: an ask from inside the editor, which may replace the text.
+  const [asked, setAsked] = useState(false);
 
   const shown = keyword ?? frame.keyword;
   const mine = generation.literal === frame.literal;
@@ -98,7 +103,13 @@ export function MeetFrame({
   const loading = mine && generation.loading;
   const failed = mine && generation.message !== null;
 
-  const draft = generated ? generation.story! : (story ?? "");
+  // A story that lands while the learner is writing their OWN must not replace
+  // it: they opened the editor themselves and nothing warned them. Regenerate,
+  // from inside the editor, is an explicit ask — that one does replace.
+  const theirs = opened > 0 && !asked;
+  const takeGenerated = generated && !theirs;
+
+  const draft = takeGenerated ? generation.story! : (story ?? "");
   // Remounting on a new attempt is what lets a regenerate replace the text:
   // MnemonicEditor reads initialValue once. A regenerate therefore discards
   // tweaks when the new story lands — but not while it is still on its way.
@@ -143,11 +154,13 @@ export function MeetFrame({
           {failed ? (
             <Text className="mb-2 text-sm text-destructive">{generation.message}</Text>
           ) : null}
+          {saveError ? <Text className="mb-2 text-sm text-destructive">{saveError}</Text> : null}
           <View className="mb-2 flex-row items-center justify-between">
             <Text className="text-sm text-muted-foreground">Your story</Text>
             <Pressable
               onPress={() => {
                 setDismissed(null);
+                setAsked(true);
                 onGenerate(true);
               }}
               disabled={!canGenerate || loading}

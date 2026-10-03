@@ -79,7 +79,10 @@ describe("answering", () => {
     const after = advance(state, "miss");
     expect(after.queue).toEqual([]);
     expect(isComplete(after)).toBe(true);
-    expect(after.cleared).toContain(last);
+    // Skipped, not cleared: the crown gate reads `cleared`, and a wrong answer
+    // must never buy a crown — even the last one.
+    expect(after.skipped).toContain(last);
+    expect(after.cleared).not.toContain(last);
     expect(after.misses).toBe(1);
   });
 

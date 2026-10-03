@@ -19,6 +19,8 @@ export function useKanjiMnemonic(literal: string) {
   // Until this is true, `mnemonic` being null means "not read yet", not "none" —
   // and a caller that writes both fields would erase a story it never saw.
   const [loaded, setLoaded] = useState(false);
+  // The read failed, so `mnemonic` being null means "unknown", not "none".
+  const [readFailed, setReadFailed] = useState(false);
 
   useEffect(() => {
     if (!userDb || !literal) return;
@@ -36,9 +38,10 @@ export function useKanjiMnemonic(literal: string) {
       .catch(() => {
         setMnemonic(null);
         setKeyword(null);
-        // Still loaded: a failed read is "there is nothing", not "ask later".
-        // Left false, a caller that waits for it can never save at all.
+        // Loaded, but NOT read: a caller that waits for `loaded` can act, and a
+        // caller that would write the story back must not — it never saw it.
         setLoaded(true);
+        setReadFailed(true);
       });
   }, [userDb, literal]);
 
@@ -84,6 +87,32 @@ export function useKanjiMnemonic(literal: string) {
   );
 
   /**
+   * The keyword alone, touching no other column. The whole-row upsert cannot be
+   * used for this: when the note read failed, `mnemonic` is null because it is
+   * unknown, and writing that back erases the learner's story — or, if the
+   * keyword matches Heisig's, soft-deletes the row on every device.
+   */
+  const saveKeywordOnly = useCallback(
+    async (keywordText: string) => {
+      if (!userDb || !literal) return;
+      const k = keywordText.trim() || null;
+      const now = new Date().toISOString();
+      setKeyword(k);
+      await userDb.runAsync(
+        `INSERT INTO user_kanji_notes (literal, mnemonic, keyword, updated_at)
+         VALUES (?, '', ?, ?)
+         ON CONFLICT(literal) DO UPDATE SET
+           keyword = excluded.keyword,
+           updated_at = excluded.updated_at,
+           deleted_at = NULL`,
+        [literal, k, now],
+      );
+      markDirty();
+    },
+    [userDb, literal, markDirty],
+  );
+
+  /**
    * Both at once. saveMnemonic and saveKeyword each carry the other value from
    * their render closure, so calling them in one handler writes a stale one
    * over the fresh one — a caller that changes both needs this instead.
@@ -99,5 +128,14 @@ export function useKanjiMnemonic(literal: string) {
     [upsertOrDelete],
   );
 
-  return { mnemonic, keyword, loaded, saveMnemonic, saveKeyword, saveNote };
+  return {
+    mnemonic,
+    keyword,
+    loaded,
+    readFailed,
+    saveMnemonic,
+    saveKeyword,
+    saveKeywordOnly,
+    saveNote,
+  };
 }

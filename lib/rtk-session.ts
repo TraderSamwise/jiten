@@ -54,10 +54,11 @@ export function advance(state: SessionState, outcome: "hit" | "miss"): SessionSt
   }
 
   // Nothing left to space it against: an item put back at the head would be
-  // re-asked at once, forever, and the only honest way out would be to claim it
-  // was right. The learner has seen the answer, so it is counted and the node ends.
+  // re-asked at once, forever, and the only way out would be to claim it was
+  // right. The node ends — but the item goes to `skipped`, not `cleared`: the
+  // crown gate reads `cleared`, and a wrong answer must never buy a crown.
   if (rest.length === 0) {
-    return { ...state, queue: [], cleared: [...state.cleared, current], misses: state.misses + 1 };
+    return { ...state, queue: [], skipped: [...state.skipped, current], misses: state.misses + 1 };
   }
 
   const at = Math.min(REQUEUE_AFTER, rest.length);

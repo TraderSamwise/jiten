@@ -104,13 +104,17 @@ function MeetStep({
   onGenerate: (frame: CourseFrame, keyword: string | null, fresh: boolean) => void;
   onDone: (outcome: "saved" | "skipped") => void;
 }) {
-  const { mnemonic, keyword, loaded, saveMnemonic, saveNote } = useKanjiMnemonic(frame.literal);
+  const { mnemonic, keyword, loaded, saveMnemonic, saveKeywordOnly } = useKanjiMnemonic(
+    frame.literal,
+  );
   // Saving is an async write; two taps would advance the queue twice and the
   // next frame would be marked answered without ever being shown.
   const saving = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   return (
     <MeetFrame
+      saveError={saveError}
       frame={frame}
       primitives={primitives}
       keyword={keyword}
@@ -121,19 +125,24 @@ function MeetStep({
       onSave={(text) => {
         if (saving.current) return;
         saving.current = true;
+        setSaveError(null);
         saveMnemonic(text)
-          .catch((err) => console.warn("[learn] could not save the story", err))
-          .finally(() => onDone("saved"));
+          .then(() => onDone("saved"))
+          .catch((err) => {
+            // Not `finally`: a write that failed must not advance the queue and
+            // report the frame as met, with the learner's text gone.
+            console.warn("[learn] could not save the story", err);
+            saving.current = false;
+            setSaveError("That did not save. Try again.");
+          });
       }}
       onKeyword={(text) => {
-        // Before the row is read, `mnemonic` is null because nothing has been
-        // read — writing both fields now would erase a story never seen.
         if (!loaded) return;
-        // Both fields at once: saving them separately would write one back stale.
         // A keyword equal to Heisig's is no override, so it is stored as none —
-        // the same rule KanjiDetail applies.
+        // the same rule KanjiDetail applies. Written on its own: the whole-row
+        // write would carry a story this screen may never have read.
         const own = text.trim() === frame.keyword ? "" : text;
-        saveNote(mnemonic ?? "", own).catch((err) =>
+        saveKeywordOnly(own).catch((err) =>
           console.warn("[learn] could not save the keyword", err),
         );
       }}
@@ -320,8 +329,11 @@ export default function LearnNodeScreen() {
   const [crown, setCrown] = useState(0);
   // The ref guards against a second award; the state is what the screen reads,
   // because a ref change does not re-render.
-  const awarded = useRef(false);
-  const [crowned, setCrowned] = useState(false);
+  // Keyed to the node, because the loader effect runs first in the same flush
+  // and a boolean reset there let a stale session award — and then blocked the
+  // real pass from ever awarding.
+  const awardedFor = useRef<string | null>(null);
+  const [crowned, setCrowned] = useState<string | null>(null);
   const [pieces, setPieces] = useState<AssemblePiece[] | null>(null);
   const [strokes, setStrokes] = useState<Map<string, StrokePath[]>>(new Map());
   const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
@@ -336,8 +348,7 @@ export default function LearnNodeScreen() {
     setFrames(null);
     setSession(null);
     setPoolReady(false);
-    awarded.current = false;
-    setCrowned(false);
+
     setPrimitives(new Map());
     setSimilar(new Map());
     setStrokes(new Map());
@@ -459,10 +470,12 @@ export default function LearnNodeScreen() {
    * the ref guards against a re-render.
    */
   useEffect(() => {
-    if (!ref || !userDb || !session || awarded.current) return;
+    if (!ref || !userDb || !session) return;
+    const id = nodeId(ref);
+    if (awardedFor.current === id) return;
     if (!isComplete(session) || session.cleared.length === 0) return;
-    awarded.current = true;
-    setCrowned(true);
+    awardedFor.current = id;
+    setCrowned(id);
     const next = nextCrown(crown);
     awardCrown(userDb, ref, next).catch((err) =>
       console.warn("[learn] could not award the crown", err),
@@ -681,9 +694,15 @@ export default function LearnNodeScreen() {
           onUnaskable={onUnaskable}
         />
       ) : item?.step === "write" && !strokes.has(item.frame.literal) ? (
-        <Centred>
-          <ActivityIndicator size="large" />
-        </Centred>
+        strokesDb ? (
+          <Centred>
+            <ActivityIndicator size="large" />
+          </Centred>
+        ) : (
+          // The handle went away mid-session, so nothing is coming: hand the
+          // step back rather than spin on a read that will never land.
+          <SkipStep key={`skip:write:${item.frame.literal}`} onSkip={onUnaskable} />
+        )
       ) : item?.step === "write" && !strokes.get(item.frame.literal)?.length ? (
         // Nothing to reveal, so nothing to grade against.
         <SkipStep key={`skip:write:${item.frame.literal}`} onSkip={onUnaskable} />
@@ -696,9 +715,13 @@ export default function LearnNodeScreen() {
           onDone={onSeen}
         />
       ) : item?.step === "assemble" && (!pieces || !primitives.has(item.frame.literal)) ? (
-        <Centred>
-          <ActivityIndicator size="large" />
-        </Centred>
+        strokesDb ? (
+          <Centred>
+            <ActivityIndicator size="large" />
+          </Centred>
+        ) : (
+          <SkipStep key={`skip:assemble:${item.frame.literal}`} onSkip={onUnaskable} />
+        )
       ) : item?.step === "assemble" ? (
         <AssembleStep
           key={`assemble:${item.frame.literal}:${session.misses}`}
@@ -746,7 +769,7 @@ export default function LearnNodeScreen() {
               ? "Already crowned"
               : total === 0
                 ? "Nothing to do here yet"
-                : crowned
+                : crowned === nodeId(ref)
                   ? "Crowned"
                   : "Node met"}
           </Text>
