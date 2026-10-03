@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { MnemonicEditor } from "@/components/MnemonicEditor";
 import { MnemonicText } from "@/components/MnemonicText";
 import { PrimitiveChips } from "@/components/PrimitiveChips";
+import { firstSentences } from "@/lib/wikitext";
 import { Text } from "@/components/ui/text";
 import type { KanjiPrimitive } from "@/db/types";
 import type { GenerationState } from "@/hooks/useMnemonicGeneration";
@@ -14,6 +15,8 @@ interface Props {
   primitives: KanjiPrimitive[];
   /** The learner's own keyword, when they have set one. */
   keyword: string | null;
+  /** What the glyph actually depicts, when the dictionary knows. */
+  glyphOrigin?: string | null;
   /** The story already saved for this frame, if any. */
   story: string | null;
   generation: GenerationState;
@@ -78,6 +81,7 @@ export function MeetFrame({
   frame,
   primitives,
   keyword,
+  glyphOrigin,
   story,
   generation,
   canGenerate,
@@ -148,6 +152,15 @@ export function MeetFrame({
       </View>
 
       <PrimitiveChips primitives={primitives} className="mt-4" />
+
+      {/* The real history, offered beside the parts: often the better hook, and
+          the one a learner cannot invent. Wiktionary, CC BY-SA 4.0. */}
+      {glyphOrigin ? (
+        <View className="mt-3 rounded-xl border border-border p-3">
+          <Text className="text-xs text-muted-foreground">Where it comes from</Text>
+          <Text className="mt-1 text-sm text-foreground">{firstSentences(glyphOrigin, 260)}</Text>
+        </View>
+      ) : null}
 
       {editing ? (
         <View className="mt-5">

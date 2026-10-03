@@ -27,6 +27,7 @@ import {
 import { awardCrown, getNodeProgress, markNodeSeen } from "@/db/rtk-progress";
 import type { KanjiPrimitive, StrokePath } from "@/db/types";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
+import { useGlyphOrigin } from "@/hooks/useGlyphOrigin";
 import { useMnemonicGeneration, type GenerationState } from "@/hooks/useMnemonicGeneration";
 import { useSafeGoBack } from "@/lib/navigation";
 import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
@@ -111,6 +112,7 @@ function MeetStep({
   // next frame would be marked answered without ever being shown.
   const saving = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const glyphOrigin = useGlyphOrigin(frame.literal);
 
   return (
     <MeetFrame
@@ -118,6 +120,7 @@ function MeetStep({
       frame={frame}
       primitives={primitives}
       keyword={keyword}
+      glyphOrigin={glyphOrigin}
       story={mnemonic}
       generation={generation}
       canGenerate={canGenerate}

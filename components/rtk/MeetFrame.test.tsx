@@ -90,12 +90,17 @@ const nothing: GenerationState = {
   message: null,
 };
 
-function view(generation: GenerationState, story: string | null = null) {
+function view(
+  generation: GenerationState,
+  story: string | null = null,
+  glyphOrigin: string | null = null,
+) {
   return render(
     <MeetFrame
       frame={frame}
       primitives={[]}
       keyword={null}
+      glyphOrigin={glyphOrigin}
       story={story}
       generation={generation}
       canGenerate
@@ -429,5 +434,19 @@ describe("without the strokes tier", () => {
     );
     expect(screen.getByText("needs stroke data")).toBeTruthy();
     expect(screen.getByText("Generate").closest("button")?.disabled).toBe(true);
+  });
+});
+
+describe("where the character comes from", () => {
+  it("offers the real history beside the parts", () => {
+    view(nothing, null, "Phono-semantic compound: phonetic 辛 + semantic 見 (see).");
+    expect(screen.getByText("Where it comes from")).toBeTruthy();
+    expect(screen.getByText(/phonetic 辛/)).toBeTruthy();
+  });
+
+  it("says nothing when the dictionary has none", () => {
+    // Most devices, until the prose arrives with dict base v25.
+    view(nothing);
+    expect(screen.queryByText("Where it comes from")).toBeNull();
   });
 });

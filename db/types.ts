@@ -98,6 +98,8 @@ export interface KanjiCharacter {
   strokePaths: StrokePath[];
   heisigKeyword: string | null;
   heisigLesson: number | null;
+  /** Wiktionary's account of where the glyph came from; null before dict v25. */
+  glyphOrigin: string | null;
 }
 
 export interface StrokePath {

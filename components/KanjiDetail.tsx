@@ -27,6 +27,7 @@ import { useBookmarkStore } from "@/stores/bookmarks";
 import { useQuickBookmarkKanji } from "@/hooks/useQuickBookmark";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { MnemonicText } from "@/components/MnemonicText";
+import { firstSentences } from "@/lib/wikitext";
 import { MnemonicEditor } from "@/components/MnemonicEditor";
 import { PrimitiveGlyph } from "@/components/PrimitiveGlyph";
 import {
@@ -376,6 +377,17 @@ export function KanjiDetail({ literal }: KanjiDetailProps) {
           </Pressable>
         )}
       </Card>
+
+      {/* Glyph origin — Wiktionary, CC BY-SA 4.0 (see THIRD_PARTY_NOTICES.md) */}
+      {kanji.glyphOrigin ? (
+        <Card className="mb-3">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Glyph origin</Text>
+          <Text className="text-base text-foreground">
+            {firstSentences(kanji.glyphOrigin, 320)}
+          </Text>
+          <Text className="mt-2 text-xs text-muted-foreground">English Wiktionary · CC BY-SA</Text>
+        </Card>
+      ) : null}
 
       {/* Readings */}
       <Card className="mb-3">

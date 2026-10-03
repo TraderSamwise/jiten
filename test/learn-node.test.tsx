@@ -32,6 +32,7 @@ const h = vi.hoisted(() => {
     crown: 1,
     // Null is "this frame has no story"; a test can give it one to reach cloze.
     story: null as string | null,
+    glyphOrigin: null as string | null,
     saveMnemonic: vi.fn(async () => {}),
     // A test can take the strokes tier away, as a user without it has.
     noStrokes: false,
@@ -109,6 +110,9 @@ vi.mock("@/db/kanji-search", () => ({
   getPrimitivesForKanjiAsync: async () => h.primitives,
   getStrokePathsAsync: async () => h.strokes,
   getSynonymsForKeywordAsync: async () => [],
+  // The glyph origin rides along on the kanji row; a dictionary without the
+  // column yet simply has none, which is most devices until dict v25.
+  getKanjiBatchAsync: async () => [{ glyphOrigin: h.glyphOrigin }],
 }));
 
 vi.mock("@/db/rtk-frames", () => ({

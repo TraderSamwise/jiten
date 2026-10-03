@@ -45,6 +45,7 @@ function rowToKanjiCharacter(row: Record<string, unknown>): KanjiCharacter {
     strokePaths: parseJsonArray<StrokePath>(row.stroke_paths as string | null),
     heisigKeyword: (row.heisig_keyword as string | null) ?? null,
     heisigLesson: (row.heisig_lesson as number | null) ?? null,
+    glyphOrigin: (row.glyph_origin as string | null) ?? null,
   };
 }
 
