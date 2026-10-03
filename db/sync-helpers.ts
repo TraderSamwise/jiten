@@ -55,6 +55,10 @@ export const MUTABLE_TABLES = [
   // is three short strings.
   { name: "furigana_pins", pk: "id", timestampCol: "updated_at" },
   { name: "confusion_pairs", pk: "id", timestampCol: "updated_at" },
+  // Deliberately unfiltered. The id is derived from (course, unit, node) by
+  // lib/rtk-course.ts, so two devices opening one node converge on one row and
+  // last-write-wins costs at most a re-crowned node.
+  { name: "course_progress", pk: "id", timestampCol: "updated_at" },
   // app_flags removed — only contains local seeding flags, not user data
 ] as const;
 
@@ -72,14 +76,19 @@ export const CLOUD_APPEND_TABLES = LOCAL_APPEND_TABLES.filter(
   (table) => table.name === "practice_sessions",
 );
 
-/** Check if user has any meaningful local data (lists, cards, books, notes). */
+/**
+ * Check if user has any meaningful local data (lists, cards, books, notes).
+ * Course rows count only once a crown is earned: merely opening a node writes
+ * one, and that must not make a first sign-in ask about merging.
+ */
 export async function hasLocalData(db: WrappedUserDb): Promise<boolean> {
   const row = await db.getFirstAsync<{ n: number }>(
     `SELECT
       (SELECT COUNT(*) FROM lists WHERE deleted_at IS NULL AND is_default = 0) +
       (SELECT COUNT(*) FROM srs_cards WHERE deleted_at IS NULL AND list_id NOT LIKE 'default-%') +
       (SELECT COUNT(*) FROM books WHERE deleted_at IS NULL AND is_default = 0) +
-      (SELECT COUNT(*) FROM user_kanji_notes WHERE deleted_at IS NULL) as n`,
+      (SELECT COUNT(*) FROM user_kanji_notes WHERE deleted_at IS NULL) +
+      (SELECT COUNT(*) FROM course_progress WHERE deleted_at IS NULL AND crown > 0) as n`,
   );
   return !!(row && row.n > 0);
 }
@@ -115,6 +124,7 @@ export const DATA_CATEGORIES: Record<
     mutable: ["confusion_pairs"],
     append: ["confusion_events"],
   },
+  course: { label: "Course Progress", mutable: ["course_progress"], append: [] },
 };
 
 /** Delete selected data categories locally (soft-delete mutable, hard-delete append) and remotely. */

@@ -301,6 +301,18 @@ export const furiganaPins = sqliteTable("furigana_pins", {
   deletedAt: text("deleted_at"),
 });
 
+export const courseProgress = sqliteTable("course_progress", {
+  id: text("id").primaryKey(), // `<course>:<unit>:<node>`, derived — see lib/rtk-course.ts
+  course: text("course").notNull(),
+  unit: integer("unit").notNull(), // RTK lesson
+  node: integer("node").notNull(), // 0-based five-frame slice of the unit
+  crown: integer("crown").notNull().default(0), // 0..3
+  firstSeenAt: text("first_seen_at"),
+  crackedAt: text("cracked_at"),
+  updatedAt: text("updated_at").notNull(),
+  deletedAt: text("deleted_at"),
+});
+
 export const reviewMarks = sqliteTable("review_marks", {
   id: text("id").primaryKey(),
   entryId: integer("entry_id").notNull(),

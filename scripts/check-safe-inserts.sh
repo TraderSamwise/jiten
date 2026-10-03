@@ -30,6 +30,7 @@ SCAN_DB_GLOBS=(
   "$PROJECT_ROOT/db/user-db*"
   "$PROJECT_ROOT/db/sync-engine*"
   "$PROJECT_ROOT/db/sync-helpers*"
+  "$PROJECT_ROOT/db/rtk-progress*"
 )
 
 FOUND=0
@@ -45,8 +46,9 @@ check_file() {
 
   # Find lines with INSERT INTO that lack safe conflict handling.
   # We look for "INSERT INTO" (case-insensitive) that is NOT preceded by
-  # "OR IGNORE" or "OR REPLACE", and does not have "ON CONFLICT" on the
-  # same line or the next line.
+  # "OR IGNORE" or "OR REPLACE", and has no "ON CONFLICT" anywhere in the rest
+  # of the same SQL statement — read as the lines up to the one closing the
+  # template literal, so a readable multi-line upsert is not a false positive.
   #
   # Strategy: use grep to find INSERT INTO lines, then filter out safe ones.
   local lines
@@ -63,12 +65,13 @@ check_file() {
       continue
     fi
 
-    # Check next line for ON CONFLICT (multi-line SQL)
+    # Check the rest of this statement for ON CONFLICT (multi-line SQL): the
+    # lines after it, stopping at the backtick that closes the template literal.
     local lineno
     lineno=$(echo "$line" | cut -d: -f1)
-    local next_line
-    next_line=$(sed -n "$((lineno + 1))p" "$file" 2>/dev/null || true)
-    if echo "$next_line" | grep -qi 'ON CONFLICT'; then
+    local rest
+    rest=$(awk -v s="$((lineno + 1))" 'NR >= s && NR < s + 12 { print; if (index($0, "`")) exit }' "$file" 2>/dev/null || true)
+    if echo "$rest" | grep -qi 'ON CONFLICT'; then
       continue
     fi
 

@@ -74,6 +74,11 @@ export const BACKUP_TABLES: {
     query:
       "SELECT id, list_id, game_type, game_mode, speed_preset, score, matches_made, triples_made, max_combo, accuracy, duration_ms, played_at FROM game_scores",
   },
+  {
+    name: "course_progress",
+    query:
+      "SELECT id, course, unit, node, crown, first_seen_at, cracked_at, updated_at, deleted_at FROM course_progress",
+  },
 ];
 
 // Column names for each table — used for INSERT during import
@@ -222,6 +227,17 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "duration_ms",
     "played_at",
   ],
+  course_progress: [
+    "id",
+    "course",
+    "unit",
+    "node",
+    "crown",
+    "first_seen_at",
+    "cracked_at",
+    "updated_at",
+    "deleted_at",
+  ],
 };
 
 // Import order matters for FK constraints
@@ -238,6 +254,7 @@ const IMPORT_ORDER = [
   "user_kanji_notes",
   "practice_sessions",
   "game_scores",
+  "course_progress",
 ];
 
 export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {

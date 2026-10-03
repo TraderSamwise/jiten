@@ -227,4 +227,22 @@ export const USER_DB_MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_furigana_pins_book ON furigana_pins(book_id)`,
   `CREATE INDEX IF NOT EXISTS idx_furigana_pins_updated ON furigana_pins(updated_at)`,
+  // One row per node of a course path (lib/rtk-course.ts): `unit` is the RTK
+  // lesson, `node` its 0-based five-frame slice, `crown` 0..3. `id` is derived
+  // from (course, unit, node) so two devices cannot make two rows for one node.
+  `CREATE TABLE IF NOT EXISTS course_progress (
+    id TEXT PRIMARY KEY,
+    course TEXT NOT NULL,
+    unit INTEGER NOT NULL,
+    node INTEGER NOT NULL,
+    crown INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT,
+    cracked_at TEXT,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT DEFAULT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_course_progress_lookup ON course_progress(course, unit, node)`,
+  // Named `_updated` deliberately: isRemoteRelevant in db/sync-engine.ts ships
+  // only indexes whose name contains it, and delta sync needs this one remotely.
+  `CREATE INDEX IF NOT EXISTS idx_course_progress_updated ON course_progress(updated_at)`,
 ];

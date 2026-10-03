@@ -12,26 +12,26 @@ other card. Nothing here is a second scheduler.
 Measured against the committed assets on 2026-10-03, before any of this is written. The scope of
 the work is the delta, so this list is the part that must **not** be rebuilt.
 
-| asset                                                              | where                                                                               | size                       |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------- |
-| Heisig frame number, keyword, lesson                               | `kanji_characters.heisig_{index,keyword,lesson}`                                    | 3,000 / 3,000 / 56 lessons |
-| Primitive decomposition, ordered                                   | `kanji_primitives(literal, position, primitive_id, keyword)`                        | 6,644 edges                |
-| Primitive inventory, with glyph substitutes for the invented ones  | `primitives`                                                                        | 244                        |
-| Visual confusables, ranked                                         | `kanji_similarity(literal, similar, score, rank)`                                   | 249,260 pairs              |
-| Stroke paths (KanjiVG 109×109)                                     | `kanji_strokes`                                                                     | 6,702 kanji                |
-| Keyword synonyms, for accepting typed answers                      | `keyword_synonyms`                                                                  | 81,036 pairs               |
-| Stories with `[primitive]` markup + a custom keyword per kanji     | `user_kanji_notes`                                                                  | user data                  |
-| Personal primitive↔word index, learned from the user's own stories | `primitive_note_assoc`, `db/primitive-associations.ts`                              | user data                  |
-| Kanji SRS cards                                                    | `srs_cards` (`entry_id = 0`, `kanji_literal`) + FSRS                                | —                          |
-| A `mnemonic` card face, with primitive chips                       | `app/(tabs)/lists/study.tsx` (`FACE_ORDER`)                                         | —                          |
-| Per-item telemetry                                                 | `practice_events` (`practice_mode`, `assisted`, `response_ms`), `practice_sessions` | —                          |
-| Streak, daily activity, leeches, confusion pairs, card states      | `lib/practice-stats.ts` + `app/(tabs)/lists/stats.tsx`                              | —                          |
-| Lesson retrieval                                                   | `getKanjiByLessonAsync` in `db/kanji-search.ts`                                     | —                          |
-| Primitive lookup, stroke paths, synonyms, similar kanji            | `db/kanji-search.ts`                                                                | —                          |
-| Story editor with ambient auto-linking                             | `components/MnemonicEditor.tsx`, `hooks/useMnemonicSuggestor`                       | —                          |
-| Story rendering with tappable primitive glyphs                     | `components/MnemonicText.tsx`, `PrimitiveGlyph`, `PrimitiveChips`                   | —                          |
-| Stroke order diagram                                               | `components/StrokeOrderDiagram.tsx`                                                 | —                          |
-| Drawing primitives                                                 | `@shopify/react-native-skia`, `react-native-svg`, `react-native-gesture-handler`    | —                          |
+| asset                                                              | where                                                                               | size                                        |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------- |
+| Heisig frame number, keyword, lesson                               | `kanji_characters.heisig_{index,keyword,lesson}`                                    | 3,000 / 3,000 / 56 lessons (frames 1-2,200) |
+| Primitive decomposition, ordered                                   | `kanji_primitives(literal, position, primitive_id, keyword)`                        | 6,644 edges                                 |
+| Primitive inventory, with glyph substitutes for the invented ones  | `primitives`                                                                        | 244                                         |
+| Visual confusables, ranked                                         | `kanji_similarity(literal, similar, score, rank)`                                   | 249,260 pairs                               |
+| Stroke paths (KanjiVG 109×109)                                     | `kanji_strokes`                                                                     | 6,702 kanji                                 |
+| Keyword synonyms, for accepting typed answers                      | `keyword_synonyms`                                                                  | 81,036 pairs                                |
+| Stories with `[primitive]` markup + a custom keyword per kanji     | `user_kanji_notes`                                                                  | user data                                   |
+| Personal primitive↔word index, learned from the user's own stories | `primitive_note_assoc`, `db/primitive-associations.ts`                              | user data                                   |
+| Kanji SRS cards                                                    | `srs_cards` (`entry_id = 0`, `kanji_literal`) + FSRS                                | —                                           |
+| A `mnemonic` card face, with primitive chips                       | `app/(tabs)/lists/study.tsx` (`FACE_ORDER`)                                         | —                                           |
+| Per-item telemetry                                                 | `practice_events` (`practice_mode`, `assisted`, `response_ms`), `practice_sessions` | —                                           |
+| Streak, daily activity, leeches, confusion pairs, card states      | `lib/practice-stats.ts` + `app/(tabs)/lists/stats.tsx`                              | —                                           |
+| Lesson retrieval                                                   | `getKanjiByLessonAsync` in `db/kanji-search.ts`                                     | —                                           |
+| Primitive lookup, stroke paths, synonyms, similar kanji            | `db/kanji-search.ts`                                                                | —                                           |
+| Story editor with ambient auto-linking                             | `components/MnemonicEditor.tsx`, `hooks/useMnemonicSuggestor`                       | —                                           |
+| Story rendering with tappable primitive glyphs                     | `components/MnemonicText.tsx`, `PrimitiveGlyph`, `PrimitiveChips`                   | —                                           |
+| Stroke order diagram                                               | `components/StrokeOrderDiagram.tsx`                                                 | —                                           |
+| Drawing primitives                                                 | `@shopify/react-native-skia`, `react-native-svg`, `react-native-gesture-handler`    | —                                           |
 
 ### Three things are built and have no caller
 
@@ -79,9 +79,17 @@ wired at all. The course adopts them rather than writing new ones.
   ends a session early.
 - **Graduation, not a second scheduler.** A cracked node writes `srs_cards` rows and retention runs
   through the existing study screen.
-- **Gate on primitives.** A frame is introducible only when every one of its primitive components
-  is either a known frame or a bare primitive already met. RTK's own order nearly guarantees this,
-  so this is a tripwire, not a reordering engine.
+- **The path is volume 1: 2,200 frames in 56 units.** Measured, not assumed — of the 3,000
+  keyworded frames in `kanji_characters`, 800 carry no `heisig_lesson`, and the ones that do run
+  contiguously from frame 1 to frame 2,200. Those 800 are volume 3 and have no unit to live in, so
+  `lesson` is typed nullable and `unitsFromFrames` drops them rather than guessing a unit.
+  The path is therefore **56 units, 2,200 frames, 461 nodes**. Coverage over those frames,
+  measured: keyword 2,200/2,200, stroke paths 2,200/2,200, at least three visual confusables
+  2,200/2,200, a primitive decomposition 2,194/2,200.
+- **Gate on primitives.** A frame is introducible only when every component that is itself a kanji
+  is already known. RTK's invented primitives are never gated — they have no Unicode glyph and no
+  frame of their own, and the book teaches each one inside the frame that first uses it. RTK's own
+  order nearly guarantees the condition, so this is a tripwire, not a reordering engine.
 
 ## Data model
 
@@ -169,13 +177,17 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - Generate calls the adopted `requestKanjiMnemonic` and prefills `MnemonicEditor`; Regenerate
   re-rolls; Save writes `user_kanji_notes` and runs `updateAssociationsForNote`.
 - After the node's first Generate, prefetch the remaining four in the background. Nothing is
-  prefetched before the user has asked for one — `kanji_mnemonic` costs 1 against `AI_DAILY_QUOTA`
-  per call (`api/_shared/rate-limit.ts`), so a whole unit ahead would eat the day.
+  prefetched before the user has asked for one — `kanji_mnemonic` costs 1 against the shared `ai`
+  bucket, which defaults to 500 per user per day and 2,000 across all users
+  (`api/_shared/rate-limit.ts`), so one 142-frame unit prefetched ahead would be 28% of a personal
+  day in a single tap.
 - Gates: typecheck, lint, tests for choose-write / choose-generate / skip / regenerate / quota
   error surfacing (never a silent failure).
 
 ### Phase 4 — Recognise and identify
 
+- Measured: **all 2,200 path frames have at least three `kanji_similarity` rows**, none has
+  zero, so the similarity source alone can fill a 4-way choice; the unit top-up is insurance.
 - `lib/rtk-distractors.ts`: pick N distractors for a frame, similarity-first, unit-topped-up,
   never equal to the answer, deterministic under a seed so a test can pin it.
 - `components/rtk/ChoiceDrill.tsx`: both directions, `practice_events` logging, `confusion_events`
@@ -185,6 +197,9 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 5 — Assemble
 
+- Measured: 2,194 of the 2,200 path frames have a decomposition (2.19 components on average,
+  8 at most); 隙 匕 喩 嗅 惧 箋 have none and 170 more have a single component, so the drill is
+  skipped below two components rather than asking the learner to assemble one piece.
 - `components/rtk/AssembleDrill.tsx`: tap the primitives in `position` order, decoys drawn from
   other frames' primitives, rendered with `PrimitiveGlyph` so invented primitives show their
   substitute glyph and keyword.
@@ -193,6 +208,9 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 6 — Write
 
+- Skia is already compiled into build 23 (`react-native-skia` 2.4.21 in the iOS pod lock, and
+  `yarn check:ota-native-deps` passes against that build), so the drill is OTA-shippable and
+  needs no new binary. Re-run that check before shipping it anyway.
 - `components/rtk/WriteDrill.tsx`: a Skia canvas, strokes recorded, **Show me** revealing
   `StrokeOrderDiagram`, then a three-way self-grade (missed it / close / got it) feeding the same
   rating scale as the SRS.
@@ -216,16 +234,15 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - `lib/api-contract.ts` + `server/routes/kanjiMnemonic.ts`: extend the request with the user's
   dominant word per primitive (`getAssociationsForWordAsync`, `targetForPrimitive`), two or three
   of their own stories as style exemplars, and their custom keyword from `user_kanji_notes`; ask
-  the prompt for `[primitive]` markup so the result renders with chips and feeds
-  `primitive_note_assoc` back.
+  the prompt for the markup `lib/mnemonic-markup.ts` already parses — `{self}` for the kanji's
+  own keyword, `[label]` for a bare primitive, `[label](p<id>|<glyph>)` for a targeted one —
+  so the result renders with chips and feeds `primitive_note_assoc` back.
 - Course progress on `app/(tabs)/lists/stats.tsx`, reusing `getCurrentStreak`.
 - Gates: typecheck, lint, scoped vitest; the schema change gets a contract test pinning the new
   fields as optional so an older client keeps working.
 
 ## Open questions
 
-- 3,000 frames is RTK volumes 1–3. Should the path stop at frame 2,200 (volume 1) and mark the rest
-  as a bonus unit range?
 - Whether the primitive gate should ever **reorder** frames to pull forward kanji from the book
   being read. Attractive, and the reader already extracts a page's kanji — but it breaks the
   story-dependency order RTK is built on, so v1 only gates and does not reorder.
