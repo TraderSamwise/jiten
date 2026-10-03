@@ -118,10 +118,20 @@ describe.skipIf(!hasDictDb)("the path as the dictionary holds it", () => {
     expect(similar.map((f) => f.literal)).not.toContain("親");
   });
 
-  it("offers a lookalike for all but a handful of frames", async () => {
-    // Measured: 7 of the 2,200 have none that is itself a frame, 43 have under three.
-    const sparse = await loadSimilarPathFrames(dictDb, "一", 20);
-    expect(Array.isArray(sparse)).toBe(true);
+  it("leaves exactly 7 of the 2,200 frames with no lookalike of their own", async () => {
+    // The number the distractor top-up exists for. The previous version of this
+    // test asserted that an array was an array, which no change could break.
+    const units = await loadUnitShapes(dictDb);
+    const frames = (
+      await Promise.all(units.map((unit) => loadUnitFrames(dictDb, unit.unit)))
+    ).flat();
+    expect(frames).toHaveLength(2200);
+
+    const counts = await Promise.all(
+      frames.map(async (frame) => (await loadSimilarPathFrames(dictDb, frame.literal)).length),
+    );
+    expect(counts.filter((n) => n === 0)).toHaveLength(7);
+    expect(counts.filter((n) => n < 3)).toHaveLength(43);
   });
 
   it("never returns a frame volume 1 does not have", async () => {

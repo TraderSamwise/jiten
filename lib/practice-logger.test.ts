@@ -202,3 +202,24 @@ describe("recordConfusion", () => {
     expect(rows).toHaveLength(2);
   });
 });
+
+describe("a confusion pair reaches the other device", () => {
+  test("stamps updated_at, which is what sync pushes on", async () => {
+    const a = { entryId: 0, kanjiLiteral: "日" };
+    const b = { entryId: 0, kanjiLiteral: "目" };
+    await recordConfusion(db, a, b, "visual_kanji");
+    const first = await rawDb.getAllAsync<{ updated_at: string | null }>(
+      "SELECT updated_at FROM confusion_pairs",
+    );
+    expect(first[0].updated_at).toBeTruthy();
+
+    // And again on the increment, or a growing count would stop syncing.
+    await rawDb.runAsync("UPDATE confusion_pairs SET updated_at = NULL");
+    await recordConfusion(db, a, b, "visual_kanji");
+    const again = await rawDb.getAllAsync<{ updated_at: string | null; confusion_count: number }>(
+      "SELECT updated_at, confusion_count FROM confusion_pairs",
+    );
+    expect(again[0].confusion_count).toBe(2);
+    expect(again[0].updated_at).toBeTruthy();
+  });
+});

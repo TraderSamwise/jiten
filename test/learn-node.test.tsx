@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 
 /**
+ * Lives here, not beside the screen: expo-router's require.context treats every
+ * .tsx under app/ as a route, so a test file there is bundled into the web
+ * export and Metro dies on vitest's own dependency on vite.
+ *
  * The runner's wiring, with the drills stubbed: they have their own tests, and
  * what goes wrong here is the queue. Two bugs this would have caught on sight —
  * an answer advancing the queue twice (which made the reveal unreachable), and a
  * choice drill mounted before its options loaded, skipping the whole node.
  */
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CourseFrame } from "@/lib/rtk-course";
@@ -26,6 +30,9 @@ const h = vi.hoisted(() => {
     // A test can narrow the node to one frame to reach a later step quickly.
     only: null as null | number,
     crown: 1,
+    // Null is "this frame has no story"; a test can give it one to reach cloze.
+    story: null as string | null,
+    saveMnemonic: vi.fn(async () => {}),
     // A test can take the strokes tier away, as a user without it has.
     noStrokes: false,
     // Stable identities: a fresh object each render would re-run the loaders'
@@ -132,10 +139,10 @@ vi.mock("@/lib/practice-logger", () => ({
 
 vi.mock("@/hooks/useKanjiMnemonic", () => ({
   useKanjiMnemonic: () => ({
-    mnemonic: null,
+    mnemonic: h.story,
     keyword: null,
     loaded: true,
-    saveMnemonic: async () => {},
+    saveMnemonic: h.saveMnemonic,
     saveNote: async () => {},
   }),
 }));
@@ -211,9 +218,19 @@ vi.mock("@/components/rtk/AssembleDrill", () => ({
 }));
 
 vi.mock("@/components/rtk/ClozeDrill", () => ({
-  ClozeDrill: ({ frame, onUnaskable }: { frame: CourseFrame; onUnaskable: () => void }) => {
-    // The fixture's frames have no story, so every cloze hands itself back.
-    React.useEffect(() => onUnaskable(), [onUnaskable]);
+  // Mirrors the real drill: a frame with no story hands the step back.
+  ClozeDrill: ({
+    frame,
+    story,
+    onUnaskable,
+  }: {
+    frame: CourseFrame;
+    story: string | null;
+    onUnaskable: () => void;
+  }) => {
+    React.useEffect(() => {
+      if (!story) onUnaskable();
+    }, [story, onUnaskable]);
     return <span>{`CLOZE:${frame.literal}`}</span>;
   },
 }));
@@ -252,19 +269,21 @@ vi.mock("@/components/rtk/WriteDrill", () => ({
   ),
 }));
 
-import LearnNodeScreen from "./node";
+import LearnNodeScreen from "@/app/(tabs)/learn/node";
 
 afterEach(() => {
   cleanup();
   h.only = null;
   h.noStrokes = false;
   h.crown = 1;
+  h.story = null;
 });
 
 beforeEach(() => {
   h.markNodeSeen.mockClear();
   h.awardCrown.mockClear();
   h.graduateFrames.mockClear();
+  h.saveMnemonic.mockClear();
   h.logPracticeEvent.mockClear();
   h.recordConfusion.mockClear();
 });
@@ -357,6 +376,66 @@ describe("a question the course cannot ask", () => {
     expect(question()).toBe("DRILL:kanji:一");
     fireEvent.click(screen.getByText("unaskable"));
     expect(question()).toBe("DRILL:kanji:二");
+  });
+});
+
+describe("a node's first visit", () => {
+  it("meets every frame before it asks anything", async () => {
+    h.crown = 0;
+    render(<LearnNodeScreen />);
+    // Crown 0 opens on Meet, which no test used to reach at all.
+    expect((await screen.findByText(/^MEET:/)).textContent).toBe("MEET:一");
+    expect(screen.queryByText(/^DRILL:/)).toBeNull();
+  });
+
+  it("counts the steps it holds, and drops one when a step turns out unaskable", async () => {
+    h.crown = 0;
+    h.only = 1;
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+    // meet + recognise + identify + cloze, for one frame.
+    expect(document.body.textContent).toContain("1 of 4");
+
+    fireEvent.click(screen.getByText("save"));
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(await screen.findByText("right"));
+      fireEvent.click(screen.getByText("seen"));
+    }
+    // The cloze had no story to blank, so it left: three were ever asked.
+    expect(document.body.textContent).toContain("3 of 3");
+  });
+
+  it("moves on once the story is saved, and saves it once", async () => {
+    h.crown = 0;
+    h.only = 1;
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+
+    act(() => {
+      fireEvent.click(screen.getByText("save"));
+      fireEvent.click(screen.getByText("save"));
+    });
+    // Two taps on an async write would advance twice and skip the next frame.
+    expect(h.saveMnemonic).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/^DRILL:/)).toBeTruthy();
+  });
+});
+
+describe("the cloze step", () => {
+  it("is asked when the frame has a story", async () => {
+    h.crown = 0;
+    h.only = 1;
+    h.story = "a [needle] through a [tree] makes a {self}";
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+    fireEvent.click(screen.getByText("save"));
+
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(await screen.findByText("right"));
+      fireEvent.click(screen.getByText("seen"));
+    }
+    // It used to hand itself back before the note had even been read.
+    expect(screen.getByText("CLOZE:一")).toBeTruthy();
   });
 });
 

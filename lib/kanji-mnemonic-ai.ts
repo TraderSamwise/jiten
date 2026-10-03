@@ -5,10 +5,6 @@ export interface KanjiMnemonicRequest {
   kanji: string;
   keyword: string;
   primitives: string[];
-  /** The learner's own words for these primitives, from their past stories. */
-  myWords?: string[];
-  /** A few of their own stories, as style exemplars. */
-  examples?: string[];
 }
 
 // Server-side response guard, shared with the Hono route (server/routes/kanjiMnemonic).
@@ -49,8 +45,6 @@ export async function requestKanjiMnemonic({
       kanji: input.kanji,
       keyword: input.keyword,
       primitives: input.primitives,
-      myWords: input.myWords ?? [],
-      examples: input.examples ?? [],
     },
   });
   const body = await response.json().catch(() => null);

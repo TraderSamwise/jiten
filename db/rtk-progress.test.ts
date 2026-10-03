@@ -119,6 +119,41 @@ describe("course progress", () => {
     expect(await getNodeProgress(db, ref)).toBeNull();
   });
 
+  it("does not touch updated_at when a known node is merely reopened", async () => {
+    // Sync merges whole rows last-write-wins, so a bump here would let a stale
+    // device's look at a node overwrite a crown earned on another one.
+    await awardCrown(db, ref, 3);
+    const stamped = (await getNodeProgress(db, ref))?.updatedAt;
+    await markNodeSeen(db, ref);
+    const after = await getNodeProgress(db, ref);
+    expect(after?.updatedAt).toBe(stamped);
+    expect(after?.crown).toBe(CROWN_MAX);
+  });
+
+  it("starts a deleted node over rather than resurrecting its crown", async () => {
+    // The learner asked for the progress to be deleted; reopening a node must
+    // not hand back the crown they threw away.
+    await awardCrown(db, ref, 3);
+    await db.runAsync("UPDATE course_progress SET deleted_at = ? WHERE id = ?", [
+      new Date().toISOString(),
+      nodeId(ref),
+    ]);
+    await markNodeSeen(db, ref);
+    const after = await getNodeProgress(db, ref);
+    expect(after?.crown).toBe(0);
+    expect(after?.crackedAt).toBeNull();
+  });
+
+  it("gives a deleted node the new crown, not the old maximum", async () => {
+    await awardCrown(db, ref, 3);
+    await db.runAsync("UPDATE course_progress SET deleted_at = ? WHERE id = ?", [
+      new Date().toISOString(),
+      nodeId(ref),
+    ]);
+    await awardCrown(db, ref, 1);
+    expect((await getNodeProgress(db, ref))?.crown).toBe(1);
+  });
+
   it("revives a soft-deleted row rather than colliding with it", async () => {
     await awardCrown(db, ref, 1);
     await db.runAsync("UPDATE course_progress SET deleted_at = ? WHERE id = ?", [

@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useAuth } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { requestKanjiMnemonic, type KanjiMnemonicRequest } from "@/lib/kanji-mnemonic-ai";
-
-/** How far ahead a node warms itself after the learner's first Generate. */
-const PREFETCH_AHEAD = 2;
 
 /**
  * The last story asked for, and whether another is on its way. Deliberately not
@@ -36,8 +33,11 @@ function cacheKey(request: KanjiMnemonicRequest): string {
 
 /**
  * Asks the server for a story, once per frame-and-keyword the learner asked
- * about. The cache is what makes Regenerate and the node-ahead prefetch one
- * path, and the request id drops a reply the learner has moved past.
+ * about. Only ever on a tap: warming the frames ahead was tried and taken out
+ * again — it generated for frames nobody had reached, which is the one thing
+ * this screen promises not to do, and it billed the learner's daily quota for
+ * stories that were never shown. The request id drops a reply the learner has
+ * moved past; the cache makes Regenerate cheap.
  */
 export function useMnemonicGeneration() {
   const { getToken } = useAuth();
@@ -46,16 +46,6 @@ export function useMnemonicGeneration() {
   const stories = useRef(new Map<string, string>());
   const attempts = useRef(new Map<string, number>());
   const inFlight = useRef(new Map<string, Promise<string>>());
-  // Stop warming ahead after a refusal; a story the learner asks for still tries.
-  const stopWarming = useRef(false);
-  const gone = useRef(false);
-
-  useEffect(
-    () => () => {
-      gone.current = true;
-    },
-    [],
-  );
 
   const fetchStory = useCallback(
     async (request: KanjiMnemonicRequest): Promise<string> => {
@@ -112,7 +102,6 @@ export function useMnemonicGeneration() {
 
       try {
         const story = await fetchStory(request);
-        stopWarming.current = false;
         if (requestId.current !== id) return story;
         setState({
           literal: request.kanji,
@@ -123,7 +112,6 @@ export function useMnemonicGeneration() {
         });
         return story;
       } catch (err) {
-        stopWarming.current = true;
         const message = err instanceof Error ? err.message : "Could not write a story.";
         if (requestId.current === id) {
           setState((current) => ({ ...current, loading: false, message }));
@@ -134,27 +122,5 @@ export function useMnemonicGeneration() {
     [fetchStory],
   );
 
-  /**
-   * Warms the next frames once the learner has asked for one story. Two at a
-   * time, sequentially: the quota is charged before the model is called, so a
-   * speculative story costs a unit of 500 personal and 2,000 shared per day
-   * whether or not it is ever read, and a refusal stops the run.
-   */
-  const prefetch = useCallback(
-    async (requests: readonly KanjiMnemonicRequest[]): Promise<void> => {
-      for (const request of requests.slice(0, PREFETCH_AHEAD)) {
-        if (stopWarming.current || gone.current) return;
-        if (stories.current.has(cacheKey(request))) continue;
-        try {
-          await fetchStory(request);
-        } catch {
-          stopWarming.current = true;
-          return;
-        }
-      }
-    },
-    [fetchStory],
-  );
-
-  return { state, generate, prefetch };
+  return { state, generate };
 }

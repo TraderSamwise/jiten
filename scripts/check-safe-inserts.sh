@@ -70,7 +70,21 @@ check_file() {
     local lineno
     lineno=$(echo "$line" | cut -d: -f1)
     local rest
-    rest=$(awk -v s="$((lineno + 1))" 'NR >= s && NR < s + 12 { print; if (index($0, "`")) exit }' "$file" 2>/dev/null || true)
+    local own
+    own=$(sed -n "${lineno}p" "$file")
+    local rest=""
+    # A statement that ends on its own line has no continuation to scan. Without
+    # this, the window's first line is the NEXT statement and an unsafe one-line
+    # INSERT borrows the ON CONFLICT of whatever follows it.
+    if ! echo "$own" | grep -q ';'; then
+      rest=$(awk -v s="$((lineno + 1))" '
+        NR >= s && NR < s + 12 {
+          print
+          # The backtick closing the template literal ends this statement.
+          if (index($0, "`")) exit
+          if (index($0, ";")) exit
+        }' "$file" 2>/dev/null || true)
+    fi
     if echo "$rest" | grep -qi 'ON CONFLICT'; then
       continue
     fi

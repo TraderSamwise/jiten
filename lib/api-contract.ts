@@ -98,9 +98,4 @@ export const kanjiMnemonicRequestSchema = z.object({
   kanji: reqTrimmed(8, "kanji is required"),
   keyword: reqTrimmed(120, "keyword is required"),
   primitives: trimmedArray(12, 120),
-  // The learner's own vocabulary for these primitives, learned from their past
-  // stories (db/primitive-associations.ts), and a few of those stories as
-  // style exemplars. Both optional: an older client sends neither.
-  myWords: trimmedArray(12, 60),
-  examples: trimmedArray(3, 400),
 });

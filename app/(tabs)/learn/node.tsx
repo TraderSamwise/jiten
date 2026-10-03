@@ -31,11 +31,11 @@ import { useMnemonicGeneration, type GenerationState } from "@/hooks/useMnemonic
 import { useSafeGoBack } from "@/lib/navigation";
 import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
 import {
+  CROWN_MAX,
   nextCrown,
   nodeId,
   nodeRefFromParams,
   type CourseFrame,
-  type NodeStep,
 } from "@/lib/rtk-course";
 import type { AssemblePiece } from "@/lib/rtk-assemble";
 import { mnemonicRequestFor } from "@/lib/rtk-prompt";
@@ -50,20 +50,6 @@ import {
   startSession,
   type SessionState,
 } from "@/lib/rtk-session";
-
-/**
- * The steps the runner can render. Each later phase adds one, and a step that
- * is not here is never scheduled — so a session's progress counts only what it
- * will actually ask.
- */
-const IMPLEMENTED_STEPS: readonly NodeStep[] = [
-  "meet",
-  "recognise",
-  "identify",
-  "assemble",
-  "write",
-  "cloze",
-];
 
 const pieceCache = new WeakMap<object, AssemblePiece[]>();
 
@@ -119,6 +105,9 @@ function MeetStep({
   onDone: (outcome: "saved" | "skipped") => void;
 }) {
   const { mnemonic, keyword, loaded, saveMnemonic, saveNote } = useKanjiMnemonic(frame.literal);
+  // Saving is an async write; two taps would advance the queue twice and the
+  // next frame would be marked answered without ever being shown.
+  const saving = useRef(false);
 
   return (
     <MeetFrame
@@ -130,6 +119,8 @@ function MeetStep({
       canGenerate={canGenerate}
       onGenerate={(fresh) => onGenerate(frame, keyword, fresh)}
       onSave={(text) => {
+        if (saving.current) return;
+        saving.current = true;
         saveMnemonic(text)
           .catch((err) => console.warn("[learn] could not save the story", err))
           .finally(() => onDone("saved"));
@@ -257,7 +248,7 @@ function ClozeStep({
   onUnaskable: () => void;
 }) {
   const { strokesDb } = useDatabase();
-  const { mnemonic, keyword } = useKanjiMnemonic(frame.literal);
+  const { mnemonic, keyword, loaded } = useKanjiMnemonic(frame.literal);
   const [synonyms, setSynonyms] = useState<string[]>([]);
   const shown = keyword ?? frame.keyword;
 
@@ -275,6 +266,16 @@ function ClozeStep({
       current = false;
     };
   }, [strokesDb, shown]);
+
+  // Until the note is read, `mnemonic` is null because nothing has been read —
+  // and the drill would decide it has no story to cloze and skip itself.
+  if (!loaded) {
+    return (
+      <Centred>
+        <ActivityIndicator size="large" />
+      </Centred>
+    );
+  }
 
   return (
     <ClozeDrill
@@ -298,7 +299,7 @@ export default function LearnNodeScreen() {
   const { markDirty } = useSync();
   // Held by the runner, not the step: the story cache and the node-ahead
   // prefetch have to outlive the frame that asked for the first story.
-  const { state: generation, generate, prefetch } = useMnemonicGeneration();
+  const { state: generation, generate } = useMnemonicGeneration();
 
   const ref = useMemo(() => nodeRefFromParams(unit, node), [unit, node]);
   // One sitting of this node: a stable node id alone would collapse every pass
@@ -345,7 +346,7 @@ export default function LearnNodeScreen() {
         if (!current) return;
         setFrames(loaded);
         setCrown(progress?.crown ?? 0);
-        setSession(startSession(loaded, progress?.crown ?? 0, IMPLEMENTED_STEPS));
+        setSession(startSession(loaded, progress?.crown ?? 0));
       })
       .catch((err) => {
         if (current) setFrames([]);
@@ -599,19 +600,9 @@ export default function LearnNodeScreen() {
     (frame: CourseFrame, keyword: string | null, fresh: boolean) => {
       const request = mnemonicRequestFor(frame, primitives.get(frame.literal) ?? [], keyword);
       if (!request) return;
-      generate(request, { fresh })
-        .then((story) => {
-          if (!story || !frames) return;
-          // Only now, having been asked for one, warm the frames after this one.
-          const after = frames.slice(frames.indexOf(frame) + 1);
-          const requests = after
-            .map((next) => mnemonicRequestFor(next, primitives.get(next.literal) ?? [], null))
-            .filter((req): req is NonNullable<typeof req> => !!req);
-          prefetch(requests).catch(() => {});
-        })
-        .catch(() => {});
+      generate(request, { fresh }).catch(() => {});
     },
-    [frames, primitives, generate, prefetch],
+    [primitives, generate],
   );
 
   const header = (
@@ -680,11 +671,7 @@ export default function LearnNodeScreen() {
         </Text>
       </View>
 
-      {item?.step === "write" && !strokesDb ? (
-        <SkipStep onSkip={onUnaskable} />
-      ) : item?.step === "assemble" && !strokesDb ? (
-        <SkipStep onSkip={onUnaskable} />
-      ) : item?.step === "cloze" ? (
+      {item?.step === "cloze" ? (
         <ClozeStep
           key={`cloze:${item.frame.literal}:${session.misses}`}
           frame={item.frame}
@@ -699,7 +686,7 @@ export default function LearnNodeScreen() {
         </Centred>
       ) : item?.step === "write" && !strokes.get(item.frame.literal)?.length ? (
         // Nothing to reveal, so nothing to grade against.
-        <SkipStep onSkip={onUnaskable} />
+        <SkipStep key={`skip:write:${item.frame.literal}`} onSkip={onUnaskable} />
       ) : item?.step === "write" ? (
         <WriteStep
           key={`write:${item.frame.literal}:${session.misses}`}
@@ -755,12 +742,20 @@ export default function LearnNodeScreen() {
       ) : (
         <Centred>
           <Text className="text-xl font-semibold text-foreground">
-            {total === 0 ? "Nothing to do here yet" : crowned ? "Crowned" : "Node met"}
+            {crown >= CROWN_MAX
+              ? "Already crowned"
+              : total === 0
+                ? "Nothing to do here yet"
+                : crowned
+                  ? "Crowned"
+                  : "Node met"}
           </Text>
           <Text className="mt-2 text-center text-sm text-muted-foreground">
-            {total === 0
-              ? "The drills for this pass land in a coming update."
-              : `${session.cleared.length} of ${total} answered.`}
+            {crown >= CROWN_MAX
+              ? "This node is drilled to production. Nothing left to ask."
+              : total === 0
+                ? "There was nothing this pass could ask without the stroke data."
+                : `${session.cleared.length} of ${total} answered.`}
           </Text>
           <Pressable
             onPress={goBack}

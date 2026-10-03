@@ -36,6 +36,9 @@ export function useKanjiMnemonic(literal: string) {
       .catch(() => {
         setMnemonic(null);
         setKeyword(null);
+        // Still loaded: a failed read is "there is nothing", not "ask later".
+        // Left false, a caller that waits for it can never save at all.
+        setLoaded(true);
       });
   }, [userDb, literal]);
 

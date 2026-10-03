@@ -78,6 +78,7 @@ export function AssembleDrill({
   onUnaskable,
 }: Props) {
   const [picked, setPicked] = useState<string[]>([]);
+  const sequence = useRef<string[]>([]);
   const settled = useRef(false);
   const askedAt = useRef(0);
   const moveOn = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,9 +109,13 @@ export function AssembleDrill({
   const tap = useCallback(
     (piece: AssemblePiece) => {
       if (settled.current) return;
-      const next = [...picked, piece.target];
-      const outcome = judge(next, board.answer);
+      // The ref is the sequence; the state only draws it. Two taps in one batch
+      // would both read the same `picked` and the first would be lost — scoring
+      // a miss for a learner who tapped in the right order.
+      const next = [...sequence.current, piece.target];
+      sequence.current = next;
       setPicked(next);
+      const outcome = judge(next, board.answer);
       if (outcome === "building") return;
 
       settled.current = true;
@@ -120,7 +125,7 @@ export function AssembleDrill({
       });
       if (outcome === "done") moveOn.current = setTimeout(onDone, CORRECT_PAUSE_MS);
     },
-    [picked, board.answer, onAnswer, onDone],
+    [board.answer, onAnswer, onDone],
   );
 
   const shown = keyword ?? frame.keyword;

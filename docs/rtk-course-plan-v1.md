@@ -63,8 +63,8 @@ wired at all. The course adopts them rather than writing new ones.
 - **The entry point is a tab of its own, `Learn`** — not a screen under `/lists`. The course is not
   a deck: it reads no list, it has no entry count, and nothing is added to or removed from it.
   Its root screen _is_ the path, so opening the app one tab over is the whole of "starting a
-  session". Two incidental deep links in: the `Heisig <n>` badge already on `KanjiDetail`, and a
-  kanji long-pressed in the reader — both jump to that frame's node.
+  session". Two deep links in were planned — the `Heisig <n>` badge on `KanjiDetail`, and a kanji
+  long-pressed in the reader — and **neither is built**: the path is the only way into a node.
 
 - **The user chooses: write, or generate.** Nothing is generated silently and nothing is
   generated before it is asked for. A frame's Meet step offers **Write it**, **Generate** and
@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS course_progress (
   updated_at TEXT NOT NULL,
   deleted_at TEXT DEFAULT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_course_progress_course ON course_progress(course, unit, node);
+CREATE INDEX IF NOT EXISTS idx_course_progress_lookup ON course_progress(course, unit, node);
+CREATE INDEX IF NOT EXISTS idx_course_progress_updated ON course_progress(updated_at);
 ```
 
 Sync posture: a row is three integers and two timestamps, and losing it would silently reset the
@@ -230,7 +231,7 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - Measured: all 2,200 path frames have at least three `kanji_similarity` rows, but a distractor
   also needs a keyword, so it must itself be a path frame — and on that basis 7 frames have **no**
   usable lookalike and 43 have fewer than three. The same-unit top-up is therefore load-bearing,
-  not insurance (9.2 of a frame's top 20 qualify on average).
+  not insurance (8.96 of a frame's top 20 qualify on average).
 - No two of the 2,200 keywords are the same (measured), so a 4-way choice can never be ambiguous
   and the picker dedupes on the literal only.
 - `db/rtk-frames.ts`'s `loadSimilarPathFrames` joins `kanji_similarity` to `kanji_characters` and
@@ -260,9 +261,10 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 ### Phase 5 — Assemble
 
 - Measured, and it is not what a row count suggests: of the 2,200 path frames, **165 have no
-  identifiable component at all and 54 have one**, because 280 decomposition edges carry a
-  keyword with neither a glyph nor a primitive id — the extraction could not link them, and
-  231 frames contain one. A board missing a part would teach a decomposition that is simply
+  identifiable component at all and 54 have one**, because 232 decomposition edges on the path carry a
+  keyword with neither a glyph nor a primitive id (280 across the whole dictionary) — the
+  extraction could not link them, and 231 frames contain one. They do not explain the whole
+  shortfall: 6 of the 165 have no decomposition rows at all. A board missing a part would teach a decomposition that is simply
   wrong, so `canAssemble` refuses all of those outright rather than asking a short question.
 - The decoy pool is 868 identifiable components (233 of them RTK's invented primitives, each
   with a substitute glyph to draw). Each is named by its **modal** keyword: 木 is "tree" on
@@ -302,8 +304,7 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - Self-grading is deliberate, not a shortcut: stroke-matching against KanjiVG is a project of its
   own, and recognising that you could not write it is the exercise the book sets.
 - All 2,200 path frames have stroke paths, so this drill never has to be skipped for missing data.
-- Crown 1 is the first pass that contains it (`STEPS_BY_CROWN[1]`), and crown 2 the first that
-  contains writing.
+- `STEPS_BY_CROWN[2]` is the first pass that contains writing.
 - Gates: typecheck, lint, and the drill's own tests — the grade cannot be given before the reveal,
   and two taps are one grade.
 

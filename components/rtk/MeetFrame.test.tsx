@@ -29,7 +29,29 @@ vi.mock("react-native", () => ({
       {children}
     </button>
   ),
-  TextInput: (props: { value?: string }) => <input value={props.value ?? ""} readOnly />,
+  // The keyword override lives entirely in these three props; a mock that drops
+  // them leaves the whole path untested.
+  TextInput: ({
+    value,
+    onChangeText,
+    onSubmitEditing,
+    onBlur,
+  }: {
+    value?: string;
+    onChangeText?: (t: string) => void;
+    onSubmitEditing?: () => void;
+    onBlur?: () => void;
+  }) => (
+    <input
+      aria-label="keyword"
+      value={value ?? ""}
+      onChange={(e) => onChangeText?.(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onSubmitEditing?.();
+      }}
+      onBlur={() => onBlur?.()}
+    />
+  ),
   View: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
@@ -215,6 +237,78 @@ describe("regenerating", () => {
     );
     expect(editor()).not.toBe(first);
     expect(editor()).toContain("a second story");
+  });
+});
+
+describe("the keyword", () => {
+  const field = () => screen.getByLabelText("keyword");
+
+  it("shows Heisig's until the learner sets their own", () => {
+    view(nothing);
+    expect(screen.getByText("parent")).toBeTruthy();
+    cleanup();
+    render(
+      <MeetFrame
+        frame={frame}
+        primitives={[]}
+        keyword="folks"
+        story={null}
+        generation={nothing}
+        canGenerate
+        onGenerate={() => {}}
+        onSave={() => {}}
+        onKeyword={() => {}}
+        onKeep={() => {}}
+        onSkip={() => {}}
+      />,
+    );
+    expect(screen.getByText("folks")).toBeTruthy();
+  });
+
+  it("saves what was typed on Enter", () => {
+    const onKeyword = vi.fn();
+    render(
+      <MeetFrame
+        frame={frame}
+        primitives={[]}
+        keyword={null}
+        story={null}
+        generation={nothing}
+        canGenerate
+        onGenerate={() => {}}
+        onSave={() => {}}
+        onKeyword={onKeyword}
+        onKeep={() => {}}
+        onSkip={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("parent"));
+    fireEvent.change(field(), { target: { value: "folks" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(onKeyword).toHaveBeenCalledWith("folks");
+  });
+
+  it("saves it on blur too, rather than discarding it", () => {
+    const onKeyword = vi.fn();
+    render(
+      <MeetFrame
+        frame={frame}
+        primitives={[]}
+        keyword={null}
+        story={null}
+        generation={nothing}
+        canGenerate
+        onGenerate={() => {}}
+        onSave={() => {}}
+        onKeyword={onKeyword}
+        onKeep={() => {}}
+        onSkip={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("parent"));
+    fireEvent.change(field(), { target: { value: "kin" } });
+    fireEvent.blur(field());
+    expect(onKeyword).toHaveBeenCalledWith("kin");
   });
 });
 

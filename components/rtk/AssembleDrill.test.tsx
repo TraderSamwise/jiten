@@ -142,6 +142,18 @@ describe("tapping", () => {
     expect(onAnswer).toHaveBeenCalledWith(expect.objectContaining({ correct: false }));
   });
 
+  it("keeps both taps when two land in one batch", () => {
+    // Both handlers would read the same stale `picked` and the first tap would
+    // be lost, scoring a miss for a learner who tapped in the right order.
+    const onAnswer = vi.fn();
+    drill({ onAnswer });
+    act(() => {
+      fireEvent.click(screen.getByText("house"));
+      fireEvent.click(screen.getByText("span"));
+    });
+    expect(onAnswer).toHaveBeenCalledWith(expect.objectContaining({ correct: true }));
+  });
+
   it("counts one answer however many times the learner taps", () => {
     const onAnswer = vi.fn();
     drill({ onAnswer });

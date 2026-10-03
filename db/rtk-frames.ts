@@ -53,7 +53,7 @@ export async function loadUnitFrames(
 
 /**
  * Every component the decomposition can identify, as assemble-drill decoys.
- * 868 of them, 244 being RTK's invented primitives, whose substitute glyph
+ * 868 of them, 233 being RTK's invented primitives, whose substitute glyph
  * lives on `primitives` rather than on the edge — hence the join. A component
  * with a keyword but neither a glyph nor an id is unusable as a tile and is
  * left out; `canAssemble` refuses the frames that contain one.

@@ -71,7 +71,16 @@ export function crownsFromProgress(progress: Map<string, CourseProgressRow>): No
   return { crownOf: (id) => progress.get(id)?.crown ?? 0 };
 }
 
-/** Records that a node has been opened, without touching a crown it already has. */
+/**
+ * Records that a node has been opened. Deliberately does NOT touch
+ * `updated_at` on a row that already exists: opening a node is not progress,
+ * and sync merges whole rows last-write-wins — so a bump here would let a stale
+ * device's mere look at a node overwrite a crown earned on another one.
+ *
+ * A soft-deleted row is revived as genuinely new: the learner asked for the
+ * course progress to be deleted, and reopening a node must not resurrect the
+ * crown they threw away.
+ */
 export async function markNodeSeen(db: WrappedUserDb, ref: NodeRef): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
@@ -79,9 +88,16 @@ export async function markNodeSeen(db: WrappedUserDb, ref: NodeRef): Promise<voi
        (id, course, unit, node, crown, first_seen_at, cracked_at, updated_at, deleted_at)
      VALUES (?, ?, ?, ?, 0, ?, NULL, ?, NULL)
      ON CONFLICT(id) DO UPDATE SET
-       first_seen_at = COALESCE(course_progress.first_seen_at, excluded.first_seen_at),
-       deleted_at = NULL,
-       updated_at = excluded.updated_at`,
+       crown = CASE WHEN course_progress.deleted_at IS NULL THEN course_progress.crown ELSE 0 END,
+       cracked_at = CASE WHEN course_progress.deleted_at IS NULL THEN course_progress.cracked_at ELSE NULL END,
+       first_seen_at = CASE
+         WHEN course_progress.deleted_at IS NULL
+           THEN COALESCE(course_progress.first_seen_at, excluded.first_seen_at)
+         ELSE excluded.first_seen_at END,
+       updated_at = CASE
+         WHEN course_progress.deleted_at IS NULL THEN course_progress.updated_at
+         ELSE excluded.updated_at END,
+       deleted_at = NULL`,
     [nodeId(ref), ref.course, ref.unit, ref.node, now, now],
   );
 }
@@ -89,7 +105,9 @@ export async function markNodeSeen(db: WrappedUserDb, ref: NodeRef): Promise<voi
 /**
  * Awards a crown, clamped to CROWN_MAX. MAX() keeps a racing write on THIS
  * device from lowering it; sync is plain last-write-wins, so a newer remote row
- * still can — the cost is one node re-crowned, per db/sync-helpers.ts.
+ * still can — the cost is one node re-crowned, per db/sync-helpers.ts. A
+ * soft-deleted row takes the new crown rather than the maximum, or a deleted
+ * course would come back at whatever it was before.
  */
 export async function awardCrown(db: WrappedUserDb, ref: NodeRef, crown: number): Promise<void> {
   const next = Math.max(0, Math.min(Math.trunc(crown), CROWN_MAX));
@@ -99,9 +117,15 @@ export async function awardCrown(db: WrappedUserDb, ref: NodeRef, crown: number)
        (id, course, unit, node, crown, first_seen_at, cracked_at, updated_at, deleted_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
      ON CONFLICT(id) DO UPDATE SET
-       crown = MAX(course_progress.crown, excluded.crown),
+       crown = CASE
+         WHEN course_progress.deleted_at IS NULL
+           THEN MAX(course_progress.crown, excluded.crown)
+         ELSE excluded.crown END,
        first_seen_at = COALESCE(course_progress.first_seen_at, excluded.first_seen_at),
-       cracked_at = COALESCE(course_progress.cracked_at, excluded.cracked_at),
+       cracked_at = CASE
+         WHEN course_progress.deleted_at IS NULL
+           THEN COALESCE(course_progress.cracked_at, excluded.cracked_at)
+         ELSE excluded.cracked_at END,
        deleted_at = NULL,
        updated_at = excluded.updated_at`,
     [nodeId(ref), ref.course, ref.unit, ref.node, next, now, next >= 1 ? now : null, now],

@@ -70,12 +70,17 @@ describe("answering", () => {
     expect(after.queue[2]).toEqual(missed);
   });
 
-  it("puts a miss at the end when there is nothing left to space it against", () => {
+  it("ends the node on a miss there is nothing left to space against", () => {
+    // Put back at the head it would be re-asked at once and forever, and the
+    // only way out would be to claim it was right.
     let state = startSession([FRAMES[0]], 1);
     while (state.queue.length > 1) state = advance(state, "hit");
     const last = currentItem(state)!;
     const after = advance(state, "miss");
-    expect(after.queue).toEqual([last]);
+    expect(after.queue).toEqual([]);
+    expect(isComplete(after)).toBe(true);
+    expect(after.cleared).toContain(last);
+    expect(after.misses).toBe(1);
   });
 
   it("finishes when the queue empties", () => {
@@ -107,15 +112,6 @@ describe("skipping", () => {
     expect(after.queue).toHaveLength(15);
     expect(stepsOf(after)).not.toContain("cloze");
     expect(after.skipped).toHaveLength(5);
-  });
-
-  it("leaves out a step the runner cannot render yet", () => {
-    // A phase that only implements Meet runs a coherent session whose progress
-    // bar counts five items, not twenty with fifteen pre-skipped.
-    const state = startSession(FRAMES, 0, ["meet"]);
-    expect(stepsOf(state)).toEqual(Array(5).fill("meet"));
-    expect(state.queue).toHaveLength(5);
-    expect(state.skipped).toHaveLength(0);
   });
 
   it("leaves a session alone when the step is not in it", () => {

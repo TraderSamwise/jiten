@@ -115,6 +115,8 @@ export async function recordConfusion(
       .set({
         confusionCount: sql`${confusionPairs.confusionCount} + 1`,
         lastConfusedAt: now,
+        // The table syncs on updated_at; left null the row never pushes.
+        updatedAt: now,
       })
       .where(eq(confusionPairs.id, existing[0].id));
   } else {
@@ -130,6 +132,7 @@ export async function recordConfusion(
         confusionCount: 1,
         lastConfusedAt: now,
         createdAt: now,
+        updatedAt: now,
       })
       .onConflictDoNothing();
   }
