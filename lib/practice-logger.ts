@@ -13,7 +13,10 @@ export type PracticeMode =
   // The RTK course's drills (app/(tabs)/learn): one mode per exercise, so the
   // practice history separates recognising a frame from producing it.
   | "rtk_recognise"
-  | "rtk_identify";
+  | "rtk_identify"
+  | "rtk_assemble"
+  | "rtk_write"
+  | "rtk_cloze";
 
 interface PracticeEvent {
   entryId: number;

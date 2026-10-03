@@ -2,29 +2,50 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 
+import { AssembleDrill } from "@/components/rtk/AssembleDrill";
 import { ChoiceDrill } from "@/components/rtk/ChoiceDrill";
+import { ClozeDrill } from "@/components/rtk/ClozeDrill";
+import { WriteDrill } from "@/components/rtk/WriteDrill";
 import { MeetFrame } from "@/components/rtk/MeetFrame";
 import { Text } from "@/components/ui/text";
 import { CustomHeaderScreen } from "@/components/CustomHeaderScreen";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
-import { getPrimitivesForKanjiAsync } from "@/db/kanji-search";
+import {
+  getPrimitivesForKanjiAsync,
+  getStrokePathsAsync,
+  getSynonymsForKeywordAsync,
+} from "@/db/kanji-search";
 import { getUserDrizzle } from "@/db/drizzle";
-import { loadNodeFrames, loadSimilarPathFrames, loadUnitFrames } from "@/db/rtk-frames";
-import { getNodeProgress, markNodeSeen } from "@/db/rtk-progress";
-import type { KanjiPrimitive } from "@/db/types";
+import {
+  loadDecoyPieces,
+  loadNodeFrames,
+  loadSimilarPathFrames,
+  loadUnitFrames,
+} from "@/db/rtk-frames";
+import { awardCrown, getNodeProgress, markNodeSeen } from "@/db/rtk-progress";
+import type { KanjiPrimitive, StrokePath } from "@/db/types";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { useMnemonicGeneration, type GenerationState } from "@/hooks/useMnemonicGeneration";
 import { useSafeGoBack } from "@/lib/navigation";
 import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
-import { nodeId, nodeRefFromParams, type CourseFrame, type NodeStep } from "@/lib/rtk-course";
+import {
+  nextCrown,
+  nodeId,
+  nodeRefFromParams,
+  type CourseFrame,
+  type NodeStep,
+} from "@/lib/rtk-course";
+import type { AssemblePiece } from "@/lib/rtk-assemble";
 import { mnemonicRequestFor } from "@/lib/rtk-prompt";
+import { graduateFrames } from "@/lib/rtk-graduate";
+import { gradeOutcome, type WriteGrade } from "@/lib/rtk-write";
 import {
   advance,
   currentItem,
-  sessionAnswered,
-  sessionTotal,
+  dropStep,
+  isComplete,
   skipCurrent,
   startSession,
   type SessionState,
@@ -35,7 +56,24 @@ import {
  * is not here is never scheduled — so a session's progress counts only what it
  * will actually ask.
  */
-const IMPLEMENTED_STEPS: readonly NodeStep[] = ["meet", "recognise", "identify"];
+const IMPLEMENTED_STEPS: readonly NodeStep[] = [
+  "meet",
+  "recognise",
+  "identify",
+  "assemble",
+  "write",
+  "cloze",
+];
+
+const pieceCache = new WeakMap<object, AssemblePiece[]>();
+
+async function decoyPieces(strokesDb: Parameters<typeof loadDecoyPieces>[0]) {
+  const cached = pieceCache.get(strokesDb);
+  if (cached) return cached;
+  const loaded = await loadDecoyPieces(strokesDb);
+  pieceCache.set(strokesDb, loaded);
+  return loaded;
+}
 
 /** Both choice drills ask about the same frame; the mode separates the history. */
 const CHOICE_MODE = {
@@ -43,8 +81,25 @@ const CHOICE_MODE = {
   identify: "rtk_identify",
 } as const;
 
+/** An order mistake, not a mistaken lookalike — so no confusion pair. */
+const ASSEMBLE_MODE = "rtk_assemble";
+const WRITE_MODE = "rtk_write";
+const CLOZE_MODE = "rtk_cloze";
+
 function Centred({ children }: { children: React.ReactNode }) {
   return <View className="flex-1 items-center justify-center p-6">{children}</View>;
+}
+
+/** A step the data cannot support: hand it back rather than show a spinner. */
+function SkipStep({ onSkip }: { onSkip: () => void }) {
+  useEffect(() => {
+    onSkip();
+  }, [onSkip]);
+  return (
+    <Centred>
+      <ActivityIndicator />
+    </Centred>
+  );
 }
 
 /** The frame's own saved story and keyword; everything else is the runner's. */
@@ -134,6 +189,107 @@ function ChoiceStep({
   );
 }
 
+function AssembleStep({
+  frame,
+  primitives,
+  pool,
+  onAnswered,
+  onDone,
+  onUnaskable,
+}: {
+  frame: CourseFrame;
+  primitives: KanjiPrimitive[];
+  pool: readonly AssemblePiece[];
+  onAnswered: (result: { correct: boolean; responseMs: number }) => void;
+  onDone: () => void;
+  onUnaskable: () => void;
+}) {
+  const { keyword } = useKanjiMnemonic(frame.literal);
+
+  return (
+    <AssembleDrill
+      frame={frame}
+      keyword={keyword}
+      primitives={primitives}
+      pool={pool}
+      onAnswer={onAnswered}
+      onDone={onDone}
+      onUnaskable={onUnaskable}
+    />
+  );
+}
+
+function WriteStep({
+  frame,
+  strokes,
+  onGraded,
+  onDone,
+}: {
+  frame: CourseFrame;
+  strokes: StrokePath[];
+  onGraded: (result: { grade: WriteGrade; responseMs: number }) => void;
+  onDone: () => void;
+}) {
+  const { keyword } = useKanjiMnemonic(frame.literal);
+
+  return (
+    <WriteDrill
+      frame={frame}
+      keyword={keyword}
+      strokes={strokes}
+      onAnswer={onGraded}
+      onDone={onDone}
+    />
+  );
+}
+
+function ClozeStep({
+  frame,
+  primitives,
+  onAnswered,
+  onDone,
+  onUnaskable,
+}: {
+  frame: CourseFrame;
+  primitives: KanjiPrimitive[];
+  onAnswered: (result: { correct: boolean; typed: string; responseMs: number }) => void;
+  onDone: () => void;
+  onUnaskable: () => void;
+}) {
+  const { strokesDb } = useDatabase();
+  const { mnemonic, keyword } = useKanjiMnemonic(frame.literal);
+  const [synonyms, setSynonyms] = useState<string[]>([]);
+  const shown = keyword ?? frame.keyword;
+
+  useEffect(() => {
+    if (!strokesDb || !shown) return;
+    let current = true;
+    getSynonymsForKeywordAsync(strokesDb, shown)
+      .then((loaded) => {
+        if (current) setSynonyms(loaded);
+      })
+      .catch(() => {
+        if (current) setSynonyms([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [strokesDb, shown]);
+
+  return (
+    <ClozeDrill
+      frame={frame}
+      keyword={keyword}
+      story={mnemonic}
+      primitives={primitives}
+      synonyms={synonyms}
+      onAnswer={onAnswered}
+      onDone={onDone}
+      onUnaskable={onUnaskable}
+    />
+  );
+}
+
 export default function LearnNodeScreen() {
   const { unit, node } = useLocalSearchParams<{ unit?: string; node?: string }>();
   const { dictDb, strokesDb } = useDatabase();
@@ -160,6 +316,13 @@ export default function LearnNodeScreen() {
   // Until the option pool is read, a choice drill would see one option, hand the
   // step back, and skip the whole queue before the query returned.
   const [poolReady, setPoolReady] = useState(false);
+  const [crown, setCrown] = useState(0);
+  // The ref guards against a second award; the state is what the screen reads,
+  // because a ref change does not re-render.
+  const awarded = useRef(false);
+  const [crowned, setCrowned] = useState(false);
+  const [pieces, setPieces] = useState<AssemblePiece[] | null>(null);
+  const [strokes, setStrokes] = useState<Map<string, StrokePath[]>>(new Map());
   const drizzleDb = useMemo(() => (userDb ? getUserDrizzle(userDb) : null), [userDb]);
   // Remembered between answering and moving on: the queue advances only once the
   // learner has seen the result.
@@ -172,10 +335,16 @@ export default function LearnNodeScreen() {
     setFrames(null);
     setSession(null);
     setPoolReady(false);
+    awarded.current = false;
+    setCrowned(false);
+    setPrimitives(new Map());
+    setSimilar(new Map());
+    setStrokes(new Map());
     Promise.all([loadNodeFrames(dictDb, ref), getNodeProgress(userDb, ref)])
       .then(([loaded, progress]) => {
         if (!current) return;
         setFrames(loaded);
+        setCrown(progress?.crown ?? 0);
         setSession(startSession(loaded, progress?.crown ?? 0, IMPLEMENTED_STEPS));
       })
       .catch((err) => {
@@ -205,6 +374,17 @@ export default function LearnNodeScreen() {
       }),
     ).then((pairs) => {
       if (current) setPrimitives(new Map(pairs));
+    });
+    Promise.all(
+      frames.map(async (frame) => {
+        try {
+          return [frame.literal, await getStrokePathsAsync(strokesDb, frame.literal)] as const;
+        } catch {
+          return [frame.literal, [] as StrokePath[]] as const;
+        }
+      }),
+    ).then((pairs) => {
+      if (current) setStrokes(new Map(pairs));
     });
     return () => {
       current = false;
@@ -237,6 +417,62 @@ export default function LearnNodeScreen() {
       current = false;
     };
   }, [dictDb, frames, ref]);
+
+  // The strokes tier is a download, and may never arrive. Without it there are
+  // no components to tap, so the step leaves the pass instead of spinning.
+  const everHadStrokes = useRef(false);
+  useEffect(() => {
+    if (strokesDb) everHadStrokes.current = true;
+  }, [strokesDb]);
+  useEffect(() => {
+    // Only when the tier has never been there. On web a cross-tab lock release
+    // nulls the handle for a moment, and that must not cost the sitting its
+    // stroke steps.
+    if (strokesDb || everHadStrokes.current || !session) return;
+    setSession((current) => {
+      if (!current) return current;
+      return dropStep(dropStep(current, "assemble"), "write");
+    });
+  }, [strokesDb, session]);
+
+  // Every identifiable component, once, as the assemble drill's decoys. The 868
+  // rows never change, so the read is paid once per database rather than per node.
+  useEffect(() => {
+    if (!strokesDb) return;
+    let current = true;
+    decoyPieces(strokesDb)
+      .then((loaded) => {
+        if (current) setPieces(loaded);
+      })
+      .catch(() => {
+        if (current) setPieces([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [strokesDb]);
+
+  /**
+   * The crown, and the cards. Only once something was actually answered — a
+   * pass whose every step was skipped has tested nothing — and only once, which
+   * the ref guards against a re-render.
+   */
+  useEffect(() => {
+    if (!ref || !userDb || !session || awarded.current) return;
+    if (!isComplete(session) || session.cleared.length === 0) return;
+    awarded.current = true;
+    setCrowned(true);
+    const next = nextCrown(crown);
+    awardCrown(userDb, ref, next).catch((err) =>
+      console.warn("[learn] could not award the crown", err),
+    );
+    if (drizzleDb && frames?.length) {
+      // Idempotent: a frame carded at crown 1 is not carded again at 2 or 3.
+      graduateFrames(drizzleDb, frames, ref.unit).catch((err) =>
+        console.warn("[learn] could not make the cards", err),
+      );
+    }
+  }, [ref, userDb, drizzleDb, session, crown, frames]);
 
   // Only once the node is known to exist: a link naming a node the course does
   // not have must not leave a synced progress row behind.
@@ -289,6 +525,61 @@ export default function LearnNodeScreen() {
       markDirty();
     },
     [drizzleDb, ref, markDirty],
+  );
+
+  const onAssembled = useCallback(
+    (frame: CourseFrame, result: { correct: boolean; responseMs: number }) => {
+      lastResult.current = result.correct;
+      if (!drizzleDb) return;
+      logPracticeEvent(drizzleDb, {
+        entryId: 0,
+        kanjiLiteral: frame.literal,
+        practiceMode: ASSEMBLE_MODE,
+        correct: result.correct,
+        responseMs: result.responseMs,
+        sessionId: sessionTag.current || null,
+      }).catch(() => {});
+      markDirty();
+    },
+    [drizzleDb, markDirty],
+  );
+
+  const onGraded = useCallback(
+    (frame: CourseFrame, result: { grade: WriteGrade; responseMs: number }) => {
+      const correct = gradeOutcome(result.grade) === "hit";
+      lastResult.current = correct;
+      if (!drizzleDb) return;
+      logPracticeEvent(drizzleDb, {
+        entryId: 0,
+        kanjiLiteral: frame.literal,
+        practiceMode: WRITE_MODE,
+        correct,
+        responseMs: result.responseMs,
+        // The learner's own verdict, which is the only grade this drill has.
+        typedAnswer: result.grade,
+        sessionId: sessionTag.current || null,
+      }).catch(() => {});
+      markDirty();
+    },
+    [drizzleDb, markDirty],
+  );
+
+  const onClozed = useCallback(
+    (frame: CourseFrame, result: { correct: boolean; typed: string; responseMs: number }) => {
+      lastResult.current = result.correct;
+      if (!drizzleDb) return;
+      logPracticeEvent(drizzleDb, {
+        entryId: 0,
+        kanjiLiteral: frame.literal,
+        practiceMode: CLOZE_MODE,
+        correct: result.correct,
+        responseMs: result.responseMs,
+        typedAnswer: result.typed,
+        sessionId: sessionTag.current || null,
+      }).catch(() => {});
+      markDirty();
+    },
+    [drizzleDb, markDirty],
   );
 
   const onUnaskable = useCallback(() => {
@@ -372,8 +663,10 @@ export default function LearnNodeScreen() {
   }
 
   const item = currentItem(session);
-  const answered = sessionAnswered(session);
-  const total = sessionTotal(session);
+  // Skipped steps leave the count: a node that drops its stroke drills should
+  // read "1 of 10", not "6 of 10" before a question has been answered.
+  const answered = session.cleared.length;
+  const total = answered + session.queue.length;
 
   return (
     <CustomHeaderScreen>
@@ -387,7 +680,49 @@ export default function LearnNodeScreen() {
         </Text>
       </View>
 
-      {(item?.step === "recognise" || item?.step === "identify") && !poolReady ? (
+      {item?.step === "write" && !strokesDb ? (
+        <SkipStep onSkip={onUnaskable} />
+      ) : item?.step === "assemble" && !strokesDb ? (
+        <SkipStep onSkip={onUnaskable} />
+      ) : item?.step === "cloze" ? (
+        <ClozeStep
+          key={`cloze:${item.frame.literal}:${session.misses}`}
+          frame={item.frame}
+          primitives={primitives.get(item.frame.literal) ?? []}
+          onAnswered={(result) => onClozed(item.frame, result)}
+          onDone={onSeen}
+          onUnaskable={onUnaskable}
+        />
+      ) : item?.step === "write" && !strokes.has(item.frame.literal) ? (
+        <Centred>
+          <ActivityIndicator size="large" />
+        </Centred>
+      ) : item?.step === "write" && !strokes.get(item.frame.literal)?.length ? (
+        // Nothing to reveal, so nothing to grade against.
+        <SkipStep onSkip={onUnaskable} />
+      ) : item?.step === "write" ? (
+        <WriteStep
+          key={`write:${item.frame.literal}:${session.misses}`}
+          frame={item.frame}
+          strokes={strokes.get(item.frame.literal) ?? []}
+          onGraded={(result) => onGraded(item.frame, result)}
+          onDone={onSeen}
+        />
+      ) : item?.step === "assemble" && (!pieces || !primitives.has(item.frame.literal)) ? (
+        <Centred>
+          <ActivityIndicator size="large" />
+        </Centred>
+      ) : item?.step === "assemble" ? (
+        <AssembleStep
+          key={`assemble:${item.frame.literal}:${session.misses}`}
+          frame={item.frame}
+          primitives={primitives.get(item.frame.literal) ?? []}
+          pool={pieces ?? []}
+          onAnswered={(result) => onAssembled(item.frame, result)}
+          onDone={onSeen}
+          onUnaskable={onUnaskable}
+        />
+      ) : (item?.step === "recognise" || item?.step === "identify") && !poolReady ? (
         <Centred>
           <ActivityIndicator size="large" />
         </Centred>
@@ -420,12 +755,12 @@ export default function LearnNodeScreen() {
       ) : (
         <Centred>
           <Text className="text-xl font-semibold text-foreground">
-            {total === 0 ? "Nothing to do here yet" : "Node met"}
+            {total === 0 ? "Nothing to do here yet" : crowned ? "Crowned" : "Node met"}
           </Text>
           <Text className="mt-2 text-center text-sm text-muted-foreground">
             {total === 0
               ? "The drills for this pass land in a coming update."
-              : `${session.cleared.length} of ${total} frames have a story.`}
+              : `${session.cleared.length} of ${total} answered.`}
           </Text>
           <Pressable
             onPress={goBack}

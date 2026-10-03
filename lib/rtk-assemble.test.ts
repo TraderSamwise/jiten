@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { answerPieces, buildBoard, judge, pieceOf, type AssemblePiece } from "./rtk-assemble";
+import {
+  answerPieces,
+  buildBoard,
+  canAssemble,
+  judge,
+  pieceOf,
+  type AssemblePiece,
+} from "./rtk-assemble";
 import type { KanjiPrimitive } from "@/db/types";
 
 function real(position: number, glyph: string, keyword = `kw-${glyph}`): KanjiPrimitive {
@@ -69,6 +76,40 @@ describe("the answer", () => {
       displayGlyph: null,
     };
     expect(answerPieces([real(1, "木"), orphan]).map((p) => p.target)).toEqual(["木"]);
+  });
+});
+
+describe("whether a frame can be assembled at all", () => {
+  const unlinked: KanjiPrimitive = {
+    position: 2,
+    glyph: null,
+    primitiveId: null,
+    keyword: "fireplace",
+    isPrimitive: true,
+    displayGlyph: null,
+  };
+
+  it("can, with two identifiable parts", () => {
+    expect(canAssemble([real(1, "宀"), real(2, "亘")])).toBe(true);
+  });
+
+  it("cannot, with one part", () => {
+    expect(canAssemble([real(1, "宀")])).toBe(false);
+  });
+
+  it("cannot, with none", () => {
+    // 隙 匕 喩 嗅 惧 箋 have no components at all.
+    expect(canAssemble([])).toBe(false);
+  });
+
+  it("cannot, when a named part has no identity to tap", () => {
+    // 231 of the 2,200 frames carry one: a keyword with no glyph and no id.
+    // Dropping it would ask for a decomposition that is missing a piece.
+    expect(canAssemble([real(1, "宀"), real(3, "亘"), unlinked])).toBe(false);
+  });
+
+  it("can, when an unnamed part has no identity either", () => {
+    expect(canAssemble([real(1, "宀"), real(2, "亘"), { ...unlinked, keyword: null }])).toBe(true);
   });
 });
 

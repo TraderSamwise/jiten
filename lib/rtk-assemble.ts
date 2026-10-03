@@ -30,6 +30,18 @@ export function pieceOf(primitive: KanjiPrimitive): AssemblePiece | null {
   };
 }
 
+/**
+ * Whether this frame can be asked at all. 231 of the 2,200 path frames have a
+ * component that carries a keyword but neither a glyph nor a primitive id — the
+ * extraction could not link it — and a board missing a part would teach a
+ * decomposition that is simply wrong, so those frames are never assembled.
+ */
+export function canAssemble(primitives: readonly KanjiPrimitive[]): boolean {
+  const named = primitives.filter((p) => p.keyword?.trim());
+  if (named.some((p) => pieceOf(p) === null)) return false;
+  return answerPieces(primitives).length >= MIN_COMPONENTS;
+}
+
 /** The answer: the frame's components, in writing order, each identifiable. */
 export function answerPieces(primitives: readonly KanjiPrimitive[]): AssemblePiece[] {
   const seen = new Set<string>();

@@ -239,7 +239,13 @@ export async function addKanjiToList(db: UserDrizzle, kanjiLiteral: string, list
   reconcileBookmark(key, await getKanjiListIds(db, kanjiLiteral));
 }
 
-async function writeKanjiToList(
+/**
+ * The database half of adding a kanji: the list entry and a new FSRS card, with
+ * none of the bookmark UI around it. Exported for the RTK course, which
+ * graduates frames into a DEFAULT list — one `getKanjiListIds` cannot see, so
+ * the optimistic bookmark path would add the word and then reconcile it away.
+ */
+export async function writeKanjiToList(
   db: UserDrizzle,
   kanjiLiteral: string,
   listId: string,

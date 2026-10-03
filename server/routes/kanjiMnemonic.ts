@@ -13,8 +13,9 @@ import type { AppVariables } from "../types";
 
 const MODEL = process.env.OPENAI_MNEMONIC_MODEL || "gpt-5.4-mini";
 // Coarse pre-parse DoS guard (BYTES); the zod field caps are the real content
-// limit. Sized well above the summed char caps (Japanese is ~3 bytes/char).
-const MAX_BODY_BYTES = 8 * 1024;
+// limit. Sized well above the summed char caps (Japanese is ~3 bytes/char) —
+// which the learner's own words and story exemplars doubled.
+const MAX_BODY_BYTES = 16 * 1024;
 
 const STORY_SCHEMA = {
   type: "object",
@@ -38,8 +39,20 @@ export const kanjiMnemonicRoute = new Hono<{ Variables: AppVariables }>().post(
       userId,
       model: MODEL,
       instructions:
-        "Write a concrete mnemonic story for a Heisig-style kanji learner. Prefer the shortest, cleverest phrasing that sticks — ideally one punchy sentence, never more than two; concise and vivid beats elaborate. Weave the given primitive keywords together as the imagery and land on the kanji's keyword as the punchline. Use the primitive keywords verbatim where natural. Return only the structured JSON requested by the schema.",
-      input: { kanji: input.kanji, keyword: input.keyword, primitives: input.primitives },
+        "Write a concrete mnemonic story for a Heisig-style kanji learner. Prefer the shortest, cleverest phrasing that sticks — ideally one punchy sentence, never more than two; concise and vivid beats elaborate. Weave the given primitive keywords together as the imagery and land on the kanji's keyword as the punchline. " +
+        // The learner's own words come from their past stories; using them is
+        // what makes a generated story feel like theirs rather than generic.
+        "`myWords` are the words this learner already uses for these primitives — prefer them over the primitive keywords when they fit. `examples` are their own stories; match their voice and length, not their content. " +
+        // The markup the app renders: without it a generated story shows no
+        // primitive chips and teaches the association index nothing.
+        "Mark every primitive reference up as [label], or [label](target) when a target is given for it, and write the kanji's own keyword as {self}. Escape a literal [ ] { } with a backslash. Use the primitive keywords verbatim where natural. Return only the structured JSON requested by the schema.",
+      input: {
+        kanji: input.kanji,
+        keyword: input.keyword,
+        primitives: input.primitives,
+        myWords: input.myWords,
+        examples: input.examples,
+      },
       schemaName: "kanji_mnemonic",
       schema: STORY_SCHEMA,
       maxOutputTokens: 300,

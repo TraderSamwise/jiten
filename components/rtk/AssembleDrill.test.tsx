@@ -84,6 +84,22 @@ describe("the board", () => {
     expect(onUnaskable).toHaveBeenCalledTimes(1);
   });
 
+  it("asks nothing of a frame whose decomposition has a gap", () => {
+    // A named component with neither a glyph nor an id: 231 frames carry one,
+    // and a board missing a part would teach a wrong decomposition.
+    const onUnaskable = vi.fn();
+    const unlinked: KanjiPrimitive = {
+      position: 3,
+      glyph: null,
+      primitiveId: null,
+      keyword: "fireplace",
+      isPrimitive: true,
+      displayGlyph: null,
+    };
+    drill({ primitives: [...primitives, unlinked], onUnaskable });
+    expect(onUnaskable).toHaveBeenCalledTimes(1);
+  });
+
   it("asks nothing of a frame with no components", () => {
     // 隙 匕 喩 嗅 惧 箋 have none at all.
     const onUnaskable = vi.fn();

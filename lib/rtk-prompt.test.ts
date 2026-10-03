@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { kanjiMnemonicRequestSchema } from "./api-contract";
 import {
+  MAX_EXAMPLES,
   MAX_KEYWORD_CHARS,
+  MAX_MY_WORDS,
   MAX_PRIMITIVES,
   mnemonicRequestFor,
   primitiveKeywords,
@@ -26,7 +28,13 @@ function primitive(position: number, keyword: string | null): KanjiPrimitive {
 describe("what the generator is told", () => {
   it("sends the kanji, its keyword and its primitives", () => {
     const request = mnemonicRequestFor(frame, [primitive(1, "needle"), primitive(2, "tree")]);
-    expect(request).toEqual({ kanji: "親", keyword: "parent", primitives: ["needle", "tree"] });
+    expect(request).toEqual({
+      kanji: "親",
+      keyword: "parent",
+      primitives: ["needle", "tree"],
+      myWords: [],
+      examples: [],
+    });
   });
 
   it("prefers the keyword the user set over Heisig's", () => {
@@ -64,6 +72,39 @@ describe("what the generator is told", () => {
   it("sends nothing for a frame the decomposition does not cover", () => {
     // 隙 匕 喩 嗅 惧 箋 have no components at all.
     expect(mnemonicRequestFor(frame, [])?.primitives).toEqual([]);
+  });
+});
+
+describe("the learner's own archive", () => {
+  it("sends the words they already use for these primitives", () => {
+    const request = mnemonicRequestFor(frame, [], null, {
+      myWords: ["needle", "home"],
+      examples: ["a [needle] through a [tree]"],
+    });
+    expect(request).toMatchObject({
+      myWords: ["needle", "home"],
+      examples: ["a [needle] through a [tree]"],
+    });
+  });
+
+  it("sends nothing when there is no archive yet", () => {
+    expect(mnemonicRequestFor(frame, [])).toMatchObject({ myWords: [], examples: [] });
+  });
+
+  it("drops blanks and repeats", () => {
+    expect(
+      mnemonicRequestFor(frame, [], null, { myWords: ["home", " ", "home", "needle"] }),
+    ).toMatchObject({ myWords: ["home", "needle"] });
+  });
+
+  it("sends no more than the contract keeps", () => {
+    const request = mnemonicRequestFor(frame, [], null, {
+      myWords: Array.from({ length: 30 }, (_, i) => `w${i}`),
+      examples: Array.from({ length: 9 }, (_, i) => `story ${i}`),
+    })!;
+    expect(request.myWords).toHaveLength(MAX_MY_WORDS);
+    expect(request.examples).toHaveLength(MAX_EXAMPLES);
+    expect(kanjiMnemonicRequestSchema.parse(request)).toEqual(request);
   });
 });
 

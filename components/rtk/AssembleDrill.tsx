@@ -6,8 +6,8 @@ import { Text } from "@/components/ui/text";
 import type { KanjiPrimitive } from "@/db/types";
 import {
   buildBoard,
+  canAssemble,
   judge,
-  MIN_COMPONENTS,
   type AssemblePiece,
   type AssembleVerdict,
 } from "@/lib/rtk-assemble";
@@ -21,7 +21,7 @@ interface Props {
   pool: readonly AssemblePiece[];
   onAnswer: (result: { correct: boolean; responseMs: number }) => void;
   onDone: () => void;
-  /** Fewer than two components — nothing to assemble. */
+  /** Fewer than two identifiable components — nothing to assemble. */
   onUnaskable: () => void;
 }
 
@@ -98,9 +98,10 @@ export function AssembleDrill({
     [],
   );
 
+  const askable = canAssemble(primitives);
   useEffect(() => {
-    if (board.answer.length < MIN_COMPONENTS) onUnaskable();
-  }, [board.answer.length, onUnaskable]);
+    if (!askable) onUnaskable();
+  }, [askable, onUnaskable]);
 
   const verdict: AssembleVerdict = judge(picked, board.answer);
 

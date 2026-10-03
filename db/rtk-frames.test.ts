@@ -3,13 +3,16 @@
  * numbers that matter here (56 units, 461 nodes, a 142-frame lesson) are
  * properties of the shipped data, and a synthetic unit would not have them.
  */
-import Database from "better-sqlite3";
 import type * as SQLite from "expo-sqlite";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { COURSE_RTK } from "@/lib/rtk-course";
+import { existsSync } from "fs";
+
 import { DICT_DB_PATH, hasDictDb } from "../test/dictionary-db";
+import Database from "better-sqlite3";
 import {
+  loadDecoyPieces,
   loadNodeFrames,
   loadSimilarPathFrames,
   loadUnitFrames,
@@ -23,6 +26,50 @@ const dictDb = {
   getAllAsync: async <T>(sql: string, params?: unknown[]): Promise<T[]> =>
     raw!.prepare(sql).all(...(params ?? [])) as T[],
 } as unknown as SQLite.SQLiteDatabase;
+
+const STROKES_DB_PATH = DICT_DB_PATH.replace("dictionary.db", "dictionary-strokes.db");
+const hasStrokesDb = existsSync(STROKES_DB_PATH);
+const strokesRaw = hasStrokesDb ? new Database(STROKES_DB_PATH, { readonly: true }) : null;
+afterAll(() => strokesRaw?.close());
+
+const strokesDb = {
+  getAllAsync: async <T>(sql: string, params?: unknown[]): Promise<T[]> =>
+    strokesRaw!.prepare(sql).all(...(params ?? [])) as T[],
+} as unknown as SQLite.SQLiteDatabase;
+
+describe.skipIf(!hasStrokesDb)("the components a board can offer", () => {
+  it("is every component the decomposition can identify", async () => {
+    const pool = await loadDecoyPieces(strokesDb);
+    expect(pool).toHaveLength(868);
+    expect(pool.every((piece) => piece.keyword && piece.target)).toBe(true);
+  });
+
+  it("names a component the way it is most often named", async () => {
+    const pool = await loadDecoyPieces(strokesDb);
+    // 木 is "tree" on 172 edges, but also "wood", "2 trees" and "3 trees".
+    expect(pool.find((piece) => piece.target === "木")?.keyword).toBe("tree");
+    expect(pool.find((piece) => piece.target === "日")?.keyword).toBe("sun");
+  });
+
+  it("offers each component once", async () => {
+    const pool = await loadDecoyPieces(strokesDb);
+    expect(new Set(pool.map((p) => p.target)).size).toBe(pool.length);
+  });
+
+  it("gives an invented primitive its substitute glyph to draw", async () => {
+    const pool = await loadDecoyPieces(strokesDb);
+    const invented = pool.filter((piece) => piece.target.startsWith("p"));
+    expect(invented.length).toBeGreaterThan(200);
+    expect(invented.every((piece) => piece.glyph === null)).toBe(true);
+    expect(invented.some((piece) => !!piece.displayGlyph)).toBe(true);
+  });
+
+  it("offers no component with nothing to tap", async () => {
+    const pool = await loadDecoyPieces(strokesDb);
+    // 280 edges carry a keyword and no identity at all; none may reach a board.
+    expect(pool.every((piece) => piece.glyph !== null || piece.target.startsWith("p"))).toBe(true);
+  });
+});
 
 describe.skipIf(!hasDictDb)("the path as the dictionary holds it", () => {
   it("has 56 units and 461 nodes", async () => {

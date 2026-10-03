@@ -23,13 +23,43 @@ const h = vi.hoisted(() => {
   }));
   return {
     frames,
+    // A test can narrow the node to one frame to reach a later step quickly.
+    only: null as null | number,
+    crown: 1,
+    // A test can take the strokes tier away, as a user without it has.
+    noStrokes: false,
     // Stable identities: a fresh object each render would re-run the loaders'
     // effects forever, cancelling each in turn.
+    primitives: [
+      {
+        position: 1,
+        glyph: "宀",
+        primitiveId: null,
+        keyword: "house",
+        isPrimitive: false,
+        displayGlyph: null,
+      },
+      {
+        position: 2,
+        glyph: "亘",
+        primitiveId: null,
+        keyword: "span",
+        isPrimitive: false,
+        displayGlyph: null,
+      },
+    ],
+    strokes: [{ type: "s", d: "M0,0L10,10" }],
+    pieces: [
+      { target: "木", glyph: "木", displayGlyph: null, keyword: "tree" },
+      { target: "p1", glyph: null, displayGlyph: "促", keyword: "walking stick" },
+    ],
     dictDb: {},
     strokesDb: {},
     userDb: {},
     drizzle: {},
     markNodeSeen: vi.fn(async () => {}),
+    awardCrown: vi.fn(async (..._args: unknown[]) => {}),
+    graduateFrames: vi.fn(async (..._args: unknown[]) => []),
     logPracticeEvent: vi.fn(async (..._args: unknown[]) => {}),
     recordConfusion: vi.fn(async (..._args: unknown[]) => {}),
   };
@@ -60,15 +90,25 @@ vi.mock("@/components/CustomHeaderScreen", () => ({
 vi.mock("@/lib/navigation", () => ({ useSafeGoBack: () => () => {} }));
 
 vi.mock("@/db/provider", () => ({
-  useDatabase: () => ({ dictDb: h.dictDb, strokesDb: h.strokesDb }),
+  useDatabase: () => ({
+    dictDb: h.dictDb,
+    strokesDb: h.noStrokes ? null : h.strokesDb,
+  }),
 }));
 vi.mock("@/db/user-provider", () => ({ useUserDb: () => h.userDb }));
 vi.mock("@/db/sync-provider", () => ({ useSync: () => ({ markDirty: () => {} }) }));
 vi.mock("@/db/drizzle", () => ({ getUserDrizzle: () => h.drizzle }));
-vi.mock("@/db/kanji-search", () => ({ getPrimitivesForKanjiAsync: async () => [] }));
+vi.mock("@/db/kanji-search", () => ({
+  getPrimitivesForKanjiAsync: async () => h.primitives,
+  getStrokePathsAsync: async () => h.strokes,
+  getSynonymsForKeywordAsync: async () => [],
+}));
 
 vi.mock("@/db/rtk-frames", () => ({
-  loadNodeFrames: async () => h.frames,
+  loadNodeFrames: async () => (h.only ? h.frames.slice(0, h.only) : h.frames),
+  // Deferred like the lookalikes, so "the tiles are not in yet" is a state the
+  // test passes through rather than one it skips over.
+  loadDecoyPieces: async () => h.pieces,
   loadUnitFrames: async () => h.frames,
   // Held until the test releases it, so "before the pool loads" is reachable.
   // Resolves a tick late, so "the frames are in but the options are not" — the
@@ -78,9 +118,12 @@ vi.mock("@/db/rtk-frames", () => ({
 }));
 
 vi.mock("@/db/rtk-progress", () => ({
-  getNodeProgress: async () => ({ crown: 1 }),
+  getNodeProgress: async () => ({ crown: h.crown }),
   markNodeSeen: h.markNodeSeen,
+  awardCrown: h.awardCrown,
 }));
+
+vi.mock("@/lib/rtk-graduate", () => ({ graduateFrames: h.graduateFrames }));
 
 vi.mock("@/lib/practice-logger", () => ({
   logPracticeEvent: h.logPracticeEvent,
@@ -147,12 +190,81 @@ vi.mock("@/components/rtk/ChoiceDrill", () => ({
   ),
 }));
 
+vi.mock("@/components/rtk/AssembleDrill", () => ({
+  AssembleDrill: ({
+    frame,
+    pool,
+    onAnswer,
+    onDone,
+  }: {
+    frame: CourseFrame;
+    pool: readonly { target: string }[];
+    onAnswer: (r: { correct: boolean; responseMs: number }) => void;
+    onDone: () => void;
+  }) => (
+    <div>
+      <span>{`ASSEMBLE:${frame.literal}:${pool.length}`}</span>
+      <button onClick={() => onAnswer({ correct: true, responseMs: 10 })}>built</button>
+      <button onClick={onDone}>seen</button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/rtk/ClozeDrill", () => ({
+  ClozeDrill: ({ frame, onUnaskable }: { frame: CourseFrame; onUnaskable: () => void }) => {
+    // The fixture's frames have no story, so every cloze hands itself back.
+    React.useEffect(() => onUnaskable(), [onUnaskable]);
+    return <span>{`CLOZE:${frame.literal}`}</span>;
+  },
+}));
+
+vi.mock("@/components/rtk/WriteDrill", () => ({
+  WriteDrill: ({
+    frame,
+    strokes,
+    onAnswer,
+    onDone,
+  }: {
+    frame: CourseFrame;
+    strokes: readonly { d: string }[];
+    onAnswer: (r: { grade: string; responseMs: number }) => void;
+    onDone: () => void;
+  }) => (
+    <div>
+      <span>{`WRITE:${frame.literal}:${strokes.length}`}</span>
+      <button
+        onClick={() => {
+          onAnswer({ grade: "got-it", responseMs: 10 });
+          onDone();
+        }}
+      >
+        wrote
+      </button>
+      <button
+        onClick={() => {
+          onAnswer({ grade: "missed", responseMs: 10 });
+          onDone();
+        }}
+      >
+        blank
+      </button>
+    </div>
+  ),
+}));
+
 import LearnNodeScreen from "./node";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  h.only = null;
+  h.noStrokes = false;
+  h.crown = 1;
+});
 
 beforeEach(() => {
   h.markNodeSeen.mockClear();
+  h.awardCrown.mockClear();
+  h.graduateFrames.mockClear();
   h.logPracticeEvent.mockClear();
   h.recordConfusion.mockClear();
 });
@@ -245,6 +357,134 @@ describe("a question the course cannot ask", () => {
     expect(question()).toBe("DRILL:kanji:一");
     fireEvent.click(screen.getByText("unaskable"));
     expect(question()).toBe("DRILL:kanji:二");
+  });
+});
+
+describe("assembling", () => {
+  it("comes after the choice questions, with the decoy pool in hand", async () => {
+    h.only = 1;
+    await open();
+
+    // Crown 1 runs recognise, identify, then assemble over this one frame.
+    expect(question()).toBe("DRILL:kanji:一");
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+    expect(question()).toBe("DRILL:keyword:一");
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+
+    expect(screen.getByText("ASSEMBLE:一:2")).toBeTruthy();
+  });
+
+  it("records an order mistake as practice, with no confusion pair", async () => {
+    h.only = 1;
+    await open();
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(screen.getByText("right"));
+      fireEvent.click(screen.getByText("seen"));
+    }
+    h.logPracticeEvent.mockClear();
+
+    fireEvent.click(screen.getByText("built"));
+    expect(h.logPracticeEvent).toHaveBeenCalledTimes(1);
+    expect(h.logPracticeEvent.mock.calls[0][1]).toMatchObject({
+      kanjiLiteral: "一",
+      practiceMode: "rtk_assemble",
+      correct: true,
+    });
+    // Tapping the parts out of order is not mistaking one kanji for another.
+    expect(h.recordConfusion).not.toHaveBeenCalled();
+  });
+});
+
+describe("writing", () => {
+  it("comes last, with the frame's strokes to reveal", async () => {
+    h.only = 1;
+    h.crown = 2;
+    await open();
+
+    // Crown 2 runs identify, assemble, then write.
+    expect(question()).toBe("DRILL:keyword:一");
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+
+    expect(await screen.findByText(/^ASSEMBLE:/)).toBeTruthy();
+    fireEvent.click(screen.getByText("built"));
+    fireEvent.click(screen.getByText("seen"));
+
+    expect(screen.getByText("WRITE:一:1")).toBeTruthy();
+  });
+
+  it("records the learner's own verdict, and a blank is a miss", async () => {
+    h.only = 1;
+    h.crown = 2;
+    await open();
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+    await screen.findByText(/^ASSEMBLE:/);
+    fireEvent.click(screen.getByText("built"));
+    fireEvent.click(screen.getByText("seen"));
+    h.logPracticeEvent.mockClear();
+
+    fireEvent.click(screen.getByText("blank"));
+    expect(h.logPracticeEvent.mock.calls[0][1]).toMatchObject({
+      practiceMode: "rtk_write",
+      correct: false,
+      typedAnswer: "missed",
+    });
+    // A miss comes back: the node is not finished.
+    expect(screen.getByText("WRITE:一:1")).toBeTruthy();
+  });
+});
+
+describe("without the strokes tier", () => {
+  it("drops assembling from the pass rather than waiting for it", async () => {
+    h.only = 1;
+    h.noStrokes = true;
+    await open();
+
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+
+    // The node is finished: there is no third question to wait for.
+    expect(screen.queryByText(/^ASSEMBLE:/)).toBeNull();
+    expect(screen.getByText("Back to the path")).toBeTruthy();
+  });
+});
+
+describe("finishing a node", () => {
+  it("awards the next crown and makes the cards", async () => {
+    h.only = 1;
+    h.crown = 1;
+    await open();
+    // recognise, identify, assemble, then the storyless cloze hands itself back.
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+    fireEvent.click(screen.getByText("right"));
+    fireEvent.click(screen.getByText("seen"));
+    expect(await screen.findByText(/^ASSEMBLE:/)).toBeTruthy();
+    fireEvent.click(screen.getByText("built"));
+    fireEvent.click(screen.getByText("seen"));
+
+    expect(screen.getByText("Crowned")).toBeTruthy();
+    expect(h.awardCrown).toHaveBeenCalledTimes(1);
+    expect(h.awardCrown.mock.calls[0][2]).toBe(2);
+    expect(h.graduateFrames).toHaveBeenCalledTimes(1);
+    expect(h.graduateFrames.mock.calls[0][2]).toBe(1);
+  });
+
+  it("awards nothing when every step was skipped", async () => {
+    h.only = 1;
+    h.crown = 1;
+    h.noStrokes = true;
+    await open();
+    fireEvent.click(screen.getByText("unaskable"));
+    fireEvent.click(screen.getByText("unaskable"));
+
+    expect(h.awardCrown).not.toHaveBeenCalled();
+    expect(h.graduateFrames).not.toHaveBeenCalled();
   });
 });
 

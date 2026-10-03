@@ -53,15 +53,6 @@ export function isComplete(state: SessionState): boolean {
   return state.queue.length === 0;
 }
 
-/** Everything the session will ask, answered or not — for a progress bar. */
-export function sessionTotal(state: SessionState): number {
-  return state.queue.length + state.cleared.length + state.skipped.length;
-}
-
-export function sessionAnswered(state: SessionState): number {
-  return state.cleared.length + state.skipped.length;
-}
-
 export function advance(state: SessionState, outcome: "hit" | "miss"): SessionState {
   const [current, ...rest] = state.queue;
   if (!current) return state;

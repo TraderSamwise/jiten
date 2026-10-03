@@ -1,5 +1,6 @@
 import type * as SQLite from "expo-sqlite";
 
+import type { AssemblePiece } from "@/lib/rtk-assemble";
 import {
   nodesInUnit,
   splitUnitIntoNodes,
@@ -47,6 +48,47 @@ export async function loadUnitFrames(
     index: row.heisig_index,
     keyword: row.heisig_keyword ?? "",
     lesson: row.heisig_lesson,
+  }));
+}
+
+/**
+ * Every component the decomposition can identify, as assemble-drill decoys.
+ * 868 of them, 244 being RTK's invented primitives, whose substitute glyph
+ * lives on `primitives` rather than on the edge — hence the join. A component
+ * with a keyword but neither a glyph nor an id is unusable as a tile and is
+ * left out; `canAssemble` refuses the frames that contain one.
+ */
+export async function loadDecoyPieces(strokesDb: SQLite.SQLiteDatabase): Promise<AssemblePiece[]> {
+  const rows = await strokesDb.getAllAsync<{
+    target: string;
+    glyph: string | null;
+    keyword: string | null;
+    display_glyph: string | null;
+  }>(
+    // The modal keyword per component, not an arbitrary one: 木 is "tree" on 172
+    // edges but also "wood", "2 trees" and "3 trees", and a bare column under
+    // GROUP BY would pick whichever row SQLite happened to keep.
+    `SELECT target, glyph, keyword, display_glyph FROM (
+       SELECT COALESCE(kp.glyph, 'p' || kp.primitive_id) AS target,
+              kp.glyph AS glyph,
+              kp.keyword AS keyword,
+              p.display_glyph AS display_glyph,
+              COUNT(*) AS n
+         FROM kanji_primitives kp
+         LEFT JOIN primitives p ON p.id = kp.primitive_id
+        WHERE kp.keyword IS NOT NULL
+          AND (kp.glyph IS NOT NULL OR kp.primitive_id IS NOT NULL)
+        GROUP BY target, kp.keyword
+     )
+      GROUP BY target
+     HAVING n = MAX(n)
+      ORDER BY target`,
+  );
+  return rows.map((row) => ({
+    target: row.target,
+    glyph: row.glyph,
+    displayGlyph: row.display_glyph,
+    keyword: row.keyword,
   }));
 }
 

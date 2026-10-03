@@ -6,8 +6,6 @@ import {
   currentItem,
   dropStep,
   isComplete,
-  sessionAnswered,
-  sessionTotal,
   skipCurrent,
   startSession,
 } from "./rtk-session";
@@ -44,8 +42,8 @@ describe("a first pass over a node", () => {
 
   it("asks four things of each of five frames", () => {
     expect(session.queue).toHaveLength(20);
-    expect(sessionTotal(session)).toBe(20);
-    expect(sessionAnswered(session)).toBe(0);
+    expect(session.cleared).toHaveLength(0);
+    expect(session.skipped).toHaveLength(0);
   });
 
   it("starts on the first frame's meet step", () => {
@@ -84,7 +82,7 @@ describe("answering", () => {
     let state = startSession(FRAMES, 0);
     for (let i = 0; i < 20; i++) state = advance(state, "hit");
     expect(isComplete(state)).toBe(true);
-    expect(sessionAnswered(state)).toBe(20);
+    expect(state.cleared).toHaveLength(20);
   });
 
   it("does nothing once it is complete", () => {
@@ -101,7 +99,7 @@ describe("skipping", () => {
     expect(after.cleared).toHaveLength(0);
     expect(after.skipped).toHaveLength(1);
     expect(after.misses).toBe(0);
-    expect(sessionTotal(after)).toBe(20);
+    expect(after.queue).toHaveLength(19);
   });
 
   it("drops every cloze step of a node with no stories", () => {
@@ -109,7 +107,6 @@ describe("skipping", () => {
     expect(after.queue).toHaveLength(15);
     expect(stepsOf(after)).not.toContain("cloze");
     expect(after.skipped).toHaveLength(5);
-    expect(sessionTotal(after)).toBe(20);
   });
 
   it("leaves out a step the runner cannot render yet", () => {
@@ -117,7 +114,7 @@ describe("skipping", () => {
     // bar counts five items, not twenty with fifteen pre-skipped.
     const state = startSession(FRAMES, 0, ["meet"]);
     expect(stepsOf(state)).toEqual(Array(5).fill("meet"));
-    expect(sessionTotal(state)).toBe(5);
+    expect(state.queue).toHaveLength(5);
     expect(state.skipped).toHaveLength(0);
   });
 

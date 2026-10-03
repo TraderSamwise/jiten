@@ -259,65 +259,83 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 
 ### Phase 5 — Assemble
 
-- Measured: 2,194 of the 2,200 path frames have a decomposition (2.19 components on average,
-  8 at most); 隙 匕 喩 嗅 惧 箋 have none and 170 more have a single component, so the drill is
-  skipped below two components rather than asking the learner to assemble one piece.
-- The decoy pool is measured: 869 distinct components carry a keyword (244 of them RTK's
-  invented primitives), so decoys come from the whole pool rather than the unit.
+- Measured, and it is not what a row count suggests: of the 2,200 path frames, **165 have no
+  identifiable component at all and 54 have one**, because 280 decomposition edges carry a
+  keyword with neither a glyph nor a primitive id — the extraction could not link them, and
+  231 frames contain one. A board missing a part would teach a decomposition that is simply
+  wrong, so `canAssemble` refuses all of those outright rather than asking a short question.
+- The decoy pool is 868 identifiable components (233 of them RTK's invented primitives, each
+  with a substitute glyph to draw). Each is named by its **modal** keyword: 木 is "tree" on
+  172 edges but also "wood", "2 trees" and "3 trees", and a bare column under `GROUP BY`
+  would show whichever row SQLite happened to keep.
+- Without the strokes tier there are no components to tap at all, so the stroke steps are
+  dropped from the pass rather than waiting for a download that may never come — but only
+  when the tier has **never** been there, because on web a cross-tab lock release nulls the
+  handle for a moment and that must not cost the sitting its drills. The header counts
+  cleared against cleared-plus-remaining, so a dropped step does not make it open at "6 of
+  10".
 - `components/rtk/AssembleDrill.tsx`: tap the primitives in `position` order, decoys drawn from
   other frames' primitives, rendered with `PrimitiveGlyph` so invented primitives show their
   substitute glyph and keyword.
-- Crown level 2 unlocks it.
+- `STEPS_BY_CROWN[1]` is the first pass that contains it.
 - Gates: typecheck, lint, tests for order enforcement and decoy selection.
+
+- Not pinned, and said plainly: the half of the assemble gate that waits for the **tiles** is
+  argued from the code, not covered. No crown's first step is assemble, so reaching it in a
+  test means answering earlier questions, by which time any fixture timer has fired — and a
+  deferred cannot be released because async `act` hangs in this setup.
 
 ### Phase 6 — Write
 
-- Skia is already compiled into build 23 (`react-native-skia` 2.4.21 in the iOS pod lock, and
-  `yarn check:ota-native-deps` passes against that build), so the drill is OTA-shippable and
-  needs no new binary. Re-run that check before shipping it anyway.
-- `components/rtk/WriteDrill.tsx`: a Skia canvas, strokes recorded, **Show me** revealing
-  `StrokeOrderDiagram`, then a three-way self-grade (missed it / close / got it) feeding the same
-  rating scale as the SRS.
-- Crown level 3 unlocks it.
-- Gates: typecheck, lint, a test over the grade→crown transition. Self-grading is not machine
-  graded, deliberately — recognition of one's own failure is the RTK exercise.
+- **Not Skia after all.** `components/StrokeOrderDiagram.tsx` already draws these strokes with
+  `react-native-svg` in a 109×109 KanjiVG viewBox, so the canvas records a finger stroke as an SVG
+  path in that same box and the reveal lines up by construction. `react-native-svg` is linked and
+  in use; Skia is compiled into build 23 but would be a second drawing stack for no gain. Re-run
+  `yarn check:ota-native-deps` before shipping either way.
+- `lib/rtk-write.ts` (pure): screen points to that box, clamped and de-duplicated, with a tap
+  drawn as a dot rather than an invisible lone moveto; and the three grades, where **close counts
+  as produced** — asking again in the same sitting would test the hand, not the memory.
+- `components/rtk/WriteDrill.tsx`: keyword at the top, a square to draw in, Clear, and **Show me**.
+  The grades do not exist until the strokes are revealed, so a grade is always a judgement against
+  the answer rather than a guess at it. Drawing uses the responder props, not a new gesture
+  dependency.
+- Self-grading is deliberate, not a shortcut: stroke-matching against KanjiVG is a project of its
+  own, and recognising that you could not write it is the exercise the book sets.
+- All 2,200 path frames have stroke paths, so this drill never has to be skipped for missing data.
+- Crown 1 is the first pass that contains it (`STEPS_BY_CROWN[1]`), and crown 2 the first that
+  contains writing.
+- Gates: typecheck, lint, and the drill's own tests — the grade cannot be given before the reveal,
+  and two taps are one grade.
 
 ### Phase 7 — Graduation, cloze, and the archive in context
 
-- Cracking a node creates the cards through the function that already does it:
-  `addKanjiToList(drizzle, literal, listId)` in `lib/quick-bookmark.ts` writes the
-  `list_entries` row and an FSRS card from `createNewCard()`, with `entry_id = 0` and the
-  kanji literal. No new SQL, and retention lands in `study.tsx`.
-- **The one place the course touches a deck — and it already exists.**
-  `lib/seed-default-lists.ts`'s `seedRtkLessonsIfNeeded` already seeds **56 default lists named
-  `RTK Lesson 1..56`** (`default-rtk-lesson-<n>`), each holding that lesson's kanji in
-  `heisig_index` order. So graduation does not invent a list: a cracked node writes `srs_cards`
-  rows against `default-rtk-lesson-<unit>`, whose `list_entries` already name the frame. The list
-  shell does not sync (`lists`' pushFilter excludes `is_default = 1`) and is re-seeded
-  deterministically per device; the cards in it do sync, so scheduling state crosses devices.
-- `components/rtk/ClozeDrill.tsx`: the saved story with the keyword blanked, typed answer accepted
-  through `keyword_synonyms` and `canonicalStem`.
-- `lib/api-contract.ts` + `server/routes/kanjiMnemonic.ts`: extend the request with the user's
-  dominant word per primitive (`getAssociationsForWordAsync`, `targetForPrimitive`), two or three
-  of their own stories as style exemplars, and their custom keyword from `user_kanji_notes`; ask
-  the prompt for the markup `lib/mnemonic-markup.ts` already parses — `{self}` for the kanji's
-  own keyword, `[label]` for a bare primitive, `[label](p<id>|<glyph>)` for a targeted one —
-  so the result renders with chips and feeds `primitive_note_assoc` back.
-- Course progress on `app/(tabs)/lists/stats.tsx`, reusing `getCurrentStreak`.
-- Gates: typecheck, lint, scoped vitest; the schema change gets a contract test pinning the new
-  fields as optional so an older client keeps working.
-
-## Open questions
-
-- Whether the primitive gate should ever **reorder** frames to pull forward kanji from the book
-  being read. Attractive, and the reader already extracts a page's kanji — but it breaks the
-  story-dependency order RTK is built on, so v1 only gates and does not reorder.
-
-## Not doing
-
-- **Hearts, gems, or any failure currency.** They add friction to the thing whose whole purpose is
-  to have none.
-- **A second scheduler.** FSRS and the simple-SRS path already exist and are tuned.
-- **Machine-graded handwriting.** Stroke-match scoring against KanjiVG is a project of its own and
-  self-grading is closer to what the book asks of a reader.
-- **Silently generating 3,000 stories.** Ruled out: the user chooses per frame.
+- `lib/rtk-graduate.ts`: a cracked node's frames become FSRS cards in the lesson's **existing**
+  default list (`default-rtk-lesson-<unit>`), through `writeKanjiToList` — the database half of
+  `addKanjiToList`, newly exported, because the bookmark path it belongs to calls
+  `getKanjiListIds`, which deliberately cannot see default lists and would reconcile the word
+  straight back off. Graduation runs at every crown and each write inserts a fresh row, so it skips
+  a frame already in the list: a frame drilled to crown 3 owns one card, not three.
+- The crown is awarded only when something was actually answered — a pass whose every step was
+  skipped has tested nothing — and only once per sitting.
+- `lib/rtk-cloze.ts` (pure): the markup already has a token for the keyword — `{self}` — so the
+  blank is a rendering choice rather than surgery on the learner's prose, with the written-out
+  keyword as the fallback (whole words only, and a boundary only where one means something). A
+  typed answer is accepted exactly, by `canonicalStem` (so a plural or a tense passes), or through
+  `keyword_synonyms`. `canCloze` is false when nothing in the story names the keyword, and that
+  frame's cloze leaves the pass.
+- `components/rtk/ClozeDrill.tsx`: the blanked story, a text field, and a miss that says whose
+  fault it is — if the story did not bring the keyword back, the story is the thing to rewrite.
+- `lib/api-contract.ts` + `server/routes/kanjiMnemonic.ts`: the request gains `myWords` (the words
+  this learner already uses for these primitives) and `examples` (a few of their own stories, as
+  voice rather than content), both optional so an older client is unaffected. The prompt now asks
+  for the markup `lib/mnemonic-markup.ts` parses — `{self}`, `[label]`, `[label](p<id>|<glyph>)` —
+  so a generated story renders with chips and feeds `primitive_note_assoc` back. The body guard
+  doubled to 16KB, because the summed field caps had overtaken it.
+- **Left unwired, and worth saying:** `myWords` is plumbed end to end but nothing fills it yet.
+  `primitive_note_assoc` maps word → targets, and "the learner's word for THIS primitive" needs the
+  reverse lookup, which does not exist. `examples` has the same shape of gap. The contract and the
+  prompt are ready; the query is the next piece of work.
+- Course progress on the stats screen is also not done: the five `rtk_*` modes have labels, so they
+  read correctly wherever practice history is already shown, but no course-specific panel was added.
+- Gates: typecheck, lint, check-safe-inserts, and the course suites. `lib/rtk-graduate.test.ts`
+  pins that a frame carded once stays carded once.

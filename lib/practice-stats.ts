@@ -699,6 +699,12 @@ export function practiceModeLabel(mode: string): string {
       return "RTK Recognise";
     case "rtk_identify":
       return "RTK Identify";
+    case "rtk_assemble":
+      return "RTK Assemble";
+    case "rtk_write":
+      return "RTK Write";
+    case "rtk_cloze":
+      return "RTK Cloze";
     default:
       return mode;
   }
