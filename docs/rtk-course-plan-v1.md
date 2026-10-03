@@ -82,7 +82,8 @@ wired at all. The course adopts them rather than writing new ones.
 - **The path is volume 1: 2,200 frames in 56 units.** Measured, not assumed — of the 3,000
   keyworded frames in `kanji_characters`, 800 carry no `heisig_lesson`, and the ones that do run
   contiguously from frame 1 to frame 2,200. Those 800 are volume 3 and have no unit to live in, so
-  `lesson` is typed nullable and `unitsFromFrames` drops them rather than guessing a unit.
+  `lesson` is typed nullable, every course query filters `heisig_lesson IS NOT NULL`, and
+  `splitUnitIntoNodes` drops a lesson-less frame rather than place it in a unit it has no claim to.
   The path is therefore **56 units, 2,200 frames, 461 nodes**. Coverage over those frames,
   measured: keyword 2,200/2,200, stroke paths 2,200/2,200, at least three visual confusables
   2,200/2,200, a primitive decomposition 2,194/2,200.
@@ -155,22 +156,36 @@ Each phase ends typecheck- and lint-clean and is committed on `master`.
 - Gates: `yarn typecheck`, `yarn lint`, `yarn vitest run lib/rtk-course.test.ts db/sync-helpers`.
   Prove-fail the gate by widening a node to 6 frames and watching the boundary test fail.
 
+- Staged deliberately: `awardCrown`, `getNodeProgress`, `stepsForCrown`, `nextCrown`,
+  `isCracked` and `introducible` have no production caller until Phases 3-7 wire them to the
+  node runner. They are the spine, not orphans.
+
 ### Phase 2 — The path
 
-- **A fifth tab, `Learn`**, between Lists and Reader in `app/(tabs)/_layout.tsx` — a `GraduationCap`
-  from `lucide-react-native`, `headerShown: false`, matching the other stack tabs.
-- `app/(tabs)/learn/_layout.tsx`: the stack, following the heavy-screen Shell pattern documented in
-  `app/(tabs)/lists/_layout.tsx`.
-- `app/(tabs)/learn/index.tsx`: the path itself — 56 units, node dots per unit, crown state, and a
-  single Continue that resolves to the next node. This is the tab root, so the path is a home
-  screen rather than something reached through a deck.
+- **A fifth tab, `Learn`**, declared between Lists and Reader in `app/(tabs)/_layout.tsx` (tab order
+  is declaration order), with `GraduationCap` from `@/lib/icons` — already `cssInterop`-registered.
+- `app/(tabs)/learn/_layout.tsx`: the stack. `app/(tabs)/learn/index.tsx` is the path itself — the
+  tab root, so the path is a home screen rather than something reached through a deck.
+- `useTabPrefix` in `lib/navigation.ts` gains a `/learn` branch, which obliges the learn stack to
+  carry the same four shared detail routes the other tabs have (`kanji/[literal]`, `word/[id]`,
+  `primitive/[id]`, `counter/[counterId]`) — otherwise `useTabRouter().pushKanji` dead-ends.
+- `db/rtk-frames.ts`: `loadUnitShapes` (a GROUP BY, not 2,200 rows), `loadUnitFrames`,
+  `loadNodeFrames`. Every query filters `heisig_lesson IS NOT NULL`. `kanji_characters` ships in the
+  mini dictionary, so every user has the path.
+- The screen holds no arithmetic: `pathSummary(units, crowns)` in `lib/rtk-course.ts` returns a dot
+  per node, the per-unit and overall crown totals, and where Continue goes.
 - Reads `course_progress` and `kanji_characters` only. **No list is read anywhere in the course**;
   frames come from `heisig_index`.
-- Gates: typecheck, lint, a render test over a seeded progress fixture.
+- Gates: typecheck, lint, and `db/rtk-frames.test.ts` against the real `assets/dictionary.db`
+  (`describe.skipIf(!hasDictDb)`), pinning 56 units / 461 nodes and 一二三四五 as node `rtk:1:0`.
 
 ### Phase 3 — The node runner and the Meet step
 
-- `app/(tabs)/learn/node.tsx`: the session container — frame queue, re-queue on miss, node
+- `lib/rtk-session.ts` (new, pure): the queue — the node's frames crossed with
+  `stepsForCrown`, the re-queue on a miss, and when the node is done. Phase 2 showed the
+  value: with the arithmetic in `lib/`, the screen needs no render test to be covered.
+- `app/(tabs)/learn/node.tsx` replaces the Phase 2 placeholder (which listed the node's frames
+  and recorded it seen) with the session container — frame queue, re-queue on miss, node
   completion writing `crown` and `cracked_at`.
 - `components/rtk/MeetFrame.tsx`: kanji, `PrimitiveChips`, editable keyword, **Write it** /
   **Generate** / **Skip**.

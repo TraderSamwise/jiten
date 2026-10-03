@@ -66,7 +66,7 @@ export async function getNodeProgress(
   return raw ? toRow(raw) : null;
 }
 
-/** A crown lookup for lib/rtk-course's nextNode and unitCrownTotal. */
+/** A crown lookup for lib/rtk-course's nextNode and pathSummary. */
 export function crownsFromProgress(progress: Map<string, CourseProgressRow>): NodeCrowns {
   return { crownOf: (id) => progress.get(id)?.crown ?? 0 };
 }

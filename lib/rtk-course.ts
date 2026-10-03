@@ -25,10 +25,6 @@ export interface CourseFrame {
   lesson: number | null;
 }
 
-/** Volume 1, the whole of the path: frames 1..2200 across 56 lessons. */
-export const PATH_FRAME_COUNT = 2200;
-export const PATH_UNIT_COUNT = 56;
-
 export function isPathFrame(frame: CourseFrame): frame is CourseFrame & { lesson: number } {
   return typeof frame.lesson === "number" && Number.isFinite(frame.lesson) && frame.lesson > 0;
 }
@@ -68,14 +64,26 @@ export function parseNodeId(id: string): NodeRef | null {
   return { course: m[1], unit: Number(m[2]), node: Number(m[3]) };
 }
 
+/** A node from `?unit=12&node=3`, or null when the link is not one. */
+export function nodeRefFromParams(
+  unit: string | undefined,
+  node: string | undefined,
+  course: string = COURSE_RTK,
+): NodeRef | null {
+  return parseNodeId(`${course}:${unit ?? ""}:${node ?? ""}`);
+}
+
 export function nodesInUnit(frameCount: number): number {
   if (frameCount <= 0) return 0;
   return Math.ceil(frameCount / NODE_SIZE);
 }
 
-/** Frames in Heisig order, chunked into nodes. The last node may be short. */
+/**
+ * Frames in Heisig order, chunked into nodes. The last node may be short, and a
+ * frame with no lesson is dropped rather than placed in a unit it has no claim to.
+ */
 export function splitUnitIntoNodes(frames: readonly CourseFrame[]): CourseFrame[][] {
-  const ordered = [...frames].sort((a, b) => a.index - b.index);
+  const ordered = frames.filter(isPathFrame).sort((a, b) => a.index - b.index);
   const nodes: CourseFrame[][] = [];
   for (let i = 0; i < ordered.length; i += NODE_SIZE) {
     nodes.push(ordered.slice(i, i + NODE_SIZE));
@@ -124,18 +132,6 @@ export interface UnitShape {
   nodeCount: number;
 }
 
-/** The path's units, lowest first. Frames with no lesson are dropped, not guessed. */
-export function unitsFromFrames(frames: readonly CourseFrame[]): UnitShape[] {
-  const counts = new Map<number, number>();
-  for (const frame of frames) {
-    if (!isPathFrame(frame)) continue;
-    counts.set(frame.lesson, (counts.get(frame.lesson) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([unit, frameCount]) => ({ unit, nodeCount: nodesInUnit(frameCount) }))
-    .sort((a, b) => a.unit - b.unit);
-}
-
 export interface NodeCrowns {
   /** node id → crown level. A missing id means crown 0. */
   crownOf(id: string): number;
@@ -156,16 +152,46 @@ export function nextNode(
   return null;
 }
 
-/** Crowns earned over a unit's nodes, for the path screen's unit ring. */
-export function unitCrownTotal(
-  unit: UnitShape,
+/** One unit as the path draws it: a dot per node, carrying that node's crown. */
+export interface UnitRow {
+  unit: number;
+  /** Crown level per node, in node order — the path's dots. */
+  crowns: number[];
+  earned: number;
+  possible: number;
+}
+
+export interface PathSummary {
+  rows: UnitRow[];
+  /** Where Continue goes, or null when every node is at the cap. */
+  next: NodeRef | null;
+  earned: number;
+  possible: number;
+}
+
+/** Everything the path screen renders, so the screen itself holds no arithmetic. */
+export function pathSummary(
+  units: readonly UnitShape[],
   crowns: NodeCrowns,
   course: string = COURSE_RTK,
-): number {
-  let total = 0;
-  for (let node = 0; node < unit.nodeCount; node++) {
-    const crown = crowns.crownOf(nodeId({ course, unit: unit.unit, node }));
-    total += Math.max(0, Math.min(crown, CROWN_MAX));
-  }
-  return total;
+): PathSummary {
+  const rows = [...units]
+    .sort((a, b) => a.unit - b.unit)
+    .map(({ unit, nodeCount }) => {
+      const perNode = Array.from({ length: Math.max(0, nodeCount) }, (_, node) =>
+        Math.max(0, Math.min(crowns.crownOf(nodeId({ course, unit, node })), CROWN_MAX)),
+      );
+      return {
+        unit,
+        crowns: perNode,
+        earned: perNode.reduce((a, b) => a + b, 0),
+        possible: perNode.length * CROWN_MAX,
+      };
+    });
+  return {
+    rows,
+    next: nextNode(units, crowns, course),
+    earned: rows.reduce((n, r) => n + r.earned, 0),
+    possible: rows.reduce((n, r) => n + r.possible, 0),
+  };
 }

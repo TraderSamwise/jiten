@@ -4,20 +4,18 @@ import {
   COURSE_RTK,
   CROWN_MAX,
   NODE_SIZE,
-  PATH_FRAME_COUNT,
-  PATH_UNIT_COUNT,
   introducible,
   isCracked,
   isPathFrame,
   nextCrown,
   nextNode,
   nodeId,
+  nodeRefFromParams,
   nodesInUnit,
   parseNodeId,
   splitUnitIntoNodes,
   stepsForCrown,
-  unitCrownTotal,
-  unitsFromFrames,
+  pathSummary,
   type CourseFrame,
   type NodeCrowns,
 } from "./rtk-course";
@@ -85,20 +83,16 @@ describe("node boundaries", () => {
   });
 });
 
+// Volume 1, the whole of the path, as assets/dictionary.db holds it.
+const PATH_FRAME_COUNT = 2200;
+const PATH_UNIT_COUNT = 56;
+
 describe("what is on the path", () => {
   it("drops a frame the dictionary gives no lesson", () => {
     // Frames 2201-3000 are keyworded but lesson-less; they have no unit.
     const mixed = [...frames(5, 1), ...frames(3, null, 2201)];
     expect(mixed.filter(isPathFrame)).toHaveLength(5);
-    expect(unitsFromFrames(mixed)).toEqual([{ unit: 1, nodeCount: 1 }]);
-  });
-
-  it("builds one unit shape per lesson, lowest first", () => {
-    const mixed = [...frames(6, 9), ...frames(15, 2, 100)];
-    expect(unitsFromFrames(mixed)).toEqual([
-      { unit: 2, nodeCount: 3 },
-      { unit: 9, nodeCount: 2 },
-    ]);
+    expect(splitUnitIntoNodes(mixed).flat()).toHaveLength(5);
   });
 
   it("covers volume 1 as the dictionary actually divides it", () => {
@@ -112,25 +106,17 @@ describe("what is on the path", () => {
     expect(perLesson).toHaveLength(PATH_UNIT_COUNT);
     expect(perLesson.reduce((a, b) => a + b, 0)).toBe(PATH_FRAME_COUNT);
 
-    let index = 1;
-    const vol1: CourseFrame[] = [];
-    perLesson.forEach((count, i) => {
-      for (let n = 0; n < count; n++, index++) {
-        vol1.push({ literal: `k${index}`, index, keyword: `kw${index}`, lesson: i + 1 });
-      }
-    });
+    // What db/rtk-frames.ts loadUnitShapes does with the same counts.
+    const nodeTotal = perLesson.reduce((n, count) => n + nodesInUnit(count), 0);
+    expect(nodeTotal).toBe(461);
 
-    const units = unitsFromFrames(vol1);
-    expect(units).toHaveLength(PATH_UNIT_COUNT);
-    expect(units.map((u) => u.unit)).toEqual(perLesson.map((_, i) => i + 1));
-    expect(units.reduce((n, u) => n + u.nodeCount, 0)).toBe(461);
     // The 142-frame lesson is the one that proves a short tail survives.
-    expect(units[22].nodeCount).toBe(nodesInUnit(142));
-    expect(splitUnitIntoNodes(vol1.filter((f) => f.lesson === 23)).at(-1)).toHaveLength(2);
+    expect(nodesInUnit(142)).toBe(29);
+    expect(splitUnitIntoNodes(frames(142, 23)).at(-1)).toHaveLength(2);
   });
 
-  it("has no units at all when nothing has a lesson", () => {
-    expect(unitsFromFrames(frames(4, null, 2500))).toEqual([]);
+  it("has no nodes at all when nothing has a lesson", () => {
+    expect(splitUnitIntoNodes(frames(4, null, 2500))).toEqual([]);
   });
 });
 
@@ -238,14 +224,76 @@ describe("what Continue resolves to", () => {
   });
 });
 
-describe("unit totals", () => {
-  it("sums the crowns its nodes have earned", () => {
-    const crowns = crownsFrom({ "rtk:1:0": 3, "rtk:1:1": 1 });
-    expect(unitCrownTotal({ unit: 1, nodeCount: 3 }, crowns)).toBe(4);
+describe("what the path draws", () => {
+  const units = [
+    { unit: 1, nodeCount: 3 },
+    { unit: 2, nodeCount: 2 },
+  ];
+
+  it("gives every node a dot, in node order", () => {
+    const summary = pathSummary(units, crownsFrom({ "rtk:1:0": 3, "rtk:1:2": 1 }));
+    expect(summary.rows.map((r) => r.crowns)).toEqual([
+      [3, 0, 1],
+      [0, 0],
+    ]);
   });
 
-  it("never counts more than the cap for one node", () => {
-    const crowns = crownsFrom({ "rtk:1:0": 99 });
-    expect(unitCrownTotal({ unit: 1, nodeCount: 1 }, crowns)).toBe(CROWN_MAX);
+  it("totals what is earned against what there is to earn", () => {
+    const summary = pathSummary(units, crownsFrom({ "rtk:1:0": 3, "rtk:2:1": 2 }));
+    expect(summary.rows[0]).toMatchObject({ unit: 1, earned: 3, possible: 9 });
+    expect(summary.earned).toBe(5);
+    expect(summary.possible).toBe(15);
+  });
+
+  it("carries where Continue goes", () => {
+    expect(pathSummary(units, crownsFrom({})).next).toEqual({
+      course: COURSE_RTK,
+      unit: 1,
+      node: 0,
+    });
+  });
+
+  it("has no next node once every one is capped", () => {
+    const all = crownsFrom({
+      "rtk:1:0": 3,
+      "rtk:1:1": 3,
+      "rtk:1:2": 3,
+      "rtk:2:0": 3,
+      "rtk:2:1": 3,
+    });
+    const summary = pathSummary(units, all);
+    expect(summary.next).toBeNull();
+    expect(summary.earned).toBe(summary.possible);
+  });
+
+  it("draws a unit with no frames as no dots at all", () => {
+    const summary = pathSummary([{ unit: 1, nodeCount: 0 }], crownsFrom({}));
+    expect(summary.rows[0]).toMatchObject({ crowns: [], earned: 0, possible: 0 });
+  });
+
+  it("never lets a junk crown distort a total", () => {
+    const summary = pathSummary([{ unit: 1, nodeCount: 2 }], crownsFrom({ "rtk:1:0": -5 }));
+    expect(summary.rows[0].earned).toBe(0);
+  });
+});
+
+describe("a node from a link", () => {
+  it("reads the query the path writes", () => {
+    expect(nodeRefFromParams("12", "3")).toEqual({ course: COURSE_RTK, unit: 12, node: 3 });
+    expect(nodeRefFromParams("1", "0")).toEqual({ course: COURSE_RTK, unit: 1, node: 0 });
+  });
+
+  it("refuses anything that is not one", () => {
+    for (const [unit, node] of [
+      ["abc", "0"],
+      ["1", "x"],
+      ["-1", "0"],
+      ["1", "-2"],
+      ["1.5", "0"],
+      ["1", ""],
+      [undefined, undefined],
+    ] as [string | undefined, string | undefined][]) {
+      expect(nodeRefFromParams(unit, node)).toBeNull();
+    }
   });
 });
