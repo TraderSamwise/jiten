@@ -201,11 +201,11 @@ export async function getOrCreateSmartList(
          id, name, description, flashcard_mode,
          front_faces, back_faces, configured,
          study_position, auto_play_audio, confusion_detection,
-         voice_mode, typing_mode,
+         voice_mode, typing_mode, mnemonic_cloze,
          disable_flip_animation, disable_swipe_animation,
          is_default, learning_steps, relearning_steps,
          created_at, updated_at
-       ) VALUES (?, ?, '', 'simple_srs', ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)`,
+       ) VALUES (?, ?, '', 'simple_srs', ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)`,
       [
         smartId,
         `Smart Review — ${sourceList.name}`,
@@ -215,6 +215,7 @@ export async function getOrCreateSmartList(
         sourceList.confusionDetection ? 1 : 0,
         sourceList.voiceMode ? 1 : 0,
         sourceList.typingMode ? 1 : 0,
+        sourceList.mnemonicCloze ? 1 : 0,
         sourceList.disableFlipAnimation ? 1 : 0,
         sourceList.disableSwipeAnimation ? 1 : 0,
         now,

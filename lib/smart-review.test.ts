@@ -30,6 +30,7 @@ function makeSourceList(overrides: Partial<WordList> = {}): WordList {
     confusionDetection: true,
     voiceMode: false,
     typingMode: false,
+    mnemonicCloze: false,
     disableFlipAnimation: false,
     disableSwipeAnimation: false,
     learningSteps: null,

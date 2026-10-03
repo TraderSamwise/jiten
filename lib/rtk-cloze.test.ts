@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { accepts, BLANK, canCloze, clozed } from "./rtk-cloze";
+import { accepts, BLANK, canCloze, clozed, shouldAskAsCloze } from "./rtk-cloze";
 
 describe("taking the keyword out of a story", () => {
   it("blanks the markup's own token for it", () => {
@@ -79,5 +79,48 @@ describe("what counts as the keyword", () => {
     expect(accepts("needle", "parent")).toBe(false);
     expect(accepts("", "parent")).toBe(false);
     expect(accepts("   ", "parent")).toBe(false);
+  });
+});
+
+describe("deciding to ask a card as a cloze", () => {
+  const ask = {
+    enabled: true,
+    pending: true,
+    isKanji: true,
+    story: "A {self} standing on a [tree].",
+    keyword: "parent",
+  };
+
+  it("asks when the list says so and there is a story to blank", () => {
+    expect(shouldAskAsCloze(ask)).toBe(true);
+  });
+
+  it("does not ask when the list is in another input mode", () => {
+    expect(shouldAskAsCloze({ ...ask, enabled: false })).toBe(false);
+  });
+
+  it("does not ask a card that has already been answered", () => {
+    expect(shouldAskAsCloze({ ...ask, pending: false })).toBe(false);
+  });
+
+  it("does not ask a word card, which has no mnemonic of its own", () => {
+    expect(shouldAskAsCloze({ ...ask, isKanji: false })).toBe(false);
+  });
+
+  it("falls back to the ordinary front for a frame with no story", () => {
+    expect(shouldAskAsCloze({ ...ask, story: null })).toBe(false);
+    expect(shouldAskAsCloze({ ...ask, story: "   " })).toBe(false);
+  });
+
+  it("falls back when the story never names the keyword", () => {
+    expect(shouldAskAsCloze({ ...ask, story: "Something else entirely." })).toBe(false);
+  });
+
+  it("falls back while the keyword is still unknown", () => {
+    expect(shouldAskAsCloze({ ...ask, keyword: null })).toBe(false);
+  });
+
+  it("asks on the keyword written out, without the {self} marker", () => {
+    expect(shouldAskAsCloze({ ...ask, story: "A parent up a tree." })).toBe(true);
   });
 });

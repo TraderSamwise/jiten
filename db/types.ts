@@ -147,6 +147,7 @@ export interface WordList {
   confusionDetection: boolean;
   voiceMode: boolean;
   typingMode: boolean;
+  mnemonicCloze: boolean;
   disableFlipAnimation: boolean;
   disableSwipeAnimation: boolean;
   learningSteps: string[] | null;

@@ -16,6 +16,8 @@ import { useContainerWidth } from "@/lib/use-container-width";
 import { MnemonicText } from "@/components/MnemonicText";
 import { PrimitiveChips } from "@/components/PrimitiveChips";
 import { useMnemonicData } from "@/hooks/useMnemonicData";
+import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
+import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { viewportPosition } from "@/lib/viewport-position";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -87,7 +89,12 @@ import {
   findMeaningConfusion,
   type ConfusedWordResult,
 } from "@/lib/confused-words";
-import { logPracticeEvent, logSessionSummary, recordConfusion } from "@/lib/practice-logger";
+import {
+  logPracticeEvent,
+  logSessionSummary,
+  recordConfusion,
+  type PracticeMode,
+} from "@/lib/practice-logger";
 import { getSimilarKanjiAsync, getKanjiBatchAsync } from "@/db/kanji-search";
 import { useSync } from "@/db/sync-provider";
 import type { DictEntry, KanjiCharacter, CardFace, SrsCardRow, FlashcardMode } from "@/db/types";
@@ -487,12 +494,13 @@ interface StudyCardViewProps {
   isListening: boolean;
   typingMode: boolean;
   voiceMode: boolean;
+  mnemonicCloze: boolean;
   // Mark for review (omit to hide the flag button, e.g. when studying marked cards)
   isMarkedForReview?: boolean;
   onMarkForReview?: () => void;
   // Callbacks
   onFlip: () => void;
-  onTypingComplete: (wasCorrect: boolean) => void;
+  onTypingComplete: (wasCorrect: boolean, askedAsCloze: boolean) => void;
   onInfoPress: () => void;
 }
 
@@ -516,6 +524,7 @@ const StudyCardView = React.memo(
       isListening,
       typingMode,
       voiceMode,
+      mnemonicCloze,
       isMarkedForReview,
       onMarkForReview,
       onFlip,
@@ -671,6 +680,16 @@ const StudyCardView = React.memo(
     // --- Front content ---
     function renderFront() {
       const isTyping = typingMode && status === "pending" && item.kind === "entry";
+      const clozeKeyword = mnemonicData.primaryKeywords[0] ?? null;
+      // Only where there is something to blank: no story, or a story that never
+      // names the keyword, falls through to the ordinary front.
+      const isCloze = shouldAskAsCloze({
+        enabled: mnemonicCloze,
+        pending: status === "pending",
+        isKanji: item.kind === "kanji",
+        story: mnemonicData.mnemonic,
+        keyword: clozeKeyword,
+      });
       const frontIsKanji =
         item.kind === "entry" &&
         frontFaces[0] === "kanji" &&
@@ -678,7 +697,7 @@ const StudyCardView = React.memo(
 
       const handleTypingComplete = (wasCorrect: boolean) => {
         toggle(); // flip the card
-        onTypingComplete(wasCorrect);
+        onTypingComplete(wasCorrect, isCloze);
       };
 
       const renderableFront = frontFaces.filter(canRenderFace);
@@ -696,7 +715,15 @@ const StudyCardView = React.memo(
 
       return (
         <View className="items-center justify-center flex-1">
-          {isTyping && frontIsKanji && item.kind === "entry" ? (
+          {isCloze && clozeKeyword && mnemonicData.mnemonic ? (
+            <MnemonicClozeInput
+              key={item.kind === "kanji" ? item.kanji.literal : ""}
+              keyword={clozeKeyword}
+              story={mnemonicData.mnemonic}
+              primitives={mnemonicData.primitives}
+              onComplete={handleTypingComplete}
+            />
+          ) : isTyping && frontIsKanji && item.kind === "entry" ? (
             <TypingInput
               key={item.entry.id}
               entry={item.entry}
@@ -1069,6 +1096,17 @@ function StudyScreen() {
 
   // Pre-selected rating from typing/voice completion
   const [preSelectedRating, setPreSelectedRating] = useState<"pass" | "fail" | null>(null);
+  // Set by the card itself: cloze mode can be on for a list and still fall back
+  // to an ordinary front for a frame with no story to blank.
+  const askedAsClozeRef = useRef(false);
+
+  /** How the card the learner just answered was actually asked. */
+  const askedMode = useCallback((): PracticeMode => {
+    if (askedAsClozeRef.current) return "rtk_cloze";
+    if (list?.typingMode) return "typing_flashcard";
+    if (list?.voiceMode) return "voice";
+    return "flashcard";
+  }, [list?.typingMode, list?.voiceMode]);
 
   // Voice recognition state
   const [voiceHeard, setVoiceHeard] = useState<string | null>(null);
@@ -1104,6 +1142,7 @@ function StudyScreen() {
     setVoiceStatus("idle");
     setVoiceHeard(null);
     setPreSelectedRating(null);
+    askedAsClozeRef.current = false;
     if (voiceAutoAdvanceRef.current) {
       clearTimeout(voiceAutoAdvanceRef.current);
       voiceAutoAdvanceRef.current = null;
@@ -1117,11 +1156,7 @@ function StudyScreen() {
   // Log session summary when study session completes
   useEffect(() => {
     if (sessionPhase === "done" && reviewedCount > 0 && userDb && listId && sessionIdRef.current) {
-      const practiceMode = list?.typingMode
-        ? "typing_flashcard"
-        : list?.voiceMode
-          ? "voice"
-          : "flashcard";
+      const practiceMode: PracticeMode = list?.mnemonicCloze ? "rtk_cloze" : askedMode();
       logSessionSummary(drizzleDb!, {
         sessionId: sessionIdRef.current,
         listId,
@@ -1749,11 +1784,7 @@ function StudyScreen() {
 
     // Log practice event
     if (userDb && listId && item.kind === "entry") {
-      const practiceMode = list?.typingMode
-        ? "typing_flashcard"
-        : list?.voiceMode
-          ? "voice"
-          : "flashcard";
+      const practiceMode = askedMode();
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
@@ -1868,11 +1899,7 @@ function StudyScreen() {
 
     // Log practice event
     if (userDb && listId && item.kind === "entry") {
-      const practiceMode = list?.typingMode
-        ? "typing_flashcard"
-        : list?.voiceMode
-          ? "voice"
-          : "flashcard";
+      const practiceMode = askedMode();
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
@@ -1947,11 +1974,7 @@ function StudyScreen() {
     setCards(updatedCards);
 
     if (userDb && listId && item.kind === "entry") {
-      const practiceMode = list?.typingMode
-        ? "typing_flashcard"
-        : list?.voiceMode
-          ? "voice"
-          : "flashcard";
+      const practiceMode = askedMode();
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
@@ -2017,11 +2040,7 @@ function StudyScreen() {
     setCards(updatedCards);
 
     if (userDb && listId && item.kind === "entry") {
-      const practiceMode = list?.typingMode
-        ? "typing_flashcard"
-        : list?.voiceMode
-          ? "voice"
-          : "flashcard";
+      const practiceMode = askedMode();
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
@@ -2845,6 +2864,7 @@ function StudyScreen() {
                       isListening={isCursor && isListening}
                       typingMode={isCursor && !!list?.typingMode}
                       voiceMode={isCursor && !!list?.voiceMode}
+                      mnemonicCloze={isCursor && !!list?.mnemonicCloze}
                       {...(isEphemeralListId(listId)
                         ? {}
                         : {
@@ -2881,9 +2901,10 @@ function StudyScreen() {
                             },
                           })}
                       onFlip={isCursor ? handleCardFlip : () => {}}
-                      onTypingComplete={(wasCorrect) => {
+                      onTypingComplete={(wasCorrect, askedAsCloze) => {
                         if (isCursor) {
                           setPreSelectedRating(wasCorrect ? "pass" : "fail");
+                          askedAsClozeRef.current = askedAsCloze;
                         }
                       }}
                       onInfoPress={() =>

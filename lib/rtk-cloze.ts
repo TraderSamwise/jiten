@@ -53,3 +53,26 @@ export function accepts(typed: string, keyword: string, synonyms: readonly strin
   if (stem === canonicalStem(keyword)) return true;
   return synonyms.some((synonym) => canonicalStem(synonym) === stem);
 }
+
+export interface ClozeAsk {
+  /** The list's input mode is cloze. */
+  enabled: boolean;
+  /** The card has not been answered yet; a revealed card shows its own back. */
+  pending: boolean;
+  /** Word cards have no mnemonic of their own to blank. */
+  isKanji: boolean;
+  /** The learner's story, or null while it is unread or absent. */
+  story: string | null;
+  /** Their keyword, else Heisig's; null when neither is known yet. */
+  keyword: string | null;
+}
+
+/**
+ * Whether this card should be asked as a cloze. Separate from the screen that
+ * renders it because every one of these conditions can silently switch the
+ * exercise off, and the course shipped once with a cloze that never fired.
+ */
+export function shouldAskAsCloze({ enabled, pending, isKanji, story, keyword }: ClozeAsk): boolean {
+  if (!enabled || !pending || !isKanji || !keyword) return false;
+  return canCloze(story, keyword);
+}

@@ -134,6 +134,7 @@ export function BookmarkPopover({
       confusionDetection: true,
       voiceMode: false,
       typingMode: false,
+      mnemonicCloze: false,
       disableFlipAnimation: false,
       disableSwipeAnimation: false,
       learningSteps: null,

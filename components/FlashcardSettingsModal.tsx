@@ -47,6 +47,7 @@ export function FlashcardSettingsModal({
   const [confusionDetection, setConfusionDetection] = useState(true);
   const [voiceMode, setVoiceMode] = useState(false);
   const [typingMode, setTypingMode] = useState(false);
+  const [mnemonicCloze, setMnemonicCloze] = useState(false);
   const [flipAnimation, setFlipAnimation] = useAtom(flashcardFlipAnimationAtom);
   const [swipeAnimation, setSwipeAnimation] = useAtom(flashcardSwipeAnimationAtom);
   const [buttonAnimation, setButtonAnimation] = useAtom(flashcardButtonAnimationAtom);
@@ -54,19 +55,20 @@ export function FlashcardSettingsModal({
   const [relearningStepsText, setRelearningStepsText] = useState("");
   const [hasKanjiEntries, setHasKanjiEntries] = useState(false);
 
-  const inputMode = voiceMode ? "voice" : typingMode ? "typing" : "normal";
+  const inputMode = voiceMode
+    ? "voice"
+    : typingMode
+      ? "typing"
+      : mnemonicCloze
+        ? "cloze"
+        : "normal";
 
-  function setInputMode(m: "normal" | "voice" | "typing") {
-    if (m === "normal") {
-      setVoiceMode(false);
-      setTypingMode(false);
-    } else if (m === "voice") {
-      setTypingMode(false);
-      // voice permission handled in the onPress
-    } else {
-      setVoiceMode(false);
-      setTypingMode(true);
-    }
+  // One way of being asked at a time: a card cannot want a reading typed and
+  // a keyword recalled at once.
+  function setInputMode(m: "normal" | "voice" | "typing" | "cloze") {
+    setVoiceMode(m === "voice");
+    setTypingMode(m === "typing");
+    setMnemonicCloze(m === "cloze");
   }
 
   useEffect(() => {
@@ -78,6 +80,7 @@ export function FlashcardSettingsModal({
       setConfusionDetection(list.confusionDetection !== false);
       setVoiceMode(list.voiceMode ?? false);
       setTypingMode(list.typingMode ?? false);
+      setMnemonicCloze(list.mnemonicCloze ?? false);
       setLearningStepsText(list.learningSteps ? list.learningSteps.join(", ") : "");
       setRelearningStepsText(list.relearningSteps ? list.relearningSteps.join(", ") : "");
     }
@@ -152,6 +155,7 @@ export function FlashcardSettingsModal({
         confusionDetection === (list.confusionDetection !== false) &&
         voiceMode === (list.voiceMode ?? false) &&
         typingMode === (list.typingMode ?? false) &&
+        mnemonicCloze === (list.mnemonicCloze ?? false) &&
         arrEq(learningSteps, list.learningSteps) &&
         arrEq(relearningSteps, list.relearningSteps);
       if (unchanged) {
@@ -162,7 +166,7 @@ export function FlashcardSettingsModal({
 
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, learning_steps = ?, relearning_steps = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, mnemonic_cloze = ?, learning_steps = ?, relearning_steps = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -171,6 +175,7 @@ export function FlashcardSettingsModal({
         confusionDetection ? 1 : 0,
         voiceMode ? 1 : 0,
         typingMode ? 1 : 0,
+        mnemonicCloze ? 1 : 0,
         learningSteps ? JSON.stringify(learningSteps) : null,
         relearningSteps ? JSON.stringify(relearningSteps) : null,
         now,
@@ -186,6 +191,7 @@ export function FlashcardSettingsModal({
       confusionDetection,
       voiceMode,
       typingMode,
+      mnemonicCloze,
       learningSteps,
       relearningSteps,
       updatedAt: now,
@@ -400,8 +406,7 @@ export function FlashcardSettingsModal({
                 onPress={async () => {
                   const granted = await requestVoicePermissions();
                   if (granted) {
-                    setVoiceMode(true);
-                    setTypingMode(false);
+                    setInputMode("voice");
                   } else {
                     alert(
                       "Permission Required",
@@ -435,7 +440,29 @@ export function FlashcardSettingsModal({
                   Typing
                 </Text>
               </Pressable>
+              {/* Only a kanji card has a mnemonic to blank. */}
+              <Pressable
+                onPress={() => hasKanjiEntries && setInputMode("cloze")}
+                disabled={!hasKanjiEntries}
+                className={`flex-1 items-center rounded-lg border py-2 ${
+                  inputMode === "cloze" ? "border-primary bg-primary/10" : "border-border"
+                } ${hasKanjiEntries ? "" : "opacity-40"}`}
+              >
+                <Text
+                  className={`text-sm font-medium ${
+                    inputMode === "cloze" ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  Cloze
+                </Text>
+              </Pressable>
             </View>
+            {inputMode === "cloze" ? (
+              <Text className="-mt-4 mb-5 text-xs text-muted-foreground">
+                Kanji cards are asked as your own mnemonic with the keyword blanked. A frame you
+                have not written a story for is asked as usual.
+              </Text>
+            ) : null}
 
             {/* Actions */}
             <View className="flex-row gap-2">

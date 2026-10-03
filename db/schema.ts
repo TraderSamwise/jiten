@@ -117,6 +117,7 @@ export const lists = sqliteTable("lists", {
   confusionDetection: integer("confusion_detection").notNull().default(1),
   voiceMode: integer("voice_mode").notNull().default(0),
   typingMode: integer("typing_mode").notNull().default(0),
+  mnemonicCloze: integer("mnemonic_cloze").notNull().default(0),
   disableFlipAnimation: integer("disable_flip_animation").notNull().default(0),
   disableSwipeAnimation: integer("disable_swipe_animation").notNull().default(0),
   isDefault: integer("is_default").notNull().default(0),

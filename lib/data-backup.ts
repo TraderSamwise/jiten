@@ -21,7 +21,7 @@ export const BACKUP_TABLES: {
   {
     name: "lists",
     query:
-      "SELECT id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, confusion_detection, voice_mode, typing_mode, disable_flip_animation, disable_swipe_animation, is_default, learning_steps, relearning_steps, created_at, updated_at FROM lists",
+      "SELECT id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, confusion_detection, voice_mode, typing_mode, disable_flip_animation, disable_swipe_animation, is_default, learning_steps, relearning_steps, mnemonic_cloze, created_at, updated_at FROM lists",
   },
   {
     name: "list_entries",
@@ -101,6 +101,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "is_default",
     "learning_steps",
     "relearning_steps",
+    "mnemonic_cloze",
     "created_at",
     "updated_at",
   ],

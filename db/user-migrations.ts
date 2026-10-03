@@ -245,4 +245,7 @@ export const USER_DB_MIGRATIONS = [
   // Named `_updated` deliberately: isRemoteRelevant in db/sync-engine.ts ships
   // only indexes whose name contains it, and delta sync needs this one remotely.
   `CREATE INDEX IF NOT EXISTS idx_course_progress_updated ON course_progress(updated_at)`,
+  // Ask a kanji card by blanking the keyword out of the learner's own story
+  // (lib/rtk-cloze.ts) instead of showing the character.
+  `ALTER TABLE lists ADD COLUMN mnemonic_cloze INTEGER NOT NULL DEFAULT 0`,
 ];
