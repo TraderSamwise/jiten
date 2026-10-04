@@ -46,7 +46,7 @@ export function useRtkPath(): RtkPath {
         unitShapes(dictDb),
         loadCourseProgress(userDb),
       ]);
-      // Filter before the summary, so the dots and Continue cannot disagree
+      // Filter before the summary, so the tiles and Continue cannot disagree
       // about which units exist.
       const real = shapes.filter((shape) => shape.nodeCount > 0);
       if (stillMounted()) setSummary(pathSummary(real, crownsFromProgress(progress)));

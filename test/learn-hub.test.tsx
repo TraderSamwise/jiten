@@ -25,8 +25,18 @@ vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/hooks/useRtkPath", () => ({ useRtkPath: () => h.path }));
 
 vi.mock("react-native", () => ({
-  Pressable: ({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) => (
-    <button onClick={onPress}>{children}</button>
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: React.ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button onClick={onPress} aria-label={accessibilityLabel}>
+      {children}
+    </button>
   ),
   ScrollView: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   View: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,

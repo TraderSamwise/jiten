@@ -175,9 +175,13 @@ export function unitSpan(frames: number, firstFrame: number): FrameSpan {
  * unbroken run. All 56 lessons of volume 1 are unbroken — the arithmetic below
  * depends on it, so the alternative to checking is a label that quietly lies.
  */
+export function isContiguousSpan(span: FrameSpan): boolean {
+  return span.lastFrame - span.firstFrame + 1 === span.frames;
+}
+
 export function nodeFrameRange(span: FrameSpan, node: number): { from: number; to: number } | null {
   if (!Number.isInteger(node) || node < 0 || node >= span.nodeCount) return null;
-  if (span.lastFrame - span.firstFrame + 1 !== span.frames) return null;
+  if (!isContiguousSpan(span)) return null;
   const from = span.firstFrame + node * NODE_SIZE;
   if (from > span.lastFrame) return null;
   return { from, to: Math.min(from + NODE_SIZE - 1, span.lastFrame) };

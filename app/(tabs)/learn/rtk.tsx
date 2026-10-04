@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -17,36 +17,70 @@ import {
   type RtkReviewCounts,
 } from "@/lib/rtk-review";
 import { dayResetHourAtom } from "@/stores/settings";
-import { RTK_PATH_FRAME_COUNT, type PathSummary } from "@/lib/rtk-course";
+import {
+  CROWN_MAX,
+  formatFrameRange,
+  isContiguousSpan,
+  nodeFrameRange,
+  RTK_PATH_FRAME_COUNT,
+  type PathSummary,
+  type UnitRow,
+} from "@/lib/rtk-course";
 
 type Mode = "learn" | "review";
 
-const DOT_BY_CROWN = [
-  "bg-secondary border border-border",
-  "bg-primary/30",
-  "bg-primary/60",
-  "bg-primary",
-] as const;
+/** Tiles past this many are behind "show all", so one lesson cannot be 29 rows. */
+const TILES_SHOWN = 8;
 
-function NodeDot({
+/**
+ * One node. It names the frames it asks about and says its crown in words:
+ * a tint cannot carry that — `bg-primary/15` on a card is 1.4:1, which is not
+ * a state indicator — so the tint is decoration and the words are the state.
+ */
+function NodeTile({
+  label,
   crown,
   opening,
+  accessibilityLabel,
   onPress,
 }: {
+  label: string;
   crown: number;
   /** This is the node being opened: say so, rather than looking unresponsive. */
   opening: boolean;
+  accessibilityLabel: string;
   onPress: () => void;
 }) {
+  const done = crown >= CROWN_MAX;
+  const started = crown > 0 && !done;
+  const skin = done
+    ? "bg-primary border border-primary"
+    : started
+      ? "bg-transparent border-2 border-primary"
+      : "bg-secondary/60 border border-muted-foreground";
+  const ink = done ? "text-primary-foreground" : "text-foreground";
+
   return (
     <Pressable
       onPress={onPress}
       hitSlop={4}
-      className={`h-6 w-6 items-center justify-center rounded-md ${
-        DOT_BY_CROWN[crown] ?? DOT_BY_CROWN[0]
-      } ${opening ? "opacity-60" : ""}`}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ busy: opening, disabled: opening }}
+      className={`min-h-[56px] min-w-[76px] items-center justify-center rounded-xl px-3 py-2 active:opacity-80 ${skin} ${
+        opening ? "opacity-70" : ""
+      }`}
     >
-      {opening ? <ActivityIndicator size="small" /> : null}
+      <Text className={`text-xs font-semibold ${ink}`}>{label}</Text>
+      {opening ? (
+        // The label stays: swapping it for the spinner shrank the tile back to
+        // its floor and reflowed the whole row mid-tap.
+        <ActivityIndicator size="small" color={done ? "#71717a" : undefined} />
+      ) : (
+        <Text className={`mt-0.5 text-[10px] ${done ? "text-primary-foreground/80" : ink}`}>
+          {done ? "done" : started ? `crown ${crown}` : "new"}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -241,13 +275,109 @@ function LearnHeader({
   );
 }
 
+/** A lesson and its nodes. Capped, because lesson 23 holds 29 of them. */
+function LessonCard({
+  row,
+  opening,
+  expanded,
+  onToggle,
+  openNode,
+}: {
+  row: UnitRow;
+  opening: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  openNode: (unit: number, node: number) => void;
+}) {
+  // Same honesty as the tiles: a lesson whose frames are not one unbroken run
+  // gets no span rather than a made-up one.
+  const span = isContiguousSpan(row)
+    ? formatFrameRange({ from: row.firstFrame, to: row.lastFrame })
+    : null;
+  const shown = expanded ? row.crowns.length : Math.min(row.crowns.length, TILES_SHOWN);
+  const hidden = row.crowns.length - shown;
+
+  return (
+    <Card className="mt-3 p-3">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-baseline gap-2">
+          <Text className="text-sm font-semibold text-foreground">Lesson {row.unit}</Text>
+          {span ? <Text className="text-xs text-muted-foreground">frames {span}</Text> : null}
+        </View>
+        <Text className="text-xs text-muted-foreground">
+          {row.earned}/{row.possible}
+        </Text>
+      </View>
+
+      {row.crowns.length === 0 ? null : (
+        <View className="mt-2 flex-row flex-wrap gap-2">
+          {row.crowns.slice(0, shown).map((crown, node) => {
+            const range = nodeFrameRange(row, node);
+            // A dictionary whose frames are not one run gets a usable label
+            // rather than a wrong one.
+            const label = formatFrameRange(range) ?? `node ${node + 1}`;
+            const state =
+              crown >= CROWN_MAX
+                ? "done"
+                : crown > 0
+                  ? `crown ${crown} of ${CROWN_MAX}`
+                  : "not started";
+            return (
+              <NodeTile
+                key={node}
+                label={label}
+                crown={crown}
+                opening={opening === `${row.unit}:${node}`}
+                accessibilityLabel={
+                  range
+                    ? `Frames ${range.from} to ${range.to}, ${state}`
+                    : `Node ${node + 1}, ${state}`
+                }
+                onPress={() => openNode(row.unit, node)}
+              />
+            );
+          })}
+
+          {expanded && row.crowns.length > TILES_SHOWN ? (
+            <Pressable
+              onPress={onToggle}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={`Show fewer nodes of lesson ${row.unit}`}
+              className="min-h-[56px] min-w-[76px] items-center justify-center rounded-xl border border-dashed border-muted-foreground px-3 py-2 active:opacity-80"
+            >
+              <Text className="text-xs font-semibold text-foreground">Show</Text>
+              <Text className="mt-0.5 text-[10px] text-foreground">less</Text>
+            </Pressable>
+          ) : null}
+
+          {hidden > 0 ? (
+            <Pressable
+              onPress={onToggle}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={`Show the remaining ${hidden} nodes of lesson ${row.unit}`}
+              className="min-h-[56px] min-w-[76px] items-center justify-center rounded-xl border border-dashed border-muted-foreground px-3 py-2 active:opacity-80"
+            >
+              <Text className="text-xs font-semibold text-foreground">+{hidden}</Text>
+              <Text className="mt-0.5 text-[10px] text-foreground">more</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
+    </Card>
+  );
+}
+
 export default function RtkScreen() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("learn");
-  // Mounting the node screen is not instant, and a dot that does nothing
+  // Mounting the node screen is not instant, and a tile that does nothing
   // visible for a beat reads as a dropped tap. Cleared on focus, which is where
   // the learner lands when they come back.
   const [opening, setOpening] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useFocusEffect(useCallback(() => setOpening(null), []));
   // Loaded once for the whole screen: the header needs the totals and the list
   // needs the rows, and two hooks meant two course-progress reads per focus.
@@ -255,12 +385,40 @@ export default function RtkScreen() {
 
   // Cast because expo-router's generated route union (.expo/types) only learns
   // about /learn once a dev server has regenerated it.
+  const toggleExpanded = useCallback((unit: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(unit)) next.add(unit);
+      return next;
+    });
+  }, []);
+
   const openNode = useCallback(
     (unit: number, node: number) => {
-      setOpening(`${unit}:${node}`);
+      const key = `${unit}:${node}`;
+      // One at a time: the spinner says a push is under way, and a second tap
+      // would push the same screen twice.
+      if (opening) return;
+      setOpening(key);
       router.push(`/learn/node?unit=${unit}&node=${node}` as never);
+      // router.push resolves nothing and the focus effect cannot fire if the
+      // screen never blurred, so a push that goes nowhere would leave a tile
+      // spinning for good. Cleared by key, so a later tap's spinner survives
+      // an earlier tap's timer.
+      if (openTimer.current) clearTimeout(openTimer.current);
+      openTimer.current = setTimeout(
+        () => setOpening((current) => (current === key ? null : current)),
+        4000,
+      );
     },
-    [router],
+    [opening, router],
+  );
+
+  useEffect(
+    () => () => {
+      if (openTimer.current) clearTimeout(openTimer.current);
+    },
+    [],
   );
 
   // The lesson cards are the list's own data, so they recycle; Review has none.
@@ -269,6 +427,7 @@ export default function RtkScreen() {
   return (
     <FlashList
       data={units}
+      extraData={expanded}
       keyExtractor={(row) => String(row.unit)}
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       ListHeaderComponent={
@@ -297,24 +456,13 @@ export default function RtkScreen() {
         </View>
       }
       renderItem={({ item: row }) => (
-        <Card className="mt-3 p-3">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-semibold text-foreground">Lesson {row.unit}</Text>
-            <Text className="text-xs text-muted-foreground">
-              {row.earned}/{row.possible}
-            </Text>
-          </View>
-          <View className="mt-2 flex-row flex-wrap gap-1.5">
-            {row.crowns.map((crown, node) => (
-              <NodeDot
-                key={node}
-                crown={crown}
-                opening={opening === `${row.unit}:${node}`}
-                onPress={() => openNode(row.unit, node)}
-              />
-            ))}
-          </View>
-        </Card>
+        <LessonCard
+          row={row}
+          opening={opening}
+          expanded={expanded.has(row.unit)}
+          onToggle={() => toggleExpanded(row.unit)}
+          openNode={openNode}
+        />
       )}
     />
   );
