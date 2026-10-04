@@ -29,6 +29,7 @@ import type { KanjiPrimitive, StrokePath } from "@/db/types";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
 import { useGlyphOrigin } from "@/hooks/useGlyphOrigin";
 import { useMnemonicGeneration, type GenerationState } from "@/hooks/useMnemonicGeneration";
+import { X } from "@/lib/icons";
 import { useSafeGoBack } from "@/lib/navigation";
 import { logPracticeEvent, recordConfusion } from "@/lib/practice-logger";
 import {
@@ -628,17 +629,21 @@ export default function LearnNodeScreen() {
     [primitives, generate],
   );
 
-  const header = (
+  const headerWith = (right: React.ReactNode) => (
     <View className="flex-row items-center justify-between px-4 py-2">
-      <Pressable onPress={goBack} className="py-1 pr-3 active:opacity-70">
-        <Text className="text-sm text-muted-foreground">Path</Text>
+      <Pressable onPress={goBack} className="p-2 active:opacity-70" accessibilityLabel="Leave node">
+        <X size={24} className="text-foreground" />
       </Pressable>
-      {ref ? (
-        <Text className="text-xs text-muted-foreground">
-          Lesson {ref.unit} · node {ref.node + 1}
-        </Text>
-      ) : null}
+      {right}
     </View>
+  );
+
+  const header = headerWith(
+    ref ? (
+      <Text className="text-xs text-muted-foreground">
+        Lesson {ref.unit} · node {ref.node + 1}
+      </Text>
+    ) : null,
   );
 
   if (!ref) {
@@ -684,15 +689,12 @@ export default function LearnNodeScreen() {
 
   return (
     <CustomHeaderScreen>
-      <View className="flex-row items-center justify-between px-4 py-2">
-        <Pressable onPress={goBack} className="py-1 pr-3 active:opacity-70">
-          <Text className="text-sm text-muted-foreground">Path</Text>
-        </Pressable>
+      {headerWith(
         <Text className="text-xs text-muted-foreground">
           Lesson {ref.unit} · node {ref.node + 1}
           {total > 0 ? ` · ${Math.min(answered + 1, total)} of ${total}` : ""}
-        </Text>
-      </View>
+        </Text>,
+      )}
 
       {item?.step === "cloze" ? (
         <ClozeStep

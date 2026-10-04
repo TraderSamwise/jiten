@@ -66,6 +66,7 @@ const h = vi.hoisted(() => {
     strokesDb: {},
     userDb: {},
     drizzle: {},
+    goBack: vi.fn(),
     markNodeSeen: vi.fn(async () => {}),
     awardCrown: vi.fn(async (..._args: unknown[]) => {}),
     graduateFrames: vi.fn(async (..._args: unknown[]) => []),
@@ -82,8 +83,18 @@ vi.mock("expo-router", () => ({
 
 vi.mock("react-native", () => ({
   ActivityIndicator: () => <span>loading</span>,
-  Pressable: ({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) => (
-    <button onClick={onPress}>{children}</button>
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: React.ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button onClick={onPress} aria-label={accessibilityLabel}>
+      {children}
+    </button>
   ),
   View: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
@@ -96,7 +107,9 @@ vi.mock("@/components/CustomHeaderScreen", () => ({
   CustomHeaderScreen: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@/lib/navigation", () => ({ useSafeGoBack: () => () => {} }));
+vi.mock("@/lib/navigation", () => ({ useSafeGoBack: () => h.goBack }));
+
+vi.mock("@/lib/icons", () => ({ X: () => <span>X</span> }));
 
 vi.mock("@/db/provider", () => ({
   useDatabase: () => ({
@@ -398,6 +411,16 @@ describe("a question the course cannot ask", () => {
 });
 
 describe("a node's first visit", () => {
+  it("offers a way out of the node, not a label", async () => {
+    // It used to read "Path", which named a destination rather than an exit —
+    // and named it in a word the screen it leads to does not use.
+    h.crown = 0;
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+    fireEvent.click(screen.getByLabelText("Leave node"));
+    expect(h.goBack).toHaveBeenCalled();
+  });
+
   it("meets every frame before it asks anything", async () => {
     h.crown = 0;
     render(<LearnNodeScreen />);
