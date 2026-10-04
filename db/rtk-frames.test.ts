@@ -13,11 +13,16 @@ import { DICT_DB_PATH, hasDictDb } from "../test/dictionary-db";
 import Database from "better-sqlite3";
 import {
   loadDecoyPieces,
+  loadGlyphOrigins,
   loadNodeFrames,
+  loadPrimitivesForFrames,
+  loadSimilarForFrames,
   loadSimilarPathFrames,
+  loadStrokesForFrames,
   loadUnitFrames,
   loadUnitShapes,
 } from "./rtk-frames";
+import { getPrimitivesForKanjiAsync, getStrokePathsAsync } from "./kanji-search";
 
 const raw = hasDictDb ? new Database(DICT_DB_PATH, { readonly: true }) : null;
 afterAll(() => raw?.close());
@@ -35,6 +40,8 @@ afterAll(() => strokesRaw?.close());
 const strokesDb = {
   getAllAsync: async <T>(sql: string, params?: unknown[]): Promise<T[]> =>
     strokesRaw!.prepare(sql).all(...(params ?? [])) as T[],
+  getFirstAsync: async <T>(sql: string, params?: unknown[]): Promise<T | null> =>
+    (strokesRaw!.prepare(sql).get(...(params ?? [])) as T) ?? null,
 } as unknown as SQLite.SQLiteDatabase;
 
 describe.skipIf(!hasStrokesDb)("the components a board can offer", () => {
@@ -138,5 +145,72 @@ describe.skipIf(!hasDictDb)("the path as the dictionary holds it", () => {
     const units = await loadUnitShapes(dictDb);
     const frames = await loadUnitFrames(dictDb, units[units.length - 1].unit);
     expect(frames.every((f) => f.index <= 2200)).toBe(true);
+  });
+});
+
+/**
+ * The batched reads. A node open used to cost about twenty round trips to
+ * native SQLite — three per frame plus the unit twice — and the queries were
+ * never the expensive part, the crossings were. These have to agree with the
+ * per-frame reads they replaced, exactly.
+ */
+describe.skipIf(!hasDictDb || !hasStrokesDb)("loading a node's five frames at once", () => {
+  const LITERALS = ["日", "月", "親", "海", "聞"];
+
+  it("gives every frame its own decomposition", async () => {
+    const batched = await loadPrimitivesForFrames(strokesDb, LITERALS);
+    expect([...batched.keys()].sort()).toEqual([...LITERALS].sort());
+    for (const literal of LITERALS) {
+      const one = await getPrimitivesForKanjiAsync(strokesDb, literal);
+      expect(batched.get(literal)).toEqual(one);
+    }
+  });
+
+  it("gives every frame its own strokes", async () => {
+    const batched = await loadStrokesForFrames(strokesDb, LITERALS);
+    for (const literal of LITERALS) {
+      const one = await getStrokePathsAsync(strokesDb, literal);
+      expect(batched.get(literal)).toEqual(one);
+    }
+    expect(batched.get("親")?.length).toBeGreaterThan(0);
+  });
+
+  it("gives every frame its own lookalikes, in the same order", async () => {
+    const batched = await loadSimilarForFrames(dictDb, LITERALS);
+    for (const literal of LITERALS) {
+      const one = await loadSimilarPathFrames(dictDb, literal, 20);
+      expect(batched.get(literal)).toEqual(one);
+    }
+  });
+
+  it("caps the lookalikes per frame, not across the node", async () => {
+    // One LIMIT over a five-frame result would cut the last frames off
+    // entirely — the bug a single query invites.
+    const batched = await loadSimilarForFrames(dictDb, LITERALS, 3);
+    for (const literal of LITERALS) {
+      expect(batched.get(literal)!.length).toBeLessThanOrEqual(3);
+      expect(batched.get(literal)!.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("knows a frame it was given nothing for", async () => {
+    const batched = await loadPrimitivesForFrames(strokesDb, ["日", "\u{20000}"]);
+    expect(batched.get("\u{20000}")).toEqual([]);
+    expect(batched.get("日")!.length).toBeGreaterThan(0);
+  });
+
+  it("asks nothing for an empty node", async () => {
+    expect((await loadPrimitivesForFrames(strokesDb, [])).size).toBe(0);
+    expect((await loadStrokesForFrames(strokesDb, [])).size).toBe(0);
+    expect((await loadSimilarForFrames(dictDb, [])).size).toBe(0);
+    expect((await loadGlyphOrigins(dictDb, [])).size).toBe(0);
+  });
+
+  it("survives a dictionary with no glyph_origin column", async () => {
+    // Every shipped dictionary, until base v25. Naming a missing column in a
+    // SELECT throws, and this read shares a Promise.all with the option pool,
+    // so a throw here cost the node its choice questions.
+    const origins = await loadGlyphOrigins(dictDb, LITERALS);
+    for (const [, text] of origins) expect(text.length).toBeGreaterThan(0);
   });
 });

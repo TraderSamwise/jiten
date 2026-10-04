@@ -205,6 +205,7 @@ export function buildMiniDb(fullDbPath: string, miniDbPath: string): MiniBuildRe
     CREATE INDEX idx_kc_stroke_count ON kanji_characters(stroke_count);
     CREATE INDEX idx_kc_radical ON kanji_characters(radical_classical);
     CREATE INDEX idx_kc_heisig ON kanji_characters(heisig_index);
+    CREATE INDEX idx_kc_heisig_lesson ON kanji_characters(heisig_lesson, heisig_index);
     CREATE INDEX idx_kr_radical ON kanji_radicals(radical);
     CREATE INDEX idx_ks_literal_rank ON kanji_similarity(literal, rank);
   `);

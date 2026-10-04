@@ -12,22 +12,19 @@ import { CustomHeaderScreen } from "@/components/CustomHeaderScreen";
 import { useDatabase } from "@/db/provider";
 import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
-import {
-  getPrimitivesForKanjiAsync,
-  getStrokePathsAsync,
-  getSynonymsForKeywordAsync,
-} from "@/db/kanji-search";
+import { getSynonymsForKeywordAsync } from "@/db/kanji-search";
 import { getUserDrizzle } from "@/db/drizzle";
 import {
   loadDecoyPieces,
-  loadNodeFrames,
-  loadSimilarPathFrames,
+  loadGlyphOrigins,
+  loadPrimitivesForFrames,
+  loadSimilarForFrames,
+  loadStrokesForFrames,
   loadUnitFrames,
 } from "@/db/rtk-frames";
 import { awardCrown, getNodeProgress, markNodeSeen } from "@/db/rtk-progress";
 import type { KanjiPrimitive, StrokePath } from "@/db/types";
 import { useKanjiMnemonic } from "@/hooks/useKanjiMnemonic";
-import { useGlyphOrigin } from "@/hooks/useGlyphOrigin";
 import { useMnemonicGeneration, type GenerationState } from "@/hooks/useMnemonicGeneration";
 import { X } from "@/lib/icons";
 import { useSafeGoBack } from "@/lib/navigation";
@@ -37,6 +34,7 @@ import {
   nextCrown,
   nodeId,
   nodeRefFromParams,
+  splitUnitIntoNodes,
   type CourseFrame,
 } from "@/lib/rtk-course";
 import type { AssemblePiece } from "@/lib/rtk-assemble";
@@ -94,6 +92,7 @@ function SkipStep({ onSkip }: { onSkip: () => void }) {
 function MeetStep({
   frame,
   primitives,
+  glyphOrigin,
   generation,
   canGenerate,
   onGenerate,
@@ -101,6 +100,8 @@ function MeetStep({
 }: {
   frame: CourseFrame;
   primitives: KanjiPrimitive[];
+  /** Loaded with the node, not per frame: one read, not five. */
+  glyphOrigin: string | null;
   generation: GenerationState;
   canGenerate: boolean;
   onGenerate: (frame: CourseFrame, keyword: string | null, fresh: boolean) => void;
@@ -113,7 +114,6 @@ function MeetStep({
   // next frame would be marked answered without ever being shown.
   const saving = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const glyphOrigin = useGlyphOrigin(frame.literal);
 
   return (
     <MeetFrame
@@ -334,6 +334,7 @@ export default function LearnNodeScreen() {
   const [primitives, setPrimitives] = useState<Map<string, KanjiPrimitive[]>>(new Map());
   const [similar, setSimilar] = useState<Map<string, CourseFrame[]>>(new Map());
   const [unitFrames, setUnitFrames] = useState<CourseFrame[]>([]);
+  const [glyphOrigins, setGlyphOrigins] = useState<Map<string, string>>(new Map());
   // Until the option pool is read, a choice drill would see one option, hand the
   // step back, and skip the whole queue before the query returned.
   const [poolReady, setPoolReady] = useState(false);
@@ -363,9 +364,11 @@ export default function LearnNodeScreen() {
     setPrimitives(new Map());
     setSimilar(new Map());
     setStrokes(new Map());
-    Promise.all([loadNodeFrames(dictDb, ref), getNodeProgress(userDb, ref)])
-      .then(([loaded, progress]) => {
+    Promise.all([loadUnitFrames(dictDb, ref.unit), getNodeProgress(userDb, ref)])
+      .then(([unit, progress]) => {
         if (!current) return;
+        const loaded = splitUnitIntoNodes(unit)[ref.node] ?? [];
+        setUnitFrames(unit);
         setFrames(loaded);
         setCrown(progress?.crown ?? 0);
         setSession(startSession(loaded, progress?.crown ?? 0));
@@ -384,31 +387,17 @@ export default function LearnNodeScreen() {
   useEffect(() => {
     if (!strokesDb || !frames?.length) return;
     let current = true;
-    Promise.all(
-      frames.map(async (frame) => {
-        try {
-          return [
-            frame.literal,
-            await getPrimitivesForKanjiAsync(strokesDb, frame.literal),
-          ] as const;
-        } catch {
-          return [frame.literal, [] as KanjiPrimitive[]] as const;
-        }
-      }),
-    ).then((pairs) => {
-      if (current) setPrimitives(new Map(pairs));
-    });
-    Promise.all(
-      frames.map(async (frame) => {
-        try {
-          return [frame.literal, await getStrokePathsAsync(strokesDb, frame.literal)] as const;
-        } catch {
-          return [frame.literal, [] as StrokePath[]] as const;
-        }
-      }),
-    ).then((pairs) => {
-      if (current) setStrokes(new Map(pairs));
-    });
+    const literals = frames.map((frame) => frame.literal);
+    loadPrimitivesForFrames(strokesDb, literals)
+      .then((byLiteral) => {
+        if (current) setPrimitives(byLiteral);
+      })
+      .catch((err) => console.warn("[learn] could not load the decompositions", err));
+    loadStrokesForFrames(strokesDb, literals)
+      .then((byLiteral) => {
+        if (current) setStrokes(byLiteral);
+      })
+      .catch((err) => console.warn("[learn] could not load the strokes", err));
     return () => {
       current = false;
     };
@@ -420,22 +409,26 @@ export default function LearnNodeScreen() {
     if (!dictDb || !frames?.length || !ref) return;
     let current = true;
     Promise.all([
-      Promise.all(
-        frames.map(async (frame) => {
-          try {
-            return [frame.literal, await loadSimilarPathFrames(dictDb, frame.literal)] as const;
-          } catch {
-            return [frame.literal, [] as CourseFrame[]] as const;
-          }
-        }),
+      loadSimilarForFrames(
+        dictDb,
+        frames.map((frame) => frame.literal),
       ),
-      loadUnitFrames(dictDb, ref.unit).catch(() => [] as CourseFrame[]),
-    ]).then(([pairs, unit]) => {
-      if (!current) return;
-      setSimilar(new Map(pairs));
-      setUnitFrames(unit);
-      setPoolReady(true);
-    });
+      loadGlyphOrigins(
+        dictDb,
+        frames.map((frame) => frame.literal),
+      ),
+    ])
+      .then(([lookalikes, origins]) => {
+        if (!current) return;
+        setSimilar(lookalikes);
+        setGlyphOrigins(origins);
+        setPoolReady(true);
+      })
+      .catch((err) => {
+        console.warn("[learn] could not load the option pool", err);
+        // The drills can fall back to the unit; a dead pool would hang the node.
+        if (current) setPoolReady(true);
+      });
     return () => {
       current = false;
     };
@@ -769,6 +762,7 @@ export default function LearnNodeScreen() {
           key={item.frame.literal}
           frame={item.frame}
           primitives={primitives.get(item.frame.literal) ?? []}
+          glyphOrigin={glyphOrigins.get(item.frame.literal) ?? null}
           generation={generation}
           canGenerate={!strokesArriving}
           onGenerate={onGenerate}

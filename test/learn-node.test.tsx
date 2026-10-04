@@ -123,26 +123,28 @@ vi.mock("@/db/provider", () => ({
 vi.mock("@/db/user-provider", () => ({ useUserDb: () => h.userDb }));
 vi.mock("@/db/sync-provider", () => ({ useSync: () => ({ markDirty: () => {} }) }));
 vi.mock("@/db/drizzle", () => ({ getUserDrizzle: () => h.drizzle }));
-vi.mock("@/db/kanji-search", () => ({
-  getPrimitivesForKanjiAsync: async () => h.primitives,
-  getStrokePathsAsync: async () => h.strokes,
-  getSynonymsForKeywordAsync: async () => [],
-  // The glyph origin rides along on the kanji row; a dictionary without the
-  // column yet simply has none, which is most devices until dict v25.
-  getKanjiBatchAsync: async () => [{ glyphOrigin: h.glyphOrigin }],
-}));
+vi.mock("@/db/kanji-search", () => ({ getSynonymsForKeywordAsync: async () => [] }));
 
+/** One read per node rather than one per frame — see db/rtk-frames.ts. */
 vi.mock("@/db/rtk-frames", () => ({
-  loadNodeFrames: async () => (h.only ? h.frames.slice(0, h.only) : h.frames),
+  loadUnitFrames: async () => (h.only ? h.frames.slice(0, h.only) : h.frames),
   // Deferred like the lookalikes, so "the tiles are not in yet" is a state the
   // test passes through rather than one it skips over.
   loadDecoyPieces: async () => h.pieces,
-  loadUnitFrames: async () => h.frames,
-  // Held until the test releases it, so "before the pool loads" is reachable.
-  // Resolves a tick late, so "the frames are in but the options are not" — the
-  // state that used to skip the whole node — is a state the test passes through.
-  loadSimilarPathFrames: () =>
-    new Promise((resolve) => setTimeout(() => resolve(h.frames.slice(1)), 20)),
+  loadPrimitivesForFrames: async (_db: unknown, literals: string[]) =>
+    new Map(literals.map((literal) => [literal, h.primitives])),
+  loadStrokesForFrames: async (_db: unknown, literals: string[]) =>
+    new Map(literals.map((literal) => [literal, h.strokes])),
+  // The glyph origin arrives with the node; absent until the dictionary carries
+  // the prose, which is most devices until dict base v25.
+  loadGlyphOrigins: async () =>
+    new Map(h.glyphOrigin ? [[h.frames[0].literal, h.glyphOrigin]] : []),
+  // Held a tick, so "the frames are in but the options are not" — the state
+  // that used to skip the whole node — is one the test passes through.
+  loadSimilarForFrames: (_db: unknown, literals: string[]) =>
+    new Promise((resolve) =>
+      setTimeout(() => resolve(new Map(literals.map((l) => [l, h.frames.slice(1)]))), 20),
+    ),
 }));
 
 vi.mock("@/db/rtk-progress", () => ({

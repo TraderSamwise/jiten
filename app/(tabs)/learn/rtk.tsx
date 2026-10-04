@@ -28,13 +28,26 @@ const DOT_BY_CROWN = [
   "bg-primary",
 ] as const;
 
-function NodeDot({ crown, onPress }: { crown: number; onPress: () => void }) {
+function NodeDot({
+  crown,
+  opening,
+  onPress,
+}: {
+  crown: number;
+  /** This is the node being opened: say so, rather than looking unresponsive. */
+  opening: boolean;
+  onPress: () => void;
+}) {
   return (
     <Pressable
       onPress={onPress}
       hitSlop={4}
-      className={`h-6 w-6 rounded-md ${DOT_BY_CROWN[crown] ?? DOT_BY_CROWN[0]}`}
-    />
+      className={`h-6 w-6 items-center justify-center rounded-md ${
+        DOT_BY_CROWN[crown] ?? DOT_BY_CROWN[0]
+      } ${opening ? "opacity-60" : ""}`}
+    >
+      {opening ? <ActivityIndicator size="small" /> : null}
+    </Pressable>
   );
 }
 
@@ -169,10 +182,12 @@ function ReviewPane({
 function LearnHeader({
   unavailable,
   summary,
+  opening,
   openNode,
 }: {
   unavailable: boolean;
   summary: PathSummary | null;
+  opening: string | null;
   openNode: (unit: number, node: number) => void;
 }) {
   // A missing dictionary is not a slow one: say so rather than spin forever.
@@ -207,7 +222,9 @@ function LearnHeader({
           onPress={() => openNode(next.unit, next.node)}
           className="mt-4 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
         >
-          <Text className="text-base font-semibold text-primary-foreground">Continue</Text>
+          <Text className="text-base font-semibold text-primary-foreground">
+            {opening ? "Opening…" : "Continue"}
+          </Text>
           <Text className="text-xs text-primary-foreground/80">
             Lesson {next.unit} · node {next.node + 1}
           </Text>
@@ -227,6 +244,11 @@ function LearnHeader({
 export default function RtkScreen() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("learn");
+  // Mounting the node screen is not instant, and a dot that does nothing
+  // visible for a beat reads as a dropped tap. Cleared on focus, which is where
+  // the learner lands when they come back.
+  const [opening, setOpening] = useState<string | null>(null);
+  useFocusEffect(useCallback(() => setOpening(null), []));
   // Loaded once for the whole screen: the header needs the totals and the list
   // needs the rows, and two hooks meant two course-progress reads per focus.
   const { summary, unavailable } = useRtkPath();
@@ -234,7 +256,10 @@ export default function RtkScreen() {
   // Cast because expo-router's generated route union (.expo/types) only learns
   // about /learn once a dev server has regenerated it.
   const openNode = useCallback(
-    (unit: number, node: number) => router.push(`/learn/node?unit=${unit}&node=${node}` as never),
+    (unit: number, node: number) => {
+      setOpening(`${unit}:${node}`);
+      router.push(`/learn/node?unit=${unit}&node=${node}` as never);
+    },
     [router],
   );
 
@@ -259,7 +284,12 @@ export default function RtkScreen() {
           />
           <View className="mt-4">
             {mode === "learn" ? (
-              <LearnHeader unavailable={unavailable} summary={summary} openNode={openNode} />
+              <LearnHeader
+                unavailable={unavailable}
+                summary={summary}
+                opening={opening}
+                openNode={openNode}
+              />
             ) : (
               <ReviewPane onGoToLearn={() => setMode("learn")} unavailable={unavailable} />
             )}
@@ -276,7 +306,12 @@ export default function RtkScreen() {
           </View>
           <View className="mt-2 flex-row flex-wrap gap-1.5">
             {row.crowns.map((crown, node) => (
-              <NodeDot key={node} crown={crown} onPress={() => openNode(row.unit, node)} />
+              <NodeDot
+                key={node}
+                crown={crown}
+                opening={opening === `${row.unit}:${node}`}
+                onPress={() => openNode(row.unit, node)}
+              />
             ))}
           </View>
         </Card>

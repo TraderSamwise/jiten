@@ -4,6 +4,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { runClientDictMigrations, CLIENT_DICT_MIGRATIONS } from "./dict-client-migrations";
 import { determineUpdateAction } from "./dict-download";
 import { DICT_VERSION, DICT_BASE_VERSION } from "./dict-version";
+import { DICT_DB_PATH, hasDictDb } from "../test/dictionary-db";
 
 // ─── Adapter: wrap better-sqlite3 to match expo-sqlite's async interface ───
 
@@ -196,5 +197,53 @@ describe("determineUpdateAction", () => {
       const action = determineUpdateAction(DICT_BASE_VERSION, mockManifest);
       expect(action.type).toBe("none");
     }
+  });
+});
+
+/**
+ * The index migration 020 dropped. Asserted against the REAL
+ * `kanji_characters` definition — read out of the shipped dictionary, so this
+ * cannot drift from the table it has to serve — with the migration's own SQL
+ * applied to it.
+ */
+describe("the restored index on heisig_lesson", () => {
+  const LESSON_QUERY = `SELECT literal, heisig_index, heisig_keyword, heisig_lesson
+       FROM kanji_characters
+      WHERE heisig_lesson = ? AND heisig_index IS NOT NULL
+      ORDER BY heisig_index`;
+
+  function replicaOfShippedTable(): Database.Database {
+    const shipped = new Database(DICT_DB_PATH, { readonly: true });
+    const ddl = shipped
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'kanji_characters'")
+      .get() as { sql: string };
+    const indexes = shipped
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'kanji_characters' AND sql IS NOT NULL",
+      )
+      .all() as { sql: string }[];
+    shipped.close();
+    const db = new Database(":memory:");
+    db.exec(ddl.sql);
+    for (const index of indexes) db.exec(index.sql);
+    return db;
+  }
+
+  it.skipIf(!hasDictDb)("the shipped dictionary walks the frames instead of seeking", () => {
+    const db = replicaOfShippedTable();
+    const plan = db.prepare(`EXPLAIN QUERY PLAN ${LESSON_QUERY}`).all(40) as { detail: string }[];
+    db.close();
+    // The symptom: 3,000 index entries and 3,000 full row reads to find 40.
+    expect(plan.map((r) => r.detail).join(" ")).not.toContain("heisig_lesson=?");
+  });
+
+  it.skipIf(!hasDictDb)("and seeks once the client migration has run", () => {
+    const db = replicaOfShippedTable();
+    const migration = CLIENT_DICT_MIGRATIONS.find((m) => m.version === 25);
+    expect(migration).toBeDefined();
+    for (const sql of migration!.sql) db.exec(sql);
+    const plan = db.prepare(`EXPLAIN QUERY PLAN ${LESSON_QUERY}`).all(40) as { detail: string }[];
+    db.close();
+    expect(plan.map((r) => r.detail).join(" ")).toContain("heisig_lesson=?");
   });
 });

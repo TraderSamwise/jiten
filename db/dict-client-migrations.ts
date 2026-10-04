@@ -30,6 +30,18 @@ export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
     description: "Add glyph_origin column to kanji_characters",
     sql: ["ALTER TABLE kanji_characters ADD COLUMN glyph_origin TEXT"],
   },
+  {
+    // Migration 014 created an index on heisig_lesson; migration 020 rebuilt
+    // kanji_characters and recreated six of its indexes, not this one. Every
+    // "give me lesson N" since has walked all 3,000 Heisig-indexed rows and
+    // read each full record to test the column — 27x slower than the seek, and
+    // far worse than that on a phone reading cold pages out of a 120 MB file.
+    version: 25,
+    description: "Restore the index on heisig_lesson",
+    sql: [
+      "CREATE INDEX IF NOT EXISTS idx_kc_heisig_lesson ON kanji_characters(heisig_lesson, heisig_index)",
+    ],
+  },
 ];
 
 /**
