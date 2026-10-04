@@ -18,6 +18,7 @@ import { PrimitiveChips } from "@/components/PrimitiveChips";
 import { useMnemonicData } from "@/hooks/useMnemonicData";
 import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
 import { shouldAskAsCloze } from "@/lib/rtk-cloze";
+import { singleList, type ListScope } from "@/lib/list-scope";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -1103,6 +1104,24 @@ function StudyScreen() {
   // to an ordinary front for a frame with no story to blank.
   const askedAsClozeRef = useRef(false);
 
+  /** Which lists this session draws from. A review of the whole course spans 56. */
+  const scope: ListScope = useMemo(() => singleList(listId ?? ""), [listId]);
+  /**
+   * A list still in simple_srs never writes `state`, so its answered cards sit
+   * at state 0 forever. Across one list that is its own business; across a
+   * scope it would pull them into the FSRS new pool and start a second,
+   * parallel history on the same row.
+   */
+  const newCardGuard = scope.multi ? "AND simple_stage IS NULL" : "";
+  /**
+   * How this session schedules. A scoped session is FSRS whatever the settings
+   * row says: add_order walks one list's `position` and writes `study_position`
+   * back to it, and simple_srs counts per list — both are per-list by
+   * construction, and letting the queue and the rating disagree about which
+   * they are is the kind of split that writes the wrong column.
+   */
+  const sessionMode: FlashcardMode = scope.multi ? "srs" : (list?.flashcardMode ?? "add_order");
+
   /** How the card the learner just answered was actually asked. */
   const askedMode = useCallback((): PracticeMode => {
     if (askedAsClozeRef.current) return "rtk_cloze";
@@ -1284,8 +1303,8 @@ function StudyScreen() {
     const dayExpr = sqlDayExpr("marked_at", dayResetHour);
     userDb
       .getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
-        `SELECT entry_id, kanji_literal FROM review_marks WHERE ${dayExpr} = ? AND list_id = ?`,
-        [today, listId],
+        `SELECT entry_id, kanji_literal FROM review_marks WHERE ${dayExpr} = ? AND ${scope.clause}`,
+        [today, ...scope.args],
       )
       .then((rows) => {
         const set = new Set<string>();
@@ -1293,12 +1312,12 @@ function StudyScreen() {
         setMarkedSet(set);
       })
       .catch(() => {});
-  }, [userDb, listId, dayResetHour]);
+  }, [userDb, listId, dayResetHour, scope]);
 
   useEffect(() => {
     if (!dictDb || !userDb || !list) return;
     loadQueue();
-  }, [dictDb, userDb, list?.id]);
+  }, [dictDb, userDb, list?.id, scope]);
 
   const srsSelectClause = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
     stability, difficulty, elapsed_days as elapsedDays,
@@ -1404,7 +1423,7 @@ function StudyScreen() {
     const nextPending = refilled.findIndex((c, i) => i > cursorPos && c.status === "pending");
     if (nextPending >= 0) {
       moveCursor(nextPending);
-    } else if (list?.flashcardMode === "srs" && pendingTimersRef.current.size > 0) {
+    } else if (sessionMode === "srs" && pendingTimersRef.current.size > 0) {
       // FSRS: learning cards still on timers — show waiting screen
       setSessionPhase("waiting");
     } else {
@@ -1501,7 +1520,7 @@ function StudyScreen() {
     translateX.value = 0;
 
     try {
-      if (list.flashcardMode === "add_order") {
+      if (sessionMode === "add_order") {
         // add_order mode: unchanged
         let position = list.studyPosition ?? 0;
         let rows = await userDb.getAllAsync<{ entry_id: number; kanji_literal: string | null }>(
@@ -1563,14 +1582,16 @@ function StudyScreen() {
         setOriginalCardCount(items.length);
         if (items.length === 0) setSessionPhase("done");
         else setSessionPhase("studying");
-      } else if (list.flashcardMode === "simple_srs") {
+      } else if (sessionMode === "simple_srs") {
         // Simple SRS mode
         // Ensure srs_cards exist for all list entries (auto-create if missing)
         const cardCount = await userDb.getFirstAsync<{ c: number }>(
-          "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL",
-          [listId],
+          `SELECT COUNT(*) as c FROM srs_cards WHERE ${scope.clause} AND deleted_at IS NULL`,
+          [...scope.args],
         );
-        if (!cardCount || cardCount.c === 0) {
+        // Backfilling is a single-list act: under a scope there is no one list
+        // to stamp the new cards with.
+        if (!scope.multi && (!cardCount || cardCount.c === 0)) {
           const entryRows = await userDb.getAllAsync<{
             entry_id: number;
             kanji_literal: string | null;
@@ -1595,15 +1616,15 @@ function StudyScreen() {
           // then seed the active deque with the first batch.
           const dueRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards
-             WHERE list_id = ? AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
+             WHERE ${scope.clause} AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
              ORDER BY simple_n ASC`,
-            [listId, dueCutoffDays],
+            [...scope.args, dueCutoffDays],
           );
           const newRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards
-             WHERE list_id = ? AND simple_stage IS NULL AND deleted_at IS NULL
+             WHERE ${scope.clause} AND simple_stage IS NULL AND deleted_at IS NULL
              ORDER BY created_at ASC`,
-            [listId],
+            [...scope.args],
           );
 
           if (dueRows.length > 0 || newRows.length > 0) {
@@ -1642,17 +1663,17 @@ function StudyScreen() {
         {
           const nowISO = new Date().toISOString();
           const learningRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state IN (1, 3) AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
-            [listId, nowISO],
+            `${srsSelectClause} FROM srs_cards WHERE ${scope.clause} AND state IN (1, 3) AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
+            [...scope.args, nowISO],
           );
           const reviewRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 2 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
-            [listId, dueCutoffISO],
+            `${srsSelectClause} FROM srs_cards WHERE ${scope.clause} AND state = 2 AND due <= ? AND deleted_at IS NULL ORDER BY due ASC`,
+            [...scope.args, dueCutoffISO],
           );
           const allDueRows = [...learningRows, ...reviewRows];
           const newRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL ORDER BY created_at ASC`,
-            [listId],
+            `${srsSelectClause} FROM srs_cards WHERE ${scope.clause} AND state = 0 ${newCardGuard} AND deleted_at IS NULL ORDER BY created_at ASC`,
+            [...scope.args],
           );
 
           if (allDueRows.length > 0 || newRows.length > 0) {
@@ -1750,9 +1771,9 @@ function StudyScreen() {
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
 
-    if (list?.flashcardMode === "simple_srs" && card) {
+    if (sessionMode === "simple_srs" && card) {
       await rateSimpleSrsCard(card, "fail");
-    } else if (list?.flashcardMode === "srs" && card) {
+    } else if (sessionMode === "srs" && card) {
       reviewLogId = generateId();
       const result = await rateSrsCard(card, Rating.Again, reviewLogId);
       // Schedule learning timer instead of immediate re-queue
@@ -1779,7 +1800,7 @@ function StudyScreen() {
       wasNewSimpleSrs: card ? card.simpleStage == null : false,
     };
     // Push failed card to end for re-review (non-FSRS only; FSRS uses timer)
-    if (list?.flashcardMode !== "srs") {
+    if (sessionMode !== "srs") {
       updatedCards.push({ item, status: "pending", flipped: false, reQueueOf: cursor });
     }
     cardsRef.current = updatedCards;
@@ -1791,7 +1812,8 @@ function StudyScreen() {
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
-        listId,
+        // The card's own list, not the screen's: a scoped session spans many.
+        listId: item.srsCard?.listId ?? listId,
         practiceMode,
         correct: false,
         responseMs,
@@ -1800,7 +1822,7 @@ function StudyScreen() {
     }
 
     // Check for confused words (fire-and-forget, modal appears async) -- skip for kanji
-    if (card && list?.flashcardMode !== "add_order" && item.kind === "entry") {
+    if (card && sessionMode !== "add_order" && item.kind === "entry") {
       checkForConfusedWords(item.entry, card);
     }
 
@@ -1840,7 +1862,7 @@ function StudyScreen() {
     const wasNewSimpleSrs = card ? card.simpleStage == null : false;
     let shouldReQueue = false;
 
-    if (list?.flashcardMode === "add_order") {
+    if (sessionMode === "add_order") {
       if (!userDb || !listId) return;
       const currentList = useListsStore.getState().lists.find((l) => l.id === listId);
       preStudyPosition = currentList?.studyPosition ?? 0;
@@ -1854,7 +1876,7 @@ function StudyScreen() {
           updatedAt: new Date().toISOString(),
         });
       }
-    } else if (list?.flashcardMode === "simple_srs" && card) {
+    } else if (sessionMode === "simple_srs" && card) {
       const simpleAction = isLongPress ? "easy" : "pass";
       const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
       if (!graduated) {
@@ -1906,7 +1928,8 @@ function StudyScreen() {
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
-        listId,
+        // The card's own list, not the screen's: a scoped session spans many.
+        listId: item.srsCard?.listId ?? listId,
         practiceMode,
         correct: true,
         responseMs,
@@ -1981,7 +2004,8 @@ function StudyScreen() {
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
-        listId,
+        // The card's own list, not the screen's: a scoped session spans many.
+        listId: item.srsCard?.listId ?? listId,
         practiceMode,
         correct: true,
         responseMs,
@@ -2047,7 +2071,8 @@ function StudyScreen() {
       const responseMs = revealTimeRef.current > 0 ? Date.now() - revealTimeRef.current : null;
       logPracticeEvent(drizzleDb!, {
         entryId: item.entry.id,
-        listId,
+        // The card's own list, not the screen's: a scoped session spans many.
+        listId: item.srsCard?.listId ?? listId,
         practiceMode,
         correct: true,
         responseMs,
@@ -2136,7 +2161,9 @@ function StudyScreen() {
       await markForReview(drizzleDb!, card.entryId, card.kanjiLiteral, card.listId, dayResetHour);
       setMarkedSet((prev) => {
         const next = new Set(prev);
-        next.add(card.kanjiLiteral ? `k:${card.kanjiLiteral}` : `e:${card.entryId}`);
+        // Same key shape as the prefill and the badge — this wrote `k:`/`e:`,
+        // so the flag never lit up from an automatic mark.
+        next.add(`${card.entryId}-${card.kanjiLiteral ?? ""}`);
         return next;
       });
     }
@@ -2225,7 +2252,7 @@ function StudyScreen() {
   async function checkForConfusedWords(entry: DictEntry, card: SrsCardRow) {
     if (!userDb || !dictDb || !listId) return;
     if (list?.confusionDetection === false) return;
-    if (list?.flashcardMode === "add_order") return;
+    if (sessionMode === "add_order") return;
 
     // Check cooldown: skip if we checked this card recently
     if (card.lastConfusionCheck) {
@@ -2239,8 +2266,8 @@ function StudyScreen() {
 
     // Get all entry_ids in the list (excluding the failed one and kanji entries)
     const rows = await userDb.getAllAsync<{ entry_id: number }>(
-      "SELECT entry_id FROM list_entries WHERE list_id = ? AND entry_id != ? AND kanji_literal IS NULL AND deleted_at IS NULL",
-      [listId, entry.id],
+      `SELECT entry_id FROM list_entries WHERE ${scope.clause} AND entry_id != ? AND kanji_literal IS NULL AND deleted_at IS NULL`,
+      [...scope.args, entry.id],
     );
     const entryIds = rows.map((r: { entry_id: number }) => r.entry_id);
     if (entryIds.length === 0) return;
@@ -2271,7 +2298,7 @@ function StudyScreen() {
           { entryId: entry.id },
           { entryId: result.entry.id },
           "visual_kanji",
-          listId,
+          card.listId ?? listId,
           "flashcard",
         ).catch(() => {});
       }
@@ -2286,7 +2313,7 @@ function StudyScreen() {
         { entryId: entry.id },
         { entryId: mr.entry.id },
         "meaning",
-        listId,
+        card.listId ?? listId,
         "flashcard",
       ).catch(() => {});
     }
@@ -2306,15 +2333,16 @@ function StudyScreen() {
         simple_stage as simpleStage, simple_n as simpleN,
         simple_interval as simpleInterval,
         last_confusion_check as lastConfusionCheck
-       FROM srs_cards WHERE list_id = ? AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL`,
-      [listId, result.entry.id],
+       FROM srs_cards WHERE ${scope.clause} AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL
+       ORDER BY due ASC`,
+      [...scope.args, result.entry.id],
     );
 
     if (cardRow) {
       // Fail it so it comes up soon
-      if (list?.flashcardMode === "simple_srs") {
+      if (sessionMode === "simple_srs") {
         await rateSimpleSrsCard(cardRow, "fail");
-      } else if (list?.flashcardMode === "srs") {
+      } else if (sessionMode === "srs") {
         await rateSrsCard(cardRow, Rating.Again);
       }
 
@@ -2346,7 +2374,7 @@ function StudyScreen() {
     const snap = studyCard.snapshot;
     const now = new Date().toISOString();
 
-    if (list?.flashcardMode === "srs" && card && snap) {
+    if (sessionMode === "srs" && card && snap) {
       // Restore FSRS fields
       await userDb.runAsync(
         `UPDATE srs_cards SET
@@ -2376,7 +2404,7 @@ function StudyScreen() {
       }
       // Reset completed status on undo
       completedSrsIdsRef.current.delete(card.id);
-    } else if (list?.flashcardMode === "simple_srs" && card && snap) {
+    } else if (sessionMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
       await userDb.runAsync(
         `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
@@ -2395,7 +2423,7 @@ function StudyScreen() {
       // Reset correct count and completed status for this card on undo
       simpleCorrectCountRef.current.delete(card.id);
       completedSrsIdsRef.current.delete(card.id);
-    } else if (list?.flashcardMode === "add_order" && studyCard.preStudyPosition != null) {
+    } else if (sessionMode === "add_order" && studyCard.preStudyPosition != null) {
       // Restore study_position
       await userDb.runAsync("UPDATE lists SET study_position = ?, updated_at = ? WHERE id = ?", [
         studyCard.preStudyPosition,
@@ -2450,7 +2478,7 @@ function StudyScreen() {
       await handleFail(true);
     } else if (action === "hard") {
       await handleHard();
-    } else if (action === "easy" && list?.flashcardMode === "srs") {
+    } else if (action === "easy" && sessionMode === "srs") {
       await handleEasy();
     } else {
       await handlePass(isLongPress, true);
@@ -2652,8 +2680,8 @@ function StudyScreen() {
   const frontFaces = sortFaces(list?.frontFaces ?? ["kanji"]);
   const backFaces = sortFaces(list?.backFaces ?? ["english"]);
 
-  const isSimpleSrs = list?.flashcardMode === "simple_srs";
-  const isFsrsMode = list?.flashcardMode === "srs";
+  const isSimpleSrs = sessionMode === "simple_srs";
+  const isFsrsMode = sessionMode === "srs";
   const isSrsMode = isFsrsMode || isSimpleSrs;
   const currentSrsCard = currentCard?.item.srsCard;
   const isFsrsReviewCard = isFsrsMode && currentSrsCard?.state === 2;
@@ -2742,7 +2770,7 @@ function StudyScreen() {
           <Text className="text-lg text-muted-foreground text-center mb-2">
             {reviewedCount > 0
               ? `You reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"}.`
-              : list?.flashcardMode === "add_order"
+              : sessionMode === "add_order"
                 ? "You've studied all cards in this list. You can reset your position in settings."
                 : "No cards are due and no new cards remain."}
           </Text>
@@ -2856,7 +2884,7 @@ function StudyScreen() {
                       disableFlipAnimation={!flipAnimationEnabled}
                       frontFaces={frontFaces}
                       backFaces={backFaces}
-                      flashcardMode={list?.flashcardMode ?? "add_order"}
+                      flashcardMode={sessionMode}
                       simpleCorrectCount={
                         studyCard.item.srsCard
                           ? (simpleCorrectCountRef.current.get(studyCard.item.srsCard.id) ?? 0)
@@ -2897,7 +2925,7 @@ function StudyScreen() {
                                     drizzleDb,
                                     entryId,
                                     kanjiLiteral,
-                                    listId ?? null,
+                                    studyCard.item.srsCard?.listId ?? listId ?? null,
                                     dayResetHour,
                                   );
                               }
@@ -3216,7 +3244,7 @@ function StudyScreen() {
         visible={statsVisible}
         onClose={() => setStatsVisible(false)}
         listId={listId!}
-        flashcardMode={list?.flashcardMode ?? "add_order"}
+        flashcardMode={sessionMode}
         onClearStatistics={loadQueue}
       />
 

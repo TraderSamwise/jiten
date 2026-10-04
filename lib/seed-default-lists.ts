@@ -1,6 +1,7 @@
 import type * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "@/db/user-db";
 import { STARTER_BOOK_CONTENT } from "@/lib/starter-book-content";
+import { RTK_LESSON_COUNT } from "./rtk-course";
 
 const FLAG_KEY = "default_lists_seeded_v3";
 const VOCAB_FLAG_KEY = "default_vocab_lists_seeded_v2";
@@ -191,7 +192,7 @@ export async function seedRtkLessonsIfNeeded(
 
   const now = new Date().toISOString();
 
-  for (let lesson = 1; lesson <= 56; lesson++) {
+  for (let lesson = 1; lesson <= RTK_LESSON_COUNT; lesson++) {
     const literals = await dictDb.getAllAsync<{ literal: string }>(
       "SELECT literal FROM kanji_characters WHERE heisig_lesson = ? ORDER BY heisig_index",
       [lesson],

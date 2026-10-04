@@ -12,6 +12,9 @@ export const NODE_SIZE = 5;
 /** Crown 3 is a node drilled to production. Nothing schedules a crown-3 node. */
 export const CROWN_MAX = 3;
 
+/** Volume 1's lessons, which is what the course and its lists cover. */
+export const RTK_LESSON_COUNT = 56;
+
 export interface CourseFrame {
   literal: string;
   /** Heisig frame number, 1-based; the course's only ordering. */
