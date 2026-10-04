@@ -42,11 +42,16 @@ describe("what the generator is told", () => {
     expect(mnemonicRequestFor({ ...frame, keyword: "  " }, one, "")).toBeNull();
   });
 
-  it("has nothing to ask for a frame with no primitives to weave", () => {
-    // The instruction builds the imagery out of them; an empty list buys a
-    // generic story for a unit of the learner's daily quota.
-    expect(mnemonicRequestFor(frame, [])).toBeNull();
-    expect(mnemonicRequestFor(frame, [primitive(1, null)])).toBeNull();
+  it("still asks when the decomposition has not arrived", () => {
+    // This used to return null, which made Generate dead on any device whose
+    // strokes tier had not downloaded. The server grounds a story in the glyph
+    // origin and the crowd's hook too, so the keyword alone is enough to ask.
+    expect(mnemonicRequestFor(frame, [])).toEqual({
+      kanji: frame.literal,
+      keyword: frame.keyword,
+      primitives: [],
+    });
+    expect(mnemonicRequestFor(frame, [primitive(1, null)])?.primitives).toEqual([]);
   });
 
   it("keeps the primitives in writing order", () => {

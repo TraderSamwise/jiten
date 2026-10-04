@@ -36,6 +36,7 @@ const h = vi.hoisted(() => {
     saveMnemonic: vi.fn(async () => {}),
     // A test can take the strokes tier away, as a user without it has.
     noStrokes: false,
+    strokesStatus: null as string | null,
     // Stable identities: a fresh object each render would re-run the loaders'
     // effects forever, cancelling each in turn.
     primitives: [
@@ -101,6 +102,9 @@ vi.mock("@/db/provider", () => ({
   useDatabase: () => ({
     dictDb: h.dictDb,
     strokesDb: h.noStrokes ? null : h.strokesDb,
+    // What the runner reads to tell "the strokes tier is still coming" from
+    // "this device has none": a test without it is a device with none.
+    backgroundStatus: h.strokesStatus ? [{ key: "strokes", state: h.strokesStatus }] : [],
   }),
 }));
 vi.mock("@/db/user-provider", () => ({ useUserDb: () => h.userDb }));
@@ -161,9 +165,18 @@ vi.mock("@/hooks/useMnemonicGeneration", () => ({
 
 // The drills, stubbed: a button per callback, and a label naming the question.
 vi.mock("@/components/rtk/MeetFrame", () => ({
-  MeetFrame: ({ frame, onSave }: { frame: CourseFrame; onSave: (s: string) => void }) => (
+  MeetFrame: ({
+    frame,
+    onSave,
+    canGenerate,
+  }: {
+    frame: CourseFrame;
+    onSave: (s: string) => void;
+    canGenerate: boolean;
+  }) => (
     <div>
       <span>{`MEET:${frame.literal}`}</span>
+      <span>{`CANGEN:${canGenerate}`}</span>
       <button onClick={() => onSave("a story")}>save</button>
     </div>
   ),
@@ -279,6 +292,7 @@ afterEach(() => {
   cleanup();
   h.only = null;
   h.noStrokes = false;
+  h.strokesStatus = null;
   h.crown = 1;
   h.story = null;
 });
@@ -390,6 +404,28 @@ describe("a node's first visit", () => {
     // Crown 0 opens on Meet, which no test used to reach at all.
     expect((await screen.findByText(/^MEET:/)).textContent).toBe("MEET:一");
     expect(screen.queryByText(/^DRILL:/)).toBeNull();
+  });
+
+  it("offers Generate on a device with no stroke data at all", async () => {
+    // The bug this covers: generation was gated on the strokes tier, so every
+    // frame read "needs stroke data" and the button did nothing — on a device
+    // where the background download had never finished, which is most of them
+    // on first run. The server grounds a story without the primitives.
+    h.crown = 0;
+    h.noStrokes = true;
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+    expect(screen.getByText("CANGEN:true")).toBeTruthy();
+  });
+
+  it("waits while the stroke data is still downloading", async () => {
+    // Worth the wait: the primitives make a better story, and the story is saved.
+    h.crown = 0;
+    h.noStrokes = true;
+    h.strokesStatus = "downloading";
+    render(<LearnNodeScreen />);
+    await screen.findByText(/^MEET:/);
+    expect(screen.getByText("CANGEN:false")).toBeTruthy();
   });
 
   it("counts the steps it holds, and drops one when a step turns out unaskable", async () => {

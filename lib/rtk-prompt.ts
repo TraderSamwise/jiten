@@ -38,10 +38,9 @@ export function mnemonicRequestFor(
 ): KanjiMnemonicRequest | null {
   const keyword = (userKeyword?.trim() || frame.keyword.trim()).slice(0, MAX_KEYWORD_CHARS);
   if (!keyword) return null;
-  const weave = primitiveKeywords(primitives);
-  // No primitives, nothing to weave: the instruction tells the model to build
-  // the imagery out of them, so an empty list buys a generic story for a unit
-  // of the learner's daily quota — and it would be cached under this frame.
-  if (weave.length === 0) return null;
-  return { kanji: frame.literal, keyword, primitives: weave };
+  // An empty list is allowed: the server grounds a story in the glyph origin
+  // and the crowd's best hook as well as the primitives, so a frame whose
+  // decomposition has not arrived still gets a story worth reading. Refusing
+  // here is what made Generate dead on a device without the strokes tier.
+  return { kanji: frame.literal, keyword, primitives: primitiveKeywords(primitives) };
 }

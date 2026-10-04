@@ -16,16 +16,20 @@ import type { CourseFrame } from "@/lib/rtk-course";
 
 vi.mock("react-native", () => ({
   ActivityIndicator: () => <span>loading</span>,
+  // className comes through: whether an action is the weighted one on the screen
+  // is the difference between a button and a line of small print.
   Pressable: ({
     children,
     onPress,
     disabled,
+    className,
   }: {
     children?: React.ReactNode;
     onPress?: () => void;
     disabled?: boolean;
+    className?: string;
   }) => (
-    <button onClick={onPress} disabled={disabled}>
+    <button onClick={onPress} disabled={disabled} className={className}>
       {children}
     </button>
   ),
@@ -416,7 +420,7 @@ describe("a story landing while the learner is writing their own", () => {
 });
 
 describe("without the strokes tier", () => {
-  it("will not generate a story with no primitives to weave", () => {
+  it("waits while the stroke data is still coming, and says so", () => {
     render(
       <MeetFrame
         frame={frame}
@@ -432,7 +436,7 @@ describe("without the strokes tier", () => {
         onSkip={() => {}}
       />,
     );
-    expect(screen.getByText("needs stroke data")).toBeTruthy();
+    expect(screen.getByText("stroke data is loading…")).toBeTruthy();
     expect(screen.getByText("Generate").closest("button")?.disabled).toBe(true);
   });
 });
@@ -448,5 +452,28 @@ describe("where the character comes from", () => {
     // Most devices, until the prose arrives with dict base v25.
     view(nothing);
     expect(screen.queryByText("Where it comes from")).toBeNull();
+  });
+});
+
+describe("moving on", () => {
+  /** The button that carries the label, not the <span> inside it. */
+  function control(label: string): HTMLButtonElement {
+    const button = screen.getByText(label).closest("button");
+    if (!button) throw new Error(`${label} is not a button`);
+    return button as HTMLButtonElement;
+  }
+
+  it("makes Next frame the weighted action once there is a story", () => {
+    // It used to be a line of muted text under two real buttons — the action
+    // taken on every single frame, dressed as a footnote.
+    view(nothing, "a [tree] stands");
+    expect(control("Next frame").className).toContain("bg-primary");
+    expect(control("Generate").className).not.toContain("bg-primary");
+  });
+
+  it("still offers Skip as a button, with Generate leading", () => {
+    view(nothing);
+    expect(control("Skip for now").className).toContain("border");
+    expect(control("Generate").className).toContain("bg-primary");
   });
 });

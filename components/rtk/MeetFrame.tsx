@@ -20,7 +20,11 @@ interface Props {
   /** The story already saved for this frame, if any. */
   story: string | null;
   generation: GenerationState;
-  /** True once the strokes tier is present; without it there are no primitives. */
+  /**
+   * False only while the strokes tier is still arriving: the story is better
+   * with the primitives, so it is worth a moment's wait. Generation itself does
+   * not need them.
+   */
   canGenerate: boolean;
   onGenerate: (fresh: boolean) => void;
   onSave: (story: string) => void;
@@ -222,8 +226,8 @@ export function MeetFrame({
             />
             <Action
               label="Generate"
-              hint={canGenerate ? undefined : "needs stroke data"}
-              primary
+              hint={canGenerate ? undefined : "stroke data is loading…"}
+              primary={!story}
               disabled={!canGenerate || loading}
               onPress={() => {
                 setDismissed(null);
@@ -232,14 +236,15 @@ export function MeetFrame({
             />
           </View>
 
-          <Pressable
-            onPress={story ? onKeep : onSkip}
-            className="items-center py-2 active:opacity-70"
-          >
-            <Text className="text-sm text-muted-foreground">
-              {story ? "Next frame" : "Skip for now"}
-            </Text>
-          </Pressable>
+          {/* With a story in hand this is the action, so it carries the weight;
+              without one it is still a button, not a line of small print. */}
+          <View className="flex-row">
+            <Action
+              label={story ? "Next frame" : "Skip for now"}
+              primary={!!story}
+              onPress={story ? onKeep : onSkip}
+            />
+          </View>
         </View>
       )}
     </View>

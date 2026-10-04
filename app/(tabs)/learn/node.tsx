@@ -305,9 +305,16 @@ function ClozeStep({
 
 export default function LearnNodeScreen() {
   const { unit, node } = useLocalSearchParams<{ unit?: string; node?: string }>();
-  const { dictDb, strokesDb } = useDatabase();
+  const { dictDb, strokesDb, backgroundStatus } = useDatabase();
   const userDb = useUserDb();
   const goBack = useSafeGoBack("/learn/rtk");
+  // The strokes tier opens in the background, and the primitives come with it.
+  // Generation does not need them — the server has the glyph origin and the
+  // crowd's hook — but it is worth the wait while they are actually coming.
+  const strokesState = backgroundStatus.find((item) => item.key === "strokes")?.state;
+  const strokesArriving =
+    !strokesDb &&
+    (strokesState === "pending" || strokesState === "downloading" || strokesState === "importing");
   const { markDirty } = useSync();
   // Held by the runner, not the step: the story cache and the node-ahead
   // prefetch have to outlive the frame that asked for the first story.
@@ -761,7 +768,7 @@ export default function LearnNodeScreen() {
           frame={item.frame}
           primitives={primitives.get(item.frame.literal) ?? []}
           generation={generation}
-          canGenerate={!!strokesDb}
+          canGenerate={!strokesArriving}
           onGenerate={onGenerate}
           onDone={onDone}
         />

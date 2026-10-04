@@ -53,6 +53,7 @@ export const kanjiMnemonicRoute = new Hono<{ Variables: AppVariables }>().post(
         // carries keywords, never targets, and inviting `(target)` got the model
         // to invent one — which isValidTarget accepts and the reader then
         // resolves to an unrelated primitive.
+        "With no primitives given, build the imagery from glyphOrigin, crowdStory or the keyword itself, and use no [label] markup at all. " +
         "Mark every primitive reference up as [label], using the primitive keyword as the label. Do not write a (target) after it. Refer to the kanji's own keyword in words rather than with any marker. Escape a literal [ ] { } with a backslash. Use the primitive keywords verbatim where natural. " +
         // What the two grounding fields are for. They are raw material, not
         // content to pass through: one is another learner's writing and the
