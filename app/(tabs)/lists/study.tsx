@@ -18,6 +18,13 @@ import { PrimitiveChips } from "@/components/PrimitiveChips";
 import { useMnemonicData } from "@/hooks/useMnemonicData";
 import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
 import { shouldAskAsCloze } from "@/lib/rtk-cloze";
+import {
+  getFaceText,
+  getKanjiFaceText,
+  resolveKeywordFace,
+  shownFaces,
+  sortFaces,
+} from "@/lib/card-faces";
 import { viewportPosition } from "@/lib/viewport-position";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -419,56 +426,25 @@ function TypingInput({
   );
 }
 
-function getFaceText(entry: DictEntry, face: CardFace): string {
-  switch (face) {
-    case "kanji":
-      return entry.kanji[0]?.text ?? entry.kana[0]?.text ?? "";
-    case "kana":
-      return entry.kana[0]?.text ?? "";
-    case "english": {
-      const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
-      const parts = entry.senses.map((sense, i) => {
-        const glosses = sense.glosses.filter((g) => g.lang === "eng").map((g) => g.text);
-        if (glosses.length === 0) return null;
-        const text = glosses.join(", ");
-        return entry.senses.length > 1 ? `${CIRCLED[i] ?? `(${i + 1})`} ${text}` : text;
-      });
-      return parts.filter(Boolean).join(" ");
-    }
-    case "mnemonic":
-      return "";
-  }
-}
-
-function getKanjiFaceText(kanji: KanjiCharacter, face: CardFace): string {
-  switch (face) {
-    case "kanji":
-      return kanji.literal;
-    case "kana":
-      return [...kanji.readingsOn, ...kanji.readingsKun].join("\u3001");
-    case "english":
-      return kanji.meanings.join(", ");
-    case "mnemonic":
-      return "";
-  }
-}
-
-const FACE_ORDER: Record<CardFace, number> = { kanji: 0, kana: 1, english: 2, mnemonic: 3 };
-function sortFaces(faces: CardFace[]): CardFace[] {
-  return [...faces].sort((a, b) => FACE_ORDER[a] - FACE_ORDER[b]);
-}
-
 const BASE_FONT_SIZE = 84;
 const MAX_ENGLISH_FONT_SIZE = 18;
+const MAX_KEYWORD_FONT_SIZE = 34;
 function scaledFontStyle(
   count: number,
   face: CardFace,
 ): { fontSize: number; lineHeight: number; textAlign: "center" } {
   const scale = 1 / (1 + (count - 1) * 0.5);
   const typeFactor =
-    face === "english" ? 0.5 : face === "kana" ? 0.8 : face === "mnemonic" ? 0.22 : 1;
+    face === "english" || face === "keyword"
+      ? 0.5
+      : face === "kana"
+        ? 0.8
+        : face === "mnemonic"
+          ? 0.22
+          : 1;
   let size = Math.round(BASE_FONT_SIZE * scale * typeFactor);
   if (face === "english") size = Math.min(size, MAX_ENGLISH_FONT_SIZE);
+  if (face === "keyword") size = Math.min(size, MAX_KEYWORD_FONT_SIZE);
   if (face === "mnemonic") size = Math.min(size, 18);
   return {
     fontSize: size,
@@ -535,7 +511,14 @@ const StudyCardView = React.memo(
   ) {
     const screenWidth = useContainerWidth();
     const mnemonicData = useMnemonicData(item.kind === "kanji" ? item.kanji.literal : null);
+    // The notes load a tick after the card mounts, so this falls back to the
+    // row's own keyword rather than hiding the face until they arrive.
+    const keywordText =
+      item.kind === "kanji"
+        ? resolveKeywordFace(mnemonicData.primaryKeywords[0], item.kanji.heisigKeyword)
+        : "";
     function canRenderFace(face: CardFace): boolean {
+      if (face === "keyword") return !!keywordText;
       if (face !== "mnemonic") return true;
       if (item.kind !== "kanji") return false;
       return !!mnemonicData.mnemonic;
@@ -637,7 +620,11 @@ const StudyCardView = React.memo(
         );
       }
       const text =
-        item.kind === "entry" ? getFaceText(item.entry, face) : getKanjiFaceText(item.kanji, face);
+        face === "keyword"
+          ? keywordText
+          : item.kind === "entry"
+            ? getFaceText(item.entry, face)
+            : getKanjiFaceText(item.kanji, face);
 
       if (face === "kana" && item.kind === "entry" && item.entry.pitchAccents.length > 0) {
         const targetReading = item.entry.kana[0]?.text;
@@ -690,24 +677,26 @@ const StudyCardView = React.memo(
         story: mnemonicData.mnemonic,
         keyword: clozeKeyword,
       });
-      const frontIsKanji =
-        item.kind === "entry" &&
-        frontFaces[0] === "kanji" &&
-        getDisplayText(item.entry) !== getTargetReading(item.entry);
-
       const handleTypingComplete = (wasCorrect: boolean) => {
         toggle(); // flip the card
         onTypingComplete(wasCorrect, isCloze);
       };
 
-      const renderableFront = frontFaces.filter(canRenderFace);
+      const renderableFront = shownFaces(frontFaces, canRenderFace);
+      // What is actually on the front, not what was chosen: when the fallback
+      // fires, typing mode would otherwise show the reading beside a kanji
+      // prompt — the answer, next to the question.
+      const frontIsKanji =
+        item.kind === "entry" &&
+        renderableFront[0] === "kanji" &&
+        getDisplayText(item.entry) !== getTargetReading(item.entry);
       const primaryFront = renderableFront[0];
       const frontCount = renderableFront.length;
       const secondaryFaces = renderableFront.slice(1).map((face, i) => (
         <View key={`front-${i}`} style={{ marginTop: 4 }}>
           {renderFaceContent(face, scaledFontStyle(frontCount, face), {
-            numberOfLines: face === "english" ? 3 : 1,
-            adjustsFontSizeToFit: face !== "english" && face !== "mnemonic",
+            numberOfLines: face === "english" ? 3 : face === "keyword" ? 2 : 1,
+            adjustsFontSizeToFit: face !== "english" && face !== "mnemonic" && face !== "keyword",
             minimumFontScale: 0.5,
           })}
         </View>
@@ -734,8 +723,12 @@ const StudyCardView = React.memo(
             <>
               {primaryFront &&
                 renderFaceContent(primaryFront, scaledFontStyle(frontCount, primaryFront), {
-                  numberOfLines: primaryFront === "english" ? 3 : 1,
-                  adjustsFontSizeToFit: primaryFront !== "english" && primaryFront !== "mnemonic",
+                  numberOfLines:
+                    primaryFront === "english" ? 3 : primaryFront === "keyword" ? 2 : 1,
+                  adjustsFontSizeToFit:
+                    primaryFront !== "english" &&
+                    primaryFront !== "mnemonic" &&
+                    primaryFront !== "keyword",
                   minimumFontScale: 0.5,
                 })}
               {isTyping && item.kind === "entry" && (
@@ -786,12 +779,17 @@ const StudyCardView = React.memo(
       const backEnglishSize = MAX_ENGLISH_FONT_SIZE;
 
       function backFontStyle(face: CardFace) {
-        const size = face === "english" ? backEnglishSize : face === "kana" ? 22 : backKanjiSize;
+        const size =
+          face === "english"
+            ? backEnglishSize
+            : face === "kana" || face === "keyword"
+              ? 22
+              : backKanjiSize;
         return { fontSize: size, lineHeight: Math.round(size * 1.3), textAlign: "center" as const };
       }
 
-      const renderableBackFront = frontFaces.filter(canRenderFace);
-      const renderableBack = backFaces.filter(canRenderFace);
+      const renderableBackFront = shownFaces(frontFaces, canRenderFace);
+      const renderableBack = shownFaces(backFaces, canRenderFace, ["keyword", "english", "kanji"]);
       return (
         <View className="items-center justify-center flex-1">
           {renderableBackFront[0] &&
@@ -805,12 +803,17 @@ const StudyCardView = React.memo(
             <View className="h-px w-48 bg-muted-foreground/30 mb-4" />
             {renderableBack[0] &&
               renderFaceContent(renderableBack[0], backFontStyle(renderableBack[0]), {
-                numberOfLines: renderableBack[0] === "english" ? 4 : undefined,
+                numberOfLines:
+                  renderableBack[0] === "english"
+                    ? 4
+                    : renderableBack[0] === "keyword"
+                      ? 2
+                      : undefined,
               })}
             {renderableBack.slice(1).map((face, i) => (
               <View key={`back-${i}`} style={{ marginTop: 4 }}>
                 {renderFaceContent(face, backFontStyle(face), {
-                  numberOfLines: face === "english" ? 4 : undefined,
+                  numberOfLines: face === "english" ? 4 : face === "keyword" ? 2 : undefined,
                 })}
               </View>
             ))}

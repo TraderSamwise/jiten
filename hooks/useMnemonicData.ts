@@ -36,7 +36,13 @@ export function useMnemonicData(literal: string | null | undefined): MnemonicDat
       if (cancelled) return;
       const mnemonic = noteRow?.mnemonic ?? null;
       if (!mnemonic) {
-        setData(EMPTY);
+        // Not EMPTY: a keyword override with no story still has to reach the
+        // keyword face, which would otherwise silently show Heisig's instead.
+        setData({
+          mnemonic: null,
+          primaryKeywords: noteRow?.keyword ? [noteRow.keyword] : [],
+          primitives: [],
+        });
         return;
       }
 

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { WrappedUserDb } from "@/db/user-db";
-import type { WordList, CardFace, ListItem } from "@/db/types";
+import type { WordList, ListItem } from "@/db/types";
+import { parseFaces } from "@/lib/card-faces";
 import type { SortMode } from "@/stores/list-sort";
 
 type ListEntryRow = { entry_id: number; kanji_literal: string | null };
@@ -35,10 +36,8 @@ export function parseListRow(row: any): WordList {
     ...row,
     configured: Boolean(row.configured ?? 0),
     flashcardMode: row.flashcardMode ?? row.flashcard_mode ?? "add_order",
-    frontFaces:
-      typeof rawFront === "string" ? (JSON.parse(rawFront) as CardFace[]) : (rawFront ?? ["kanji"]),
-    backFaces:
-      typeof rawBack === "string" ? (JSON.parse(rawBack) as CardFace[]) : (rawBack ?? ["english"]),
+    frontFaces: parseFaces(rawFront, ["kanji"]),
+    backFaces: parseFaces(rawBack, ["english"]),
     studyPosition: row.studyPosition ?? row.study_position ?? 0,
     autoPlayAudio: Boolean(row.autoPlayAudio ?? row.auto_play_audio ?? 0),
     confusionDetection: (row.confusionDetection ?? row.confusion_detection ?? 1) !== 0,

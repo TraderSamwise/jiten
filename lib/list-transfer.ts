@@ -1,5 +1,6 @@
 import type { WrappedUserDb } from "@/db/user-db";
 import type { CardFace, FlashcardMode } from "@/db/types";
+import { parseFaces } from "./card-faces";
 
 // ─── Export file schema ───
 
@@ -77,10 +78,8 @@ export async function buildListExport(
 
   const rawFront = listRow.front_faces ?? listRow.frontFaces;
   const rawBack = listRow.back_faces ?? listRow.backFaces;
-  const frontFaces: CardFace[] =
-    typeof rawFront === "string" ? JSON.parse(rawFront) : (rawFront ?? ["kanji"]);
-  const backFaces: CardFace[] =
-    typeof rawBack === "string" ? JSON.parse(rawBack) : (rawBack ?? ["english"]);
+  const frontFaces: CardFace[] = parseFaces(rawFront, ["kanji"]);
+  const backFaces: CardFace[] = parseFaces(rawBack, ["english"]);
 
   const flashcardMode = listRow.flashcard_mode ?? listRow.flashcardMode ?? "add_order";
 
@@ -253,8 +252,9 @@ export async function importListToDb(
       name,
       data.list.description,
       data.list.flashcardMode,
-      JSON.stringify(data.list.frontFaces),
-      JSON.stringify(data.list.backFaces),
+      // A stranger's file: faces go through the same guard as any other read.
+      JSON.stringify(parseFaces(data.list.frontFaces, ["kanji"])),
+      JSON.stringify(parseFaces(data.list.backFaces, ["english"])),
       studyPosition,
       configured,
       data.list.autoPlayAudio ? 1 : 0,

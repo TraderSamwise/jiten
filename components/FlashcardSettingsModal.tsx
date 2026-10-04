@@ -26,6 +26,8 @@ const FACE_OPTIONS: { key: CardFace; label: string }[] = [
   { key: "kanji", label: "Kanji" },
   { key: "kana", label: "Reading" },
   { key: "english", label: "Meaning" },
+  // The RTK frame's keyword, as against the dictionary's meanings.
+  { key: "keyword", label: "Keyword" },
   { key: "mnemonic", label: "Mnemonic" },
 ];
 
@@ -297,16 +299,17 @@ export function FlashcardSettingsModal({
 
             {/* Front faces */}
             <Text className="text-sm font-medium text-muted-foreground mb-2">Front</Text>
-            <View className="flex-row gap-2 mb-4">
+            <View className="flex-row flex-wrap gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = frontFaces.includes(opt.key);
-                const disabled = opt.key === "mnemonic" && !hasKanjiEntries;
+                const disabled =
+                  (opt.key === "mnemonic" || opt.key === "keyword") && !hasKanjiEntries;
                 return (
                   <Pressable
                     key={opt.key}
                     onPress={() => !disabled && toggleFace(frontFaces, setFrontFaces, opt.key)}
                     disabled={disabled}
-                    className={`flex-1 items-center rounded-lg border py-2 ${
+                    className={`items-center rounded-lg border px-3 py-2 ${
                       disabled
                         ? "border-border opacity-40"
                         : active
@@ -328,16 +331,17 @@ export function FlashcardSettingsModal({
 
             {/* Back faces */}
             <Text className="text-sm font-medium text-muted-foreground mb-2">Back</Text>
-            <View className="flex-row gap-2 mb-4">
+            <View className="flex-row flex-wrap gap-2 mb-4">
               {FACE_OPTIONS.map((opt) => {
                 const active = backFaces.includes(opt.key);
-                const disabled = opt.key === "mnemonic" && !hasKanjiEntries;
+                const disabled =
+                  (opt.key === "mnemonic" || opt.key === "keyword") && !hasKanjiEntries;
                 return (
                   <Pressable
                     key={opt.key}
                     onPress={() => !disabled && toggleFace(backFaces, setBackFaces, opt.key)}
                     disabled={disabled}
-                    className={`flex-1 items-center rounded-lg border py-2 ${
+                    className={`items-center rounded-lg border px-3 py-2 ${
                       disabled
                         ? "border-border opacity-40"
                         : active

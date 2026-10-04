@@ -132,7 +132,10 @@ export interface Primitive {
 }
 
 // SRS card display modes
-export type CardFace = "kanji" | "kana" | "english" | "mnemonic";
+// "keyword" is the RTK frame's keyword — the learner's own override from
+// user_kanji_notes, else Heisig's. "english" is the dictionary's meanings,
+// which is a different question.
+export type CardFace = "kanji" | "kana" | "english" | "mnemonic" | "keyword";
 
 export type FlashcardMode = "add_order" | "simple_srs" | "srs";
 
