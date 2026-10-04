@@ -29,6 +29,7 @@ import { softDelete } from "@/db/sync-helpers";
 import { useSync } from "@/db/sync-provider";
 import { SyncChoiceModal } from "@/components/SyncChoiceModal";
 import type { WordList } from "@/db/types";
+import { RTK_REVIEW_LIST_ID } from "@/lib/rtk-review";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -149,6 +150,7 @@ export default function ListsIndexScreen() {
        WHERE l.deleted_at IS NULL
          AND l.id NOT LIKE '\\_smart\\_%' ESCAPE '\\'
          AND l.id NOT LIKE '\\_marked\\_%' ESCAPE '\\'
+         AND l.id <> '${RTK_REVIEW_LIST_ID}'
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
 

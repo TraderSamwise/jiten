@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   AppState,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
 import { useSafeGoBack, useTabRouter } from "@/lib/navigation";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { MnemonicText } from "@/components/MnemonicText";
@@ -18,7 +18,8 @@ import { PrimitiveChips } from "@/components/PrimitiveChips";
 import { useMnemonicData } from "@/hooks/useMnemonicData";
 import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
 import { shouldAskAsCloze } from "@/lib/rtk-cloze";
-import { singleList, type ListScope } from "@/lib/list-scope";
+import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
+import { isRtkReviewList } from "@/lib/rtk-review";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -1017,7 +1018,15 @@ function StudyScreen() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
   const tabRouter = useTabRouter();
-  const navigateBack = useSafeGoBack("/lists");
+  /**
+   * The same screen is mounted in the Lists stack and the Learn stack, and the
+   * fallback has to name the one it was opened from. Frozen at mount on
+   * purpose: usePathname() follows the ACTIVE tab, so a live read sent the
+   * lists session's X to /learn/rtk after a visit to the Learn tab.
+   */
+  const pathname = usePathname();
+  const fromLearn = useRef(pathname.startsWith("/learn")).current;
+  const navigateBack = useSafeGoBack(fromLearn ? "/learn/rtk" : "/lists");
   const insets = useSafeAreaInsets();
   const clampedWidth = useContainerWidth();
   const { webBgStyle } = useWebBackdrop();
@@ -1100,12 +1109,16 @@ function StudyScreen() {
 
   // Pre-selected rating from typing/voice completion
   const [preSelectedRating, setPreSelectedRating] = useState<"pass" | "fail" | null>(null);
+  const [listMissing, setListMissing] = useState(false);
   // Set by the card itself: cloze mode can be on for a list and still fall back
   // to an ordinary front for a frame with no story to blank.
   const askedAsClozeRef = useRef(false);
 
   /** Which lists this session draws from. A review of the whole course spans 56. */
-  const scope: ListScope = useMemo(() => singleList(listId ?? ""), [listId]);
+  const scope: ListScope = useMemo(
+    () => (isRtkReviewList(listId) ? rtkReviewScope() : singleList(listId ?? "")),
+    [listId],
+  );
   /**
    * A list still in simple_srs never writes `state`, so its answered cards sit
    * at state 0 forever. Across one list that is its own business; across a
@@ -1285,15 +1298,19 @@ function StudyScreen() {
           setLocalList(parsed);
           // Don't pollute the lists index with ephemeral _smart_/_marked_ lists,
           // and guard against re-running this effect double-appending the same row.
-          if (!isEphemeralListId(parsed.id)) {
+          if (!isEphemeralListId(parsed.id) && !isRtkReviewList(parsed.id)) {
             const current = useListsStore.getState().lists;
             if (!current.some((l) => l.id === parsed.id)) {
               setLists([...current, parsed]);
             }
           }
+        } else {
+          // No row, so loadQueue will never run and `loading` would never
+          // clear: the learner would sit on a spinner for good.
+          setListMissing(true);
         }
       })
-      .catch(() => {});
+      .catch(() => setListMissing(true));
   }, [userDb, listId, storeList]);
 
   // Pre-populate markedSet with today's marks for this list
@@ -2715,6 +2732,23 @@ function StudyScreen() {
     };
   }, [isFsrsMode, currentSrsCard?.id, currentSrsCard?.state]);
 
+  if (listMissing) {
+    return (
+      <CustomHeaderScreen>
+        <View className="flex-row items-center px-4 py-2">
+          <Pressable onPress={navigateBack} className="p-2">
+            <X size={24} className="text-foreground" />
+          </Pressable>
+        </View>
+        <View className="flex-1 items-center justify-center p-6">
+          <Text className="text-base text-muted-foreground">
+            That study session could not be opened.
+          </Text>
+        </View>
+      </CustomHeaderScreen>
+    );
+  }
+
   if (loading) {
     return (
       <CustomHeaderScreen>
@@ -2834,9 +2868,15 @@ function StudyScreen() {
               ? `${completedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
               : `${ratedCount + 1} / ${originalCardCount}`}
         </Text>
-        <Pressable onPress={handleGear} className="p-2">
-          <Settings size={20} className="text-foreground" />
-        </Pressable>
+        {scope.multi ? (
+          <View className="p-2">
+            <View style={{ width: 20 }} />
+          </View>
+        ) : (
+          <Pressable onPress={handleGear} className="p-2">
+            <Settings size={20} className="text-foreground" />
+          </Pressable>
+        )}
       </View>
 
       {/* Progress bar */}

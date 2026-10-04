@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { WrappedUserDb } from "@/db/user-db";
 import type { WordList, ListItem } from "@/db/types";
 import { parseFaces } from "@/lib/card-faces";
+import { RTK_REVIEW_LIST_ID } from "@/lib/rtk-review";
 import type { SortMode } from "@/stores/list-sort";
 
 type ListEntryRow = { entry_id: number; kanji_literal: string | null };
@@ -71,6 +72,7 @@ export const useListsStore = create<ListsState>((set, get) => ({
        WHERE l.deleted_at IS NULL
          AND l.id NOT LIKE '\\_smart\\_%' ESCAPE '\\'
          AND l.id NOT LIKE '\\_marked\\_%' ESCAPE '\\'
+         AND l.id <> '${RTK_REVIEW_LIST_ID}'
        GROUP BY l.id ORDER BY l.created_at DESC`,
     );
     type SrsProgress = { list_id: string; total: number; learned: number; learning: number };

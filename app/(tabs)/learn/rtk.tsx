@@ -1,11 +1,24 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useAtomValue } from "jotai";
 
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useUserDb } from "@/db/user-provider";
 import { useRtkPath } from "@/hooks/useRtkPath";
+import type { PathSummary } from "@/lib/rtk-course";
+import {
+  ensureRtkReviewList,
+  RTK_REVIEW_LIST_ID,
+  rtkReviewCounts,
+  type RtkReviewCounts,
+} from "@/lib/rtk-review";
+import { dayResetHourAtom } from "@/stores/settings";
+
+type Mode = "learn" | "review";
 
 const DOT_BY_CROWN = [
   "bg-secondary border border-border",
@@ -24,19 +37,119 @@ function NodeDot({ crown, onPress }: { crown: number; onPress: () => void }) {
   );
 }
 
-export default function RtkPathScreen() {
+/** The course introduces a frame; FSRS keeps it. One screen, two jobs. */
+function ReviewPane() {
+  const userDb = useUserDb();
   const router = useRouter();
-  const { summary, unavailable } = useRtkPath();
+  const dayResetHour = useAtomValue(dayResetHourAtom);
+  const [counts, setCounts] = useState<RtkReviewCounts | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Cast because expo-router's generated route union (.expo/types) only learns
-  // about /learn once a dev server has regenerated it.
-  const openNode = (unit: number, node: number) =>
-    router.push(`/learn/node?unit=${unit}&node=${node}` as never);
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      if (!userDb) return;
+      rtkReviewCounts(userDb, dayResetHour)
+        .then((next) => {
+          if (current) setCounts(next);
+        })
+        .catch((err) => {
+          console.warn("[learn] could not count the course's due cards", err);
+          if (current) setError("Could not count what is due.");
+        });
+      return () => {
+        current = false;
+      };
+    }, [userDb, dayResetHour]),
+  );
 
+  // The settings row has to exist before the engine opens: it bails without
+  // one, and the learner would sit on a spinner that never resolves.
+  const start = async () => {
+    if (!userDb || starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      await ensureRtkReviewList(userDb);
+      router.push(`/learn/study?listId=${RTK_REVIEW_LIST_ID}` as never);
+    } catch (err) {
+      console.warn("[learn] could not open the course review", err);
+      setError("Could not open the review.");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  if (!counts) {
+    return (
+      <View className="items-center py-10">
+        {error ? <Text className="text-sm text-destructive">{error}</Text> : <ActivityIndicator />}
+      </View>
+    );
+  }
+
+  const nothingGraduated = counts.due === 0 && counts.unseen === 0;
+
+  return (
+    <View className="mt-4">
+      {nothingGraduated ? (
+        <Card className="p-4">
+          <Text className="text-base font-semibold text-foreground">Nothing to review yet</Text>
+          <Text className="mt-1 text-sm text-muted-foreground">
+            A node becomes flashcards when you crown it. Earn a crown in Learn and its five frames
+            arrive here.
+          </Text>
+        </Card>
+      ) : (
+        <>
+          <Card className="p-4">
+            <Text className="text-base font-semibold text-foreground">
+              {counts.due > 0 ? `${counts.due} due` : "Nothing due today"}
+            </Text>
+            <Text className="mt-1 text-sm text-muted-foreground">
+              {counts.unseen > 0
+                ? `${counts.unseen} crowned frame${counts.unseen === 1 ? "" : "s"} waiting to be scheduled`
+                : "Every crowned frame is scheduled."}
+            </Text>
+            <Text className="mt-2 text-xs text-muted-foreground">
+              Asked as Heisig asks: the keyword, then the character.
+            </Text>
+          </Card>
+
+          <Pressable
+            onPress={start}
+            disabled={starting}
+            className={`mt-3 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80 ${
+              starting ? "opacity-60" : ""
+            }`}
+          >
+            <Text className="text-base font-semibold text-primary-foreground">
+              {starting ? "Opening…" : "Review"}
+            </Text>
+          </Pressable>
+        </>
+      )}
+
+      {error ? <Text className="mt-3 text-sm text-destructive">{error}</Text> : null}
+    </View>
+  );
+}
+
+/** The path's own header: where you are, and the one tap that continues. */
+function LearnHeader({
+  unavailable,
+  summary,
+  openNode,
+}: {
+  unavailable: boolean;
+  summary: PathSummary | null;
+  openNode: (unit: number, node: number) => void;
+}) {
   // A missing dictionary is not a slow one: say so rather than spin forever.
   if (unavailable) {
     return (
-      <View className="flex-1 items-center justify-center p-6">
+      <View className="items-center py-10">
         <Text className="text-base text-muted-foreground">
           The course needs the dictionary to be downloaded.
         </Text>
@@ -46,7 +159,7 @@ export default function RtkPathScreen() {
 
   if (!summary) {
     return (
-      <View className="flex-1 items-center justify-center">
+      <View className="items-center py-10">
         <ActivityIndicator size="large" />
       </View>
     );
@@ -55,36 +168,73 @@ export default function RtkPathScreen() {
   const { next, rows: units } = summary;
 
   return (
+    <View>
+      <Text className="text-sm text-muted-foreground">
+        {summary.earned} of {summary.possible} crowns · {units.length} lessons
+      </Text>
+
+      {next ? (
+        <Pressable
+          onPress={() => openNode(next.unit, next.node)}
+          className="mt-4 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
+        >
+          <Text className="text-base font-semibold text-primary-foreground">Continue</Text>
+          <Text className="text-xs text-primary-foreground/80">
+            Lesson {next.unit} · node {next.node + 1}
+          </Text>
+        </Pressable>
+      ) : (
+        <Card className="mt-4 p-4">
+          <Text className="text-base font-semibold text-foreground">Every frame is crowned</Text>
+          <Text className="mt-1 text-sm text-muted-foreground">
+            All 2,200 frames of volume 1, drilled to production.
+          </Text>
+        </Card>
+      )}
+    </View>
+  );
+}
+
+export default function RtkScreen() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("learn");
+  // Loaded once for the whole screen: the header needs the totals and the list
+  // needs the rows, and two hooks meant two course-progress reads per focus.
+  const { summary, unavailable } = useRtkPath();
+
+  // Cast because expo-router's generated route union (.expo/types) only learns
+  // about /learn once a dev server has regenerated it.
+  const openNode = useCallback(
+    (unit: number, node: number) => router.push(`/learn/node?unit=${unit}&node=${node}` as never),
+    [router],
+  );
+
+  // The lesson cards are the list's own data, so they recycle; Review has none.
+  const units = mode === "learn" && summary ? summary.rows : [];
+
+  return (
     <FlashList
       data={units}
       keyExtractor={(row) => String(row.unit)}
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       ListHeaderComponent={
         <View>
-          <Text className="text-sm text-muted-foreground">
-            {summary.earned} of {summary.possible} crowns · {units.length} lessons
-          </Text>
-
-          {next ? (
-            <Pressable
-              onPress={() => openNode(next.unit, next.node)}
-              className="mt-4 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
-            >
-              <Text className="text-base font-semibold text-primary-foreground">Continue</Text>
-              <Text className="text-xs text-primary-foreground/80">
-                Lesson {next.unit} · node {next.node + 1}
-              </Text>
-            </Pressable>
-          ) : (
-            <Card className="mt-4 p-4">
-              <Text className="text-base font-semibold text-foreground">
-                Every frame is crowned
-              </Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                All 2,200 frames of volume 1, drilled to production.
-              </Text>
-            </Card>
-          )}
+          <SegmentedControl
+            fullWidth
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "learn" as Mode, label: "Learn" },
+              { value: "review" as Mode, label: "Review" },
+            ]}
+          />
+          <View className="mt-4">
+            {mode === "learn" ? (
+              <LearnHeader unavailable={unavailable} summary={summary} openNode={openNode} />
+            ) : (
+              <ReviewPane />
+            )}
+          </View>
         </View>
       }
       renderItem={({ item: row }) => (
