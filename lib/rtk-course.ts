@@ -15,6 +15,13 @@ export const CROWN_MAX = 3;
 /** Volume 1's lessons, which is what the course and its lists cover. */
 export const RTK_LESSON_COUNT = 56;
 
+/**
+ * Frames on the path. The dictionary carries 3,000 keyworded frames but a
+ * `heisig_lesson` for volume 1's 2,200 only, and a frame without a lesson has
+ * no unit to live in — see `CourseFrame.lesson`.
+ */
+export const RTK_PATH_FRAME_COUNT = 2200;
+
 export interface CourseFrame {
   literal: string;
   /** Heisig frame number, 1-based; the course's only ordering. */

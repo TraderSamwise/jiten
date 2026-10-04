@@ -9,14 +9,15 @@ import { Text } from "@/components/ui/text";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useUserDb } from "@/db/user-provider";
 import { useRtkPath } from "@/hooks/useRtkPath";
-import type { PathSummary } from "@/lib/rtk-course";
 import {
   ensureRtkReviewList,
+  nextCardLine,
   RTK_REVIEW_LIST_ID,
   rtkReviewCounts,
   type RtkReviewCounts,
 } from "@/lib/rtk-review";
 import { dayResetHourAtom } from "@/stores/settings";
+import { RTK_PATH_FRAME_COUNT, type PathSummary } from "@/lib/rtk-course";
 
 type Mode = "learn" | "review";
 
@@ -38,7 +39,14 @@ function NodeDot({ crown, onPress }: { crown: number; onPress: () => void }) {
 }
 
 /** The course introduces a frame; FSRS keeps it. One screen, two jobs. */
-function ReviewPane() {
+function ReviewPane({
+  onGoToLearn,
+  unavailable,
+}: {
+  onGoToLearn: () => void;
+  /** No dictionary, so Learn cannot help them either. */
+  unavailable: boolean;
+}) {
   const userDb = useUserDb();
   const router = useRouter();
   const dayResetHour = useAtomValue(dayResetHourAtom);
@@ -89,47 +97,68 @@ function ReviewPane() {
     );
   }
 
-  const nothingGraduated = counts.due === 0 && counts.unseen === 0;
-
-  return (
-    <View className="mt-4">
-      {nothingGraduated ? (
+  // Keyed on whether anything is carded at all, not on whether anything is due
+  // today: a course whose cards are all scheduled for next week is not a course
+  // with nothing in it.
+  // All three, not just the carded count: a vocabulary word added to a lesson
+  // list is not a frame, so `scheduled` can be 0 while the queue has work.
+  if (counts.scheduled === 0 && counts.due === 0 && counts.unseen === 0) {
+    return (
+      <View className="mt-4">
         <Card className="p-4">
           <Text className="text-base font-semibold text-foreground">Nothing to review yet</Text>
           <Text className="mt-1 text-sm text-muted-foreground">
-            A node becomes flashcards when you crown it. Earn a crown in Learn and its five frames
-            arrive here.
+            {unavailable
+              ? "The course needs the dictionary to be downloaded."
+              : "A node becomes flashcards when you crown it. Earn a crown in Learn and its five frames arrive here."}
           </Text>
+          {unavailable ? null : (
+            <Pressable
+              onPress={onGoToLearn}
+              className="mt-3 items-center rounded-xl bg-primary px-4 py-2 active:opacity-80"
+            >
+              <Text className="text-sm font-semibold text-primary-foreground">Go to Learn</Text>
+            </Pressable>
+          )}
         </Card>
-      ) : (
-        <>
-          <Card className="p-4">
-            <Text className="text-base font-semibold text-foreground">
-              {counts.due > 0 ? `${counts.due} due` : "Nothing due today"}
-            </Text>
-            <Text className="mt-1 text-sm text-muted-foreground">
-              {counts.unseen > 0
-                ? `${counts.unseen} crowned frame${counts.unseen === 1 ? "" : "s"} waiting to be scheduled`
-                : "Every crowned frame is scheduled."}
-            </Text>
-            <Text className="mt-2 text-xs text-muted-foreground">
-              Asked as Heisig asks: the keyword, then the character.
-            </Text>
-          </Card>
+      </View>
+    );
+  }
 
-          <Pressable
-            onPress={start}
-            disabled={starting}
-            className={`mt-3 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80 ${
-              starting ? "opacity-60" : ""
-            }`}
-          >
-            <Text className="text-base font-semibold text-primary-foreground">
-              {starting ? "Opening…" : "Review"}
-            </Text>
-          </Pressable>
-        </>
-      )}
+  const nothingToDo = counts.due === 0 && counts.unseen === 0;
+
+  return (
+    <View className="mt-4">
+      <Card className="p-4">
+        <Text className="text-base font-semibold text-foreground">
+          {counts.due > 0 ? `${counts.due} due` : "Nothing due today"}
+        </Text>
+        <Text className="mt-1 text-sm text-muted-foreground">
+          {counts.unseen > 0
+            ? `${counts.unseen} crowned frame${counts.unseen === 1 ? "" : "s"} waiting to be scheduled`
+            : nextCardLine(counts.nextDueAt, counts.dueThrough)}
+        </Text>
+        <Text className="mt-2 text-xs text-muted-foreground">
+          {Math.min(counts.scheduled, RTK_PATH_FRAME_COUNT)} of {RTK_PATH_FRAME_COUNT} frames carded
+          · asked as Heisig asks, the keyword then the character
+        </Text>
+      </Card>
+
+      <Pressable
+        onPress={start}
+        disabled={starting}
+        className={`mt-3 items-center rounded-xl px-4 py-3 active:opacity-80 ${
+          nothingToDo ? "border border-border bg-secondary" : "bg-primary"
+        } ${starting ? "opacity-60" : ""}`}
+      >
+        <Text
+          className={`text-base font-semibold ${
+            nothingToDo ? "text-foreground" : "text-primary-foreground"
+          }`}
+        >
+          {starting ? "Opening…" : nothingToDo ? "Review ahead" : "Review"}
+        </Text>
+      </Pressable>
 
       {error ? <Text className="mt-3 text-sm text-destructive">{error}</Text> : null}
     </View>
@@ -232,7 +261,7 @@ export default function RtkScreen() {
             {mode === "learn" ? (
               <LearnHeader unavailable={unavailable} summary={summary} openNode={openNode} />
             ) : (
-              <ReviewPane />
+              <ReviewPane onGoToLearn={() => setMode("learn")} unavailable={unavailable} />
             )}
           </View>
         </View>

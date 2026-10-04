@@ -15,8 +15,10 @@ import type { WrappedUserDb } from "@/db/user-db";
 import { parseFaces } from "./card-faces";
 import { lessonListId } from "./rtk-graduate";
 import { makeDefaultListId } from "./seed-default-lists";
+import { endOfLogicalDayISO } from "@/stores/simple-srs";
 import {
   ensureRtkReviewList,
+  nextCardLine,
   isRtkReviewList,
   RTK_REVIEW_LIST_ID,
   rtkReviewCounts,
@@ -48,11 +50,21 @@ interface CardSpec {
   list: string;
   state: number;
   due: string;
+  /** Defaults to the id; two cards can name the same frame. */
+  literal?: string;
   simpleStage?: number | null;
   deleted?: boolean;
 }
 
-async function card({ id, list, state, due, simpleStage = null, deleted = false }: CardSpec) {
+async function card({
+  id,
+  list,
+  state,
+  due,
+  literal,
+  simpleStage = null,
+  deleted = false,
+}: CardSpec) {
   const now = new Date().toISOString();
   // srs_cards.list_id has a foreign key, and the point of the scope is that
   // these cards stay in their own lesson lists.
@@ -65,8 +77,15 @@ async function card({ id, list, state, due, simpleStage = null, deleted = false 
        elapsed_days, scheduled_days, reps, lapses, state, simple_stage, front_mode, back_mode,
        created_at, updated_at, deleted_at)
      VALUES (?, 0, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?, 'kanji', 'english', ?, ?, ?)`,
-    [id, id, list, due, state, simpleStage, now, now, deleted ? now : null],
+    [id, literal ?? id, list, due, state, simpleStage, now, now, deleted ? now : null],
   );
+}
+
+async function dueOf(id: string): Promise<string | undefined> {
+  const row = await db.getFirstAsync<{ due: string }>("SELECT due FROM srs_cards WHERE id = ?", [
+    id,
+  ]);
+  return row?.due;
 }
 
 function iso(offsetMs: number): string {
@@ -167,8 +186,20 @@ describe("the review list", () => {
 });
 
 describe("counting what the review will ask", () => {
+  it("reports the cutoff the counts were taken against", async () => {
+    // The pane reads nextDueAt against this, not against its own clock: across
+    // the reset hour the two disagree.
+    const counts = await rtkReviewCounts(db, RESET_HOUR);
+    expect(counts.dueThrough).toBe(endOfLogicalDayISO(RESET_HOUR));
+  });
+
   it("counts nothing before a node is crowned", async () => {
-    expect(await rtkReviewCounts(db, RESET_HOUR)).toEqual({ due: 0, unseen: 0 });
+    expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({
+      due: 0,
+      unseen: 0,
+      scheduled: 0,
+      nextDueAt: null,
+    });
   });
 
   it("counts a review card due later today", async () => {
@@ -191,19 +222,37 @@ describe("counting what the review will ask", () => {
 
   it("counts a crowned frame FSRS has never shown as unseen, not due", async () => {
     await card({ id: "a", list: lessonListId(2), state: 0, due: iso(0) });
-    expect(await rtkReviewCounts(db, RESET_HOUR)).toEqual({ due: 0, unseen: 1 });
+    expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({
+      due: 0,
+      unseen: 1,
+      scheduled: 1,
+      // A new card's due is its creation time, already past: it is not "next".
+      nextDueAt: null,
+    });
   });
 
   it("leaves out a card answered under simple_srs", async () => {
     // simple_srs never writes `state`, so these sit at 0 forever and the queue
     // excludes them; counting them would promise cards the session withholds.
     await card({ id: "a", list: lessonListId(2), state: 0, due: iso(0), simpleStage: 2 });
-    expect(await rtkReviewCounts(db, RESET_HOUR)).toEqual({ due: 0, unseen: 0 });
+    expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({
+      due: 0,
+      unseen: 0,
+      // Carded all the same: "scheduled" means a live card exists, and this one
+      // does — it is simply invisible to the FSRS queue.
+      scheduled: 1,
+      nextDueAt: null,
+    });
   });
 
   it("leaves out a deleted card", async () => {
     await card({ id: "a", list: lessonListId(1), state: 2, due: iso(-HOUR), deleted: true });
-    expect(await rtkReviewCounts(db, RESET_HOUR)).toEqual({ due: 0, unseen: 0 });
+    expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({
+      due: 0,
+      unseen: 0,
+      scheduled: 0,
+      nextDueAt: null,
+    });
   });
 
   it("counts across the lessons, and only the lessons", async () => {
@@ -212,5 +261,94 @@ describe("counting what the review will ask", () => {
     await card({ id: "c", list: "my-list", state: 2, due: iso(-HOUR) });
     await card({ id: "d", list: RTK_REVIEW_LIST_ID, state: 2, due: iso(-HOUR) });
     expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({ due: 2 });
+  });
+});
+
+describe("how many frames are carded", () => {
+  it("counts a frame once however many rows it has", async () => {
+    // Nothing stops two rows for one frame (lib/rtk-graduate.ts says so), and
+    // the lesson lists are ordinary editable lists, so COUNT(*) could read
+    // higher than the course is long.
+    await card({ id: "x", list: lessonListId(1), state: 2, due: iso(HOUR * 48), literal: "日" });
+    await card({ id: "y", list: lessonListId(2), state: 2, due: iso(HOUR * 48), literal: "日" });
+    expect((await rtkReviewCounts(db, RESET_HOUR)).scheduled).toBe(1);
+  });
+
+  it("counts a carded frame that is not due yet", async () => {
+    await card({ id: "a", list: lessonListId(1), state: 2, due: iso(HOUR * 48) });
+    const counts = await rtkReviewCounts(db, RESET_HOUR);
+    expect(counts).toMatchObject({ due: 0, unseen: 0, scheduled: 1 });
+  });
+});
+
+describe("when the next card arrives", () => {
+  it("names a learning card due later today, which is not due yet", async () => {
+    // Due in two hours, and the pane must not round that up to "today" or down
+    // to "now": state 1 is measured against the clock.
+    const due = iso(2 * HOUR);
+    await card({ id: "a", list: lessonListId(1), state: 1, due });
+    expect(await rtkReviewCounts(db, RESET_HOUR)).toMatchObject({ due: 0, nextDueAt: due });
+  });
+
+  it("names the earliest of them", async () => {
+    await card({ id: "late", list: lessonListId(1), state: 2, due: iso(HOUR * 96) });
+    await card({ id: "soon", list: lessonListId(2), state: 2, due: iso(HOUR * 48) });
+    const counts = await rtkReviewCounts(db, RESET_HOUR);
+    expect(counts.nextDueAt).toBe(await dueOf("soon"));
+  });
+
+  it("never names a moment that has already gone", async () => {
+    await card({ id: "a", list: lessonListId(1), state: 2, due: iso(-HOUR) });
+    await card({ id: "b", list: lessonListId(1), state: 0, due: iso(-HOUR * 5) });
+    const counts = await rtkReviewCounts(db, RESET_HOUR);
+    expect(counts.nextDueAt).toBeNull();
+    expect(counts.due).toBe(1);
+  });
+
+  it("ignores a deleted card that would have been next", async () => {
+    // A live card behind it, so this cannot pass by naming nothing at all.
+    await card({ id: "gone", list: lessonListId(1), state: 2, due: iso(HOUR * 24), deleted: true });
+    await card({ id: "live", list: lessonListId(1), state: 2, due: iso(HOUR * 96) });
+    expect((await rtkReviewCounts(db, RESET_HOUR)).nextDueAt).toBe(await dueOf("live"));
+  });
+
+  it("says nothing is next when the only other card is due today", async () => {
+    // It is already counted in `due`; naming it as "next" would contradict that.
+    await card({ id: "a", list: lessonListId(1), state: 2, due: iso(2 * HOUR) });
+    const counts = await rtkReviewCounts(db, RESET_HOUR);
+    expect(counts.due).toBe(1);
+    expect(counts.nextDueAt).toBeNull();
+  });
+});
+
+describe("saying when the next card arrives", () => {
+  // 14:00 with a 03:00 reset: the day is out at 03:00 tomorrow.
+  const now = new Date("2026-06-15T14:00:00");
+  const dueThrough = new Date("2026-06-16T03:00:00").toISOString();
+  const line = (dueAt: string | null) => nextCardLine(dueAt, dueThrough, now);
+
+  it("says nothing when no card is waiting", () => {
+    expect(line(null)).toBe("Every crowned frame is scheduled.");
+  });
+
+  it("counts the hours for a card still coming today", () => {
+    expect(line(new Date("2026-06-15T16:00:00").toISOString())).toBe("Next card in 2h.");
+  });
+
+  it("says tomorrow for a card just past the cutoff", () => {
+    expect(line(new Date("2026-06-16T09:00:00").toISOString())).toBe("Next card tomorrow.");
+  });
+
+  it("does not call the day after tomorrow 'tomorrow'", () => {
+    // 35 hours past the cutoff. Rounding said 1, and 1 said tomorrow.
+    expect(line(new Date("2026-06-17T14:00:00").toISOString())).toBe("Next card in 2 days.");
+  });
+
+  it("counts whole days further out", () => {
+    expect(line(new Date("2026-06-29T10:00:00").toISOString())).toBe("Next card in 14 days.");
+  });
+
+  it("falls back rather than printing an invalid date", () => {
+    expect(line("not a date")).toBe("Every crowned frame is scheduled.");
   });
 });

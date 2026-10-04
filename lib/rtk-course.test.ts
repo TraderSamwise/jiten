@@ -18,6 +18,7 @@ import {
   pathSummary,
   type CourseFrame,
   type NodeCrowns,
+  RTK_PATH_FRAME_COUNT,
 } from "./rtk-course";
 
 function frames(count: number, lesson: number | null = 1, startIndex = 1): CourseFrame[] {
@@ -84,7 +85,7 @@ describe("node boundaries", () => {
 });
 
 // Volume 1, the whole of the path, as assets/dictionary.db holds it.
-const PATH_FRAME_COUNT = 2200;
+const PATH_FRAME_COUNT = RTK_PATH_FRAME_COUNT;
 const PATH_UNIT_COUNT = 56;
 
 describe("what is on the path", () => {
