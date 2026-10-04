@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { COURSE_RTK, CROWN_MAX, nextNode, nodeId } from "@/lib/rtk-course";
+import { COURSE_RTK, CROWN_MAX, nextNode, nodeId, unitSpan } from "@/lib/rtk-course";
 import { createTestDb } from "@/test/test-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 import { MUTABLE_TABLES } from "./sync-helpers";
@@ -167,7 +167,7 @@ describe("course progress", () => {
   it("drives nextNode from stored crowns", async () => {
     await awardCrown(db, ref, CROWN_MAX);
     const crowns = crownsFromProgress(await loadCourseProgress(db));
-    expect(nextNode([{ unit: 1, nodeCount: 2 }], crowns)).toEqual({
+    expect(nextNode([{ unit: 1, ...unitSpan(10, 1) }], crowns)).toEqual({
       course: COURSE_RTK,
       unit: 1,
       node: 1,

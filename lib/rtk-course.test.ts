@@ -16,10 +16,18 @@ import {
   splitUnitIntoNodes,
   stepsForCrown,
   pathSummary,
+  unitSpan,
+  nodeFrameRange,
+  formatFrameRange,
   type CourseFrame,
   type NodeCrowns,
   RTK_PATH_FRAME_COUNT,
 } from "./rtk-course";
+
+/** A unit shape with its node count derived, as the loader builds it. */
+function shape(unit: number, frames: number, firstFrame = 1) {
+  return { unit, ...unitSpan(frames, firstFrame) };
+}
 
 function frames(count: number, lesson: number | null = 1, startIndex = 1): CourseFrame[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -173,10 +181,7 @@ describe("the primitive gate", () => {
 });
 
 describe("what Continue resolves to", () => {
-  const units = [
-    { unit: 1, nodeCount: 3 },
-    { unit: 2, nodeCount: 2 },
-  ];
+  const units = [shape(1, 15, 1), shape(2, 10, 16)];
 
   it("starts at the first node", () => {
     expect(nextNode(units, crownsFrom({}))).toEqual({ course: COURSE_RTK, unit: 1, node: 0 });
@@ -198,10 +203,7 @@ describe("what Continue resolves to", () => {
   });
 
   it("orders by unit number, not array order", () => {
-    const outOfOrder = [
-      { unit: 9, nodeCount: 1 },
-      { unit: 4, nodeCount: 1 },
-    ];
+    const outOfOrder = [shape(9, 5, 41), shape(4, 5, 16)];
     expect(nextNode(outOfOrder, crownsFrom({}))?.unit).toBe(4);
   });
 
@@ -217,7 +219,7 @@ describe("what Continue resolves to", () => {
   });
 
   it("skips a unit with no frames", () => {
-    expect(nextNode([{ unit: 1, nodeCount: 0 }, units[1]], crownsFrom({}))).toEqual({
+    expect(nextNode([shape(1, 0, 1), units[1]], crownsFrom({}))).toEqual({
       course: COURSE_RTK,
       unit: 2,
       node: 0,
@@ -226,10 +228,7 @@ describe("what Continue resolves to", () => {
 });
 
 describe("what the path draws", () => {
-  const units = [
-    { unit: 1, nodeCount: 3 },
-    { unit: 2, nodeCount: 2 },
-  ];
+  const units = [shape(1, 15, 1), shape(2, 10, 16)];
 
   it("gives every node a dot, in node order", () => {
     const summary = pathSummary(units, crownsFrom({ "rtk:1:0": 3, "rtk:1:2": 1 }));
@@ -268,12 +267,12 @@ describe("what the path draws", () => {
   });
 
   it("draws a unit with no frames as no dots at all", () => {
-    const summary = pathSummary([{ unit: 1, nodeCount: 0 }], crownsFrom({}));
+    const summary = pathSummary([shape(1, 0, 1)], crownsFrom({}));
     expect(summary.rows[0]).toMatchObject({ crowns: [], earned: 0, possible: 0 });
   });
 
   it("never lets a junk crown distort a total", () => {
-    const summary = pathSummary([{ unit: 1, nodeCount: 2 }], crownsFrom({ "rtk:1:0": -5 }));
+    const summary = pathSummary([shape(1, 10, 1)], crownsFrom({ "rtk:1:0": -5 }));
     expect(summary.rows[0].earned).toBe(0);
   });
 });

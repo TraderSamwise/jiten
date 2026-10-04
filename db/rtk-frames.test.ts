@@ -6,7 +6,7 @@
 import type * as SQLite from "expo-sqlite";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { COURSE_RTK } from "@/lib/rtk-course";
+import { COURSE_RTK, nodeFrameRange, splitUnitIntoNodes } from "@/lib/rtk-course";
 import { existsSync } from "fs";
 
 import { DICT_DB_PATH, hasDictDb } from "../test/dictionary-db";
@@ -212,5 +212,43 @@ describe.skipIf(!hasDictDb || !hasStrokesDb)("loading a node's five frames at on
     // so a throw here cost the node its choice questions.
     const origins = await loadGlyphOrigins(dictDb, LITERALS);
     for (const [, text] of origins) expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the premise a frame label rests on", () => {
+  it.skipIf(!hasDictDb)("gives every lesson one unbroken run of frames", async () => {
+    // `nodeFrameRange` works out a node's frames as firstFrame + node * 5. That
+    // is only true where a lesson's frames are consecutive, so the claim is
+    // measured against the shipped data rather than assumed.
+    const shapes = await loadUnitShapes(dictDb);
+    expect(shapes).toHaveLength(56);
+    for (const shape of shapes) {
+      expect(shape.lastFrame - shape.firstFrame + 1).toBe(shape.frames);
+    }
+  });
+
+  it.skipIf(!hasDictDb)("runs the lessons end to end with no gap between them", async () => {
+    const shapes = await loadUnitShapes(dictDb);
+    expect(shapes[0].firstFrame).toBe(1);
+    for (let i = 1; i < shapes.length; i++) {
+      expect(shapes[i].firstFrame).toBe(shapes[i - 1].lastFrame + 1);
+    }
+    expect(shapes[shapes.length - 1].lastFrame).toBe(2200);
+  });
+
+  it.skipIf(!hasDictDb)("labels a node with the frames that node actually holds", async () => {
+    // The label and the content, compared against each other for real units.
+    const shapes = await loadUnitShapes(dictDb);
+    // All 56, not a sample: this is the only check that would notice a label
+    // drifting from the frames behind it.
+    for (const shape of shapes) {
+      const unit = shape.unit;
+      const nodes = splitUnitIntoNodes(await loadUnitFrames(dictDb, unit));
+      for (const [node, held] of nodes.entries()) {
+        const range = nodeFrameRange(shape, node)!;
+        expect(range.from).toBe(held[0].index);
+        expect(range.to).toBe(held[held.length - 1].index);
+      }
+    }
   });
 });

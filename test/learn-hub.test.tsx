@@ -10,7 +10,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { COURSE_RTK, type PathSummary } from "@/lib/rtk-course";
+import { COURSE_RTK, unitSpan, type PathSummary } from "@/lib/rtk-course";
 
 const h = vi.hoisted(() => ({
   push: vi.fn(),
@@ -51,7 +51,7 @@ import LearnHome from "@/app/(tabs)/learn/index";
 
 function summary(over: Partial<PathSummary> = {}): PathSummary {
   return {
-    rows: [{ unit: 1, crowns: [3, 1, 0], earned: 4, possible: 9 }],
+    rows: [{ unit: 1, crowns: [3, 1, 0], earned: 4, possible: 9, ...unitSpan(15, 1) }],
     earned: 4,
     possible: 9,
     next: { course: COURSE_RTK, unit: 1, node: 1 },

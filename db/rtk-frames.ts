@@ -18,14 +18,28 @@ import {
 
 /** The 56 unit shapes, counted rather than materialised — the path needs no frames. */
 export async function loadUnitShapes(dictDb: SQLite.SQLiteDatabase): Promise<UnitShape[]> {
-  const rows = await dictDb.getAllAsync<{ unit: number; frames: number }>(
-    `SELECT heisig_lesson AS unit, COUNT(*) AS frames
+  const rows = await dictDb.getAllAsync<{
+    unit: number;
+    frames: number;
+    first_frame: number;
+    last_frame: number;
+  }>(
+    // MIN/MAX ride along on the covering index the GROUP BY already walks, and
+    // they are what lets a node say which frames it asks about.
+    `SELECT heisig_lesson AS unit, COUNT(DISTINCT heisig_index) AS frames,
+            MIN(heisig_index) AS first_frame, MAX(heisig_index) AS last_frame
        FROM kanji_characters
-      WHERE heisig_lesson IS NOT NULL
+      WHERE heisig_lesson IS NOT NULL AND heisig_index IS NOT NULL
       GROUP BY heisig_lesson
       ORDER BY heisig_lesson`,
   );
-  return rows.map(({ unit, frames }) => ({ unit, nodeCount: nodesInUnit(frames) }));
+  return rows.map(({ unit, frames, first_frame, last_frame }) => ({
+    unit,
+    frames,
+    firstFrame: first_frame,
+    lastFrame: last_frame,
+    nodeCount: nodesInUnit(frames),
+  }));
 }
 
 export async function loadUnitFrames(

@@ -19,6 +19,7 @@ const migration: DictMigration = {
 
     // Lost when migration 020 rebuilt the table; the course asks for a lesson
     // at a time, and without it every such query reads 3,000 full rows.
+    db.exec("DROP INDEX IF EXISTS idx_kc_heisig_lesson");
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_kc_heisig_lesson ON kanji_characters(heisig_lesson, heisig_index)",
     );

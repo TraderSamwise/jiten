@@ -137,9 +137,56 @@ export function introducible(
   return components.every((c) => c.isPrimitive || !c.glyph || known.has(c.glyph));
 }
 
-export interface UnitShape {
-  unit: number;
+/**
+ * Which frames a unit covers, and how they divide into nodes. Shared by the
+ * unit shapes the path loads and the rows it draws, so a tile can be labelled
+ * with the frames it actually asks about from either one.
+ */
+export interface FrameSpan {
   nodeCount: number;
+  /** Path frames in the unit. */
+  frames: number;
+  /** Heisig frame number of the unit's first and last frame. */
+  firstFrame: number;
+  lastFrame: number;
+}
+
+export interface UnitShape extends FrameSpan {
+  unit: number;
+}
+
+/**
+ * A span from a frame count and a starting frame, with `nodeCount` derived
+ * rather than passed — the two can only disagree if someone writes them by
+ * hand, which is exactly what a test fixture does.
+ */
+export function unitSpan(frames: number, firstFrame: number): FrameSpan {
+  return {
+    frames,
+    firstFrame,
+    lastFrame: firstFrame + Math.max(0, frames) - 1,
+    nodeCount: nodesInUnit(frames),
+  };
+}
+
+/**
+ * The frames a node covers, as Heisig numbers, or null when there is nothing
+ * honest to say: a node outside the unit, or a unit whose frames are not one
+ * unbroken run. All 56 lessons of volume 1 are unbroken — the arithmetic below
+ * depends on it, so the alternative to checking is a label that quietly lies.
+ */
+export function nodeFrameRange(span: FrameSpan, node: number): { from: number; to: number } | null {
+  if (!Number.isInteger(node) || node < 0 || node >= span.nodeCount) return null;
+  if (span.lastFrame - span.firstFrame + 1 !== span.frames) return null;
+  const from = span.firstFrame + node * NODE_SIZE;
+  if (from > span.lastFrame) return null;
+  return { from, to: Math.min(from + NODE_SIZE - 1, span.lastFrame) };
+}
+
+/** "16–20", or "15" for a node holding one frame. */
+export function formatFrameRange(range: { from: number; to: number } | null): string | null {
+  if (!range) return null;
+  return range.from === range.to ? String(range.from) : `${range.from}\u2013${range.to}`;
 }
 
 export interface NodeCrowns {
@@ -162,10 +209,10 @@ export function nextNode(
   return null;
 }
 
-/** One unit as the path draws it: a dot per node, carrying that node's crown. */
-export interface UnitRow {
+/** One unit as the path draws it: a tile per node, carrying that node's crown. */
+export interface UnitRow extends FrameSpan {
   unit: number;
-  /** Crown level per node, in node order — the path's dots. */
+  /** Crown level per node, in node order — one per tile. */
   crowns: number[];
   earned: number;
   possible: number;
@@ -187,12 +234,18 @@ export function pathSummary(
 ): PathSummary {
   const rows = [...units]
     .sort((a, b) => a.unit - b.unit)
-    .map(({ unit, nodeCount }) => {
+    .map((shape) => {
+      const { unit, nodeCount } = shape;
       const perNode = Array.from({ length: Math.max(0, nodeCount) }, (_, node) =>
         Math.max(0, Math.min(crowns.crownOf(nodeId({ course, unit, node })), CROWN_MAX)),
       );
       return {
         unit,
+        // The count the crowns were built from, so the two cannot disagree.
+        nodeCount: perNode.length,
+        frames: shape.frames,
+        firstFrame: shape.firstFrame,
+        lastFrame: shape.lastFrame,
         crowns: perNode,
         earned: perNode.reduce((a, b) => a + b, 0),
         possible: perNode.length * CROWN_MAX,

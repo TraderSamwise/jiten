@@ -39,6 +39,10 @@ export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
     version: 25,
     description: "Restore the index on heisig_lesson",
     sql: [
+      // Dropped first: migration 014 created an index of this name on
+      // heisig_lesson alone, and CREATE IF NOT EXISTS would leave that one in
+      // place — which costs a row fetch per frame instead of covering the read.
+      "DROP INDEX IF EXISTS idx_kc_heisig_lesson",
       "CREATE INDEX IF NOT EXISTS idx_kc_heisig_lesson ON kanji_characters(heisig_lesson, heisig_index)",
     ],
   },
