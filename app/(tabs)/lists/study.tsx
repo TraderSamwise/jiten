@@ -2887,7 +2887,8 @@ function StudyScreen() {
           {isBrowsingHistory
             ? (() => {
                 const frontier = cards.findIndex((c) => c.status === "pending");
-                return `\u2190 ${cursor + 1} / ${frontier === -1 ? cards.length : frontier}`;
+                const stepsBack = (frontier === -1 ? cards.length : frontier) - cursor;
+                return `\u2190 ${stepsBack} back`;
               })()
             : isSrsMode
               ? `${completedCount} / ${dueAtStart}${list?.entryCount ? ` (${list.entryCount})` : ""}`
