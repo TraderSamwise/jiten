@@ -1788,8 +1788,10 @@ function StudyScreen() {
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
 
+    let reQueueItem = item;
     if (sessionMode === "simple_srs" && card) {
-      await rateSimpleSrsCard(card, "fail");
+      const rated = await rateSimpleSrsCard(card, "fail");
+      reQueueItem = { ...item, srsCard: rated.card };
     } else if (sessionMode === "srs" && card) {
       reviewLogId = generateId();
       const result = await rateSrsCard(card, Rating.Again, reviewLogId);
@@ -1818,7 +1820,12 @@ function StudyScreen() {
     };
     // Push failed card to end for re-review (non-FSRS only; FSRS uses timer)
     if (sessionMode !== "srs") {
-      updatedCards.push({ item, status: "pending", flipped: false, reQueueOf: cursor });
+      updatedCards.push({
+        item: reQueueItem,
+        status: "pending",
+        flipped: false,
+        reQueueOf: cursor,
+      });
     }
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -1878,6 +1885,7 @@ function StudyScreen() {
     let preStudyPosition: number | null = null;
     const wasNewSimpleSrs = card ? card.simpleStage == null : false;
     let shouldReQueue = false;
+    let reQueueItem = item;
 
     if (sessionMode === "add_order") {
       if (!userDb || !listId) return;
@@ -1895,9 +1903,10 @@ function StudyScreen() {
       }
     } else if (sessionMode === "simple_srs" && card) {
       const simpleAction = isLongPress ? "easy" : "pass";
-      const graduated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
-      if (!graduated) {
+      const rated = await rateSimpleSrsCard(card, simpleAction as "pass" | "easy");
+      if (!rated.graduated) {
         shouldReQueue = true;
+        reQueueItem = { ...item, srsCard: rated.card };
       } else if (dueIdsRef.current.has(card.id)) {
         // Only count due cards toward progress (not new cards)
         completedSrsIdsRef.current.add(card.id);
@@ -1934,7 +1943,12 @@ function StudyScreen() {
       wasNewSimpleSrs,
     };
     if (shouldReQueue) {
-      updatedCards.push({ item, status: "pending", flipped: false, reQueueOf: cursor });
+      updatedCards.push({
+        item: reQueueItem,
+        status: "pending",
+        flipped: false,
+        reQueueOf: cursor,
+      });
     }
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -2189,14 +2203,15 @@ function StudyScreen() {
   }
 
   /**
-   * Rate a simple SRS card. Returns true if the card graduated (should advance),
-   * false if it stays in learning (should re-queue).
+   * Rate a simple SRS card. `graduated` says whether it advances or re-queues;
+   * `card` is the row as written, which a re-queued copy must carry — the stale
+   * one still reads as new and resets the correct-in-a-row count every pass.
    */
   async function rateSimpleSrsCard(
     card: SrsCardRow,
     action: "pass" | "easy" | "fail",
-  ): Promise<boolean> {
-    if (!userDb) return true;
+  ): Promise<{ graduated: boolean; card: SrsCardRow }> {
+    if (!userDb) return { graduated: true, card };
     const now = new Date().toISOString();
     const isNew = card.simpleStage == null;
     const isEasy = action === "easy";
@@ -2263,7 +2278,16 @@ function StudyScreen() {
       [updates.simpleStage, updates.simpleN, updates.simpleInterval, pass ? 0 : 1, now, card.id],
     );
 
-    return graduated;
+    return {
+      graduated,
+      card: {
+        ...card,
+        ...updates,
+        reps: card.reps + 1,
+        lapses: card.lapses + (pass ? 0 : 1),
+        updatedAt: now,
+      },
+    };
   }
 
   async function checkForConfusedWords(entry: DictEntry, card: SrsCardRow) {
@@ -2357,8 +2381,9 @@ function StudyScreen() {
 
     if (cardRow) {
       // Fail it so it comes up soon
+      let queuedCard = cardRow;
       if (sessionMode === "simple_srs") {
-        await rateSimpleSrsCard(cardRow, "fail");
+        queuedCard = (await rateSimpleSrsCard(cardRow, "fail")).card;
       } else if (sessionMode === "srs") {
         await rateSrsCard(cardRow, Rating.Again);
       }
@@ -2367,7 +2392,7 @@ function StudyScreen() {
       setCards((prev) => [
         ...prev,
         {
-          item: { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: cardRow },
+          item: { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: queuedCard },
           status: "pending" as CardStatus,
           flipped: false,
         },
