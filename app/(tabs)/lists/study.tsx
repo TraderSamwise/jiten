@@ -2298,9 +2298,13 @@ function StudyScreen() {
     if (list?.confusionDetection === false) return;
     if (sessionMode === "add_order") return;
 
-    // Check cooldown: skip if we checked this card recently
-    if (card.lastConfusionCheck) {
-      const lastCheck = new Date(card.lastConfusionCheck).getTime();
+    // Check cooldown against the DB: a re-queued copy's row predates this session's checks.
+    const checked = await userDb.getFirstAsync<{ last_confusion_check: string | null }>(
+      "SELECT last_confusion_check FROM srs_cards WHERE id = ?",
+      [card.id],
+    );
+    if (checked?.last_confusion_check) {
+      const lastCheck = new Date(checked.last_confusion_check).getTime();
       const cooldownMs = CONFUSION_COOLDOWN_HOURS * 60 * 60 * 1000;
       if (Date.now() - lastCheck < cooldownMs) return;
     }
@@ -2889,7 +2893,8 @@ function StudyScreen() {
         >
           {isBrowsingHistory
             ? (() => {
-                const frontier = cards.findIndex((c) => c.status === "pending");
+                // A flipped-but-unanswered card is the frontier too, not only a pending one.
+                const frontier = cards.findIndex((c) => c.status !== "rated");
                 const stepsBack = (frontier === -1 ? cards.length : frontier) - cursor;
                 return `\u2190 ${stepsBack} back`;
               })()
