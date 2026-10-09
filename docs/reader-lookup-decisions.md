@@ -11,11 +11,16 @@ of argued about.
 
 - **Taps.** Resolve `smartLookupWithOffset` at every character of
   `test/corpus/bocchan.txt` (a 24-character window either side, matching the
-  reader) before and after, and diff the matched span and top entry. ~11,250
-  taps. `scripts/tap-consistency.ts` is the committed gate over the same corpus
+  reader) before and after, and diff the matched span and top entry. **37,411
+  taps** — the whole file. The "~11,250" this line used to say is the first
+  12,000 characters, and a sweep stopped there was reported as the corpus for
+  the whole of the 2026-10-09 lookup work; widening it to the file found a
+  blocker on the first run. Resolve `autoLookupWithOffset` too when the change
+  can touch names: auto mode is a different walk and the committed gate is
+  word-mode only. `scripts/tap-consistency.ts` is the committed gate over the same corpus
   (`yarn check:tap-consistency`); it reports the share of taps that agree with
-  every other tap landing inside their own span, currently **98.0%** (11,130
-  agreeing, 128 disagreeing pairs).
+  every other tap landing inside their own span, currently **98.0%** (11,161
+  agreeing, 125 disagreeing pairs).
 - **Furigana.** Resolve `resolveFuriganaBatch` over every kanji-initial
   substring of the corpus, up to 8 characters. ~54,900 surfaces.
 - **Counters.** The `counter_readings` table is finite: resolve all 2728
@@ -37,6 +42,26 @@ of argued about.
   code does not meet yet are listed in each case's `knownRed` and run as
   `it.fails`, so the suite is green today and goes red the moment one is
   fixed.
+
+**Measure from a copy of the tree, not by reverting the one you are working
+in.** `git archive <sha> | tar -x -C <dir>`, then symlink `node_modules`, the
+two `assets/*.db` files, `packages/reader-webview/dist` and
+`packages/reader-webview/bundle.ts` — the last two are generated and nothing
+resolves without them. `yarn vitest` and `scripts/*.ts` key off `__dirname` and
+work from there unchanged. **An ad-hoc sweep script with absolute imports does
+not**: it will silently measure whatever tree those paths point at, which is
+how a "before" run can report the "after" numbers. `git stash` is worse than
+both — a second agent or a second terminal measuring at the same time gets
+garbage, and the 2026-10-09 review found two reviewers doing exactly that.
+
+**Bocchan is 1906 prose and cannot show everything.** Three of that day's
+regressions were invisible in it: the ～なく rules misfiring on adj-i adverbials
+(found by sweeping all 4,155 ～ない-adverbial dictionary surfaces), the name
+override straddling word boundaries (found on 236,778 characters of modern
+Wikipedia — 東京府と東京**市** answered the given name きょういち), and a
+one-character drag (found by reading `touch.ts`). A synthetic population built
+from the dictionary and a page of modern prose are both worth more than another
+pass over the corpus.
 
 **None of this runs in CI.** The dictionaries are build artifacts and the
 workflow does not fetch them, so `test/dictionary-db.ts` makes every suite that
@@ -1123,6 +1148,15 @@ common entries answer, because any entry at reach 3 refuses 14 and costs 滝山
 another name — 杉[藤]美代子, 桜[井]茂治 — where the neighbour is in no dictionary
 at all, and catching those would be one name vouching for another.
 
+**A kana name's ranking is not deterministic in the data, and nothing here
+depends on it.** `lookupExactName` orders by `name_freq` only when the query is
+a kanji form; for a kana query it selects no frequency and has no `ORDER BY`, so
+`nameMatches[0]` is whatever SQLite returns first out of a `LIMIT 20` — and
+さくら has well over 20 rows. `nameType` and `candidateCount` feed
+`computeAutoNameConfidence` off that row. Review could not make it change an
+answer and neither could I; recorded because the next person reading
+`nameMatches[0]` as "the best one" will be right for kanji and wrong for kana.
+
 **Only for the two-kanji override.** A longer name overlaps an ordinary word all
 the time: asking the same question of every override takes フランクリン to
 フランク and ゴルキ to ゴ, 125 taps of real names in this corpus alone.
@@ -1157,6 +1191,15 @@ the tail when it is tagged `vs`.
 guard, so with the word span refused, 注文したから came back as the surname
 たから. Auto mode now computes the starts once and hands them to both walks
 (`okuriganaStartsForTap`).
+
+**What it costs, measured rather than assumed.** `okuriganaStartsForTap` runs
+before the two walks and owns a second entry cache, so the main walk re-asks for
+words the starts had already fetched. Instrumented at the `ReaderSqlDb`
+boundary over 3,000 real taps against the shipped dictionaries: word mode 45.1
+→ 45.0 queries per tap, and auto mode **163.3 → 145.9** — 11% _fewer_, because
+the shared starts prune the name walk by more than the discarded cache costs.
+Wall clock is 6.51 → 6.43 ms per tap in auto. Nothing to recover here; if the
+double fetch ever matters, pass the cache in.
 
 **And NAME mode, which review caught twice.** `autoLookupWithOffset`
 computes the starts and hands them to both walks, but the reader calls
