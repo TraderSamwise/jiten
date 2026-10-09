@@ -14,7 +14,12 @@ import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { DICT_DB_PATH, EXT_DB_PATH, hasBothDbs } from "../../../test/dictionary-db";
-import { autoLookupWithOffset, smartLookupWithOffset } from "./lookup";
+import {
+  autoLookupWithOffset,
+  nameLookupWithOffset,
+  okuriganaStartsForTap,
+  smartLookupWithOffset,
+} from "./lookup";
 
 const dict = hasBothDbs ? new Database(DICT_DB_PATH, { readonly: true }) : null;
 const ext = hasBothDbs ? new Database(EXT_DB_PATH, { readonly: true }) : null;
@@ -50,8 +55,38 @@ describe.skipIf(!hasBothDbs)("a suru-verb noun proves its own kana tail", () => 
   });
 
   it("leaves a noun's trailing particle alone", async () => {
-    // 注意に is not 注意する in any form, so に stays open.
-    expect((await word("注意にも程がある", 3))?.matchedText).not.toBe("注意に");
+    // 注意に is not 注意する in any form, so に stays open: the kanji answer the
+    // noun and the kana answer the particle. Asserting only "not 注意に" passed
+    // before this change too, which is no gate at all.
+    expect((await word("注意にも程がある", 0))?.matchedText).toBe("注意");
+    expect((await word("注意にも程がある", 2))?.matchedText).toBe("にも");
+  });
+});
+
+describe.skipIf(!hasBothDbs)("name mode walks the same spans", () => {
+  // Name mode has its own walk, and it got the starts only after review:
+  // without them it answered 注文したから with the surname たから and
+  // したためだった with 為田, from inside words the word walk had closed.
+  it("refuses a start inside a word", async () => {
+    const starts = await okuriganaStartsForTap(
+      "切ってみろと注文したから、何だ指ぐらい",
+      10,
+      wrap(dict!),
+    );
+    const guarded = await nameLookupWithOffset(
+      "切ってみろと注文したから、何だ指ぐらい",
+      10,
+      wrap(ext!),
+      starts,
+    );
+    expect(guarded[0]?.matchedText).not.toBe("たから");
+  });
+
+  it("still answers a name that starts at a word boundary", async () => {
+    const text = "演じた西條さんがそばに来て";
+    const starts = await okuriganaStartsForTap(text, 3, wrap(dict!));
+    const hit = await nameLookupWithOffset(text, 3, wrap(ext!), starts);
+    expect(hit[0]?.matchedText).toBe("西條");
   });
 });
 

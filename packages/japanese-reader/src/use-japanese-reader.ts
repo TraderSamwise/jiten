@@ -42,6 +42,7 @@ import {
   autoSelectionLookup,
   nameLookup,
   nameLookupWithOffset,
+  okuriganaStartsForTap,
   selectionLookup,
   smartLookup,
   smartLookupWithOffset,
@@ -1602,9 +1603,16 @@ export function useJapaneseReader({
             }
           } else {
             const tapOffset = msg.tapOffset as number | undefined;
+            // Name mode walks spans too, so it refuses the same starts a word
+            // walk does: without this, 注文したから answers the surname たから
+            // from inside 注文した.
+            const nameModeStarts =
+              isNameMode && dictDb && tapOffset && tapOffset > 0
+                ? await okuriganaStartsForTap(text, tapOffset, dictDb)
+                : undefined;
             const results = isNameMode
               ? tapOffset && tapOffset > 0
-                ? await nameLookupWithOffset(text, tapOffset, extendedDb!)
+                ? await nameLookupWithOffset(text, tapOffset, extendedDb!, nameModeStarts)
                 : await nameLookup(text, extendedDb!)
               : isAutoMode
                 ? tapOffset && tapOffset > 0

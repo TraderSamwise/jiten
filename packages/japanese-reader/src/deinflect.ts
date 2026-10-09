@@ -41,6 +41,12 @@ const NOT_MASU_STEM = ANY & ~V5;
  * span starting inside よっぽど.
  */
 const RAW = 0x80;
+/**
+ * `ANY` as a rule's OUTPUT. `ANY` includes `RAW`, so a rule that emits it
+ * hands the next rule a surface that was never written — which is how
+ * よぎなくさせる reached 余儀る through the suru-noun rule.
+ */
+const ANY_OUTPUT = ANY & ~RAW;
 
 /** An ichidan stem's last character: an え/い-row kana, or any kanji. */
 const V1_STEM =
@@ -62,6 +68,12 @@ interface DeinflectRule {
   reason: string;
   /** Minimum stem length left after stripping `from`. Guards 1-char inputs. */
   minStem?: number;
+  /**
+   * Undoing this rule is a guess about what the page meant, so a reading that
+   * needs no guess wins first: 弛まぬ and でなく are entries, and answering
+   * them with 緩む and 出る is reaching past a word the dictionary has.
+   */
+  guess?: boolean;
   /**
    * What the character before the ending has to be. Only an え/い-row kana or a
    * kanji can be an ichidan stem, so without it お小遣い**が**なくて deinflects
@@ -285,7 +297,7 @@ const RULES: DeinflectRule[] = [
   { from: "したり", to: "する", typeIn: SURU, typeOut: SURU, reason: "tari" },
   { from: "している", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru" },
   { from: "してる", to: "する", typeIn: SURU, typeOut: SURU, reason: "te-iru (casual)" },
-  { from: "する", to: "", typeIn: SURU, typeOut: ANY, reason: SURU_NOUN_REASON },
+  { from: "する", to: "", typeIn: SURU, typeOut: ANY_OUTPUT, reason: SURU_NOUN_REASON },
 
   // ── 来る (kuru) irregular ──
   { from: "きた", to: "くる", typeIn: KURU, typeOut: KURU, reason: "past" },
@@ -351,7 +363,7 @@ const RULES: DeinflectRule[] = [
   // volitional 話そう below; both rules are tried and the dictionary decides.
   { from: "そう", to: "い", typeIn: ADJ, typeOut: ADJ, reason: "appearance" },
   // ── Negative ～ず / ～ずに (written negative, the ～ない of literary prose) ──
-  { from: "ずに", to: "ず", typeIn: ANY, typeOut: ANY, reason: "without doing" },
+  { from: "ずに", to: "ず", typeIn: ANY, typeOut: ANY_OUTPUT, reason: "without doing" },
   { from: "ず", to: "る", typeIn: V1, typeOut: V1, reason: "negative", minStem: 1 },
   { from: "わず", to: "う", typeIn: V5, typeOut: V5, reason: "negative" },
   { from: "かず", to: "く", typeIn: V5, typeOut: V5, reason: "negative" },
@@ -369,15 +381,15 @@ const RULES: DeinflectRule[] = [
   // Every rule here fires on the surface as written. ～ぬ is also a verb ending
   // — the te-form rule んで→ぬ makes たくさんで a ぬ-verb — so without RAW a
   // second pass strips the ending it just produced and 託す answers たくさんで.
-  { from: "わぬ", to: "う", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "かぬ", to: "く", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "がぬ", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "さぬ", to: "す", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "たぬ", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "なぬ", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "ばぬ", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "まぬ", to: "む", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "らぬ", to: "る", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "わぬ", to: "う", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "かぬ", to: "く", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "がぬ", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "さぬ", to: "す", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "たぬ", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "なぬ", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "ばぬ", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "まぬ", to: "む", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
+  { from: "らぬ", to: "る", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1, guess: true },
   {
     from: "ぬ",
     to: "る",
@@ -386,22 +398,95 @@ const RULES: DeinflectRule[] = [
     reason: "negative",
     minStem: 1,
     stemEnd: V1_STEM,
+    guess: true,
   },
-  { from: "せぬ", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative" },
-  { from: "こぬ", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative" },
+  { from: "せぬ", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative", guess: true },
+  { from: "こぬ", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative", guess: true },
 
   // ～なく is the negative's adverbial, the half of 誘わなくなった that is the
   // verb. The ADJ rule く→い already reaches 誘わない and stops: nothing is
   // spelled that way, and its output is typed ADJ so no verb rule follows it.
-  { from: "わなく", to: "う", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "かなく", to: "く", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "がなく", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "さなく", to: "す", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "たなく", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "ななく", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "ばなく", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "まなく", to: "む", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
-  { from: "らなく", to: "る", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  {
+    from: "わなく",
+    to: "う",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "かなく",
+    to: "く",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "がなく",
+    to: "ぐ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "さなく",
+    to: "す",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "たなく",
+    to: "つ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "ななく",
+    to: "ぬ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "ばなく",
+    to: "ぶ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "まなく",
+    to: "む",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "らなく",
+    to: "る",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative",
+    minStem: 1,
+    guess: true,
+  },
   {
     from: "なく",
     to: "る",
@@ -410,19 +495,92 @@ const RULES: DeinflectRule[] = [
     reason: "negative",
     minStem: 1,
     stemEnd: V1_STEM,
+    guess: true,
   },
-  { from: "しなく", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative" },
-  { from: "こなく", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative" },
+  { from: "しなく", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative", guess: true },
+  { from: "こなく", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative", guess: true },
 
-  { from: "わなくて", to: "う", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "かなくて", to: "く", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "がなくて", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "さなくて", to: "す", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "たなくて", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "ななくて", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "ばなくて", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "まなくて", to: "む", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
-  { from: "らなくて", to: "る", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  {
+    from: "わなくて",
+    to: "う",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "かなくて",
+    to: "く",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "がなくて",
+    to: "ぐ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "さなくて",
+    to: "す",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "たなくて",
+    to: "つ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "ななくて",
+    to: "ぬ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "ばなくて",
+    to: "ぶ",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "まなくて",
+    to: "む",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
+  {
+    from: "らなくて",
+    to: "る",
+    typeIn: RAW,
+    typeOut: V5,
+    reason: "negative te-form",
+    minStem: 1,
+    guess: true,
+  },
   {
     from: "なくて",
     to: "る",
@@ -431,15 +589,30 @@ const RULES: DeinflectRule[] = [
     reason: "negative te-form",
     minStem: 1,
     stemEnd: V1_STEM,
+    guess: true,
   },
-  { from: "しなくて", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative te-form" },
-  { from: "こなくて", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative te-form" },
+  {
+    from: "しなくて",
+    to: "する",
+    typeIn: RAW,
+    typeOut: SURU,
+    reason: "negative te-form",
+    guess: true,
+  },
+  {
+    from: "こなくて",
+    to: "くる",
+    typeIn: RAW,
+    typeOut: KURU,
+    reason: "negative te-form",
+    guess: true,
+  },
 
   // ── Generic te-iru forms (works across verb types after te-form resolution) ──
-  { from: "ている", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
-  { from: "てる", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
-  { from: "でいる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
-  { from: "でる", to: "で", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
+  { from: "ている", to: "て", typeIn: ANY, typeOut: ANY_OUTPUT, reason: "te-iru" },
+  { from: "てる", to: "て", typeIn: ANY, typeOut: ANY_OUTPUT, reason: "te-iru (casual)" },
+  { from: "でいる", to: "で", typeIn: ANY, typeOut: ANY_OUTPUT, reason: "te-iru" },
+  { from: "でる", to: "で", typeIn: ANY, typeOut: ANY_OUTPUT, reason: "te-iru (casual)" },
 
   // ── ～なさい: the polite imperative, built on the masu-stem ──
   // Spelled out per row rather than stripping なさい and leaving the stem to the
@@ -694,10 +867,18 @@ export interface DeinflectCandidate {
    */
   entryMask: number;
   reasons: string[];
+  /** Some rule on the way here was a guess — see `DeinflectRule.guess`. */
+  guessed: boolean;
 }
 
 export function deinflect(word: string): DeinflectCandidate[] {
-  const first: DeinflectCandidate = { word, typeMask: ANY, entryMask: ANY, reasons: [] };
+  const first: DeinflectCandidate = {
+    word,
+    typeMask: ANY,
+    entryMask: ANY,
+    reasons: [],
+    guessed: false,
+  };
   const results: DeinflectCandidate[] = [first];
   const seen = new Map<string, DeinflectCandidate>([[word, first]]);
 
@@ -712,6 +893,7 @@ export function deinflect(word: string): DeinflectCandidate[] {
       if (!(current.typeMask & rule.typeIn)) continue;
 
       const base = current.word.slice(0, stemLen) + rule.to;
+      const guessed = current.guessed || !!rule.guess;
       const already = seen.get(base);
       if (already) {
         // A second rule reaching the same word is a second reading of the
@@ -719,6 +901,8 @@ export function deinflect(word: string): DeinflectCandidate[] {
         // and the kuru te-form rule, and 来る is kuru. Keeping only the first
         // rule's class would refuse the entry that is actually there.
         already.entryMask |= rule.typeOut;
+        // Reaching the same word without a guess means it was never one.
+        if (!guessed) already.guessed = false;
         continue;
       }
       const candidate: DeinflectCandidate = {
@@ -726,6 +910,7 @@ export function deinflect(word: string): DeinflectCandidate[] {
         typeMask: rule.typeOut,
         entryMask: rule.typeOut,
         reasons: [...current.reasons, rule.reason],
+        guessed,
       };
       seen.set(base, candidate);
       results.push(candidate);

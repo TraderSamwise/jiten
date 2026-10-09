@@ -38,6 +38,13 @@ of argued about.
   `it.fails`, so the suite is green today and goes red the moment one is
   fixed.
 
+**None of this runs in CI.** The dictionaries are build artifacts and the
+workflow does not fetch them, so `test/dictionary-db.ts` makes every suite that
+queries them `describe.skipIf` — three of the five files added for the lookup
+work skip entirely there, and `yarn check:tap-consistency` is not a CI step at
+all. The sweeps above and those suites are local gates. What CI does gate is
+the pure rule table: `deinflect.*.test.ts` and the scoring helpers.
+
 A change is shippable when the diff is enumerable and every entry in it is an
 improvement, neutral, or a regression named and accepted in this document. A
 regression nobody wrote down is not accepted, it is unnoticed.
@@ -861,7 +868,7 @@ take a past. That was reading **any** entry with an `exp` sense as classless,
 and 棒 is `n,exp` — so ぼって was painted across the corpus as a te-form of the
 noun 棒. `exp` now has to be the only class recorded.
 
-#### Negative ～ぬ, ～なく and ～なくて
+### Negative ～ぬ, ～なく and ～なくて, and the guess they are
 
 Reported from a novel: 広げた風呂敷を**畳まぬ**ようなもの printed じょう over 畳
 and answered the tap with the mat たたみ, and 散歩に**誘わなく**なった printed
@@ -875,42 +882,61 @@ form was in the rule table.
   and stops there: nothing is spelled that way, and it types the result ADJ so
   no verb rule can follow it.
 
-Three guards, each from a measured failure:
+**Every one of them is a guess, and that is the load-bearing part.** The first
+version of this change shipped the rules unmarked, and an adversarial review
+found what that costs, over a population the corpus cannot reach — all 4,155
+～ない-adverbial and ～ぬ dictionary surfaces, where **237 taps moved and 53 were
+regressions**:
 
-- **`typeIn: RAW` on every one of them.** ～ぬ is also a verb ending — the
-  te-form rule んで→ぬ makes たくさんで a ぬ-verb — so without it a second pass
-  strips the ending the first one produced: たくさんで answered 託す, んです
-  answered 酢, and 〜れたんだ answered 劣. All four of those vanish with RAW.
+|                            | was               | became |
+| -------------------------- | ----------------- | ------ |
+| 問題**でなく**単なる誤解だ | で無い            | 出る   |
+| **弛まぬ**努力             | 弛まぬ (たゆまぬ) | 緩む   |
+| **卒なく**こなす           | 卒なく            | 終わる |
+| 馬が**いななく**           | 嘶く              | 犬     |
+| **せわしなく**歩き回る     | 忙しない          | 世話   |
+
+Each of those surfaces is itself a dictionary entry, and the manufactured verb
+beat it because `hasCommon` pays 100 against five points a reason. The repo
+already had the answer — **a reading that needs no guess wins first**, the rule
+that keeps にしては from being answered with にしても — so the rules now carry
+`guess: true`, `deinflect` propagates a `guessed` flag (merging it, because a
+word reachable without a guess is not one), and the gate was extended to the
+three walks that never had it: the drag-selection expansion, `findFirstWord`
+and `findBoundaryWord`. The furigana resolver asks the same question as a
+**preference, not a weight** — commonness pays +120 there against −80 for a
+deinflection, so a score could not express it.
+
+Checked against every one of the 53: all fixed, and none of 畳まぬ, 知らぬ,
+誘わなく, 出なく, 心配しなく, 消えぬ, 知れぬ is itself an entry, so every win
+still speaks. Ordering cannot defeat the gate — the surface is candidate 0 and
+the ADJ block precedes the negative block, measured over 747,558 surfaces with
+zero counterexamples.
+
+Three further guards, each from a measured failure:
+
+- **`typeIn: RAW` on every rule.** ～ぬ is also a verb ending — the te-form rule
+  んで→ぬ makes たくさんで a ぬ-verb — so without it a second pass strips the
+  ending the first one produced: たくさんで answered 託す, んです answered 酢.
 - **`stemEnd: V1_STEM` on the three bare ichidan rules**, a new field holding
-  what the character before the ending has to be. お小遣い**が**なくて is a
-  particle and ない, but が passes a length floor, so the bare rule reached がる
-  and answered a particle with a verb (4 taps). Only an え/い-row kana or a
-  kanji can be an ichidan stem; が is あ-row.
+  what the character before the ending has to be. お小遣い**が**なくて passes a
+  length floor, so the bare rule reached がる.
 - **`minStem: 1` on the row rules, and none on せぬ / こぬ / しなく / こなく**,
-  which are whole words with no stem at all. The test caught that: せぬ reached
-  せる and す but never する.
+  which are whole words with no stem at all.
 
-Measured. **Tap sweep: 33 of 3,772 corpus taps change.** 21 are the point —
-知らぬ→知る (was 糠, 等, 知/ち), 知れぬ→知れる, 切れぬ→切れる, 消えぬ→消える,
-使えぬ→使う, 出揃わぬ→出揃う, 出なく→出る. **Furigana sweep: 44 of 67,299
-surfaces gain a reading, 0 lose one, 0 read differently** — 似ぬ, 心得ぬ,
-思えぬ, 分らなく, 聞かなくて, 鳴らなくて and the rest. Gate 98.0%, 128
-disagreeing pairs → **126**.
+**A bit leak the same review found, fixed here:** `ANY` is `0xff` and `RAW` is
+`0x80`, so a rule whose output is typed `ANY` re-granted RAW — よぎなくさせる
+reached 余儀る through the suru-noun rule, three rules deep. Rules that emit
+`ANY` now emit `ANY_OUTPUT`, which is `ANY & ~RAW`. Latent today (余儀る and
+程る are not words) and found by sweeping 827,842 dictionary forms.
 
-**Accepted regressions**, all read in that diff:
+**Not shipped here, deliberately:** ～ん (読まん), ～ざる (行かざる) and ～なくちゃ
+resolve to nothing at all. ～ん needs its own collision sweep before it goes
+near the table — it collides with sentence-final ん, with のだ→んだ and with
+every noun ending in ん, which is the over-broad shape that produced
+たくさんで→託す in the first place.
 
-- 何にもせぬ (5 taps). おやじは何にもせぬ男で: the span now swallows せぬ and
-  shows 何にも, because せぬ→する→the suru-noun rule lands back on 何にも. The
-  entry shown is still the right one and two of those taps were junk before
-  (燃やす for せ); the ideal split, 何にも + する, needs the suru-noun rule to
-  refuse a negative it did not undo itself.
-- はせぬ → 蓮/はす (3 taps). そんな依怙贔負はせぬ男だ is は + せぬ. Junk for junk:
-  it answered 蓮 in its imperative before.
-- なくなった → ナウ (3 taps). 水が出なくなった now answers 出なく on the first
-  three characters, which is right, and the ナウ is what tapping the leftover
-  なった already gave everywhere else.
-
-### A name spelling that ends in kana is not evidence about the kanji before it
+### A kanji followed by a particle is the particle
 
 花のつぼみのような printed **あや** over 花, and 水の流れ printed **にず** over
 水. JMnedict holds 花の (Ayano) and 水の (Nizuno); the furigana path takes a
@@ -919,27 +945,42 @@ surface, and two characters beat one. Both spellings have no observed
 frequency at all — nobody has been seen reading 水の as にずの.
 
 The ruby that came out is the tell: `stripOkurigana` had already cut the の
-off, so the page got a reading over 花 alone that only the whole name has. A
-name's trailing kana is part of its spelling, not okurigana, so a surface
-ending in kana is now never considered for a name reading
-(`shouldConsiderNameFuriganaSurface`).
+off, so the page got a reading over 花 alone that only the whole name has.
 
-Measured over the corpus: **15 of 67,299 surfaces change, all of them losses
-of a name reading, every one junk** — 上の, 仲の, 坂の, 木の, 東の, 松の, 水の,
-浜の, 理の, 育の, 高の, 魚の (a kanji and the particle), plus 夢か, 新し and
-帝国ホテル. Nothing gains or changes a reading.
+**Refusing every kana-tailed name was too wide, and review caught it before
+this shipped.** Two separate costs, neither visible in the corpus:
 
-The whole population, not just the corpus: of the **7,596** name spellings in
-JMnedict that end in kana, 7,247 stop resolving as a surface. **4,410 of those
-print exactly the same ruby anyway**, because the kanji run before the kana
-carries the name on its own — 帝国ホテル still reads 帝国/ていこく, and
-龍ヶ嶽トンネル still reads 龍ヶ嶽. The remaining 2,837 are spellings with the
-kanji buried inside kana (い乃り, み津ゑ, しら坂トンネル): prewar given-name
-orthography and signposted place names, which the reader will not meet, and
-where the old ruby covered a leading fragment.
+- **33 place and person names lost their ruby entirely** — 十勝ダム, 一戸トンネル,
+  三輪ひとみ — because their kanji prefix is also a `counter_readings` form, and
+  a counter rejected by the `showCounters` setting shadows the whole span. With
+  counters on, 17 of them printed the counter instead: 一戸【いっこ】.
+- **The ◯◯通り street class was garbled, which is worse than absent.**
+  三条通【さんじょうどお】り became 三条通【さんじょうどおり】り — the reading
+  absorbs the り and the page reprints it. 94 of the 101 通り spellings changed.
 
-五十嵐, 杏子, 丸木, 後味 and 西條 are all unmoved — nothing written in kanji
-is touched.
+So the guard is what the bug actually was: a name is refused only when the
+surface ends in a **single-kana particle** (の, が, を, に, は, へ, と, も, や, か)
+directly after a kanji. り, め and み are the name.
+
+Measured over the corpus: **13 of 67,299 surfaces change, every one a junk name
+reading going away** — 上の, 仲の, 坂の, 夢か, 木の, 東の, 松の, 水の, 浜の, 理の,
+育の, 高の, 魚の. Nothing gains or reads differently. Over the whole kana-tailed
+population (7,467 spellings) the narrowed guard changes 308 and loses **none**,
+against 2,785 changed and 33 lost for the wide one; 帝国ホテル, 龍ヶ嶽トンネル,
+三条通り, お染め, 晴み and 鉞り are all back to what they read before.
+
+**Accepted, and inherited rather than introduced:** a handful of single-kanji
+given names spelled with one trailing particle still lose — 秋を (Akio) reads
+秋【とき】を. All carry a frequency of 1 or 2, and the fallback is the kanji's
+own word reading.
+
+**One thing this does not reach:** a name entry short-circuits the JLPT level
+filters and the word entry that replaces it does not, so under a restricted
+level config 165 surfaces lose ruby that the name was carrying past the filter.
+That is `entry.isName ||` in `shouldShowFuriganaForSurface`, not this guard.
+
+五十嵐, 杏子, 丸木, 後味 and 西條 are unmoved — nothing written in kanji is
+touched.
 
 ### A two-kanji name the counts have seen may override a one-kanji word
 
@@ -981,6 +1022,12 @@ the tail when it is tagged `vs`.
 guard, so with the word span refused, 注文したから came back as the surname
 たから. Auto mode now computes the starts once and hands them to both walks
 (`okuriganaStartsForTap`).
+
+**And NAME mode, which review caught after the fact.** `autoLookupWithOffset`
+computes the starts and hands them to both walks, but the reader calls
+`nameLookupWithOffset` directly when the user switches to Names, and that call
+had no starts at all — so name mode went on answering 注文したから with たから.
+It computes them too now, when the word dictionary is open.
 
 **And then the name walk's own hole.** A name may override a shorter word
 outright when the surface is "an exact name match", and that accepted a match
@@ -1031,7 +1078,12 @@ which is what 姿 → 姿勢 depends on.
 **The selection cases in `lib/smart-lookup.test.ts` re-implement the walk** in
 the test file rather than calling it, so they cannot see this change at all —
 they pass before and after. `lookup.selection.test.ts` runs the shipping
-function.
+function — including `autoSelectionLookup`, which is what the reader's default
+mode actually calls and which nothing covered until review said so.
+
+**The expansion step had no literal-first gate either**, which is where the
+negative rules above would have spoken over an entry on a drag. It has one now,
+as do `findFirstWord` and `findBoundaryWord`.
 
 ## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 

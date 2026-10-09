@@ -36,10 +36,32 @@ describe("negative ～ぬ", () => {
   // word that already ends in ぬ. Without RAW a second pass strips the ending
   // the first one produced and たくさんで comes back as 託す.
   it("fires on the text as written, never on another rule's output", () => {
-    expect(bases("たくさんで")).not.toContain("託す");
+    // The te-form rule んで→ぬ types these as ぬ-verbs; without RAW the negative
+    // rules strip the ending it just produced. たくす is the word 託す is
+    // spelled with, and asserting on 託す instead would be unfailable —
+    // deinflect only ever returns the script it was handed.
+    expect(bases("たくさんで")).not.toContain("たくす");
+    expect(bases("飲んで")).not.toContain("飲る");
+    expect(bases("読んで")).not.toContain("読る");
+    expect(bases("言われたんだ")).not.toContain("言われつ");
     // 死る is the ichidan rule reading 死 as a stem. No dictionary holds it, so
     // it costs a lookup and nothing else; 死ぬ keeps answering as itself.
     expect(bases("死ぬ")).toEqual(["死ぬ", "死る"]);
+  });
+
+  // These rules are guesses: 弛まぬ, でなく and いななく are themselves entries,
+  // and a manufactured verb must not be allowed to answer them.
+  it("marks what it produces as a guess", () => {
+    const guessed = (word: string, base: string) =>
+      deinflect(word).find((c) => c.word === base)?.guessed;
+    expect(guessed("畳まぬ", "畳む")).toBe(true);
+    expect(guessed("誘わなく", "誘う")).toBe(true);
+    // でる, not 出る: deinflect returns the script it was handed.
+    expect(guessed("でなく", "でる")).toBe(true);
+    // The path that does not guess keeps its standing.
+    expect(guessed("でなく", "でない")).toBe(false);
+    expect(guessed("せわしなく", "せわしない")).toBe(false);
+    expect(guessed("畳まぬ", "畳まぬ")).toBe(false);
   });
 });
 

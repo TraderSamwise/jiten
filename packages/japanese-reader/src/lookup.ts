@@ -42,12 +42,31 @@ interface EntrySortContext {
 
 type KanjiReadingRecord = Awaited<ReturnType<typeof getKanjiAsync>>;
 
+/**
+ * Undoing a contraction, swapping a particle and the literary negatives are
+ * all guesses about what the page meant, and a reading that needs no guess
+ * wins first — so a guess only speaks when the span found nothing else.
+ */
+function candidateIsGuess(candidate: {
+  reasons: string[];
+  particleSwapped?: boolean;
+  guessed?: boolean;
+}): boolean {
+  return (
+    !!candidate.particleSwapped ||
+    !!candidate.guessed ||
+    candidate.reasons.some((reason) => CONTRACTION_REASONS.has(reason))
+  );
+}
+
 /** One spelling the tap walk will ask the dictionary about, and why. */
 interface TapCandidate {
   word: string;
   reasons: string[];
   spelledKanji?: string;
   particleSwapped?: boolean;
+  /** A rule on the way here was a guess — see `DeinflectRule.guess`. */
+  guessed?: boolean;
 }
 
 const DIGIT_TO_KANJI: Record<string, string> = {
@@ -905,10 +924,14 @@ export async function selectionLookup(
 
         let best: LookupResult | null = null;
         let bestScore = Number.NEGATIVE_INFINITY;
+        let literalMatched = false;
 
         for (const candidate of candidates) {
+          const guessed = candidateIsGuess(candidate);
+          if (guessed && literalMatched) continue;
           const entries = await lookupExactJapanese(dictDb, candidate.word);
           if (entries.length > 0) {
+            if (!guessed) literalMatched = true;
             const sortedEntries = sortEntriesForMatchedSurface(
               entries,
               substr,
@@ -1023,12 +1046,16 @@ async function findFirstWord(
     // Try all candidates for this substring length, prefer common entries
     let best: { result: LookupResult; matchLength: number } | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
+    let literalMatched = false;
 
     for (const candidate of candidates) {
+      const guessed = candidateIsGuess(candidate);
+      if (guessed && literalMatched) continue;
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
+        if (!guessed) literalMatched = true;
         const sortedEntries = sortEntriesForMatchedSurface(
           newEntries,
           substr,
@@ -1094,12 +1121,16 @@ async function findBoundaryWord(
 
       let best: LookupResult | null = null;
       let bestScore = Number.NEGATIVE_INFINITY;
+      let literalMatched = false;
 
       for (const candidate of candidates) {
+        const guessed = candidateIsGuess(candidate);
+        if (guessed && literalMatched) continue;
         const allEntries = await lookupExactJapanese(dictDb, candidate.word);
         const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
         if (newEntries.length > 0) {
+          if (!guessed) literalMatched = true;
           const sortedEntries = sortEntriesForMatchedSurface(
             newEntries,
             substr,
@@ -1154,13 +1185,17 @@ export async function smartLookup(
 
   for (const substr of substrings) {
     const candidates = deinflect(substr);
+    let literalMatched = false;
 
     for (const candidate of candidates) {
+      const guessed = candidateIsGuess(candidate);
+      if (guessed && literalMatched) continue;
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
 
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
+        if (!guessed) literalMatched = true;
         const sortedEntries = sortEntriesForMatchedSurface(
           newEntries,
           substr,
@@ -1280,9 +1315,7 @@ export async function smartLookupWithOffset(
       // commoner of the two.
       let literalMatched = false;
       for (const candidate of candidates) {
-        const guessed =
-          candidate.particleSwapped ||
-          candidate.reasons.some((reason) => CONTRACTION_REASONS.has(reason));
+        const guessed = candidateIsGuess(candidate);
         if (guessed && literalMatched) continue;
         let entries = await lookupOnce(candidate.word);
         // Rewriting a kanji as kana claims the entry is that word spelled

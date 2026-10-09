@@ -12,7 +12,16 @@ import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { DICT_DB_PATH, EXT_DB_PATH, hasBothDbs } from "../../../test/dictionary-db";
-import { selectionLookup } from "./lookup";
+import { autoSelectionLookup as autoSelection, selectionLookup } from "./lookup";
+
+async function autoSelectionLookup(
+  dict: ReturnType<typeof wrap>,
+  text: string,
+  prefix: string,
+  suffix: string,
+) {
+  return autoSelection(text, dict, wrap(ext!), { prefix, suffix });
+}
 
 const dict = hasBothDbs ? new Database(DICT_DB_PATH, { readonly: true }) : null;
 const ext = hasBothDbs ? new Database(EXT_DB_PATH, { readonly: true }) : null;
@@ -51,6 +60,15 @@ describe.skipIf(!hasBothDbs)("a selection that is itself a word", () => {
 
   it("does not repeat itself when nothing longer is there", async () => {
     expect(await select("散歩", "の", "に誘わ")).toEqual(["散歩"]);
+  });
+});
+
+describe.skipIf(!hasBothDbs)("auto mode, which is what a drag actually runs", () => {
+  // The reader's default mode calls autoSelectionLookup, not selectionLookup,
+  // and nothing covered it until review pointed that out.
+  it("answers the selection first there too", async () => {
+    const results = await autoSelectionLookup(wrap(dict!), "展開", "チェーン", "の新古書店");
+    expect(results.map((r) => r.matchedText)).toEqual(["展開", "チェーン展開"]);
   });
 });
 
