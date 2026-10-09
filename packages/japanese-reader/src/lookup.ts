@@ -1336,6 +1336,20 @@ export async function smartLookupWithOffset(
             entry.senses.some((sense) => sense.partOfSpeech?.includes("exp")),
           );
         }
+        // A guess claims the surface is an inflected word, so what it lands on
+        // has to be one. Without this the ～なく rules reach する and the
+        // suru-noun strip hands back whatever was in front of it: 釣や猟を
+        // しなくっちゃ answered the particle を, ものでなくっちゃ answered ので,
+        // 何にもせぬ swallowed せぬ to answer the adverb 何にも.
+        //
+        // Only on the literary negatives, which is where the claim comes from.
+        // The same filter over every suru-noun strip moves 869 corpus taps and
+        // takes 直にしていれば from 直に to the broth 煮汁; over the contractions
+        // and particle swaps, which have their own filters above, it takes
+        // 虫の好かない from the phrase to 良く and すると to the particle と.
+        if (candidate.guessed) {
+          entries = entries.filter((entry) => entryInflects(entry) || entryTakesSuru(entry));
+        }
         if (entries.length > 0) {
           let sortedEntries = sortEntriesForMatchedSurface(
             entries,

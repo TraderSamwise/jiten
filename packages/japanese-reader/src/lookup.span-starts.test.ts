@@ -63,6 +63,36 @@ describe.skipIf(!hasBothDbs)("a suru-verb noun proves its own kana tail", () => 
   });
 });
 
+describe.skipIf(!hasBothDbs)("what a guess is allowed to land on", () => {
+  // The ～なく rules reach する, and the suru-noun strip then hands back
+  // whatever stood in front of it. A guess claims the surface is an inflected
+  // word, so the entry it lands on has to be one.
+  it("refuses a guess that lands on a particle or an adverb", async () => {
+    expect((await word("る方が楽に極まってる。釣や猟をしなくっちゃ活計が", 14))?.matchedText).toBe(
+      "を",
+    );
+    expect((await word("と三人で暮していた。おやじは何にもせぬ男で、人の", 14))?.matchedText).toBe(
+      "何にも",
+    );
+    expect((await word("つは魚に相違ない。生きてるものでなくっちゃ、こう", 13))?.matchedText).toBe(
+      "もの",
+    );
+  });
+
+  // Only on a guess: the same filter over every suru-noun strip moves 869
+  // corpus taps and takes 直にしていれば from 直に to the broth 煮汁.
+  it("leaves the suru-noun strip alone where nothing guessed", async () => {
+    expect((await word("正直にしていれば誰が乗じ", 2))?.matchedText).toBe("直にしていれば");
+    expect((await word("勧誘されるのを断った", 0))?.entries[0]?.kanji[0]?.text).toBe("勧誘");
+    expect((await word("出たりはいったりして、よう", 5))?.entries[0]?.kanji[0]?.text).toBe("入る");
+  });
+
+  it("still lets a guess speak when it lands on a verb", async () => {
+    expect((await word("心配しなくてもいいと云い", 0))?.matchedText).toBe("心配しなくて");
+    expect((await word("散歩に誘わなくなった", 3))?.matchedText).toBe("誘わなく");
+  });
+});
+
 describe.skipIf(!hasBothDbs)("name mode walks the same spans", () => {
   // Name mode has its own walk, and it got the starts only after review:
   // without them it answered 注文したから with the surname たから and

@@ -936,6 +936,63 @@ near the table — it collides with sentence-final ん, with のだ→んだ and
 every noun ending in ん, which is the over-broad shape that produced
 たくさんで→託す in the first place.
 
+### What a guess is allowed to land on, and the branch measured whole
+
+A reviewer pointed out that the sections above each measure a 12,000-character
+slice, not the corpus, and that the whole file is four times that. Measured
+whole — **37,411 taps**, every character of `test/corpus/bocchan.txt`, this
+branch against `origin/master`:
+
+- **Word mode: 233 change**, 126 distinct transitions, all read.
+- **Auto mode: 2,036 change** — 1,752 a kana run that was answered with a
+  JMnedict name and is now answered with a word, 220 the word-mode changes, 60
+  a real name the tap used to answer with a single kanji, 2 lateral.
+- **`yarn check:tap-consistency`: 128 disagreeing pairs → 125.** The per-commit
+  numbers above (126, 123) were each measured on their own commit; the branch
+  as a whole lands at 125, the two pairs being the entry filter below refusing
+  a span the gate had counted as agreeing.
+
+That sweep also found the last defect, which the slice could not: the ～なく
+rules reach する, the suru-noun rule then strips it, and what came back was
+whatever stood in front — 釣や猟を**しなく**っちゃ answered the particle を,
+足音も**しなく** answered 喪, ものでなく**っちゃ** answered ので, and 何にもせぬ
+swallowed せぬ to answer the adverb 何にも. A guess claims the surface is an
+inflected word, so the entry it lands on now has to be one (`entryInflects` or
+`entryTakesSuru`).
+
+**That filter is on the literary negatives only, and the scope was measured
+twice.** Over every suru-noun strip it moves 869 taps and takes
+正直**にしていれば** from 直に to the broth 煮汁, 出たり**はいったり**して from
+入る to 配流. Over the contractions and particle swaps — which have their own
+filters already — it takes 虫の好かない from the phrase to 良く and すると to the
+particle と. Narrowed to candidates this branch introduced, it moves 16.
+
+**The costs in those 233, named.** All but one are the suru-noun proof closing
+a position that is genuinely ambiguous, which is the trade `11eeebc` already
+records:
+
+- 安心した**らしかった** → しかった (4 taps). 安心したら is the conditional and
+  proves ら closed; here した is past and らしかった is 〜らしい. Nothing in the
+  kana separates them.
+- 遠慮**するがいい** → がい (6), 説明**しようがない** → がない (3),
+  勘当**すると** → と (4), 心配**しようと** → と (2), **しろと** → と (2),
+  **したく** → くらい, **したに** → に, **したて** → て (3 between them). Same
+  shape: a suru-verb's own kana closing a position a longer entry wanted.
+- 足音**もしなく** → 模する (2). もする is a real suru verb, so both filters pass
+  it; `origin/master` answered もし there, which is no better. A commonness
+  requirement would clear it and would cost 出揃わぬ, which is uncommon and
+  right.
+- なくなった → なった/ナウ (9), **くっちゃ寝** → ちゃ (3), なくてもいい → いいん
+  (3), なくては → は (2). Tails left over where a longer correct span now wins
+  in front of them.
+
+Against roughly 185 taps that are the point: 知らぬ, 入らぬ, 知れぬ, 切れぬ,
+消えぬ, 思えぬ, 心得ぬ, 似ぬ, 劣らぬ, 分らぬ, わからぬ, 出揃わぬ, もせぬ, はせぬ
+(馳せる, where it was 蓮), 差支えなく, 行かなく, 聞かなく, 聞かなくて, 心配しなく,
+鳴らなくて, 及ぼさなくて, 仰がれなくて, 待ってなくて, 動かなく, 殺さなく, 笑わなく,
+寝なく, 癪に障らなく, 出来なく, 出なく, and the suru-verb splits やる, やろう,
+やった, くれ, くれた, から, もの.
+
 ### A kanji followed by a particle is the particle
 
 花のつぼみのような printed **あや** over 花, and 水の流れ printed **にず** over
@@ -997,8 +1054,8 @@ in 34, while 田先 and 中電 have never been observed as names at all. A
 two-kanji name with any observed frequency may now override
 (`nameMayOverrideShorterWord`).
 
-Measured over **11,296** auto-mode corpus taps: **12 change, all of them
-names in the book that a tap used to answer with a single kanji** — 茂作 (was
+Measured over the first **11,296** auto-mode corpus taps: **12 change, all of
+them names in the book that a tap used to answer with a single kanji** — 茂作 (was
 作), 箱根 (箱, 根), 小倉 (小, 倉), 古賀 (古, 賀), 浅井 (井, three times) and
 堀田 (堀, 田). Nothing else moves, in either direction.
 
@@ -1060,8 +1117,8 @@ on the name's **reading**: ためだった holds the reading of 為田, した�
 its kanji form, or the whole spelling for a name written in kana, so ひろし and
 たけし still resolve (`nameSpellingIsSurface`).
 
-Measured over 11,296 corpus taps. **Word mode: 15 change, all of them a span
-that was cutting into a suru-verb** — 注文したから→から, 勉強してやろう→やろう,
+Measured over the first 11,296 corpus taps. **Word mode: 15 change, all of
+them a span that was cutting into a suru-verb** — 注文したから→から, 勉強してやろう→やろう,
 合点したもの→もの, 紹介してやる→やる, 心配しなくって→って, 珍重してく→くれた.
 **Auto mode: 489 change — 472 of them a kana run that was being answered with a
 JMnedict name and is now answered with a word**: たから→から (24 taps),
