@@ -42,6 +42,10 @@ const NOT_MASU_STEM = ANY & ~V5;
  */
 const RAW = 0x80;
 
+/** An ichidan stem's last character: an え/い-row kana, or any kanji. */
+const V1_STEM =
+  /[えけげせぜてでねへべぺめれいきぎしじちぢにひびぴみり\u3005\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/u;
+
 // Passive, causative, and potential forms are themselves ichidan verbs.
 // When they conjugate (past, negative, etc.), the V1 deinflection strips
 // the conjugation and outputs V1. The next step must still recognize the
@@ -58,6 +62,12 @@ interface DeinflectRule {
   reason: string;
   /** Minimum stem length left after stripping `from`. Guards 1-char inputs. */
   minStem?: number;
+  /**
+   * What the character before the ending has to be. Only an え/い-row kana or a
+   * kanji can be an ichidan stem, so without it お小遣い**が**なくて deinflects
+   * to がる and answers a particle with a verb.
+   */
+  stemEnd?: RegExp;
 }
 
 // ─── Deinflection rules ───
@@ -355,6 +365,76 @@ const RULES: DeinflectRule[] = [
   { from: "せず", to: "する", typeIn: SURU, typeOut: SURU, reason: "negative" },
   { from: "こず", to: "くる", typeIn: KURU, typeOut: KURU, reason: "negative" },
 
+  // ── Negative ～ぬ: the ～ない of literary prose, and ～なく / ～なくて ──
+  // Every rule here fires on the surface as written. ～ぬ is also a verb ending
+  // — the te-form rule んで→ぬ makes たくさんで a ぬ-verb — so without RAW a
+  // second pass strips the ending it just produced and 託す answers たくさんで.
+  { from: "わぬ", to: "う", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "かぬ", to: "く", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "がぬ", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "さぬ", to: "す", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "たぬ", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "なぬ", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "ばぬ", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "まぬ", to: "む", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "らぬ", to: "る", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  {
+    from: "ぬ",
+    to: "る",
+    typeIn: RAW,
+    typeOut: V1,
+    reason: "negative",
+    minStem: 1,
+    stemEnd: V1_STEM,
+  },
+  { from: "せぬ", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative" },
+  { from: "こぬ", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative" },
+
+  // ～なく is the negative's adverbial, the half of 誘わなくなった that is the
+  // verb. The ADJ rule く→い already reaches 誘わない and stops: nothing is
+  // spelled that way, and its output is typed ADJ so no verb rule follows it.
+  { from: "わなく", to: "う", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "かなく", to: "く", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "がなく", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "さなく", to: "す", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "たなく", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "ななく", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "ばなく", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "まなく", to: "む", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  { from: "らなく", to: "る", typeIn: RAW, typeOut: V5, reason: "negative", minStem: 1 },
+  {
+    from: "なく",
+    to: "る",
+    typeIn: RAW,
+    typeOut: V1,
+    reason: "negative",
+    minStem: 1,
+    stemEnd: V1_STEM,
+  },
+  { from: "しなく", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative" },
+  { from: "こなく", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative" },
+
+  { from: "わなくて", to: "う", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "かなくて", to: "く", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "がなくて", to: "ぐ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "さなくて", to: "す", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "たなくて", to: "つ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "ななくて", to: "ぬ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "ばなくて", to: "ぶ", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "まなくて", to: "む", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  { from: "らなくて", to: "る", typeIn: RAW, typeOut: V5, reason: "negative te-form", minStem: 1 },
+  {
+    from: "なくて",
+    to: "る",
+    typeIn: RAW,
+    typeOut: V1,
+    reason: "negative te-form",
+    minStem: 1,
+    stemEnd: V1_STEM,
+  },
+  { from: "しなくて", to: "する", typeIn: RAW, typeOut: SURU, reason: "negative te-form" },
+  { from: "こなくて", to: "くる", typeIn: RAW, typeOut: KURU, reason: "negative te-form" },
+
   // ── Generic te-iru forms (works across verb types after te-form resolution) ──
   { from: "ている", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru" },
   { from: "てる", to: "て", typeIn: ANY, typeOut: ANY, reason: "te-iru (casual)" },
@@ -628,6 +708,7 @@ export function deinflect(word: string): DeinflectCandidate[] {
       const stemLen = current.word.length - rule.from.length;
       if (stemLen + rule.to.length <= 0) continue;
       if (rule.minStem != null && stemLen < rule.minStem) continue;
+      if (rule.stemEnd && !rule.stemEnd.test(current.word[stemLen - 1] ?? "")) continue;
       if (!(current.typeMask & rule.typeIn)) continue;
 
       const base = current.word.slice(0, stemLen) + rule.to;

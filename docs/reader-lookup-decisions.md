@@ -861,7 +861,56 @@ take a past. That was reading **any** entry with an `exp` sense as classless,
 and 棒 is `n,exp` — so ぼって was painted across the corpus as a te-form of the
 noun 棒. `exp` now has to be the only class recorded.
 
-### Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
+#### Negative ～ぬ, ～なく and ～なくて
+
+Reported from a novel: 広げた風呂敷を**畳まぬ**ようなもの printed じょう over 畳
+and answered the tap with the mat たたみ, and 散歩に**誘わなく**なった printed
+いざな — a girl's name out of JMnedict — and answered nothing at all. Neither
+form was in the rule table.
+
+- **～ぬ** is the ～ない of literary prose, parallel to the ～ず rules above and
+  spelled out the same way per godan row, plus ichidan, する and くる.
+- **～なく / ～なくて** is that negative's adverbial and its te-form, the half of
+  誘わなくなった that is a verb. The adjective rule く→い already reaches 誘わない
+  and stops there: nothing is spelled that way, and it types the result ADJ so
+  no verb rule can follow it.
+
+Three guards, each from a measured failure:
+
+- **`typeIn: RAW` on every one of them.** ～ぬ is also a verb ending — the
+  te-form rule んで→ぬ makes たくさんで a ぬ-verb — so without it a second pass
+  strips the ending the first one produced: たくさんで answered 託す, んです
+  answered 酢, and 〜れたんだ answered 劣. All four of those vanish with RAW.
+- **`stemEnd: V1_STEM` on the three bare ichidan rules**, a new field holding
+  what the character before the ending has to be. お小遣い**が**なくて is a
+  particle and ない, but が passes a length floor, so the bare rule reached がる
+  and answered a particle with a verb (4 taps). Only an え/い-row kana or a
+  kanji can be an ichidan stem; が is あ-row.
+- **`minStem: 1` on the row rules, and none on せぬ / こぬ / しなく / こなく**,
+  which are whole words with no stem at all. The test caught that: せぬ reached
+  せる and す but never する.
+
+Measured. **Tap sweep: 33 of 3,772 corpus taps change.** 21 are the point —
+知らぬ→知る (was 糠, 等, 知/ち), 知れぬ→知れる, 切れぬ→切れる, 消えぬ→消える,
+使えぬ→使う, 出揃わぬ→出揃う, 出なく→出る. **Furigana sweep: 44 of 67,299
+surfaces gain a reading, 0 lose one, 0 read differently** — 似ぬ, 心得ぬ,
+思えぬ, 分らなく, 聞かなくて, 鳴らなくて and the rest. Gate 98.0%, 128
+disagreeing pairs → **126**.
+
+**Accepted regressions**, all read in that diff:
+
+- 何にもせぬ (5 taps). おやじは何にもせぬ男で: the span now swallows せぬ and
+  shows 何にも, because せぬ→する→the suru-noun rule lands back on 何にも. The
+  entry shown is still the right one and two of those taps were junk before
+  (燃やす for せ); the ideal split, 何にも + する, needs the suru-noun rule to
+  refuse a negative it did not undo itself.
+- はせぬ → 蓮/はす (3 taps). そんな依怙贔負はせぬ男だ is は + せぬ. Junk for junk:
+  it answered 蓮 in its imperative before.
+- なくなった → ナウ (3 taps). 水が出なくなった now answers 出なく on the first
+  three characters, which is right, and the ナウ is what tapping the leftover
+  なった already gave everywhere else.
+
+## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 
 The fourth case above, 敷きこんで, is not the guard. The dictionary has no
 敷き込む, and きこんで (four characters, squared: 16) beats 敷き + こんで
