@@ -584,8 +584,27 @@ export function nameReadingDominance(
   return { share: (best.freq ?? 0) / total, total };
 }
 
-/** The single-kana particles, the only kana a name's tail is mistaken for. */
-const PARTICLE_KANA = new Set(["の", "が", "を", "に", "は", "へ", "と", "も", "や", "か"]);
+/**
+ * The single-kana particles, the only kana a name's tail is mistaken for.
+ * ね, よ and さ earn their place: they take 17 more junk name readings off
+ * kanji (多ね, 晴さ, 嘉よ) and lose none. で is a no-op — no name spelling
+ * ends in kanji + で.
+ */
+const PARTICLE_KANA = new Set([
+  "の",
+  "が",
+  "を",
+  "に",
+  "は",
+  "へ",
+  "と",
+  "も",
+  "や",
+  "か",
+  "ね",
+  "よ",
+  "さ",
+]);
 
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
   // 四十三 and 五十八 are given names in JMnedict and numbers everywhere else.

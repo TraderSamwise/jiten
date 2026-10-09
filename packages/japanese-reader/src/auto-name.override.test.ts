@@ -86,6 +86,17 @@ describe.skipIf(!hasBothDbs)("a two-kanji surname under the finger", () => {
     expect((await tap("食事中電話が鳴った", 2))?.matchedText).not.toBe("中電");
   });
 
+  // 東京|市 is not the given name きょういち. The counts cannot tell a straddle
+  // from a surname — 京市 and 定家 are both one sighting — but the text can.
+  it("refuses a two-kanji name that cuts a word in half", async () => {
+    expect((await tap("これにより東京府と東京市が廃止され", 11))?.lookupKind).not.toBe("name");
+    expect((await tap("その他の外来音を含める場合は", 6))?.lookupKind).not.toBe("name");
+  });
+
+  it("leaves a longer name alone, which overlaps words all the time", async () => {
+    expect((await tap("云うならフランクリンの自伝", 4))?.matchedText).toBe("フランクリン");
+  });
+
   it("answers a count with the counter, not with a name", async () => {
     expect((await tap("鳥が二羽いた。", 3))?.lookupKind).not.toBe("name");
     expect((await tap("全三巻を買った。", 2))?.lookupKind).not.toBe("name");

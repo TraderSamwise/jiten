@@ -4,6 +4,7 @@ import {
   AUTO_DUAL_MIN_MATCH_LENGTH,
   AUTO_NAME_DUAL_CONFIDENCE,
   AUTO_NAME_ONLY_CONFIDENCE,
+  AUTO_NAME_OVERRIDE_MIN_LENGTH,
   AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE,
   computeAutoNameConfidence,
   nameMayOverrideShorterWord,
@@ -748,6 +749,7 @@ function scoreTapCandidate(
 function chooseAutoLookupVariants(
   wordResult: LookupResult,
   nameResults: LookupResult[],
+  nameCutsAWord = false,
 ): LookupResult[] {
   const taggedWord = asWordLookupResult(wordResult);
   if (nameResults.length === 0) return [taggedWord];
@@ -780,10 +782,16 @@ function chooseAutoLookupVariants(
       : AUTO_NAME_ONLY_CONFIDENCE;
 
   const nameIsLonger = bestName.matchedText.length > taggedWord.matchedText.length;
+  // The cut test is for the counted two-kanji override only. A longer name
+  // overlaps an ordinary word all the time — フランクリン contains フランク,
+  // ゴルキ contains ゴ — and asking it there costs real names.
+  const cutsAWord =
+    nameCutsAWord && [...bestName.matchedText].length < AUTO_NAME_OVERRIDE_MIN_LENGTH;
   if (
     nameIsLonger &&
     (nameConfidence >= nameOnlyConfidence ||
-      (nameSpellingIsSurface(bestName) &&
+      (!cutsAWord &&
+        nameSpellingIsSurface(bestName) &&
         nameMayOverrideShorterWord(bestName.matchedText, bestName.nameMatches?.[0]?.freq)))
   ) {
     return taggedNames;
@@ -846,9 +854,45 @@ function attachAutoSelectionAlternates(
   });
 }
 
+/**
+ * Whether a span cuts a word at either end — 東京|市 for 京市, 外来|音 for 来音.
+ *
+ * The counts cannot tell a straddle from a surname: 京市 and 定家 are both one
+ * sighting and only one of them is a name. The text can. This is the question
+ * `findOkuriganaStarts` asks of kana, asked of kanji, and only common entries
+ * answer it, because a rare one vouching for a boundary is how 滝山 would lose
+ * to 山城.
+ */
+async function spanCutsAWord(
+  text: string,
+  start: number,
+  length: number,
+  lookupMany: (words: string[]) => Promise<Map<string, ReaderDictEntry[]>>,
+): Promise<boolean> {
+  const end = start + length;
+  const words: string[] = [];
+  for (let reach = 1; reach <= 3; reach++) {
+    for (let into = 1; into <= 3; into++) {
+      if (start - reach >= 0 && start + into <= text.length) {
+        words.push(text.slice(start - reach, start + into));
+      }
+      if (end + reach <= text.length && end - into >= 0) {
+        words.push(text.slice(end - into, end + reach));
+      }
+    }
+  }
+  if (words.length === 0) return false;
+  const found = await lookupMany([...new Set(words)]);
+  for (const entries of found.values()) {
+    if (entries.some((entry) => entry.common)) return true;
+  }
+  return false;
+}
+
 export function chooseAutoLookupResults(
   wordResults: LookupResult[],
   nameResults: LookupResult[],
+  nameCutsAWord = false,
 ): LookupResult[] {
   const taggedWordResults = wordResults.map(asWordLookupResult);
   const taggedNameResults = nameResults.map(asNameLookupResult);
@@ -856,7 +900,7 @@ export function chooseAutoLookupResults(
   if (taggedWordResults.length === 0) return taggedNameResults;
   if (taggedNameResults.length === 0) return taggedWordResults;
 
-  const variants = chooseAutoLookupVariants(taggedWordResults[0], taggedNameResults);
+  const variants = chooseAutoLookupVariants(taggedWordResults[0], taggedNameResults, nameCutsAWord);
   if (variants.length <= 1) {
     return variants[0]?.lookupKind === "name" ? taggedNameResults : taggedWordResults;
   }
@@ -1052,10 +1096,13 @@ async function findFirstWord(
       const guessed = candidateIsGuess(candidate);
       if (guessed && literalMatched) continue;
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      // Raised by the literal itself, not by what is left after the entries
+      // already shown are removed: a literal whose entries were all shown is
+      // still a reading that needed no guess.
+      if (!guessed && allEntries.length > 0) literalMatched = true;
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
-        if (!guessed) literalMatched = true;
         const sortedEntries = sortEntriesForMatchedSurface(
           newEntries,
           substr,
@@ -1127,10 +1174,10 @@ async function findBoundaryWord(
         const guessed = candidateIsGuess(candidate);
         if (guessed && literalMatched) continue;
         const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+        if (!guessed && allEntries.length > 0) literalMatched = true;
         const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
         if (newEntries.length > 0) {
-          if (!guessed) literalMatched = true;
           const sortedEntries = sortEntriesForMatchedSurface(
             newEntries,
             substr,
@@ -1191,11 +1238,11 @@ export async function smartLookup(
       const guessed = candidateIsGuess(candidate);
       if (guessed && literalMatched) continue;
       const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      if (!guessed && allEntries.length > 0) literalMatched = true;
 
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
-        if (!guessed) literalMatched = true;
         const sortedEntries = sortEntriesForMatchedSurface(
           newEntries,
           substr,
@@ -1343,11 +1390,12 @@ export async function smartLookupWithOffset(
         // 何にもせぬ swallowed せぬ to answer the adverb 何にも.
         //
         // Only on the literary negatives, which is where the claim comes from.
-        // The same filter over every suru-noun strip moves 869 corpus taps and
-        // takes 直にしていれば from 直に to the broth 煮汁; over the contractions
-        // and particle swaps, which have their own filters above, it takes
-        // 虫の好かない from the phrase to 良く and すると to the particle と.
-        if (candidate.guessed) {
+        // Asking it of every deinflected candidate — the obvious generalisation
+        // — takes 正直にしていれば from 直に to nothing and 出たりはいったりして
+        // from 入る to 配流, because an adverb reached by stripping する is a
+        // perfectly good answer. Over the contractions and particle swaps,
+        // which have their own guards above, it takes 虫の好かない to 良く.
+        if (candidate.guessed && !candidate.particleSwapped) {
           entries = entries.filter((entry) => entryInflects(entry) || entryTakesSuru(entry));
         }
         if (entries.length > 0) {
@@ -1472,7 +1520,15 @@ export async function autoLookupWithOffset(
     smartLookupWithOffset(text, tapOffset, dictDb, extDb, okuriganaStarts),
     extDb ? nameLookupWithOffset(text, tapOffset, extDb, okuriganaStarts) : Promise.resolve([]),
   ]);
-  return chooseAutoLookupResults(wordResults, nameResults);
+  // 東京|市 is not きょういち. Only asked where a name could override, which is
+  // a minority of taps, and it is one batched lookup.
+  const topName = nameResults[0];
+  const cutsAWord =
+    topName?.matchStart != null &&
+    (await spanCutsAWord(text, topName.matchStart, topName.matchedText.length, (words) =>
+      lookupExactJapaneseMany(dictDb, words),
+    ));
+  return chooseAutoLookupResults(wordResults, nameResults, cutsAWord);
 }
 
 export async function autoSelectionLookup(

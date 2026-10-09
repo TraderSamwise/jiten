@@ -944,7 +944,7 @@ whole — **37,411 taps**, every character of `test/corpus/bocchan.txt`, this
 branch against `origin/master`:
 
 - **Word mode: 233 change**, 126 distinct transitions, all read.
-- **Auto mode: 2,036 change** — 1,752 a kana run that was answered with a
+- **Auto mode: 2,050 change** — 1,766 a kana run that was answered with a
   JMnedict name and is now answered with a word, 220 the word-mode changes, 60
   a real name the tap used to answer with a single kanji, 2 lateral.
 - **`yarn check:tap-consistency`: 128 disagreeing pairs → 125.** The per-commit
@@ -978,6 +978,11 @@ records:
   勘当**すると** → と (4), 心配**しようと** → と (2), **しろと** → と (2),
   **したく** → くらい, **したに** → に, **したて** → て (3 between them). Same
   shape: a suru-verb's own kana closing a position a longer entry wanted.
+- まだ**寝ぬ** → 寝ぬ/いぬ, an all-`arch` classical entry, where it used to reach
+  寝る. The sole case in 34,527 synthetic ～ぬ/～なく surfaces built from every
+  v5/v1 entry; the other ten literal-entry wins (叶わぬ, 思わぬ, 変わらぬ,
+  漏れなく) are improvements. Letting an archaic literal lose to a guess would
+  clear it, and nobody has measured that rule.
 - 足音**もしなく** → 模する (2). もする is a real suru verb, so both filters pass
   it; `origin/master` answered もし there, which is no better. A commonness
   requirement would clear it and would cost 出揃わぬ, which is uncommon and
@@ -1026,6 +1031,11 @@ population (7,467 spellings) the narrowed guard changes 308 and loses **none**,
 against 2,785 changed and 33 lost for the wide one; 帝国ホテル, 龍ヶ嶽トンネル,
 三条通り, お染め, 晴み and 鉞り are all back to what they read before.
 
+**ね, よ and さ are in the set too**, which review measured at 17 more junk name
+readings going away (多ね, 晴さ, 嘉よ, 寧ね, 理さ, 里よ) and none lost. で earns no
+place: no name spelling ends in a kanji plus で. The corpus is neutral to all of
+them — the 13 surfaces it moves are the の cases.
+
 **Accepted, and inherited rather than introduced:** a handful of single-kanji
 given names spelled with one trailing particle still lose — 秋を (Akio) reads
 秋【とき】を. All carry a frequency of 1 or 2, and the fallback is the kanji's
@@ -1070,8 +1080,35 @@ twice, and each returned as the _only_ result with no word to fall back to. A
 span carrying a kanji numeral now needs **three** sightings rather than one
 (`AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ`). That clears every one of those at 1–2
 and costs nothing real: 一郎 is 393, 三郎 334, 七海 38, and the corpus diff is
-unmoved at 12. 1,334 of the 2,242 numeral-carrying two-kanji spellings lose the
+unmoved at 12. The floor is asked **before** the three-character shortcut, or
+千万人 (no sightings at all) and 東洋一 ride in on length alone; over the corpus
+that takes 五畳敷, 二十歩, 五十人 and 五万石 off the name walk, counts in all 14
+of their taps. 1,334 of the 2,242 numeral-carrying two-kanji spellings lose the
 override; 908 keep it.
+
+**A name may not cut a word in half.** Reviewed against 236,778 characters of
+modern prose rather than Bocchan — Wikipedia, bibliography-dense, the hardest
+case for a name walk — the counted override answered 東京府と東京**市** with the
+given name きょういち (15 taps), 外来**音** with らいね, 提出**元** with でもと and
+分野**別** with のべつ: 45 wrong taps in 2,556, every one a span cutting a word
+the walk already knew about (東京|市, 外来|音, 提出|元). The counts cannot
+separate those from a surname — 京市 and 定家 are both one sighting and only one
+is a name — but the surrounding text can, which is the question
+`findOkuriganaStarts` asks of kana asked of kanji: a **common** entry that
+covers the span's first character and starts before it, or its last and ends
+after it, three characters out either way (`spanCutsAWord`).
+
+Measured on the reviewer's 20 real-prose straddles and 42 confirmed wins: it
+refuses **11 of 20** straddles and loses **0 of 42** wins — 西條, 堀田, 華山,
+吉川, 浅井, 茂作, 箱根, 小倉, 古賀, 池上, 定家, 鈴木, 佐藤 all keep theirs. Only
+common entries answer, because any entry at reach 3 refuses 14 and costs 滝山
+(to 山城) and 家康 (to 徳川家). The nine it still allows are a name cutting
+another name — 杉[藤]美代子, 桜[井]茂治 — where the neighbour is in no dictionary
+at all, and catching those would be one name vouching for another.
+
+**Only for the two-kanji override.** A longer name overlaps an ordinary word all
+the time: asking the same question of every override takes フランクリン to
+フランク and ゴルキ to ゴ, 125 taps of real names in this corpus alone.
 
 **The bound, recorded because it is much wider than the two straddles above.**
 **36,405** two-kanji spellings that are not dictionary words now outrank a

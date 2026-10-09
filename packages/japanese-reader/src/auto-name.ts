@@ -42,12 +42,14 @@ export function nameMayOverrideShorterWord(
   topFreq: number | null | undefined,
 ): boolean {
   const chars = [...matchedText];
-  if (chars.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH) return true;
   if (chars.length < AUTO_NAME_OVERRIDE_COUNTED_LENGTH) return false;
-  const floor = chars.some((ch) => KANJI_NUMERALS.has(ch))
-    ? AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ
-    : AUTO_NAME_OVERRIDE_MIN_FREQ;
-  return (topFreq ?? 0) >= floor;
+  // Asked before the length shortcut, or 千万人 and 東洋一 ride in on it with
+  // no sightings at all.
+  if (chars.some((ch) => KANJI_NUMERALS.has(ch))) {
+    return (topFreq ?? 0) >= AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ;
+  }
+  if (chars.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH) return true;
+  return (topFreq ?? 0) >= AUTO_NAME_OVERRIDE_MIN_FREQ;
 }
 
 export interface AutoNameWordCandidate {

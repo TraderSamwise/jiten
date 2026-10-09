@@ -44,6 +44,10 @@ describe("negative ～ぬ", () => {
     expect(bases("飲んで")).not.toContain("飲る");
     expect(bases("読んで")).not.toContain("読る");
     expect(bases("言われたんだ")).not.toContain("言われつ");
+    // ANY includes RAW, so a rule that emits it used to hand the next one a
+    // surface that was never written: よぎなくさせる reached 余儀る three rules
+    // deep, through the suru-noun strip.
+    expect(bases("よぎなくさせる")).not.toContain("よぎる");
     // 死る is the ichidan rule reading 死 as a stem. No dictionary holds it, so
     // it costs a lookup and nothing else; 死ぬ keeps answering as itself.
     expect(bases("死ぬ")).toEqual(["死ぬ", "死る"]);

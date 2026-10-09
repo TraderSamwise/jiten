@@ -87,6 +87,14 @@ describe.skipIf(!hasBothDbs)("what a guess is allowed to land on", () => {
     expect((await word("出たりはいったりして、よう", 5))?.entries[0]?.kanji[0]?.text).toBe("入る");
   });
 
+  // The gate itself, not the entry filter: でなく and 弛まぬ are entries, and
+  // the walk must stop asking once a reading that needed no guess matched.
+  it("stops at a reading that needed no guess", async () => {
+    expect((await word("問題でなく単なる誤解だ", 2))?.entries[0]?.kanji[0]?.text).toBe("で無い");
+    expect((await word("弛まぬ努力を続けた", 0))?.entries[0]?.kanji[0]?.text).toBe("弛まぬ");
+    expect((await word("馬がいななく声がした", 2))?.entries[0]?.kanji[0]?.text).toBe("嘶く");
+  });
+
   it("still lets a guess speak when it lands on a verb", async () => {
     expect((await word("心配しなくてもいいと云い", 0))?.matchedText).toBe("心配しなくて");
     expect((await word("散歩に誘わなくなった", 3))?.matchedText).toBe("誘わなく");
