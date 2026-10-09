@@ -943,7 +943,7 @@ slice, not the corpus, and that the whole file is four times that. Measured
 whole — **37,411 taps**, every character of `test/corpus/bocchan.txt`, this
 branch against `origin/master`:
 
-- **Word mode: 233 change**, 126 distinct transitions, all read.
+- **Word mode: 232 change**, all read.
 - **Auto mode: 2,050 change** — 1,766 a kana run that was answered with a
   JMnedict name and is now answered with a word, 220 the word-mode changes, 60
   a real name the tap used to answer with a single kanji, 2 lateral.
@@ -959,6 +959,23 @@ whatever stood in front — 釣や猟を**しなく**っちゃ answered the part
 swallowed せぬ to answer the adverb 何にも. A guess claims the surface is an
 inflected word, so the entry it lands on now has to be one (`entryInflects` or
 `entryTakesSuru`).
+
+**The flag is a question about the tap, not about one span.** It was declared
+inside the per-length loop, so a guess was only ever compared with a literal at
+the _same_ characters — and a common guess one character in then outscores a
+rare longer literal, because commonness pays 120 and the extra character 100.
+要求に**こたえられなく** answered 耐える off たえられなく, having thrown away
+こたえる (応える, the reading the sentence wants) at its own span. Hoisted to tap
+scope, where the walk is longest-first so the longer literal is always seen
+first: **one corpus tap changes** (かもしれぬ → もし, which is what master
+answers), and the gate reads 125.
+
+A flat −150 score penalty instead of the skip was measured and is the wrong
+shape: it reverts six of the ～ぬ wins and breaks 手はない, 訳はない and 気はせく,
+gate 131. The scope was the bug, not the strength.
+
+**The filter runs in every walk**, not only the tap: a drag answered
+釣や猟を**しなく**っちゃ with the particle を long after the tap stopped doing it.
 
 **That filter is on the literary negatives only, and the scope was measured
 twice.** Over every suru-noun strip it moves 869 taps and takes
@@ -1163,6 +1180,16 @@ JMnedict name and is now answered with a word**: たから→から (24 taps),
 tail that reaches real words — いなが→云い, きなが→泣き, きでな→好き,
 みもな→望み, しもなか→少しも, うがい→使う. Two are lateral (いなひと→ひとは,
 junk either way). Gate 126 disagreeing pairs → **123**.
+
+**Open, and pre-existing: a deinflected candidate that is not a guess is still
+accepted on the dictionary alone.** Nothing requires the entry to be a word that
+could have carried the inflection, so a past or a negative lands on a noun:
+なった → ナウ (adj-na), 安心したらしかった → 死活, 選ばなくてはならない → 離る
+(a classical bigrade verb that cannot take modern ない), といった → と言う (exp).
+The obvious filter is in the file already (`entryInflects`) and the obvious
+scope — every candidate with a reason — was measured here and rejected, because
+an adverb reached by stripping する is a perfectly good answer. A narrower scope
+that exempts the suru-noun step has not been measured.
 
 **What this does not fix:** めだった still answers 目立つ. ため is a noun, so
 its め is not okurigana and nothing proves the position closed; separating that

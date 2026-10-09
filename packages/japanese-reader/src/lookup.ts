@@ -44,6 +44,23 @@ interface EntrySortContext {
 type KanjiReadingRecord = Awaited<ReturnType<typeof getKanjiAsync>>;
 
 /**
+ * What a guess is allowed to land on. Undoing one of the literary negatives
+ * claims the surface is an inflected word, so the entry has to be one: the
+ * ～なく rules otherwise reach する, the suru-noun strip hands back whatever
+ * stood in front of it, and 釣や猟をしなくっちゃ answers the particle を.
+ *
+ * Not for a particle swap, which is not an inflection and has its own guard —
+ * 虫が好かない is `exp` and nothing else.
+ */
+function entriesAGuessMayLandOn(
+  candidate: TapCandidate,
+  entries: ReaderDictEntry[],
+): ReaderDictEntry[] {
+  if (!candidate.guessed || candidate.particleSwapped) return entries;
+  return entries.filter((entry) => entryInflects(entry) || entryTakesSuru(entry));
+}
+
+/**
  * Undoing a contraction, swapping a particle and the literary negatives are
  * all guesses about what the page meant, and a reading that needs no guess
  * wins first — so a guess only speaks when the span found nothing else.
@@ -977,7 +994,10 @@ export async function selectionLookup(
         for (const candidate of candidates) {
           const guessed = candidateIsGuess(candidate);
           if (guessed && literalMatched) continue;
-          const entries = await lookupExactJapanese(dictDb, candidate.word);
+          const entries = entriesAGuessMayLandOn(
+            candidate,
+            await lookupExactJapanese(dictDb, candidate.word),
+          );
           if (entries.length > 0) {
             if (!guessed) literalMatched = true;
             const sortedEntries = sortEntriesForMatchedSurface(
@@ -1099,7 +1119,10 @@ async function findFirstWord(
     for (const candidate of candidates) {
       const guessed = candidateIsGuess(candidate);
       if (guessed && literalMatched) continue;
-      const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      const allEntries = entriesAGuessMayLandOn(
+        candidate,
+        await lookupExactJapanese(dictDb, candidate.word),
+      );
       // Raised by the literal itself, not by what is left after the entries
       // already shown are removed: a literal whose entries were all shown is
       // still a reading that needed no guess.
@@ -1177,7 +1200,10 @@ async function findBoundaryWord(
       for (const candidate of candidates) {
         const guessed = candidateIsGuess(candidate);
         if (guessed && literalMatched) continue;
-        const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+        const allEntries = entriesAGuessMayLandOn(
+          candidate,
+          await lookupExactJapanese(dictDb, candidate.word),
+        );
         if (!guessed && allEntries.length > 0) literalMatched = true;
         const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
@@ -1241,7 +1267,10 @@ export async function smartLookup(
     for (const candidate of candidates) {
       const guessed = candidateIsGuess(candidate);
       if (guessed && literalMatched) continue;
-      const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      const allEntries = entriesAGuessMayLandOn(
+        candidate,
+        await lookupExactJapanese(dictDb, candidate.word),
+      );
       if (!guessed && allEntries.length > 0) literalMatched = true;
 
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
@@ -1323,6 +1352,12 @@ export async function smartLookupWithOffset(
     (await findOkuriganaStarts(text, tapOffset, prefetch, lookupOnce));
   let bestOverall: { result: LookupResult; score: number; length: number; start: number } | null =
     null;
+  // Tap scope, not span scope. Per span, a guess is only ever compared with a
+  // literal at the SAME characters, and a common guess one character in then
+  // outscores a rare longer literal — commonness pays 120, the extra character
+  // 100 — so 要求にこたえられなく answered 耐える off たえられなく. The walk is
+  // longest-first, so the longer literal is always seen first.
+  let literalMatched = false;
 
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     // Valid start positions: substring must contain the tap position
@@ -1364,7 +1399,6 @@ export async function smartLookupWithOffset(
       // span as written found nothing — にしては is an entry in its own right
       // and must not be answered with にしても, which merely happens to be the
       // commoner of the two.
-      let literalMatched = false;
       for (const candidate of candidates) {
         const guessed = candidateIsGuess(candidate);
         if (guessed && literalMatched) continue;
@@ -1393,15 +1427,11 @@ export async function smartLookupWithOffset(
         // しなくっちゃ answered the particle を, ものでなくっちゃ answered ので,
         // 何にもせぬ swallowed せぬ to answer the adverb 何にも.
         //
-        // Only on the literary negatives, which is where the claim comes from.
-        // Asking it of every deinflected candidate — the obvious generalisation
-        // — takes 正直にしていれば from 直に to nothing and 出たりはいったりして
-        // from 入る to 配流, because an adverb reached by stripping する is a
-        // perfectly good answer. Over the contractions and particle swaps,
-        // which have their own guards above, it takes 虫の好かない to 良く.
-        if (candidate.guessed && !candidate.particleSwapped) {
-          entries = entries.filter((entry) => entryInflects(entry) || entryTakesSuru(entry));
-        }
+        // Asking this of every deinflected candidate — the obvious
+        // generalisation — takes 正直にしていれば from 直に to nothing and
+        // 出たりはいったりして from 入る to 配流, because an adverb reached by
+        // stripping する is a perfectly good answer.
+        entries = entriesAGuessMayLandOn(candidate, entries);
         if (entries.length > 0) {
           let sortedEntries = sortEntriesForMatchedSurface(
             entries,
