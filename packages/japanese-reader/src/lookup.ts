@@ -874,6 +874,20 @@ export async function selectionLookup(
     options?.extendedDb,
   );
 
+  // A drag says where the word ends. チェーン展開 is the longer word, but a
+  // selection of 展開 is a question about 展開, so what the selection itself
+  // spells is answered first and the expansion below lands under it.
+  const exactSelection = await lookupExactJapanese(dictDb, trimmed);
+  if (exactSelection.length > 0) {
+    onResult(
+      asWordLookupResult({
+        matchedText: trimmed,
+        entries: sortEntriesForMatchedSurface(exactSelection, trimmed, counterHints.get(trimmed)),
+        deinflectReasons: [],
+      }),
+    );
+  }
+
   // Expansion step: try substrings of expanded text that fully contain the selection
   if (prefix.length > 0 || suffix.length > 0) {
     const expanded = prefix + trimmed + suffix;
@@ -925,23 +939,7 @@ export async function selectionLookup(
     }
   }
 
-  // Try the full selected text as a single lookup first
-  const fullEntries = await lookupExactJapanese(dictDb, trimmed);
-  if (fullEntries.length > 0) {
-    const sortedEntries = sortEntriesForMatchedSurface(
-      fullEntries,
-      trimmed,
-      counterHints.get(trimmed),
-    );
-    onResult(
-      asWordLookupResult({
-        matchedText: trimmed,
-        entries: sortedEntries,
-        deinflectReasons: [],
-      }),
-    );
-    return;
-  }
+  if (exactSelection.length > 0) return;
 
   // Try deinflecting the full selected text
   const fullCandidates = deinflect(trimmed);

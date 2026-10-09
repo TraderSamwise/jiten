@@ -1003,6 +1003,36 @@ junk either way). Gate 126 disagreeing pairs → **123**.
 its め is not okurigana and nothing proves the position closed; separating that
 from a real word boundary needs segmentation, not a rule.
 
+### A drag selection is answered with what it selected, first
+
+Selecting **展開** in チェーン展開の新古書店 answered チェーン展開. The expansion
+step — which tries substrings of the selection plus ten characters either side,
+longest first — runs before anything else and returns on its first hit, so a
+selection that is itself a word was never asked about. Reported as: "when I
+drag EXACTLY a region I want the lookup restricted to that region, the opposite
+of greedy walking both directions when I just tap."
+
+A tap has no boundary, so it has to guess one. A drag is the boundary. The
+selection's own spelling is now looked up first and emitted first, and the
+expansion still runs and lands under it:
+
+| selected               | prefix / suffix       | was                          | now                         |
+| ---------------------- | --------------------- | ---------------------------- | --------------------------- |
+| 展開                   | チェーン / の新古書店 | チェーン展開                 | **展開**, then チェーン展開 |
+| べた                   | 食 / 。               | 食べた                       | **べた**, then 食べた       |
+| 色い                   | 茶 / シャツ           | 茶色い                       | 茶色い                      |
+| くもない               | 若 / という           | 若くもない                   | 若くもない                  |
+| 若くもないというのに姿 | / 勢がよく            | 若くもない・というのに・姿勢 | unchanged                   |
+
+Nothing is lost: a selection that is not a word still reaches past its own
+edges, and a long selection still walks word by word with the suffix attached,
+which is what 姿 → 姿勢 depends on.
+
+**The selection cases in `lib/smart-lookup.test.ts` re-implement the walk** in
+the test file rather than calling it, so they cannot see this change at all —
+they pass before and after. `lookup.selection.test.ts` runs the shipping
+function.
+
 ## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 
 The fourth case above, 敷きこんで, is not the guard. The dictionary has no
