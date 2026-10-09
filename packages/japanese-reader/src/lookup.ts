@@ -940,7 +940,11 @@ export async function selectionLookup(
   // A drag says where the word ends. チェーン展開 is the longer word, but a
   // selection of 展開 is a question about 展開, so what the selection itself
   // spells is answered first and the expansion below lands under it.
-  const exactSelection = await lookupExactJapanese(dictDb, trimmed);
+  //
+  // Two characters, because one is not a boundary anybody drew on purpose —
+  // the reader emits a selection for a single character, and 注|意 would then
+  // answer 意 ahead of 注意, which is what the expansion is for.
+  const exactSelection = [...trimmed].length >= 2 ? await lookupExactJapanese(dictDb, trimmed) : [];
   if (exactSelection.length > 0) {
     onResult(
       asWordLookupResult({

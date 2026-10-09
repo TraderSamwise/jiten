@@ -58,6 +58,13 @@ describe.skipIf(!hasBothDbs)("a selection that is itself a word", () => {
     expect(await select("べた", "食", "。")).toEqual(["べた", "食べた"]);
   });
 
+  // A one-character drag is not a boundary anybody drew: the reader emits a
+  // selection for a single character, and the expansion is what it is for.
+  it("does not apply to a one-character drag", async () => {
+    expect(await select("意", "注", "にも程がある")).toEqual(["注意"]);
+    expect(await select("本", "日", "の文化")).toEqual(["日本"]);
+  });
+
   it("does not repeat itself when nothing longer is there", async () => {
     expect(await select("散歩", "の", "に誘わ")).toEqual(["散歩"]);
   });

@@ -1199,6 +1199,13 @@ they pass before and after. `lookup.selection.test.ts` runs the shipping
 function — including `autoSelectionLookup`, which is what the reader's default
 mode actually calls and which nothing covered until review said so.
 
+**A one-character drag does not count.** The reader emits a selection for a
+single character (`touch.ts` fires on any non-empty range), and "the selection
+first" there answers 意 ahead of 注意, 本 ahead of 日本, 気 ahead of 人気のある —
+and in auto mode the primary result loses its name alternate too, because those
+are attached per matched text. Two characters is the length at which a drag
+says something the tap walk could not.
+
 **The expansion step had no literal-first gate either**, which is where the
 negative rules above would have spoken over an entry on a drag. It has one now,
 as do `findFirstWord` and `findBoundaryWord`.
