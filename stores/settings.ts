@@ -68,7 +68,7 @@ export const defaultSettings = Object.freeze({
   flashcardSwipeAnimation: true as boolean,
   flashcardButtonAnimation: true as boolean,
   dayResetHour: 3 as number,
-  smartReviewDays: 7 as number,
+  smartReviewDays: 7 as number | null,
 });
 
 export type AppSettings = typeof defaultSettings;

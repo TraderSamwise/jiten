@@ -20,6 +20,38 @@ export const AUTO_NAME_DUAL_CONFIDENCE = 45;
  */
 export const AUTO_NAME_OVERRIDE_MIN_LENGTH = 3;
 
+/**
+ * What that floor costs is two-kanji surnames, and the counts can pay it back:
+ * 西條 is さいじょう in 24 sightings, while 田先 and 中電 — the straddles the
+ * floor exists for — have never been observed as names at all.
+ */
+export const AUTO_NAME_OVERRIDE_COUNTED_LENGTH = 2;
+export const AUTO_NAME_OVERRIDE_MIN_FREQ = 1;
+/**
+ * What a span carrying a numeral has to show instead. 二羽 is two birds, 三巻
+ * is volume three and 三章 is chapter three, and each is also a name somebody
+ * has been seen with once or twice — so a number is a count until the counts
+ * say otherwise. 一郎 (393), 七海 (38) and 三郎 (334) clear this comfortably.
+ */
+export const AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ = 3;
+
+const KANJI_NUMERALS = new Set([..."一二三四五六七八九十百千万億〇零壱弐参"]);
+
+export function nameMayOverrideShorterWord(
+  matchedText: string,
+  topFreq: number | null | undefined,
+): boolean {
+  const chars = [...matchedText];
+  if (chars.length < AUTO_NAME_OVERRIDE_COUNTED_LENGTH) return false;
+  // Asked before the length shortcut, or 千万人 and 東洋一 ride in on it with
+  // no sightings at all.
+  if (chars.some((ch) => KANJI_NUMERALS.has(ch))) {
+    return (topFreq ?? 0) >= AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ;
+  }
+  if (chars.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH) return true;
+  return (topFreq ?? 0) >= AUTO_NAME_OVERRIDE_MIN_FREQ;
+}
+
 export interface AutoNameWordCandidate {
   matchedText: string;
   exactSurface: boolean;

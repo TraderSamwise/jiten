@@ -7,6 +7,7 @@ import {
   AUTO_NAME_OVERRIDE_MIN_LENGTH,
   AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE,
   computeAutoNameConfidence,
+  nameMayOverrideShorterWord,
   shouldShowBothAutoResults,
   type AutoNameNameCandidate,
   type AutoNameWordCandidate,
@@ -14,6 +15,7 @@ import {
 import type { ReaderSqlDb } from "./backend";
 import {
   CONTRACTION_REASONS,
+  SURU_NOUN_REASON,
   deinflect,
   generateSubstrings,
   kanaSpellings,
@@ -41,12 +43,48 @@ interface EntrySortContext {
 
 type KanjiReadingRecord = Awaited<ReturnType<typeof getKanjiAsync>>;
 
+/**
+ * What a guess is allowed to land on. Undoing one of the literary negatives
+ * claims the surface is an inflected word, so the entry has to be one: the
+ * ～なく rules otherwise reach する, the suru-noun strip hands back whatever
+ * stood in front of it, and 釣や猟をしなくっちゃ answers the particle を.
+ *
+ * Not for a particle swap, which is not an inflection and has its own guard —
+ * 虫が好かない is `exp` and nothing else.
+ */
+function entriesAGuessMayLandOn(
+  candidate: TapCandidate,
+  entries: ReaderDictEntry[],
+): ReaderDictEntry[] {
+  if (!candidate.guessed || candidate.particleSwapped) return entries;
+  return entries.filter((entry) => entryInflects(entry) || entryTakesSuru(entry));
+}
+
+/**
+ * Undoing a contraction, swapping a particle and the literary negatives are
+ * all guesses about what the page meant, and a reading that needs no guess
+ * wins first — so a guess only speaks when the span found nothing else.
+ */
+function candidateIsGuess(candidate: {
+  reasons: string[];
+  particleSwapped?: boolean;
+  guessed?: boolean;
+}): boolean {
+  return (
+    !!candidate.particleSwapped ||
+    !!candidate.guessed ||
+    candidate.reasons.some((reason) => CONTRACTION_REASONS.has(reason))
+  );
+}
+
 /** One spelling the tap walk will ask the dictionary about, and why. */
 interface TapCandidate {
   word: string;
   reasons: string[];
   spelledKanji?: string;
   particleSwapped?: boolean;
+  /** A rule on the way here was a guess — see `DeinflectRule.guess`. */
+  guessed?: boolean;
 }
 
 const DIGIT_TO_KANJI: Record<string, string> = {
@@ -345,6 +383,19 @@ function topWordExactSurfaceMatch(result: LookupResult): boolean {
   );
 }
 
+/**
+ * The surface is how a name is WRITTEN, not merely how one is read. ためだった
+ * holds the reading of 為田 and したから holds 多可良's, and a kana run that
+ * spells out a name — ひろし, たけし — is a spelling in its own right.
+ */
+function nameSpellingIsSurface(result: LookupResult): boolean {
+  return (
+    result.nameMatches?.some((name) =>
+      name.kanji ? name.kanji === result.matchedText : name.kana === result.matchedText,
+    ) ?? false
+  );
+}
+
 function topNameExactSurfaceMatch(result: LookupResult): boolean {
   return (
     result.nameMatches?.some(
@@ -550,6 +601,44 @@ async function lookupNegativeScopeParticleAtTap(
  * disagreement `yarn check:tap-consistency` measures.
  */
 /**
+ * One tap, one lookup per word. The walk asks for the same word from many
+ * overlapping substrings, and the kana spellings multiply that again.
+ */
+function makeEntryCache(dictDb: ReaderSqlDb) {
+  const entryCache = new Map<string, ReaderDictEntry[]>();
+  const lookupOnce = async (word: string): Promise<ReaderDictEntry[]> => {
+    const cached = entryCache.get(word);
+    if (cached) return cached;
+    const found = await lookupExactJapanese(dictDb, word);
+    entryCache.set(word, found);
+    return found;
+  };
+  /** Fill the cache for a whole length's candidates in one round trip. */
+  const prefetch = async (words: string[]): Promise<void> => {
+    const missing = [...new Set(words)].filter((word) => !entryCache.has(word));
+    if (missing.length === 0) return;
+    const found = await lookupExactJapaneseMany(dictDb, missing);
+    for (const word of missing) entryCache.set(word, found.get(word) ?? []);
+  };
+  return { lookupOnce, prefetch };
+}
+
+/**
+ * The positions a span may not begin at, for a tap the caller has not already
+ * resolved. Auto mode runs the word walk and the name walk side by side and
+ * both have to refuse the same starts, so it computes this once and hands it
+ * to each.
+ */
+export async function okuriganaStartsForTap(
+  text: string,
+  tapOffset: number,
+  dictDb: ReaderSqlDb,
+): Promise<Set<number>> {
+  const { lookupOnce, prefetch } = makeEntryCache(dictDb);
+  return findOkuriganaStarts(text, tapOffset, prefetch, lookupOnce);
+}
+
+/**
  * Positions where a candidate would begin inside a word rather than at one.
  *
  * Kana straight after a kanji is usually that kanji's okurigana — the ぬ of
@@ -566,12 +655,15 @@ async function findOkuriganaStarts(
   lookupOnce: (word: string) => Promise<ReaderDictEntry[]>,
 ): Promise<Set<number>> {
   const earliest = Math.max(1, tapOffset - 14 - MAX_OKURIGANA);
-  const tails: { first: number; ends: { end: number; words: string[] }[] }[] = [];
+  const tails: {
+    first: number;
+    ends: { end: number; words: { word: string; viaSuru: boolean }[] }[];
+  }[] = [];
   for (let first = earliest; first <= tapOffset; first++) {
     if (!isKanaChar(text[first]) || !isKanjiChar(text[first - 1])) continue;
     let head = first - 1;
     while (head > 0 && isKanjiChar(text[head - 1])) head--;
-    const ends: { end: number; words: string[] }[] = [];
+    const ends: { end: number; words: { word: string; viaSuru: boolean }[] }[] = [];
     for (let end = first; end < text.length && end < first + MAX_OKURIGANA; end++) {
       if (!isKanaChar(text[end])) break;
       ends.push({
@@ -579,24 +671,36 @@ async function findOkuriganaStarts(
         // One inflection step is the word conjugating itself. Two is a chain
         // through an auxiliary, which is a second word: 倒して is 倒す in its
         // te-form, but 倒してや reaches 倒す as well and would swallow やった.
+        // Stripping する off a suru-verb noun is not a second word: 赴任した
+        // reaches 赴任する, which no dictionary spells, and then 赴任, which
+        // every dictionary does. That step does not count towards the bound.
         words: deinflect(text.slice(head, end + 1))
-          .filter((candidate) => candidate.reasons.length <= 1)
-          .map((candidate) => candidate.word),
+          .filter(
+            (candidate) =>
+              candidate.reasons.filter((reason) => reason !== SURU_NOUN_REASON).length <= 1,
+          )
+          .map((candidate) => ({
+            word: candidate.word,
+            viaSuru: candidate.reasons.includes(SURU_NOUN_REASON),
+          })),
       });
     }
     if (ends.length > 0) tails.push({ first, ends });
   }
   if (tails.length === 0) return new Set();
 
-  await prefetch(tails.flatMap((tail) => tail.ends.flatMap((option) => option.words)));
+  await prefetch(
+    tails.flatMap((tail) => tail.ends.flatMap((option) => option.words.map((w) => w.word))),
+  );
   const starts = new Set<number>();
   for (const { first, ends } of tails) {
     // Longest first: the word decides how far its own tail runs, and taking the
     // shortest would leave the rest of the tail open to a span that cuts in.
     for (const { end, words } of [...ends].reverse()) {
       let inflects = false;
-      for (const word of words) {
-        if ((await lookupOnce(word)).some(entryInflects)) {
+      for (const { word, viaSuru } of words) {
+        const entries = await lookupOnce(word);
+        if (entries.some((entry) => entryInflects(entry) || (viaSuru && entryTakesSuru(entry)))) {
           inflects = true;
           break;
         }
@@ -611,6 +715,11 @@ async function findOkuriganaStarts(
 
 /** How far past a kanji a single word's kana tail is allowed to reach. */
 const MAX_OKURIGANA = 4;
+
+/** A noun that takes する: its し, した, して are the verb, not a particle. */
+function entryTakesSuru(entry: ReaderDictEntry): boolean {
+  return entry.senses.some((sense) => sense.partOfSpeech?.some((pos) => pos.startsWith("vs")));
+}
 
 /** Only an inflecting word has okurigana; a noun's trailing kana is a particle. */
 function entryInflects(entry: ReaderDictEntry): boolean {
@@ -657,6 +766,7 @@ function scoreTapCandidate(
 function chooseAutoLookupVariants(
   wordResult: LookupResult,
   nameResults: LookupResult[],
+  nameCutsAWord = false,
 ): LookupResult[] {
   const taggedWord = asWordLookupResult(wordResult);
   if (nameResults.length === 0) return [taggedWord];
@@ -689,11 +799,17 @@ function chooseAutoLookupVariants(
       : AUTO_NAME_ONLY_CONFIDENCE;
 
   const nameIsLonger = bestName.matchedText.length > taggedWord.matchedText.length;
+  // The cut test is for the counted two-kanji override only. A longer name
+  // overlaps an ordinary word all the time — フランクリン contains フランク,
+  // ゴルキ contains ゴ — and asking it there costs real names.
+  const cutsAWord =
+    nameCutsAWord && [...bestName.matchedText].length < AUTO_NAME_OVERRIDE_MIN_LENGTH;
   if (
     nameIsLonger &&
     (nameConfidence >= nameOnlyConfidence ||
-      (topNameExactSurfaceMatch(bestName) &&
-        bestName.matchedText.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH))
+      (!cutsAWord &&
+        nameSpellingIsSurface(bestName) &&
+        nameMayOverrideShorterWord(bestName.matchedText, bestName.nameMatches?.[0]?.freq)))
   ) {
     return taggedNames;
   }
@@ -755,9 +871,45 @@ function attachAutoSelectionAlternates(
   });
 }
 
+/**
+ * Whether a span cuts a word at either end — 東京|市 for 京市, 外来|音 for 来音.
+ *
+ * The counts cannot tell a straddle from a surname: 京市 and 定家 are both one
+ * sighting and only one of them is a name. The text can. This is the question
+ * `findOkuriganaStarts` asks of kana, asked of kanji, and only common entries
+ * answer it, because a rare one vouching for a boundary is how 滝山 would lose
+ * to 山城.
+ */
+async function spanCutsAWord(
+  text: string,
+  start: number,
+  length: number,
+  lookupMany: (words: string[]) => Promise<Map<string, ReaderDictEntry[]>>,
+): Promise<boolean> {
+  const end = start + length;
+  const words: string[] = [];
+  for (let reach = 1; reach <= 3; reach++) {
+    for (let into = 1; into <= 3; into++) {
+      if (start - reach >= 0 && start + into <= text.length) {
+        words.push(text.slice(start - reach, start + into));
+      }
+      if (end + reach <= text.length && end - into >= 0) {
+        words.push(text.slice(end - into, end + reach));
+      }
+    }
+  }
+  if (words.length === 0) return false;
+  const found = await lookupMany([...new Set(words)]);
+  for (const entries of found.values()) {
+    if (entries.some((entry) => entry.common)) return true;
+  }
+  return false;
+}
+
 export function chooseAutoLookupResults(
   wordResults: LookupResult[],
   nameResults: LookupResult[],
+  nameCutsAWord = false,
 ): LookupResult[] {
   const taggedWordResults = wordResults.map(asWordLookupResult);
   const taggedNameResults = nameResults.map(asNameLookupResult);
@@ -765,7 +917,7 @@ export function chooseAutoLookupResults(
   if (taggedWordResults.length === 0) return taggedNameResults;
   if (taggedNameResults.length === 0) return taggedWordResults;
 
-  const variants = chooseAutoLookupVariants(taggedWordResults[0], taggedNameResults);
+  const variants = chooseAutoLookupVariants(taggedWordResults[0], taggedNameResults, nameCutsAWord);
   if (variants.length <= 1) {
     return variants[0]?.lookupKind === "name" ? taggedNameResults : taggedWordResults;
   }
@@ -802,6 +954,24 @@ export async function selectionLookup(
     options?.extendedDb,
   );
 
+  // A drag says where the word ends. チェーン展開 is the longer word, but a
+  // selection of 展開 is a question about 展開, so what the selection itself
+  // spells is answered first and the expansion below lands under it.
+  //
+  // Two characters, because one is not a boundary anybody drew on purpose —
+  // the reader emits a selection for a single character, and 注|意 would then
+  // answer 意 ahead of 注意, which is what the expansion is for.
+  const exactSelection = [...trimmed].length >= 2 ? await lookupExactJapanese(dictDb, trimmed) : [];
+  if (exactSelection.length > 0) {
+    onResult(
+      asWordLookupResult({
+        matchedText: trimmed,
+        entries: sortEntriesForMatchedSurface(exactSelection, trimmed, counterHints.get(trimmed)),
+        deinflectReasons: [],
+      }),
+    );
+  }
+
   // Expansion step: try substrings of expanded text that fully contain the selection
   if (prefix.length > 0 || suffix.length > 0) {
     const expanded = prefix + trimmed + suffix;
@@ -819,10 +989,17 @@ export async function selectionLookup(
 
         let best: LookupResult | null = null;
         let bestScore = Number.NEGATIVE_INFINITY;
+        let literalMatched = false;
 
         for (const candidate of candidates) {
-          const entries = await lookupExactJapanese(dictDb, candidate.word);
+          const guessed = candidateIsGuess(candidate);
+          if (guessed && literalMatched) continue;
+          const entries = entriesAGuessMayLandOn(
+            candidate,
+            await lookupExactJapanese(dictDb, candidate.word),
+          );
           if (entries.length > 0) {
+            if (!guessed) literalMatched = true;
             const sortedEntries = sortEntriesForMatchedSurface(
               entries,
               substr,
@@ -853,23 +1030,7 @@ export async function selectionLookup(
     }
   }
 
-  // Try the full selected text as a single lookup first
-  const fullEntries = await lookupExactJapanese(dictDb, trimmed);
-  if (fullEntries.length > 0) {
-    const sortedEntries = sortEntriesForMatchedSurface(
-      fullEntries,
-      trimmed,
-      counterHints.get(trimmed),
-    );
-    onResult(
-      asWordLookupResult({
-        matchedText: trimmed,
-        entries: sortedEntries,
-        deinflectReasons: [],
-      }),
-    );
-    return;
-  }
+  if (exactSelection.length > 0) return;
 
   // Try deinflecting the full selected text
   const fullCandidates = deinflect(trimmed);
@@ -953,9 +1114,19 @@ async function findFirstWord(
     // Try all candidates for this substring length, prefer common entries
     let best: { result: LookupResult; matchLength: number } | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
+    let literalMatched = false;
 
     for (const candidate of candidates) {
-      const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      const guessed = candidateIsGuess(candidate);
+      if (guessed && literalMatched) continue;
+      const allEntries = entriesAGuessMayLandOn(
+        candidate,
+        await lookupExactJapanese(dictDb, candidate.word),
+      );
+      // Raised by the literal itself, not by what is left after the entries
+      // already shown are removed: a literal whose entries were all shown is
+      // still a reading that needed no guess.
+      if (!guessed && allEntries.length > 0) literalMatched = true;
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
       if (newEntries.length > 0) {
@@ -1024,9 +1195,16 @@ async function findBoundaryWord(
 
       let best: LookupResult | null = null;
       let bestScore = Number.NEGATIVE_INFINITY;
+      let literalMatched = false;
 
       for (const candidate of candidates) {
-        const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+        const guessed = candidateIsGuess(candidate);
+        if (guessed && literalMatched) continue;
+        const allEntries = entriesAGuessMayLandOn(
+          candidate,
+          await lookupExactJapanese(dictDb, candidate.word),
+        );
+        if (!guessed && allEntries.length > 0) literalMatched = true;
         const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
         if (newEntries.length > 0) {
@@ -1084,9 +1262,16 @@ export async function smartLookup(
 
   for (const substr of substrings) {
     const candidates = deinflect(substr);
+    let literalMatched = false;
 
     for (const candidate of candidates) {
-      const allEntries = await lookupExactJapanese(dictDb, candidate.word);
+      const guessed = candidateIsGuess(candidate);
+      if (guessed && literalMatched) continue;
+      const allEntries = entriesAGuessMayLandOn(
+        candidate,
+        await lookupExactJapanese(dictDb, candidate.word),
+      );
+      if (!guessed && allEntries.length > 0) literalMatched = true;
 
       const newEntries = allEntries.filter((e) => !seenEntryIds.has(e.id));
 
@@ -1126,32 +1311,13 @@ export async function smartLookupWithOffset(
   tapOffset: number,
   dictDb: ReaderSqlDb,
   extDb?: ReaderSqlDb | null,
+  precomputedOkuriganaStarts?: ReadonlySet<number>,
 ): Promise<LookupResult[]> {
   const negativeScopeParticle = await lookupNegativeScopeParticleAtTap(text, tapOffset, dictDb);
   if (negativeScopeParticle) return [asWordLookupResult(negativeScopeParticle)];
 
   const kanjiCache = new Map<string, KanjiReadingRecord>();
-  // The walk asks for the same word from many overlapping substrings, and the
-  // kana spellings below multiply that again. One tap, one lookup per word.
-  const entryCache = new Map<string, ReaderDictEntry[]>();
-  const lookupOnce = async (word: string): Promise<ReaderDictEntry[]> => {
-    const cached = entryCache.get(word);
-    if (cached) return cached;
-    const found = await lookupExactJapanese(dictDb, word);
-    entryCache.set(word, found);
-    return found;
-  };
-  /**
-   * Fill the cache for a whole length's candidates in one round trip. Most
-   * candidate spellings do not exist, and asking one at a time spent the bulk
-   * of a tap's queries proving that.
-   */
-  const prefetch = async (words: string[]): Promise<void> => {
-    const missing = [...new Set(words)].filter((word) => !entryCache.has(word));
-    if (missing.length === 0) return;
-    const found = await lookupExactJapaneseMany(dictDb, missing);
-    for (const word of missing) entryCache.set(word, found.get(word) ?? []);
-  };
+  const { lookupOnce, prefetch } = makeEntryCache(dictDb);
 
   /**
    * Spellings of `substr` with its one kanji written as a reading instead.
@@ -1181,9 +1347,17 @@ export async function smartLookupWithOffset(
     }
   }
   const counterHints = await buildCounterHintMap([...tapSurfaces], extDb);
-  const okuriganaStarts = await findOkuriganaStarts(text, tapOffset, prefetch, lookupOnce);
+  const okuriganaStarts =
+    precomputedOkuriganaStarts ??
+    (await findOkuriganaStarts(text, tapOffset, prefetch, lookupOnce));
   let bestOverall: { result: LookupResult; score: number; length: number; start: number } | null =
     null;
+  // Tap scope, not span scope. Per span, a guess is only ever compared with a
+  // literal at the SAME characters, and a common guess one character in then
+  // outscores a rare longer literal — commonness pays 120, the extra character
+  // 100 — so 要求にこたえられなく answered 耐える off たえられなく. The walk is
+  // longest-first, so the longer literal is always seen first.
+  let literalMatched = false;
 
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     // Valid start positions: substring must contain the tap position
@@ -1225,11 +1399,8 @@ export async function smartLookupWithOffset(
       // span as written found nothing — にしては is an entry in its own right
       // and must not be answered with にしても, which merely happens to be the
       // commoner of the two.
-      let literalMatched = false;
       for (const candidate of candidates) {
-        const guessed =
-          candidate.particleSwapped ||
-          candidate.reasons.some((reason) => CONTRACTION_REASONS.has(reason));
+        const guessed = candidateIsGuess(candidate);
         if (guessed && literalMatched) continue;
         let entries = await lookupOnce(candidate.word);
         // Rewriting a kanji as kana claims the entry is that word spelled
@@ -1250,6 +1421,17 @@ export async function smartLookupWithOffset(
             entry.senses.some((sense) => sense.partOfSpeech?.includes("exp")),
           );
         }
+        // A guess claims the surface is an inflected word, so what it lands on
+        // has to be one. Without this the ～なく rules reach する and the
+        // suru-noun strip hands back whatever was in front of it: 釣や猟を
+        // しなくっちゃ answered the particle を, ものでなくっちゃ answered ので,
+        // 何にもせぬ swallowed せぬ to answer the adverb 何にも.
+        //
+        // Asking this of every deinflected candidate — the obvious
+        // generalisation — takes 正直にしていれば from 直に to nothing and
+        // 出たりはいったりして from 入る to 配流, because an adverb reached by
+        // stripping する is a perfectly good answer.
+        entries = entriesAGuessMayLandOn(candidate, entries);
         if (entries.length > 0) {
           let sortedEntries = sortEntriesForMatchedSurface(
             entries,
@@ -1365,11 +1547,22 @@ export async function autoLookupWithOffset(
   dictDb: ReaderSqlDb,
   extDb?: ReaderSqlDb | null,
 ): Promise<LookupResult[]> {
+  // Both walks have to refuse the same starts, or the name walk answers a span
+  // the word walk just refused: 注文したから came back as the surname たから.
+  const okuriganaStarts = await okuriganaStartsForTap(text, tapOffset, dictDb);
   const [wordResults, nameResults] = await Promise.all([
-    smartLookupWithOffset(text, tapOffset, dictDb, extDb),
-    extDb ? nameLookupWithOffset(text, tapOffset, extDb) : Promise.resolve([]),
+    smartLookupWithOffset(text, tapOffset, dictDb, extDb, okuriganaStarts),
+    extDb ? nameLookupWithOffset(text, tapOffset, extDb, okuriganaStarts) : Promise.resolve([]),
   ]);
-  return chooseAutoLookupResults(wordResults, nameResults);
+  // 東京|市 is not きょういち. Only asked where a name could override, which is
+  // a minority of taps, and it is one batched lookup.
+  const topName = nameResults[0];
+  const cutsAWord =
+    topName?.matchStart != null &&
+    (await spanCutsAWord(text, topName.matchStart, topName.matchedText.length, (words) =>
+      lookupExactJapaneseMany(dictDb, words),
+    ));
+  return chooseAutoLookupResults(wordResults, nameResults, cutsAWord);
 }
 
 export async function autoSelectionLookup(
@@ -1418,12 +1611,14 @@ export async function nameLookupWithOffset(
   text: string,
   tapOffset: number,
   extDb: ReaderSqlDb,
+  okuriganaStarts?: ReadonlySet<number>,
 ): Promise<LookupResult[]> {
   for (let len = Math.min(text.length, 15); len >= 1; len--) {
     const minStart = Math.max(0, tapOffset - len + 1);
     const maxStart = Math.min(tapOffset, text.length - len);
 
     for (let start = Math.min(tapOffset, maxStart); start >= minStart; start--) {
+      if (okuriganaStarts?.has(start)) continue;
       const substr = text.slice(start, start + len);
       const names = await lookupExactName(extDb, substr);
       if (names.length > 0) {

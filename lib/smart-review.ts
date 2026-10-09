@@ -36,7 +36,12 @@ export function isEphemeralListId(id: string | null | undefined): boolean {
   return isSmartListId(id) || isMarkedListId(id);
 }
 
-function windowStartIso(days: number, resetHour: number): string {
+/** Lookback window in logical days; `null` means every retained flag. */
+export type SmartReviewWindow = number | null;
+
+function windowStartIso(days: SmartReviewWindow, resetHour: number): string {
+  // Sorts before every ISO timestamp, so `marked_at >= ?` keeps every row.
+  if (days == null) return "";
   const today = getLogicalToday(resetHour);
   const start = new Date(`${today}T00:00:00Z`);
   // Inclusive window: "7 days" means today + the previous 6 logical days.
@@ -65,7 +70,7 @@ export interface SmartCandidate {
 export async function countMarkedInWindow(
   userDb: WrappedUserDb,
   sourceListId: string,
-  days: number,
+  days: SmartReviewWindow,
   resetHour: number,
 ): Promise<number> {
   const start = windowStartIso(days, resetHour);
@@ -92,7 +97,7 @@ export async function countMarkedInWindow(
 export async function rankSmartCandidates(
   userDb: WrappedUserDb,
   sourceListId: string,
-  days: number,
+  days: SmartReviewWindow,
   resetHour: number,
   nowMs: number = Date.now(),
 ): Promise<SmartCandidate[]> {
@@ -165,27 +170,21 @@ function priorityTimestamp(rank: number): string {
 }
 
 /**
- * Idempotent create/refresh of a per-source smart-review list.
+ * Create or rebuild the per-source smart-review list.
  *
- * Behavior:
  * - Creates `_smart_${sourceListId}` if missing, inheriting visual settings
  *   (front/back faces, audio, animations) from the source list but always
  *   using `simple_srs` mode so the pass/fail UX is available.
- * - Computes priority ranking via {@link rankSmartCandidates}, then upserts
- *   list_entries and srs_cards so the new-card pool surfaces highest-priority
- *   cards first. `list_entries.added_at` and `srs_cards.created_at` get
- *   synthesised timestamps ordered by rank.
- * - Cards already past the "new" stage (simple_stage IS NOT NULL) are not
- *   re-ranked — their SRS state and queue position is preserved.
- * - Cards present in the smart list but no longer in the current window remain;
- *   they just don't get re-ranked. (Additive refresh.)
+ * - Every call rebuilds the cards from scratch: each card flagged in the window
+ *   enters as new, ordered by {@link rankSmartCandidates}. The source list's own
+ *   cards are never touched, and these rows never sync.
  *
  * Returns the smart list id.
  */
 export async function getOrCreateSmartList(
   userDb: WrappedUserDb,
   sourceList: WordList,
-  days: number,
+  days: SmartReviewWindow,
   resetHour: number,
 ): Promise<string> {
   const smartId = smartListIdFor(sourceList.id);
@@ -229,96 +228,45 @@ export async function getOrCreateSmartList(
     ]);
   }
 
+  await userDb.runAsync(`DELETE FROM srs_cards WHERE list_id = ?`, [smartId]);
+  await userDb.runAsync(`DELETE FROM list_entries WHERE list_id = ?`, [smartId]);
+
   const ranked = await rankSmartCandidates(userDb, sourceList.id, days, resetHour);
-  if (ranked.length === 0) return smartId;
-
-  const existingEntries = await userDb.getAllAsync<{
-    entry_id: number;
-    kanji_literal: string | null;
-  }>(
-    `SELECT entry_id, kanji_literal FROM list_entries
-     WHERE list_id = ? AND deleted_at IS NULL`,
-    [smartId],
-  );
-  const existingEntryKeys = new Set(
-    existingEntries.map((r) => `${r.entry_id}|${r.kanji_literal ?? ""}`),
-  );
-
-  const existingCards = await userDb.getAllAsync<{
-    id: string;
-    entry_id: number;
-    kanji_literal: string | null;
-    simple_stage: number | null;
-  }>(
-    `SELECT id, entry_id, kanji_literal, simple_stage
-     FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL`,
-    [smartId],
-  );
-  const cardByKey = new Map<string, { id: string; simple_stage: number | null }>(
-    existingCards.map((c) => [`${c.entry_id}|${c.kanji_literal ?? ""}`, c]),
-  );
 
   for (let rank = 0; rank < ranked.length; rank++) {
     const cand = ranked[rank];
-    const key = `${cand.entryId}|${cand.kanjiLiteral ?? ""}`;
+    // created_at carries priority: the new-card pool reads ORDER BY created_at.
     const ts = priorityTimestamp(rank);
-
-    if (existingEntryKeys.has(key)) {
-      await userDb.runAsync(
-        `UPDATE list_entries SET added_at = ?, position = ?, updated_at = ?, deleted_at = NULL
-         WHERE list_id = ? AND entry_id = ?
-           AND ((kanji_literal IS NULL AND ? IS NULL) OR kanji_literal = ?)`,
-        [ts, rank, now, smartId, cand.entryId, cand.kanjiLiteral, cand.kanjiLiteral],
-      );
-    } else {
-      await userDb.runAsync(
-        `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, position, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          makeId(smartId, cand.entryId, cand.kanjiLiteral),
-          smartId,
-          cand.entryId,
-          cand.kanjiLiteral,
-          ts,
-          rank,
-          now,
-        ],
-      );
-    }
-
-    const card = cardByKey.get(key);
-    if (!card) {
-      // New card — insert as "new" (simple_stage NULL). created_at carries
-      // priority so the new-card pool's ORDER BY created_at ASC surfaces
-      // highest priority first.
-      await userDb.runAsync(
-        `INSERT OR IGNORE INTO srs_cards (
-           id, entry_id, kanji_literal, list_id,
-           due, stability, difficulty, elapsed_days, scheduled_days,
-           reps, lapses, state, front_mode, back_mode,
-           created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
-        [
-          makeId(`${smartId}-srs`, cand.entryId, cand.kanjiLiteral),
-          cand.entryId,
-          cand.kanjiLiteral,
-          smartId,
-          ts,
-          ts,
-          now,
-        ],
-      );
-    } else if (card.simple_stage == null) {
-      // Existing but still in "new" pool — update created_at to new rank so
-      // priority reflects the latest signal.
-      await userDb.runAsync(`UPDATE srs_cards SET created_at = ?, updated_at = ? WHERE id = ?`, [
+    await userDb.runAsync(
+      `INSERT OR IGNORE INTO list_entries (id, list_id, entry_id, kanji_literal, added_at, position, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        makeId(smartId, cand.entryId, cand.kanjiLiteral),
+        smartId,
+        cand.entryId,
+        cand.kanjiLiteral,
+        ts,
+        rank,
+        now,
+      ],
+    );
+    await userDb.runAsync(
+      `INSERT OR IGNORE INTO srs_cards (
+         id, entry_id, kanji_literal, list_id,
+         due, stability, difficulty, elapsed_days, scheduled_days,
+         reps, lapses, state, front_mode, back_mode,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english', ?, ?)`,
+      [
+        makeId(`${smartId}-srs`, cand.entryId, cand.kanjiLiteral),
+        cand.entryId,
+        cand.kanjiLiteral,
+        smartId,
+        ts,
         ts,
         now,
-        card.id,
-      ]);
-    }
-    // Past-new cards (simple_stage NOT NULL): leave alone. Their queue
-    // position is now driven by simple_n / due time.
+      ],
+    );
   }
 
   return smartId;

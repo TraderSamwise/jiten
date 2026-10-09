@@ -5,11 +5,23 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useUserDb } from "@/db/user-provider";
 import { dayResetHourAtom, smartReviewDaysAtom } from "@/stores/settings";
-import { countMarkedInWindow, getOrCreateSmartList } from "@/lib/smart-review";
+import {
+  countMarkedInWindow,
+  getOrCreateSmartList,
+  type SmartReviewWindow,
+} from "@/lib/smart-review";
 import { useRouter } from "expo-router";
 import type { WordList } from "@/db/types";
 
-const DAY_OPTIONS = [3, 7, 14, 30] as const;
+const WINDOW_OPTIONS: SmartReviewWindow[] = [3, 7, 14, 30, null];
+
+function windowLabel(days: SmartReviewWindow): string {
+  return days == null ? "All" : `${days}d`;
+}
+
+function windowPhrase(days: SmartReviewWindow): string {
+  return days == null ? "in total" : `in the last ${days} days`;
+}
 
 interface SmartReviewModalProps {
   visible: boolean;
@@ -22,24 +34,27 @@ export function SmartReviewModal({ visible, onClose, sourceList }: SmartReviewMo
   const userDb = useUserDb();
   const [days, setDays] = useAtom(smartReviewDaysAtom);
   const [resetHour] = useAtom(dayResetHourAtom);
-  const [count, setCount] = useState<number | null>(null);
+  const [counts, setCounts] = useState<Map<SmartReviewWindow, number> | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     if (!visible || !userDb || !sourceList) return;
     let cancelled = false;
-    setCount(null);
-    countMarkedInWindow(userDb, sourceList.id, days, resetHour)
-      .then((n) => {
-        if (!cancelled) setCount(n);
+    setCounts(null);
+    Promise.all(WINDOW_OPTIONS.map((d) => countMarkedInWindow(userDb, sourceList.id, d, resetHour)))
+      .then((ns) => {
+        if (!cancelled) setCounts(new Map(WINDOW_OPTIONS.map((d, i) => [d, ns[i]])));
       })
-      .catch(() => {
-        if (!cancelled) setCount(0);
+      .catch((err) => {
+        console.error("[SmartReview] count failed:", err);
+        if (!cancelled) setCounts(new Map());
       });
     return () => {
       cancelled = true;
     };
-  }, [visible, userDb, sourceList?.id, days, resetHour]);
+  }, [visible, userDb, sourceList?.id, resetHour]);
+
+  const count = counts ? (counts.get(days) ?? 0) : null;
 
   async function handleStart() {
     if (!userDb || !sourceList || starting) return;
@@ -71,15 +86,15 @@ export function SmartReviewModal({ visible, onClose, sourceList }: SmartReviewMo
           >
             <Text className="text-lg font-semibold text-foreground mb-1">Smart Review</Text>
             <Text className="text-sm text-muted-foreground mb-4">
-              Review cards you flagged on this list, prioritized by how often and how recently you
-              flagged or failed them.
+              Review every card you flagged on this list in the window, most-flagged and most-failed
+              first. Progress here stays separate from the list.
             </Text>
 
             <Text className="text-sm font-medium text-muted-foreground mb-2">Lookback window</Text>
             <View className="flex-row gap-2 mb-4">
-              {DAY_OPTIONS.map((d) => (
+              {WINDOW_OPTIONS.map((d) => (
                 <Pressable
-                  key={d}
+                  key={windowLabel(d)}
                   onPress={() => setDays(d)}
                   className={`flex-1 items-center rounded-lg border py-2 ${
                     days === d ? "border-primary bg-primary/10" : "border-border"
@@ -90,7 +105,10 @@ export function SmartReviewModal({ visible, onClose, sourceList }: SmartReviewMo
                       days === d ? "text-primary" : "text-muted-foreground"
                     }`}
                   >
-                    {d}d
+                    {windowLabel(d)}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {counts ? (counts.get(d) ?? 0) : "–"}
                   </Text>
                 </Pressable>
               ))}
@@ -104,11 +122,11 @@ export function SmartReviewModal({ visible, onClose, sourceList }: SmartReviewMo
                 </>
               ) : count === 0 ? (
                 <Text className="text-sm text-muted-foreground">
-                  No flagged cards in the last {days} days.
+                  No flagged cards {windowPhrase(days)}.
                 </Text>
               ) : (
                 <Text className="text-sm text-foreground">
-                  {count} flagged {count === 1 ? "card" : "cards"} in the last {days} days.
+                  {count} flagged {count === 1 ? "card" : "cards"} {windowPhrase(days)}.
                 </Text>
               )}
             </View>

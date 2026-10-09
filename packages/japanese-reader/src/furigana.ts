@@ -584,10 +584,39 @@ export function nameReadingDominance(
   return { share: (best.freq ?? 0) / total, total };
 }
 
+/**
+ * The single-kana particles, the only kana a name's tail is mistaken for.
+ * ね, よ and さ earn their place: they take 17 more junk name readings off
+ * kanji (多ね, 晴さ, 嘉よ) and lose none. で is a no-op — no name spelling
+ * ends in kanji + で.
+ */
+const PARTICLE_KANA = new Set([
+  "の",
+  "が",
+  "を",
+  "に",
+  "は",
+  "へ",
+  "と",
+  "も",
+  "や",
+  "か",
+  "ね",
+  "よ",
+  "さ",
+]);
+
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
   // 四十三 and 五十八 are given names in JMnedict and numbers everywhere else.
   // A run written only in numerals is a number.
-  return hasKanjiText(surface) && !isKanjiNumeralRun(surface);
+  if (!hasKanjiText(surface) || isKanjiNumeralRun(surface)) return false;
+  // A kanji followed by a particle is the particle: 花の is the surname Ayano
+  // and 水の is Nizuno, but in prose they are 花 and 水 and the の, and the ruby
+  // that came out claimed a reading over the kanji that only the name has.
+  // Only a particle — the り of 三条通り and the み of 晴み are the name.
+  const chars = [...surface];
+  const last = chars[chars.length - 1];
+  return !(PARTICLE_KANA.has(last) && chars.length > 1 && isKanji(chars[chars.length - 2]));
 }
 
 function resolveLexicalSuffixJlpt(
@@ -595,7 +624,9 @@ function resolveLexicalSuffixJlpt(
   lookupMap: Map<string, DictMatch>,
 ): number | null | undefined {
   const tryWords = (candidateSurface: string): number | null | undefined => {
-    const candidateWords = deinflect(candidateSurface).map((c) => c.word);
+    const candidateWords = deinflect(candidateSurface)
+      .filter((c) => !c.guessed)
+      .map((c) => c.word);
     for (const word of candidateWords) {
       const match = lookupMap.get(word);
       if (match?.jlptLevel != null) return match.jlptLevel;
@@ -639,22 +670,31 @@ export async function resolveFuriganaBatch(
 ): Promise<Record<string, FuriganaEntry>> {
   const { includeNames = true, includeCounters = true } = options;
   // Deinflect all surfaces, collect unique search words
-  const surfaceToDeinflected = new Map<string, string[]>();
+  const surfaceToDeinflected = new Map<string, { word: string; guessed: boolean }[]>();
   const allSearchWords = new Set<string>();
 
   for (const surface of surfaces) {
-    const candidates = deinflect(surface);
-    const words = candidates.map((c) => c.word);
+    const words: { word: string; guessed: boolean }[] = [];
+    const at = new Map<string, number>();
+    // A word reachable both ways is not a guess, so the flag is merged rather
+    // than taken from whichever path was seen first.
+    const add = (word: string, guessed: boolean) => {
+      const seen = at.get(word);
+      if (seen === undefined) {
+        at.set(word, words.length);
+        words.push({ word, guessed });
+      } else if (!guessed) {
+        words[seen].guessed = false;
+      }
+    };
+    for (const c of deinflect(surface)) add(c.word, c.guessed);
     // Also try digit→kanji normalized forms (e.g. １人 → 一人)
     const normalized = normalizeDigitsToKanji(surface);
     if (normalized !== surface) {
-      const normCandidates = deinflect(normalized);
-      for (const c of normCandidates) {
-        if (!words.includes(c.word)) words.push(c.word);
-      }
+      for (const c of deinflect(normalized)) add(c.word, c.guessed);
     }
     surfaceToDeinflected.set(surface, words);
-    for (const w of words) allSearchWords.add(w);
+    for (const w of words) allSearchWords.add(w.word);
   }
 
   // Batch lookup
@@ -678,12 +718,19 @@ export async function resolveFuriganaBatch(
       deinflectedWord: string;
     } | null = null;
 
-    for (const word of deinflected) {
-      const match = lookupMap.get(word);
-      if (!match || !match.kanaForm) continue;
-      const score = scoreFuriganaWordMatch(surface, match, word);
-      if (!bestWordMatch || score > bestWordMatch.score) {
-        bestWordMatch = { match, score, deinflectedWord: word };
+    // Two passes, not one score: a guess is only allowed to speak when
+    // reading the surface as written found nothing. 弛まなく is 弛まない, an
+    // entry, and must not be answered with 弛む because 弛む is commoner.
+    for (const pass of [false, true]) {
+      if (bestWordMatch) break;
+      for (const { word, guessed } of deinflected) {
+        if (guessed !== pass) continue;
+        const match = lookupMap.get(word);
+        if (!match || !match.kanaForm) continue;
+        const score = scoreFuriganaWordMatch(surface, match, word);
+        if (!bestWordMatch || score > bestWordMatch.score) {
+          bestWordMatch = { match, score, deinflectedWord: word };
+        }
       }
     }
 

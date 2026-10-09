@@ -667,7 +667,9 @@ describe("Deinflection algorithm properties", () => {
 
   test("empty string returns just itself", () => {
     const result = deinflect("");
-    expect(result).toEqual([{ word: "", typeMask: 0xff, entryMask: 0xff, reasons: [] }]);
+    expect(result).toEqual([
+      { word: "", typeMask: 0xff, entryMask: 0xff, reasons: [], guessed: false },
+    ]);
   });
 
   test("non-Japanese text returns just itself", () => {

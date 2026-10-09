@@ -1651,14 +1651,17 @@ function StudyScreen() {
             // Store in pools — refillDeque will pull from these
             duePoolRef.current = dueItems;
             newPoolRef.current = newItems;
-            dueIdsRef.current = new Set(dueItems.map((item) => item.srsCard!.id));
+            // A flagged-card review is built fresh as all-new cards, so its
+            // progress counts every card rather than only the due ones.
+            const countedItems = isEphemeralListId(listId) ? [...dueItems, ...newItems] : dueItems;
+            dueIdsRef.current = new Set(countedItems.map((item) => item.srsCard!.id));
 
             // Seed the deque: refill from empty state pulls first ~10
             const seeded = refillDeque([], 0);
             setCards(seeded);
             setCursor(0);
             setOriginalCardCount(seeded.length);
-            setDueAtStart(dueRows.length);
+            setDueAtStart(countedItems.length);
             completedSrsIdsRef.current.clear();
             setSessionPhase("studying");
           } else {
@@ -1908,7 +1911,7 @@ function StudyScreen() {
         shouldReQueue = true;
         reQueueItem = { ...item, srsCard: rated.card };
       } else if (dueIdsRef.current.has(card.id)) {
-        // Only count due cards toward progress (not new cards)
+        // Only cards counted at session start advance progress
         completedSrsIdsRef.current.add(card.id);
       }
     } else if (card) {
@@ -2295,9 +2298,13 @@ function StudyScreen() {
     if (list?.confusionDetection === false) return;
     if (sessionMode === "add_order") return;
 
-    // Check cooldown: skip if we checked this card recently
-    if (card.lastConfusionCheck) {
-      const lastCheck = new Date(card.lastConfusionCheck).getTime();
+    // Check cooldown against the DB: a re-queued copy's row predates this session's checks.
+    const checked = await userDb.getFirstAsync<{ last_confusion_check: string | null }>(
+      "SELECT last_confusion_check FROM srs_cards WHERE id = ?",
+      [card.id],
+    );
+    if (checked?.last_confusion_check) {
+      const lastCheck = new Date(checked.last_confusion_check).getTime();
       const cooldownMs = CONFUSION_COOLDOWN_HOURS * 60 * 60 * 1000;
       if (Date.now() - lastCheck < cooldownMs) return;
     }
@@ -2886,7 +2893,8 @@ function StudyScreen() {
         >
           {isBrowsingHistory
             ? (() => {
-                const frontier = cards.findIndex((c) => c.status === "pending");
+                // A flipped-but-unanswered card is the frontier too, not only a pending one.
+                const frontier = cards.findIndex((c) => c.status !== "rated");
                 const stepsBack = (frontier === -1 ? cards.length : frontier) - cursor;
                 return `\u2190 ${stepsBack} back`;
               })()

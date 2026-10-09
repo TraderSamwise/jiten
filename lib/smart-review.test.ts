@@ -163,6 +163,12 @@ describe("countMarkedInWindow", () => {
     expect(await countMarkedInWindow(db, "src-1", 60, 3)).toBe(1);
   });
 
+  test("a null window counts every flag", async () => {
+    await insertMark(db, "m-old", 100, "src-1", daysAgoIso(80));
+    await insertMark(db, "m-new", 200, "src-1", new Date().toISOString());
+    expect(await countMarkedInWindow(db, "src-1", null, 3)).toBe(2);
+  });
+
   test("filters by sourceListId", async () => {
     const now = new Date().toISOString();
     await insertMark(db, "m1", 100, "src-1", now);
@@ -366,67 +372,73 @@ describe("getOrCreateSmartList", () => {
     expect(cards).toHaveLength(2);
   });
 
-  test("additive refresh — new marks added, existing cards preserved", async () => {
-    const source = makeSourceList();
-    await insertSourceListRow(db, source);
-    const now = new Date().toISOString();
-    await insertMark(db, "m1", 100, "src-1", now);
-
-    await getOrCreateSmartList(db, source, 7, 3);
-
-    await insertMark(db, "m2", 200, "src-1", now);
-    await getOrCreateSmartList(db, source, 7, 3);
-
-    const entries = await db.getAllAsync<{ entry_id: number }>(
-      `SELECT entry_id FROM list_entries WHERE list_id = ? ORDER BY entry_id`,
-      ["_smart_src-1"],
-    );
-    expect(entries.map((e) => e.entry_id)).toEqual([100, 200]);
-  });
-
-  test("cards past 'new' (simple_stage NOT NULL) keep their created_at on refresh", async () => {
+  test("rebuild resets studied cards to new, so every flagged card is in the session", async () => {
     const source = makeSourceList();
     await insertSourceListRow(db, source);
     await insertMark(db, "m1", 100, "src-1", new Date().toISOString());
+    await insertMark(db, "m2", 200, "src-1", new Date().toISOString());
     await getOrCreateSmartList(db, source, 7, 3);
 
-    // Simulate the user studying the card past the new pool
-    const studied = "2099-12-31T00:00:00.000Z";
     await db.runAsync(
-      `UPDATE srs_cards SET simple_stage = 1, simple_n = 5, simple_interval = 5,
-         created_at = ? WHERE list_id = ? AND entry_id = ?`,
-      [studied, "_smart_src-1", 100],
-    );
-
-    // Refresh
-    await getOrCreateSmartList(db, source, 7, 3);
-
-    const row = await db.getFirstAsync<{ created_at: string; simple_stage: number | null }>(
-      `SELECT created_at, simple_stage FROM srs_cards WHERE list_id = ? AND entry_id = 100`,
+      `UPDATE srs_cards SET simple_stage = 1, simple_n = 99999, simple_interval = 5
+       WHERE list_id = ? AND entry_id = 100`,
       ["_smart_src-1"],
     );
-    expect(row?.simple_stage).toBe(1);
-    expect(row?.created_at).toBe(studied);
+
+    await getOrCreateSmartList(db, source, 7, 3);
+
+    const cards = await db.getAllAsync<{ entry_id: number; simple_stage: number | null }>(
+      `SELECT entry_id, simple_stage FROM srs_cards WHERE list_id = ? ORDER BY entry_id`,
+      ["_smart_src-1"],
+    );
+    expect(cards).toEqual([
+      { entry_id: 100, simple_stage: null },
+      { entry_id: 200, simple_stage: null },
+    ]);
   });
 
-  test("entries no longer in window are NOT removed (additive)", async () => {
+  test("entries that leave the window are dropped on rebuild", async () => {
     const source = makeSourceList();
     await insertSourceListRow(db, source);
     await insertMark(db, "m1", 100, "src-1", new Date().toISOString());
+    await insertMark(db, "m2", 200, "src-1", new Date().toISOString());
     await getOrCreateSmartList(db, source, 7, 3);
 
-    // Backdate the mark so it leaves the window
-    await db.runAsync(
-      `UPDATE review_marks SET marked_at = datetime('now', '-30 days') WHERE id = 'm1'`,
-    );
-
+    await db.runAsync(`UPDATE review_marks SET marked_at = ? WHERE id = 'm1'`, [daysAgoIso(30)]);
     await getOrCreateSmartList(db, source, 7, 3);
 
     const entries = await db.getAllAsync<{ entry_id: number }>(
       `SELECT entry_id FROM list_entries WHERE list_id = ?`,
       ["_smart_src-1"],
     );
-    expect(entries.map((e) => e.entry_id)).toEqual([100]);
+    expect(entries.map((e) => e.entry_id)).toEqual([200]);
+  });
+
+  test("an 'all' window takes every flag, however old", async () => {
+    const source = makeSourceList();
+    await insertSourceListRow(db, source);
+    await insertMark(db, "m1", 100, "src-1", daysAgoIso(80));
+    await insertMark(db, "m2", 200, "src-1", new Date().toISOString());
+
+    await getOrCreateSmartList(db, source, null, 3);
+
+    const cards = await db.getAllAsync(`SELECT * FROM srs_cards WHERE list_id = ?`, [
+      "_smart_src-1",
+    ]);
+    expect(cards).toHaveLength(2);
+  });
+
+  test("leaves the source list's own cards untouched", async () => {
+    const source = makeSourceList();
+    await insertSourceListRow(db, source);
+    await insertMark(db, "m1", 100, "src-1", new Date().toISOString());
+    await insertSrsCard(db, "src-card-100", 100, "src-1");
+
+    await getOrCreateSmartList(db, source, 7, 3);
+    await getOrCreateSmartList(db, source, 7, 3);
+
+    const own = await db.getAllAsync(`SELECT * FROM srs_cards WHERE list_id = 'src-1'`);
+    expect(own).toHaveLength(1);
   });
 
   test("bumps updated_at and clears deleted_at", async () => {
