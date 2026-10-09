@@ -587,7 +587,12 @@ export function nameReadingDominance(
 function shouldConsiderNameFuriganaSurface(surface: string): boolean {
   // 四十三 and 五十八 are given names in JMnedict and numbers everywhere else.
   // A run written only in numerals is a number.
-  return hasKanjiText(surface) && !isKanjiNumeralRun(surface);
+  if (!hasKanjiText(surface) || isKanjiNumeralRun(surface)) return false;
+  // A name's trailing kana is part of its spelling, not okurigana, so the ruby
+  // would cover the kanji alone and claim a reading only the longer name has:
+  // 花の is the surname Ayano, and in prose it is 花 and the particle.
+  const chars = [...surface];
+  return !isKana(chars[chars.length - 1]);
 }
 
 function resolveLexicalSuffixJlpt(

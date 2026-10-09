@@ -910,6 +910,37 @@ disagreeing pairs → **126**.
   three characters, which is right, and the ナウ is what tapping the leftover
   なった already gave everywhere else.
 
+### A name spelling that ends in kana is not evidence about the kanji before it
+
+花のつぼみのような printed **あや** over 花, and 水の流れ printed **にず** over
+水. JMnedict holds 花の (Ayano) and 水の (Nizuno); the furigana path takes a
+name outright when no word covers the surface, the renderer takes the longest
+surface, and two characters beat one. Both spellings have no observed
+frequency at all — nobody has been seen reading 水の as にずの.
+
+The ruby that came out is the tell: `stripOkurigana` had already cut the の
+off, so the page got a reading over 花 alone that only the whole name has. A
+name's trailing kana is part of its spelling, not okurigana, so a surface
+ending in kana is now never considered for a name reading
+(`shouldConsiderNameFuriganaSurface`).
+
+Measured over the corpus: **15 of 67,299 surfaces change, all of them losses
+of a name reading, every one junk** — 上の, 仲の, 坂の, 木の, 東の, 松の, 水の,
+浜の, 理の, 育の, 高の, 魚の (a kanji and the particle), plus 夢か, 新し and
+帝国ホテル. Nothing gains or changes a reading.
+
+The whole population, not just the corpus: of the **7,596** name spellings in
+JMnedict that end in kana, 7,247 stop resolving as a surface. **4,410 of those
+print exactly the same ruby anyway**, because the kanji run before the kana
+carries the name on its own — 帝国ホテル still reads 帝国/ていこく, and
+龍ヶ嶽トンネル still reads 龍ヶ嶽. The remaining 2,837 are spellings with the
+kanji buried inside kana (い乃り, み津ゑ, しら坂トンネル): prewar given-name
+orthography and signposted place names, which the reader will not meet, and
+where the old ruby covered a leading fragment.
+
+五十嵐, 杏子, 丸木, 後味 and 西條 are all unmoved — nothing written in kanji
+is touched.
+
 ## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 
 The fourth case above, 敷きこんで, is not the guard. The dictionary has no
