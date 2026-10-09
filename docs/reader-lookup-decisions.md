@@ -941,6 +941,29 @@ where the old ruby covered a leading fragment.
 五十嵐, 杏子, 丸木, 後味 and 西條 are all unmoved — nothing written in kanji
 is touched.
 
+### A two-kanji name the counts have seen may override a one-kanji word
+
+演じた**西條**さんがそばに来て: the furigana read さいじょう and the tap, on the
+same two characters, answered 西/せい — "Spain". Tapping the second character
+gave the name; tapping the first gave the word.
+
+`AUTO_NAME_OVERRIDE_MIN_LENGTH` is 3, and the note beside it says what that
+costs: "two-kanji surnames (渋沢, 山田), which still resolve to a single kanji".
+The floor is there for two-kanji spans straddling a word boundary — 田先 out of
+山田先生, 中電 out of 食事中電話 — and `names.name_freq` now separates those
+cleanly: 西條 is さいじょう in **24** sightings, 山田 やまだ in 935, 渋沢 しぶさわ
+in 34, while 田先 and 中電 have never been observed as names at all. A
+two-kanji name with any observed frequency may now override
+(`nameMayOverrideShorterWord`).
+
+Measured over **11,296** auto-mode corpus taps: **12 change, all of them
+names in the book that a tap used to answer with a single kanji** — 茂作 (was
+作), 箱根 (箱, 根), 小倉 (小, 倉), 古賀 (古, 賀), 浅井 (井, three times) and
+堀田 (堀, 田). Nothing else moves, in either direction.
+
+The floor itself is untouched above two characters, and an uncounted two-kanji
+spelling is still refused — which is the whole of what keeps 田先 out.
+
 ## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 
 The fourth case above, 敷きこんで, is not the guard. The dictionary has no

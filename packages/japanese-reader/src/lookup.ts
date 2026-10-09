@@ -4,9 +4,9 @@ import {
   AUTO_DUAL_MIN_MATCH_LENGTH,
   AUTO_NAME_DUAL_CONFIDENCE,
   AUTO_NAME_ONLY_CONFIDENCE,
-  AUTO_NAME_OVERRIDE_MIN_LENGTH,
   AUTO_NAME_ONLY_WITH_EXACT_WORD_CONFIDENCE,
   computeAutoNameConfidence,
+  nameMayOverrideShorterWord,
   shouldShowBothAutoResults,
   type AutoNameNameCandidate,
   type AutoNameWordCandidate,
@@ -693,7 +693,7 @@ function chooseAutoLookupVariants(
     nameIsLonger &&
     (nameConfidence >= nameOnlyConfidence ||
       (topNameExactSurfaceMatch(bestName) &&
-        bestName.matchedText.length >= AUTO_NAME_OVERRIDE_MIN_LENGTH))
+        nameMayOverrideShorterWord(bestName.matchedText.length, bestName.nameMatches?.[0]?.freq)))
   ) {
     return taggedNames;
   }

@@ -20,6 +20,25 @@ export const AUTO_NAME_DUAL_CONFIDENCE = 45;
  */
 export const AUTO_NAME_OVERRIDE_MIN_LENGTH = 3;
 
+/**
+ * What that floor costs is two-kanji surnames, and the counts can pay it back:
+ * 西條 is さいじょう in 24 sightings, while 田先 and 中電 — the straddles the
+ * floor exists for — have never been observed as names at all.
+ */
+export const AUTO_NAME_OVERRIDE_COUNTED_LENGTH = 2;
+export const AUTO_NAME_OVERRIDE_MIN_FREQ = 1;
+
+export function nameMayOverrideShorterWord(
+  matchedLength: number,
+  topFreq: number | null | undefined,
+): boolean {
+  if (matchedLength >= AUTO_NAME_OVERRIDE_MIN_LENGTH) return true;
+  return (
+    matchedLength >= AUTO_NAME_OVERRIDE_COUNTED_LENGTH &&
+    (topFreq ?? 0) >= AUTO_NAME_OVERRIDE_MIN_FREQ
+  );
+}
+
 export interface AutoNameWordCandidate {
   matchedText: string;
   exactSurface: boolean;
