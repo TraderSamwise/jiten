@@ -964,6 +964,45 @@ names in the book that a tap used to answer with a single kanji** — 茂作 (wa
 The floor itself is untouched above two characters, and an uncounted two-kanji
 spelling is still refused — which is the whole of what keeps 田先 out.
 
+### A suru-verb noun proves its own kana tail, and the name walk refuses the same starts
+
+海外へ赴任した**ため**だった answered したため — 認む, "to write down", in its
+imperative — out of a span starting inside 赴任した.
+
+"A span may not start inside a word" proves a position closed by looking the
+kanji run and its kana up together and finding an **inflecting** word. 赴任した
+deinflects to 赴任する, which no dictionary spells, and then to 赴任, which every
+dictionary does — and that second step was counted as a chain through an
+auxiliary and dropped. Stripping する off a suru-verb noun is not a second word,
+so it no longer counts towards that bound, and an entry reached that way proves
+the tail when it is tagged `vs`.
+
+**Closing those starts exposed the other half.** The name walk had no such
+guard, so with the word span refused, 注文したから came back as the surname
+たから. Auto mode now computes the starts once and hands them to both walks
+(`okuriganaStartsForTap`).
+
+**And then the name walk's own hole.** A name may override a shorter word
+outright when the surface is "an exact name match", and that accepted a match
+on the name's **reading**: ためだった holds the reading of 為田, したから holds
+多可良's. The override now asks that the surface be how the name is _written_ —
+its kanji form, or the whole spelling for a name written in kana, so ひろし and
+たけし still resolve (`nameSpellingIsSurface`).
+
+Measured over 11,296 corpus taps. **Word mode: 15 change, all of them a span
+that was cutting into a suru-verb** — 注文したから→から, 勉強してやろう→やろう,
+合点したもの→もの, 紹介してやる→やる, 心配しなくって→って, 珍重してく→くれた.
+**Auto mode: 489 change — 472 of them a kana run that was being answered with a
+JMnedict name and is now answered with a word**: たから→から (24 taps),
+いから→から (14), たのだ→のだ, ものか→もの, ぬから→から, なるの→なる, plus a
+tail that reaches real words — いなが→云い, きなが→泣き, きでな→好き,
+みもな→望み, しもなか→少しも, うがい→使う. Two are lateral (いなひと→ひとは,
+junk either way). Gate 126 disagreeing pairs → **123**.
+
+**What this does not fix:** めだった still answers 目立つ. ため is a noun, so
+its め is not okurigana and nothing proves the position closed; separating that
+from a real word boundary needs segmentation, not a rule.
+
 ## Rejected: scoring a kana-spelled kanji word below one the dictionary spells that way
 
 The fourth case above, 敷きこんで, is not the guard. The dictionary has no
