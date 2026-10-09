@@ -36,17 +36,30 @@ async function tap(text: string, at: number) {
 
 describe("the override floor", () => {
   it("lets a counted two-kanji name through", () => {
-    expect(nameMayOverrideShorterWord(2, 24)).toBe(true);
-    expect(nameMayOverrideShorterWord(2, 1)).toBe(true);
+    expect(nameMayOverrideShorterWord("西條", 24)).toBe(true);
+    expect(nameMayOverrideShorterWord("箱根", 1)).toBe(true);
   });
 
   it("keeps an uncounted one out", () => {
-    expect(nameMayOverrideShorterWord(2, null)).toBe(false);
-    expect(nameMayOverrideShorterWord(2, 0)).toBe(false);
+    // An extended DB built before the frequency column has no counts at all,
+    // and every two-kanji override silently switches off rather than guessing.
+    expect(nameMayOverrideShorterWord("田先", null)).toBe(false);
+    expect(nameMayOverrideShorterWord("中電", 0)).toBe(false);
   });
 
   it("leaves three characters where they were", () => {
-    expect(nameMayOverrideShorterWord(3, null)).toBe(true);
+    expect(nameMayOverrideShorterWord("大泉学園", null)).toBe(true);
+  });
+
+  // 二羽 is two birds, 三巻 is volume three, 三章 is chapter three — each also
+  // a name somebody has been seen with once. A number is a count until the
+  // counts say otherwise.
+  it("asks a span carrying a numeral for more than one sighting", () => {
+    expect(nameMayOverrideShorterWord("二羽", 2)).toBe(false);
+    expect(nameMayOverrideShorterWord("三章", 1)).toBe(false);
+    expect(nameMayOverrideShorterWord("計三", 2)).toBe(false);
+    expect(nameMayOverrideShorterWord("一郎", 393)).toBe(true);
+    expect(nameMayOverrideShorterWord("七海", 38)).toBe(true);
   });
 });
 
@@ -66,8 +79,16 @@ describe.skipIf(!hasBothDbs)("a two-kanji surname under the finger", () => {
     expect((await tap("同じ数学の教師に堀田というのが居た", 8))?.matchedText).toBe("堀田");
   });
 
+  // A guard, not a gate: this is the pre-existing floor's behaviour, kept
+  // under the relaxation rather than proved by it.
   it("still refuses a span straddling a word boundary", async () => {
     expect((await tap("山田先生のお宅へ行った", 1))?.matchedText).not.toBe("田先");
     expect((await tap("食事中電話が鳴った", 2))?.matchedText).not.toBe("中電");
+  });
+
+  it("answers a count with the counter, not with a name", async () => {
+    expect((await tap("鳥が二羽いた。", 3))?.lookupKind).not.toBe("name");
+    expect((await tap("全三巻を買った。", 2))?.lookupKind).not.toBe("name");
+    expect((await tap("第三章まで進んだ。", 2))?.lookupKind).not.toBe("name");
   });
 });

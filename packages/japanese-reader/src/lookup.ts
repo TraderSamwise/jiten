@@ -602,7 +602,7 @@ function makeEntryCache(dictDb: ReaderSqlDb) {
     const found = await lookupExactJapaneseMany(dictDb, missing);
     for (const word of missing) entryCache.set(word, found.get(word) ?? []);
   };
-  return { entryCache, lookupOnce, prefetch };
+  return { lookupOnce, prefetch };
 }
 
 /**
@@ -784,7 +784,7 @@ function chooseAutoLookupVariants(
     nameIsLonger &&
     (nameConfidence >= nameOnlyConfidence ||
       (nameSpellingIsSurface(bestName) &&
-        nameMayOverrideShorterWord(bestName.matchedText.length, bestName.nameMatches?.[0]?.freq)))
+        nameMayOverrideShorterWord(bestName.matchedText, bestName.nameMatches?.[0]?.freq)))
   ) {
     return taggedNames;
   }
@@ -1237,7 +1237,7 @@ export async function smartLookupWithOffset(
   if (negativeScopeParticle) return [asWordLookupResult(negativeScopeParticle)];
 
   const kanjiCache = new Map<string, KanjiReadingRecord>();
-  const { entryCache, lookupOnce, prefetch } = makeEntryCache(dictDb);
+  const { lookupOnce, prefetch } = makeEntryCache(dictDb);
 
   /**
    * Spellings of `substr` with its one kanji written as a reading instead.

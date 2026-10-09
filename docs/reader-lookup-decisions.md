@@ -1005,6 +1005,30 @@ names in the book that a tap used to answer with a single kanji** — 茂作 (wa
 The floor itself is untouched above two characters, and an uncounted two-kanji
 spelling is still refused — which is the whole of what keeps 田先 out.
 
+**A number is a count until the counts say otherwise.** Review found the
+relaxation handing 鳥が**二羽**いた to ふたば, 全**三巻** to みつまき, 犬が**二戸**
+to にと and 第**三章** to さんしょう — each a real span of the app's own
+`counter_readings` table, each also a name somebody has been seen with once or
+twice, and each returned as the _only_ result with no word to fall back to. A
+span carrying a kanji numeral now needs **three** sightings rather than one
+(`AUTO_NAME_OVERRIDE_NUMERAL_MIN_FREQ`). That clears every one of those at 1–2
+and costs nothing real: 一郎 is 393, 三郎 334, 七海 38, and the corpus diff is
+unmoved at 12. 1,334 of the 2,242 numeral-carrying two-kanji spellings lose the
+override; 908 keep it.
+
+**The bound, recorded because it is much wider than the two straddles above.**
+**36,405** two-kanji spellings that are not dictionary words now outrank a
+one-character word, **18,212 of them on a single sighting**. A synthetic frame
+— `その{A}{B}を見た。` over the 11,248 pairs whose characters are each a common
+standalone word and whose pair is not a word — flips **21,598 of 22,496 taps**
+from word to name. Taken as shipped, because the frame is the thing being
+measured there, not the language: two adjacent single-kanji words with no kana
+between them is rare in real prose, which is why the same relaxation moves 12
+taps in 11,296 of Bocchan and every one is a name in the book. If this ever
+reads wrong in the wild, the fix is a frequency floor set from the
+distribution, not another guard. `yarn check:tap-consistency` is word-mode and
+cannot see any of this.
+
 ### A suru-verb noun proves its own kana tail, and the name walk refuses the same starts
 
 海外へ赴任した**ため**だった answered したため — 認む, "to write down", in its
@@ -1023,7 +1047,7 @@ guard, so with the word span refused, 注文したから came back as the surnam
 たから. Auto mode now computes the starts once and hands them to both walks
 (`okuriganaStartsForTap`).
 
-**And NAME mode, which review caught after the fact.** `autoLookupWithOffset`
+**And NAME mode, which review caught twice.** `autoLookupWithOffset`
 computes the starts and hands them to both walks, but the reader calls
 `nameLookupWithOffset` directly when the user switches to Names, and that call
 had no starts at all — so name mode went on answering 注文したから with たから.

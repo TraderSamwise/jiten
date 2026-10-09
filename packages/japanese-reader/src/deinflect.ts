@@ -889,7 +889,11 @@ export function deinflect(word: string): DeinflectCandidate[] {
       const stemLen = current.word.length - rule.from.length;
       if (stemLen + rule.to.length <= 0) continue;
       if (rule.minStem != null && stemLen < rule.minStem) continue;
-      if (rule.stemEnd && !rule.stemEnd.test(current.word[stemLen - 1] ?? "")) continue;
+      // By code point: a surrogate pair indexed as a code unit tests half a
+      // kanji, and the guard would refuse a legitimate stem.
+      if (rule.stemEnd && !rule.stemEnd.test([...current.word.slice(0, stemLen)].pop() ?? "")) {
+        continue;
+      }
       if (!(current.typeMask & rule.typeIn)) continue;
 
       const base = current.word.slice(0, stemLen) + rule.to;
