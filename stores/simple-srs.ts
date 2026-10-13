@@ -29,6 +29,8 @@ export interface SimpleSrsUpdate {
   simpleN: number;
   simpleInterval: number;
   simpleRelearning: number;
+  /** Correct answers in a row, toward the three a learning card needs. */
+  simpleRun: number;
 }
 
 const MAC_EPOCH_MS = new Date("2001-01-01T00:00:00Z").getTime();
@@ -130,6 +132,7 @@ export function simpleGraduate(
     simpleInterval: newInterval,
     // The lapse this graduation recovered from is paid for.
     simpleRelearning: 0,
+    simpleRun: 0,
   };
 }
 
@@ -141,6 +144,7 @@ export function simpleReviewFail(card: SrsCardRow): SimpleSrsUpdate {
     simpleN: 0,
     simpleInterval: card.simpleInterval ?? INITIAL_INTERVAL,
     simpleRelearning: 1,
+    simpleRun: 0,
   };
 }
 
@@ -151,6 +155,7 @@ export function simpleInitCard(): SimpleSrsUpdate {
     simpleN: 0, // immediately due (in learning)
     simpleInterval: INITIAL_INTERVAL,
     simpleRelearning: 0,
+    simpleRun: 0,
   };
 }
 
@@ -162,8 +167,6 @@ export interface SimpleSrsDecision {
   updates: SimpleSrsUpdate;
   /** Whether the card leaves the session, or is re-queued to be asked again. */
   graduated: boolean;
-  /** The card's correct-in-a-row count after this answer. */
-  correctRun: number;
 }
 
 /**
@@ -176,38 +179,33 @@ export interface SimpleSrsDecision {
 export function nextSimpleReview(
   card: SrsCardRow,
   action: "pass" | "easy" | "fail",
-  correctRun: number,
 ): SimpleSrsDecision {
   const isNew = card.simpleStage == null;
   const relearning = card.simpleRelearning === 1;
 
   if (action === "fail") {
-    return {
-      updates: isNew ? simpleInitCard() : simpleReviewFail(card),
-      graduated: false,
-      correctRun: 0,
-    };
+    return { updates: isNew ? simpleInitCard() : simpleReviewFail(card), graduated: false };
   }
 
   if (action === "easy") {
     // Easy skips the correct-in-a-row gate and graduates at once.
     const base = isNew ? { ...card, ...simpleInitCard() } : card;
-    return { updates: simpleGraduate(base, true, relearning), graduated: true, correctRun: 0 };
+    return { updates: simpleGraduate(base, true, relearning), graduated: true };
   }
 
   if (isNew) {
     // First sight: start the card and start counting.
-    return { updates: simpleInitCard(), graduated: false, correctRun: 1 };
+    return { updates: { ...simpleInitCard(), simpleRun: 1 }, graduated: false };
   }
 
   if (card.simpleStage === 1) {
     // Graduated and due: one correct answer settles it.
-    return { updates: simpleGraduate(card, false, relearning), graduated: true, correctRun: 0 };
+    return { updates: simpleGraduate(card, false, relearning), graduated: true };
   }
 
-  const run = correctRun + 1;
+  const run = (card.simpleRun ?? 0) + 1;
   if (run >= REQUIRED_CORRECT) {
-    return { updates: simpleGraduate(card, false, relearning), graduated: true, correctRun: 0 };
+    return { updates: simpleGraduate(card, false, relearning), graduated: true };
   }
   return {
     updates: {
@@ -216,8 +214,8 @@ export function nextSimpleReview(
       simpleInterval: card.simpleInterval ?? 0,
       // Still inside the lapse it is recovering from, if it was in one.
       simpleRelearning: card.simpleRelearning ?? 0,
+      simpleRun: run,
     },
     graduated: false,
-    correctRun: run,
   };
 }

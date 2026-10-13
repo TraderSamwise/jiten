@@ -15,5 +15,6 @@ export const SRS_CARD_SELECT = `SELECT id, entry_id as entryId, kanji_literal as
     simple_stage as simpleStage, simple_n as simpleN,
     simple_interval as simpleInterval,
     simple_relearning as simpleRelearning,
+    simple_run as simpleRun,
     last_confusion_check as lastConfusionCheck,
     learning_steps as learningSteps`;

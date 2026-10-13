@@ -441,44 +441,41 @@ describe("one answer, decided the way the screen decides it", () => {
 
   test("fail → three passes → the card recovers instead of ratcheting", () => {
     let card = graduated();
-    let run = 0;
 
-    const fail = nextSimpleReview(card, "fail", run);
+    const fail = nextSimpleReview(card, "fail");
     expect(fail.graduated).toBe(false);
     expect(fail.updates.simpleRelearning).toBe(1);
     card = { ...card, ...fail.updates };
-    run = fail.correctRun;
 
     for (let i = 0; i < 2; i++) {
-      const step = nextSimpleReview(card, "pass", run);
+      const step = nextSimpleReview(card, "pass");
       expect(step.graduated).toBe(false);
       // The lapse is still being served, so the flag has to survive the re-queue.
       expect(step.updates.simpleRelearning).toBe(1);
       card = { ...card, ...step.updates };
-      run = step.correctRun;
     }
 
-    const third = nextSimpleReview(card, "pass", run);
+    const third = nextSimpleReview(card, "pass");
     expect(third.graduated).toBe(true);
     expect(third.updates.simpleInterval).toBeCloseTo(28.305, 3); // halved ONCE
     expect(third.updates.simpleRelearning).toBe(0);
     card = { ...card, ...third.updates };
 
     // And the next review grows again — this is the whole fix.
-    const after = nextSimpleReview(card, "pass", 0);
+    const after = nextSimpleReview(card, "pass");
     expect(after.updates.simpleInterval).toBeCloseTo(28.305 * 1.9, 3);
   });
 
   test("a card that failed long ago but is not relearning grows", () => {
-    const step = nextSimpleReview(graduated(), "pass", 0);
+    const step = nextSimpleReview(graduated(), "pass");
     expect(step.updates.simpleInterval).toBeCloseTo(56.61 * 1.9, 2);
   });
 
   test("easy graduates at once and still halves only inside a lapse", () => {
     expect(
-      nextSimpleReview(graduated({ simpleRelearning: 1 }), "easy", 0).updates.simpleInterval,
+      nextSimpleReview(graduated({ simpleRelearning: 1 }), "easy").updates.simpleInterval,
     ).toBeCloseTo(28.305, 3);
-    expect(nextSimpleReview(graduated(), "easy", 0).updates.simpleInterval).toBeCloseTo(
+    expect(nextSimpleReview(graduated(), "easy").updates.simpleInterval).toBeCloseTo(
       56.61 * 2.6125,
       2,
     );
@@ -491,15 +488,16 @@ describe("one answer, decided the way the screen decides it", () => {
       simpleRelearning: 0,
       lapses: 0,
     } as SrsCardRow;
-    const first = nextSimpleReview(fresh, "pass", 0);
+    const first = nextSimpleReview(fresh, "pass");
     expect(first.graduated).toBe(false);
-    expect(first.correctRun).toBe(1);
-    const card = { ...fresh, ...first.updates };
-    expect(nextSimpleReview(card, "pass", 1).correctRun).toBe(2);
-    expect(nextSimpleReview(card, "pass", 2).graduated).toBe(true);
+    expect(first.updates.simpleRun).toBe(1);
+    const once = { ...fresh, ...first.updates };
+    const second = nextSimpleReview(once, "pass");
+    expect(second.updates.simpleRun).toBe(2);
+    expect(nextSimpleReview({ ...once, ...second.updates }, "pass").graduated).toBe(true);
   });
 
   test("a graduated card due for review settles in one pass", () => {
-    expect(nextSimpleReview(graduated(), "pass", 0).graduated).toBe(true);
+    expect(nextSimpleReview(graduated(), "pass").graduated).toBe(true);
   });
 });

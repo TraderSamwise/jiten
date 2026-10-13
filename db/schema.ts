@@ -162,6 +162,7 @@ export const srsCards = sqliteTable("srs_cards", {
   simpleN: real("simple_n"),
   simpleInterval: real("simple_interval"),
   simpleRelearning: integer("simple_relearning"),
+  simpleRun: integer("simple_run"),
   lastConfusionCheck: text("last_confusion_check"),
   deletedAt: text("deleted_at"),
   learningSteps: integer("learning_steps").notNull().default(0),

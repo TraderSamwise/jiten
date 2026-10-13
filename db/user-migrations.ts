@@ -258,4 +258,10 @@ export const USER_DB_MIGRATIONS = [
   // pulls the row afterwards takes the remote 0 back over it.
   `UPDATE srs_cards SET simple_relearning = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
      WHERE simple_stage = 0 AND lapses > 0`,
+  // How many correct answers in a row a learning card has. It lived in a React
+  // ref, so it died with the screen: a card answered twice and left was back to
+  // zero, and with `simple_n = 0` it stayed due forever. Nullable like its
+  // neighbours — a restored pre-column backup writes NULL, and NOT NULL would
+  // fail the whole srs_cards import.
+  `ALTER TABLE srs_cards ADD COLUMN simple_run INTEGER DEFAULT 0`,
 ];

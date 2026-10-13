@@ -31,7 +31,7 @@ export const BACKUP_TABLES: {
   {
     name: "srs_cards",
     query:
-      "SELECT id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, simple_stage, simple_n, simple_interval, simple_relearning, last_confusion_check, kanji_literal, learning_steps, created_at, updated_at FROM srs_cards",
+      "SELECT id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, simple_stage, simple_n, simple_interval, simple_relearning, simple_run, last_confusion_check, kanji_literal, learning_steps, created_at, updated_at FROM srs_cards",
   },
   {
     name: "review_logs",
@@ -133,6 +133,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "simple_n",
     "simple_interval",
     "simple_relearning",
+    "simple_run",
     "last_confusion_check",
     "kanji_literal",
     "learning_steps",

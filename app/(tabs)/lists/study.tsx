@@ -463,7 +463,6 @@ interface StudyCardViewProps {
   frontFaces: CardFace[];
   backFaces: CardFace[];
   flashcardMode: FlashcardMode;
-  simpleCorrectCount: number;
   // Voice/typing (only active for cursor card)
   voiceStatus: "idle" | "correct" | "wrong";
   voiceHeard: string | null;
@@ -494,7 +493,6 @@ const StudyCardView = React.memo(
       frontFaces,
       backFaces,
       flashcardMode,
-      simpleCorrectCount,
       voiceStatus,
       voiceHeard,
       isListening,
@@ -593,10 +591,7 @@ const StudyCardView = React.memo(
 
     // Stats & checks
     const stats = getCardStats(item.srsCard, flashcardMode);
-    const checkCount =
-      flashcardMode === "simple_srs" && item.srsCard
-        ? (simpleCorrectCount ?? getCheckCount(item.srsCard, "simple_srs"))
-        : getCheckCount(item.srsCard, flashcardMode);
+    const checkCount = getCheckCount(item.srsCard, flashcardMode);
 
     // Render kana face with pitch accent visualization when available
     function renderFaceContent(
@@ -908,6 +903,7 @@ interface SrsSnapshot {
   simpleN: number | null;
   simpleInterval: number | null;
   simpleRelearning: number | null;
+  simpleRun: number | null;
   lastConfusionCheck: string | null;
   learningSteps: number;
 }
@@ -941,6 +937,7 @@ function captureSnapshot(card: SrsCardRow): SrsSnapshot {
     simpleN: card.simpleN,
     simpleInterval: card.simpleInterval,
     simpleRelearning: card.simpleRelearning,
+    simpleRun: card.simpleRun,
     lastConfusionCheck: card.lastConfusionCheck,
     learningSteps: card.learningSteps,
   };
@@ -952,8 +949,9 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
   if (mode === "simple_srs") {
     if (srsCard.simpleStage == null) return 0;
     if (srsCard.simpleStage === 1) return 3; // graduated
-    // stage 0 (learning): 1 check after init, 2 if interval has grown
-    return srsCard.simpleInterval != null && srsCard.simpleInterval > 0.5 ? 2 : 1;
+    // The real count, now that it is persisted — this used to be guessed from
+    // the interval, because the count died with the screen.
+    return srsCard.simpleRun ?? 0;
   }
 
   if (mode === "srs") {
@@ -1084,7 +1082,6 @@ function StudyScreen() {
   const sessionCorrectRef = useRef(0);
   const cursorCardRef = useRef<StudyCardViewHandle>(null);
   // Simple SRS: track correct-in-a-row per card (need 3 to graduate)
-  const simpleCorrectCountRef = useRef(new Map<string, number>());
   // Simple SRS: track cards that completed this session (graduated or passed review)
   const completedSrsIdsRef = useRef(new Set<string>());
 
@@ -2211,26 +2208,23 @@ function StudyScreen() {
 
     // The decision lives in stores/simple-srs.ts so it can be tested: the lapse
     // bug was in which flag this call site handed over, not in the arithmetic.
-    const decision = nextSimpleReview(
-      card,
-      action,
-      simpleCorrectCountRef.current.get(card.id) ?? 0,
-    );
+    // The correct-in-a-row count rides in `updates` and is persisted — it used
+    // to live in a ref that died with the screen, so a card answered twice and
+    // left came back to a count of zero and stayed due forever.
+    const decision = nextSimpleReview(card, action);
     const updates = decision.updates;
     const graduated = decision.graduated;
-    if (action === "fail") simpleCorrectCountRef.current.set(card.id, 0);
-    else if (decision.correctRun === 0) simpleCorrectCountRef.current.delete(card.id);
-    else simpleCorrectCountRef.current.set(card.id, decision.correctRun);
 
     await userDb.runAsync(
       `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-        simple_relearning = ?, reps = reps + 1, lapses = lapses + ?, updated_at = ?
-       WHERE id = ?`,
+        simple_relearning = ?, simple_run = ?, reps = reps + 1, lapses = lapses + ?,
+        updated_at = ? WHERE id = ?`,
       [
         updates.simpleStage,
         updates.simpleN,
         updates.simpleInterval,
         updates.simpleRelearning,
+        updates.simpleRun,
         pass ? 0 : 1,
         now,
         card.id,
@@ -2328,16 +2322,7 @@ function StudyScreen() {
 
     // Find the srs_card for this confused entry
     const cardRow = await userDb.getFirstAsync<SrsCardRow>(
-      `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-        stability, difficulty, elapsed_days as elapsedDays,
-        scheduled_days as scheduledDays, reps, lapses, state,
-        last_review as lastReview, front_mode as frontMode,
-        back_mode as backMode, created_at as createdAt,
-        updated_at as updatedAt,
-        simple_stage as simpleStage, simple_n as simpleN,
-        simple_interval as simpleInterval,
-        simple_relearning as simpleRelearning,
-        last_confusion_check as lastConfusionCheck
+      `${SRS_CARD_SELECT}
        FROM srs_cards WHERE ${scope.clause} AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL
        ORDER BY due ASC`,
       [...scope.args, result.entry.id],
@@ -2351,6 +2336,13 @@ function StudyScreen() {
       } else if (sessionMode === "srs") {
         await rateSrsCard(cardRow, Rating.Again);
       }
+
+      // Drop it from the pools first: they hold the row as it was at session
+      // start, and a second copy pulled later would carry a stale correct-run
+      // and graduate the card on one pass after this fail just reset it.
+      const queuedId = queuedCard.id;
+      duePoolRef.current = duePoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
+      newPoolRef.current = newPoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
 
       // Push to end of current session
       setCards((prev) => [
@@ -2414,13 +2406,14 @@ function StudyScreen() {
       // Restore simple SRS fields
       await userDb.runAsync(
         `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-          simple_relearning = ?, reps = ?, lapses = ?, last_confusion_check = ?,
-          updated_at = ? WHERE id = ?`,
+          simple_relearning = ?, simple_run = ?, reps = ?, lapses = ?,
+          last_confusion_check = ?, updated_at = ? WHERE id = ?`,
         [
           snap.simpleStage,
           snap.simpleN,
           snap.simpleInterval,
           snap.simpleRelearning,
+          snap.simpleRun,
           snap.reps,
           snap.lapses,
           snap.lastConfusionCheck,
@@ -2428,8 +2421,7 @@ function StudyScreen() {
           card.id,
         ],
       );
-      // Reset correct count and completed status for this card on undo
-      simpleCorrectCountRef.current.delete(card.id);
+      // The restored snapshot carries the correct-in-a-row count with it now.
       completedSrsIdsRef.current.delete(card.id);
     } else if (sessionMode === "add_order" && studyCard.preStudyPosition != null) {
       // Restore study_position
@@ -2918,11 +2910,6 @@ function StudyScreen() {
                       frontFaces={frontFaces}
                       backFaces={backFaces}
                       flashcardMode={sessionMode}
-                      simpleCorrectCount={
-                        studyCard.item.srsCard
-                          ? (simpleCorrectCountRef.current.get(studyCard.item.srsCard.id) ?? 0)
-                          : 0
-                      }
                       voiceStatus={isCursor ? voiceStatus : "idle"}
                       voiceHeard={isCursor ? voiceHeard : null}
                       isListening={isCursor && isListening}

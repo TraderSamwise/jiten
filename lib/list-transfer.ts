@@ -64,6 +64,8 @@ export interface JitenExportFile {
       interval: number;
       /** 1 while the card is recovering from a lapse. Absent in older payloads. */
       relearning?: number;
+      /** Correct answers in a row so far. Absent in older payloads. */
+      run?: number;
     }[];
   };
 }
@@ -120,7 +122,7 @@ export async function buildListExport(
     if (flashcardMode === "simple_srs") {
       // Export simple SRS data
       const srsRows = await userDb.getAllAsync<any>(
-        "SELECT entry_id, kanji_literal, simple_stage, simple_n, simple_interval, simple_relearning FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
+        "SELECT entry_id, kanji_literal, simple_stage, simple_n, simple_interval, simple_relearning, simple_run FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL",
         [listId],
       );
 
@@ -134,6 +136,7 @@ export async function buildListExport(
             interval: card.simple_interval,
             // A card shared mid-lapse owes its halving on the other side too.
             relearning: card.simple_relearning ?? 0,
+            run: card.simple_run ?? 0,
           };
           if (card.kanji_literal != null) base.kanjiLiteral = card.kanji_literal;
           return base;
@@ -297,8 +300,8 @@ export async function importListToDb(
         const kanjiLiteral = "kanjiLiteral" in card ? ((card as any).kanjiLiteral ?? null) : null;
         const entryId = kanjiLiteral != null ? 0 : card.entryId;
         await userDb.runAsync(
-          `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, simple_relearning, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO srs_cards (id, entry_id, kanji_literal, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode, simple_stage, simple_n, simple_interval, simple_relearning, simple_run, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             cardId,
             entryId,
@@ -318,6 +321,7 @@ export async function importListToDb(
             card.n,
             card.interval,
             card.relearning ?? 0,
+            card.run ?? 0,
             now,
             now,
           ],
