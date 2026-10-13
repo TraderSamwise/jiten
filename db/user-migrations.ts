@@ -260,8 +260,8 @@ export const USER_DB_MIGRATIONS = [
      WHERE simple_stage = 0 AND lapses > 0`,
   // How many correct answers in a row a learning card has. It lived in a React
   // ref, so it died with the screen: a card answered twice and left was back to
-  // zero, and with `simple_n = 0` it stayed due forever. Nullable like its
-  // neighbours — a restored pre-column backup writes NULL, and NOT NULL would
-  // fail the whole srs_cards import.
+  // zero, and with `simple_n = 0` it stayed due forever. Nullable to match its
+  // neighbours; restore would survive NOT NULL too, since it inserts with
+  // `INSERT OR REPLACE`, which substitutes the default for an explicit NULL.
   `ALTER TABLE srs_cards ADD COLUMN simple_run INTEGER DEFAULT 0`,
 ];
