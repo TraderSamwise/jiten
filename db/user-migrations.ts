@@ -248,4 +248,14 @@ export const USER_DB_MIGRATIONS = [
   // Ask a kanji card by blanking the keyword out of the learner's own story
   // (lib/rtk-cloze.ts) instead of showing the character.
   `ALTER TABLE lists ADD COLUMN mnemonic_cloze INTEGER NOT NULL DEFAULT 0`,
+  // Whether a simple-SRS card is recovering from a lapse RIGHT NOW. The halved
+  // re-graduation used `lapses > 0`, a lifetime counter, so every pass after a
+  // card's first failure halved its interval and the card ratcheted down to the
+  // 8-hour floor and never left the daily queue again.
+  `ALTER TABLE srs_cards ADD COLUMN simple_relearning INTEGER DEFAULT 0`,
+  // Cards sitting in a lapse when this lands are relearning by definition.
+  // `updated_at` moves too, or the backfill never pushes and a device that
+  // pulls the row afterwards takes the remote 0 back over it.
+  `UPDATE srs_cards SET simple_relearning = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE simple_stage = 0 AND lapses > 0`,
 ];

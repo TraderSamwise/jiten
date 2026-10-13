@@ -1,5 +1,6 @@
 import { describe, test, expect } from "vitest";
 import {
+  nextSimpleReview,
   dateToSrsEpochDays,
   srsEpochDaysToDate,
   getSimpleDueDate,
@@ -355,5 +356,150 @@ describe("session flow", () => {
     const result = simpleGraduate(card, false, false);
     expect(result.simpleInterval).toBeCloseTo(19, 1);
     expect(result.simpleStage).toBe(1);
+  });
+});
+
+/**
+ * The lapse multiplier belongs to the lapse, not to the card's history.
+ *
+ * It was scoped to `lapses > 0` — a lifetime counter nothing resets — so every
+ * graduation after a card's first ever failure halved the interval instead of
+ * multiplying it. A card climbed to 56 days, failed once, and then ratcheted
+ * 28 → 14 → 7 → 3.5 → … → the 8-hour floor, where it stayed due daily forever.
+ * Side by side with Midori on the same list, Midori's queue decayed and this
+ * one did not.
+ */
+describe("the lapse multiplier is scoped to the lapse", () => {
+  // `lapses: 3` is the whole point: this card HAS failed before. Under the old
+  // scoping that alone forced the halving, which is what these pin.
+  const card = (over: Partial<SrsCardRow> = {}): SrsCardRow =>
+    ({
+      simpleStage: 1,
+      simpleN: 0,
+      simpleInterval: 56.61,
+      simpleRelearning: 0,
+      lapses: 3,
+      ...over,
+    }) as SrsCardRow;
+
+  test("a pass while relearning halves once", () => {
+    expect(simpleGraduate(card({ simpleRelearning: 1 }), false, true).simpleInterval).toBeCloseTo(
+      28.305,
+      3,
+    );
+  });
+
+  test("and clears the flag, so the next pass multiplies again", () => {
+    const first = simpleGraduate(card({ simpleRelearning: 1 }), false, true);
+    expect(first.simpleRelearning).toBe(0);
+    const second = simpleGraduate(card({ simpleInterval: first.simpleInterval }), false, false);
+    expect(second.simpleInterval).toBeCloseTo(28.305 * 1.9, 3);
+  });
+
+  test("a card that has lapsed in the past but is not relearning grows", () => {
+    expect(simpleGraduate(card(), false, false).simpleInterval).toBeCloseTo(56.61 * 1.9, 2);
+  });
+
+  test("ten passes after one lapse end far above the floor, not on it", () => {
+    let c = card({ simpleInterval: 56.61, simpleRelearning: 1 });
+    let relearning = true;
+    for (let i = 0; i < 10; i++) {
+      const u = simpleGraduate(c, false, relearning);
+      relearning = u.simpleRelearning === 1;
+      c = card({ simpleInterval: u.simpleInterval, simpleRelearning: u.simpleRelearning });
+    }
+    expect(c.simpleInterval).toBeGreaterThan(100);
+  });
+
+  test("a fail marks the card as relearning", () => {
+    expect(simpleReviewFail(card()).simpleRelearning).toBe(1);
+  });
+
+  test("a new card is not relearning", () => {
+    expect(simpleInitCard().simpleRelearning).toBe(0);
+  });
+});
+
+/**
+ * The wiring, not the arithmetic.
+ *
+ * The lapse bug lived in which flag the study screen handed to simpleGraduate,
+ * and every test above calls simpleGraduate directly — so all of them stayed
+ * green with the screen still passing `lapses > 0`. These drive the whole
+ * answer the way the screen does.
+ */
+describe("one answer, decided the way the screen decides it", () => {
+  const graduated = (over: Partial<SrsCardRow> = {}): SrsCardRow =>
+    ({
+      simpleStage: 1,
+      simpleN: 0,
+      simpleInterval: 56.61,
+      simpleRelearning: 0,
+      lapses: 3,
+      ...over,
+    }) as SrsCardRow;
+
+  test("fail → three passes → the card recovers instead of ratcheting", () => {
+    let card = graduated();
+    let run = 0;
+
+    const fail = nextSimpleReview(card, "fail", run);
+    expect(fail.graduated).toBe(false);
+    expect(fail.updates.simpleRelearning).toBe(1);
+    card = { ...card, ...fail.updates };
+    run = fail.correctRun;
+
+    for (let i = 0; i < 2; i++) {
+      const step = nextSimpleReview(card, "pass", run);
+      expect(step.graduated).toBe(false);
+      // The lapse is still being served, so the flag has to survive the re-queue.
+      expect(step.updates.simpleRelearning).toBe(1);
+      card = { ...card, ...step.updates };
+      run = step.correctRun;
+    }
+
+    const third = nextSimpleReview(card, "pass", run);
+    expect(third.graduated).toBe(true);
+    expect(third.updates.simpleInterval).toBeCloseTo(28.305, 3); // halved ONCE
+    expect(third.updates.simpleRelearning).toBe(0);
+    card = { ...card, ...third.updates };
+
+    // And the next review grows again — this is the whole fix.
+    const after = nextSimpleReview(card, "pass", 0);
+    expect(after.updates.simpleInterval).toBeCloseTo(28.305 * 1.9, 3);
+  });
+
+  test("a card that failed long ago but is not relearning grows", () => {
+    const step = nextSimpleReview(graduated(), "pass", 0);
+    expect(step.updates.simpleInterval).toBeCloseTo(56.61 * 1.9, 2);
+  });
+
+  test("easy graduates at once and still halves only inside a lapse", () => {
+    expect(
+      nextSimpleReview(graduated({ simpleRelearning: 1 }), "easy", 0).updates.simpleInterval,
+    ).toBeCloseTo(28.305, 3);
+    expect(nextSimpleReview(graduated(), "easy", 0).updates.simpleInterval).toBeCloseTo(
+      56.61 * 2.6125,
+      2,
+    );
+  });
+
+  test("a new card counts up to three, then graduates", () => {
+    const fresh = {
+      simpleStage: null,
+      simpleInterval: null,
+      simpleRelearning: 0,
+      lapses: 0,
+    } as SrsCardRow;
+    const first = nextSimpleReview(fresh, "pass", 0);
+    expect(first.graduated).toBe(false);
+    expect(first.correctRun).toBe(1);
+    const card = { ...fresh, ...first.updates };
+    expect(nextSimpleReview(card, "pass", 1).correctRun).toBe(2);
+    expect(nextSimpleReview(card, "pass", 2).graduated).toBe(true);
+  });
+
+  test("a graduated card due for review settles in one pass", () => {
+    expect(nextSimpleReview(graduated(), "pass", 0).graduated).toBe(true);
   });
 });

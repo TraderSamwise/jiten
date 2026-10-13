@@ -218,6 +218,8 @@ export interface SrsCardRow {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  /** 1 while the card is recovering from a lapse — see stores/simple-srs.ts. */
+  simpleRelearning: number | null;
   // Confusion detection cooldown
   lastConfusionCheck: string | null;
   // FSRS learning step index

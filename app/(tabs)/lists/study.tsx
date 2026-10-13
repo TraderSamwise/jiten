@@ -20,6 +20,7 @@ import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
 import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
 import { isRtkReviewList } from "@/lib/rtk-review";
+import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -74,12 +75,9 @@ import { reviewCard, Rating, getFsrsInstance, previewIntervals } from "@/stores/
 import { formatInterval as formatDueInterval } from "@/lib/format-interval";
 import { japaneseFontStyle } from "@/lib/japanese-font";
 import {
-  simpleGraduate,
-  simpleReviewFail,
-  simpleInitCard,
+  nextSimpleReview,
   endOfLogicalDayEpochDays,
   endOfLogicalDayISO,
-  SIMPLE_SRS_REQUIRED_CORRECT,
 } from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
 import { useListsStore, parseListRow } from "@/stores/lists";
@@ -909,6 +907,7 @@ interface SrsSnapshot {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  simpleRelearning: number | null;
   lastConfusionCheck: string | null;
   learningSteps: number;
 }
@@ -941,6 +940,7 @@ function captureSnapshot(card: SrsCardRow): SrsSnapshot {
     simpleStage: card.simpleStage,
     simpleN: card.simpleN,
     simpleInterval: card.simpleInterval,
+    simpleRelearning: card.simpleRelearning,
     lastConfusionCheck: card.lastConfusionCheck,
     learningSteps: card.learningSteps,
   };
@@ -1336,16 +1336,7 @@ function StudyScreen() {
     loadQueue();
   }, [dictDb, userDb, list?.id, scope]);
 
-  const srsSelectClause = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-    stability, difficulty, elapsed_days as elapsedDays,
-    scheduled_days as scheduledDays, reps, lapses, state,
-    last_review as lastReview, front_mode as frontMode,
-    back_mode as backMode, created_at as createdAt,
-    updated_at as updatedAt,
-    simple_stage as simpleStage, simple_n as simpleN,
-    simple_interval as simpleInterval,
-    last_confusion_check as lastConfusionCheck,
-    learning_steps as learningSteps`;
+  const srsSelectClause = SRS_CARD_SELECT;
 
   /** Resolve SRS card rows into QueueItems with full dict entries */
   async function resolveCards(srsRows: SrsCardRow[]): Promise<QueueItem[]> {
@@ -2216,69 +2207,34 @@ function StudyScreen() {
   ): Promise<{ graduated: boolean; card: SrsCardRow }> {
     if (!userDb) return { graduated: true, card };
     const now = new Date().toISOString();
-    const isNew = card.simpleStage == null;
-    const isEasy = action === "easy";
     const pass = action !== "fail";
 
-    let updates: { simpleStage: number; simpleN: number; simpleInterval: number };
-    let graduated = false;
-
-    if (!pass) {
-      // FAIL: preserve interval, reset to learning, increment lapses
-      if (isNew) {
-        updates = simpleInitCard();
-      } else {
-        updates = simpleReviewFail(card);
-      }
-      // Reset correct count for this card
-      simpleCorrectCountRef.current.set(card.id, 0);
-    } else if (isEasy) {
-      // EASY: skip correctCount gate, immediately graduate
-      if (isNew) {
-        const init = simpleInitCard();
-        updates = simpleGraduate({ ...card, ...init }, true, card.lapses > 0);
-      } else {
-        updates = simpleGraduate(card, true, card.lapses > 0);
-      }
-      graduated = true;
-      simpleCorrectCountRef.current.delete(card.id);
-    } else {
-      // CORRECT: behavior depends on card state
-      if (isNew) {
-        // First time seeing this card -- initialize and start counting
-        updates = simpleInitCard();
-        simpleCorrectCountRef.current.set(card.id, 1);
-        // Not graduated yet (need 3 correct)
-      } else if (card.simpleStage === 1) {
-        // Already graduated, due for review -- pass once → done
-        updates = simpleGraduate(card, false, card.lapses > 0);
-        graduated = true;
-        simpleCorrectCountRef.current.delete(card.id);
-      } else {
-        // Learning/lapsed card (stage 0) -- need 3 correct to graduate
-        const count = (simpleCorrectCountRef.current.get(card.id) ?? 0) + 1;
-        simpleCorrectCountRef.current.set(card.id, count);
-
-        if (count >= SIMPLE_SRS_REQUIRED_CORRECT) {
-          // Graduated! Update interval and schedule next review
-          updates = simpleGraduate(card, false, card.lapses > 0);
-          graduated = true;
-          simpleCorrectCountRef.current.delete(card.id);
-        } else {
-          // Still learning -- keep current state, card will be re-queued
-          updates = {
-            simpleStage: 0,
-            simpleN: 0, // immediately due
-            simpleInterval: card.simpleInterval ?? 0,
-          };
-        }
-      }
-    }
+    // The decision lives in stores/simple-srs.ts so it can be tested: the lapse
+    // bug was in which flag this call site handed over, not in the arithmetic.
+    const decision = nextSimpleReview(
+      card,
+      action,
+      simpleCorrectCountRef.current.get(card.id) ?? 0,
+    );
+    const updates = decision.updates;
+    const graduated = decision.graduated;
+    if (action === "fail") simpleCorrectCountRef.current.set(card.id, 0);
+    else if (decision.correctRun === 0) simpleCorrectCountRef.current.delete(card.id);
+    else simpleCorrectCountRef.current.set(card.id, decision.correctRun);
 
     await userDb.runAsync(
       `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-        reps = reps + 1, lapses = lapses + ?, updated_at = ? WHERE id = ?`,
-      [updates.simpleStage, updates.simpleN, updates.simpleInterval, pass ? 0 : 1, now, card.id],
+        simple_relearning = ?, reps = reps + 1, lapses = lapses + ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        updates.simpleStage,
+        updates.simpleN,
+        updates.simpleInterval,
+        updates.simpleRelearning,
+        pass ? 0 : 1,
+        now,
+        card.id,
+      ],
     );
 
     return {
@@ -2380,6 +2336,7 @@ function StudyScreen() {
         updated_at as updatedAt,
         simple_stage as simpleStage, simple_n as simpleN,
         simple_interval as simpleInterval,
+        simple_relearning as simpleRelearning,
         last_confusion_check as lastConfusionCheck
        FROM srs_cards WHERE ${scope.clause} AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL
        ORDER BY due ASC`,
@@ -2457,11 +2414,13 @@ function StudyScreen() {
       // Restore simple SRS fields
       await userDb.runAsync(
         `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-          reps = ?, lapses = ?, last_confusion_check = ?, updated_at = ? WHERE id = ?`,
+          simple_relearning = ?, reps = ?, lapses = ?, last_confusion_check = ?,
+          updated_at = ? WHERE id = ?`,
         [
           snap.simpleStage,
           snap.simpleN,
           snap.simpleInterval,
+          snap.simpleRelearning,
           snap.reps,
           snap.lapses,
           snap.lastConfusionCheck,
