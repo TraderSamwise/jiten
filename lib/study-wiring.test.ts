@@ -20,6 +20,11 @@
  * A source check cannot prove behaviour, and a determined edit can satisfy it
  * while breaking the screen. It catches the accidental revert, which is the one
  * that actually happens.
+ *
+ * It lives in `lib/` and not beside the screen because `app/` is the
+ * expo-router route directory: a test file there is bundled as a route, and its
+ * `vitest` import drags Vite into the web build, which fails on a dynamic
+ * `import(filepath)` Metro cannot resolve.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
