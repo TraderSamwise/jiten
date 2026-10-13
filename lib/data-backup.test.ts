@@ -1,6 +1,14 @@
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/test-db";
-import { attemptBackup, importBackup } from "./data-backup";
+import {
+  attemptBackup,
+  importBackup,
+  BACKUP_TABLES,
+  TABLE_COLUMNS,
+  IMPORT_ORDER,
+  PRIMARY_KEYS,
+} from "./data-backup";
 
 describe("data backup", () => {
   it("round-trips local-only history tables through backup and import", async () => {
@@ -103,7 +111,9 @@ describe("data backup", () => {
       const failingDb = {
         ...targetDb,
         runAsync: async (sql: string, params?: any[]) => {
-          if (sql.includes("INSERT OR REPLACE INTO lists")) {
+          // Matches whatever statement shape the restore uses; it is an upsert
+          // now, because `INSERT OR REPLACE` deletes the row and cascades.
+          if (/INTO lists\b/.test(sql)) {
             throw new Error("lists import failed");
           }
           return targetDb.runAsync(sql, params);
@@ -129,5 +139,362 @@ describe("data backup", () => {
       sourceDb.close();
       targetDb.close();
     }
+  });
+});
+
+/**
+ * A schema change must not cost the user their data in either direction.
+ *
+ * Review proved both halves broke: a backup from a build with
+ * `new_per_session` restored onto one without it failed per TABLE, so every
+ * list and every flashcard was skipped; and `attemptBackup`'s SELECT names the
+ * new columns while the recovery screen only runs when the database failed to
+ * migrate — precisely when they may not exist.
+ */
+describe("backup across a schema change", () => {
+  /** A `WrappedUserDb`-shaped wrapper over better-sqlite3. */
+  function wrap(db: Database.Database) {
+    return {
+      getAllAsync: async <T>(sql: string, args: unknown[] = []) =>
+        db.prepare(sql).all(...(args as unknown[])) as T[],
+      getFirstAsync: async <T>(sql: string, args: unknown[] = []) =>
+        (db.prepare(sql).get(...(args as unknown[])) ?? null) as T | null,
+      runAsync: async (sql: string, args: unknown[] = []) => {
+        db.prepare(sql).run(...(args as unknown[]));
+      },
+      execAsync: async (sql: string) => {
+        db.exec(sql);
+      },
+    } as unknown as Parameters<typeof importBackup>[0];
+  }
+
+  /** The `lists` table as it was before `new_per_session` existed. */
+  function olderDb(): Database.Database {
+    const db = new Database(":memory:");
+    db.exec(`CREATE TABLE lists (
+      id TEXT PRIMARY KEY, name TEXT, description TEXT,
+      flashcard_mode TEXT DEFAULT 'add_order', front_faces TEXT, back_faces TEXT,
+      study_position INTEGER DEFAULT 0, configured INTEGER DEFAULT 0,
+      auto_play_audio INTEGER DEFAULT 0, confusion_detection INTEGER DEFAULT 1,
+      voice_mode INTEGER DEFAULT 0, typing_mode INTEGER DEFAULT 0,
+      disable_flip_animation INTEGER DEFAULT 0, disable_swipe_animation INTEGER DEFAULT 0,
+      is_default INTEGER DEFAULT 0, learning_steps TEXT, relearning_steps TEXT,
+      mnemonic_cloze INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);
+    return db;
+  }
+
+  it("restores onto an older build instead of losing every list", async () => {
+    const db = olderDb();
+    const backup = JSON.stringify({
+      version: 1,
+      tables: {
+        lists: [
+          { id: "l1", name: "Core 8k", new_per_session: 25, created_at: "x", updated_at: "y" },
+        ],
+      },
+    });
+    const result = await importBackup(wrap(db), backup);
+    expect(result.failed).toEqual([]);
+    expect(result.succeeded).toContain("lists");
+    expect(db.prepare("SELECT name FROM lists WHERE id = 'l1'").get()).toEqual({ name: "Core 8k" });
+  });
+
+  it("takes the column default for a column an older backup never had", async () => {
+    const db = new Database(":memory:");
+    db.exec(`CREATE TABLE lists (id TEXT PRIMARY KEY, name TEXT,
+      new_per_session INTEGER DEFAULT 10, created_at TEXT, updated_at TEXT)`);
+    // No `new_per_session` key at all, the way a pre-feature backup looks.
+    const backup = JSON.stringify({
+      version: 1,
+      tables: { lists: [{ id: "l1", name: "Core 8k", created_at: "x", updated_at: "y" }] },
+    });
+    await importBackup(wrap(db), backup);
+    expect(db.prepare("SELECT new_per_session FROM lists WHERE id = 'l1'").get()).toEqual({
+      new_per_session: 10,
+    });
+  });
+
+  it("rescues the rows a failed migration leaves readable", async () => {
+    const db = olderDb();
+    db.prepare("INSERT INTO lists (id, name) VALUES ('l1', 'Core 8k')").run();
+    // BACKUP_TABLES names `new_per_session`, which this database lacks.
+    const result = await attemptBackup(wrap(db) as never);
+    expect(result.failed).not.toContain("lists");
+    expect(result.tables.lists).toHaveLength(1);
+    expect((result.tables.lists[0] as { name: string }).name).toBe("Core 8k");
+  });
+});
+
+/**
+ * The export's SELECT and the restore's column list must agree.
+ *
+ * They had drifted: `books.read_complete` was exported and then dropped on
+ * restore, and `user_kanji_notes.updated_at` was in neither, so a restored
+ * mnemonic was invisible to the push, which selects `WHERE updated_at > ?`.
+ */
+describe("the backup's column lists", () => {
+  const selected = (query: string) =>
+    query
+      .replace(/^SELECT\s+/i, "")
+      .replace(/\s+FROM\s+.*$/i, "")
+      .split(",")
+      .map((col) => col.trim());
+
+  it("restores every column it exports", () => {
+    const drift: string[] = [];
+    for (const table of BACKUP_TABLES) {
+      const restored = new Set(TABLE_COLUMNS[table.name] ?? []);
+      for (const col of selected(table.query)) {
+        if (!restored.has(col)) drift.push(`${table.name}.${col}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+
+  it("exports every column it would restore", () => {
+    const drift: string[] = [];
+    for (const table of BACKUP_TABLES) {
+      const exported = new Set(selected(table.query));
+      for (const col of TABLE_COLUMNS[table.name] ?? []) {
+        if (!exported.has(col)) drift.push(`${table.name}.${col}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+});
+
+describe("restoring one table does not take its neighbours with it", () => {
+  it("keeps a list's words when only `lists` is in the backup", async () => {
+    // `INSERT OR REPLACE` is a DELETE then an INSERT, so restoring the parent
+    // fired every cascade: the list came back with zero words and its cards
+    // orphaned. A partial backup is the normal case — `attemptBackup` reports
+    // per table and only the ones that succeeded are written.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync("PRAGMA foreign_keys = ON");
+    await db.runAsync(
+      `INSERT INTO lists (id, name, is_default, study_position, created_at, updated_at)
+       VALUES ('L', 'List', 0, 0, ?, ?)`,
+      [now, now],
+    );
+    await db.runAsync(
+      `INSERT INTO list_entries (id, list_id, entry_id, added_at, position, updated_at)
+       VALUES ('e1', 'L', 1001, ?, 0, ?)`,
+      [now, now],
+    );
+    await db.runAsync(
+      `INSERT INTO srs_cards
+        (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days,
+         reps, lapses, state, created_at, updated_at)
+       VALUES ('c1', 1001, 'L', ?, 0, 0, 0, 0, 0, 0, 0, ?, ?)`,
+      [now, now, now],
+    );
+
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: { lists: [{ id: "L", name: "List renamed", created_at: now, updated_at: now }] },
+      }),
+    );
+
+    expect(result.failed).toEqual([]);
+    expect(await db.getFirstAsync<{ c: number }>("SELECT COUNT(*) as c FROM list_entries")).toEqual(
+      { c: 1 },
+    );
+    expect(
+      await db.getFirstAsync<{ list_id: string | null }>("SELECT list_id FROM srs_cards"),
+    ).toEqual({ list_id: "L" });
+    // and the row itself really was updated
+    expect(await db.getFirstAsync<{ name: string }>("SELECT name FROM lists")).toEqual({
+      name: "List renamed",
+    });
+  });
+
+  it("skips a row with no primary key rather than writing a NULL-keyed one", async () => {
+    // SQLite allows NULL in a TEXT PRIMARY KEY, and sync keys on it. Every
+    // other column is filled, or the row would fail for its own reasons and
+    // the guard would go untested.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          furigana_pins: [
+            {
+              book_id: "b",
+              surface: "\u6c34",
+              reading: "\u307f\u305a",
+              created_at: now,
+              updated_at: now,
+              deleted_at: null,
+            },
+          ],
+        },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    expect(
+      await db.getFirstAsync<{ c: number }>("SELECT COUNT(*) as c FROM furigana_pins"),
+    ).toEqual({ c: 0 });
+  });
+
+  it("reports a locked or corrupt table as failed, not as a clean rescue", async () => {
+    // The column fallback must not swallow a real error: re-selecting fewer
+    // columns would hand `DbRecoveryScreen` whatever came back and call it a
+    // success.
+    const db = createTestDb();
+    let thrown = 0;
+    const busy = {
+      ...db,
+      getAllAsync: async (sql: string, params?: unknown[]) => {
+        // Transient, the way a lock is: a retry would succeed. The fallback
+        // must not retry, or it reports the table rescued.
+        if (/FROM books/.test(sql) && thrown++ === 0) {
+          throw new Error("SQLITE_BUSY: database is locked");
+        }
+        return db.getAllAsync(sql, params as never);
+      },
+    } as unknown as Parameters<typeof attemptBackup>[0];
+    const result = await attemptBackup(busy);
+    expect(result.failed).toContain("books");
+    expect(result.succeeded).not.toContain("books");
+  });
+});
+
+describe("a row that will not go in does not take the table with it", () => {
+  it("survives a collision on a unique index other than the primary key", async () => {
+    // `confusion_pairs` carries a unique index on its five content columns, so
+    // a pair that already exists locally under a different id raises an error
+    // the primary key's ON CONFLICT cannot absorb. That used to abort the table
+    // and drop every row after it.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO confusion_pairs (id, entry_id_a, kanji_literal_a, entry_id_b,
+         kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
+       VALUES ('local', 1, '漢', 2, '字', 'meaning', 1, ?, ?)`,
+      [now, now],
+    );
+
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          confusion_pairs: [
+            {
+              id: "incoming",
+              entry_id_a: 1,
+              kanji_literal_a: "漢",
+              entry_id_b: 2,
+              kanji_literal_b: "字",
+              confusion_type: "meaning",
+              confusion_count: 9,
+              last_confused_at: now,
+              created_at: now,
+            },
+            {
+              id: "unrelated",
+              entry_id_a: 7,
+              kanji_literal_a: null,
+              entry_id_b: 8,
+              kanji_literal_b: null,
+              confusion_type: "meaning",
+              confusion_count: 1,
+              last_confused_at: now,
+              created_at: now,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(result.failed).toEqual([]);
+    // The colliding pair was replaced, and the row behind it still landed.
+    const rows = await db.getAllAsync<{ id: string }>("SELECT id FROM confusion_pairs ORDER BY id");
+    expect(rows.map((r) => r.id)).toEqual(["incoming", "unrelated"]);
+  });
+
+  it("writes the rows it can when one row is unwritable", async () => {
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          lists: [
+            // No `name`, which is NOT NULL: this row cannot go in.
+            { id: "bad", created_at: now, updated_at: now },
+            { id: "good", name: "Core 8k", created_at: now, updated_at: now },
+          ],
+        },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    expect(await db.getAllAsync<{ id: string }>("SELECT id FROM lists")).toEqual([{ id: "good" }]);
+  });
+
+  it("builds valid SQL for a row that carries only its primary key", async () => {
+    // `ON CONFLICT(id) DO UPDATE SET` with nothing to set is a syntax error,
+    // and cost the whole table. The row still cannot go in — `lists.name` is
+    // NOT NULL — but it must fail on the constraint, not on the statement.
+    const db = createTestDb();
+    const result = await importBackup(
+      db,
+      JSON.stringify({ version: 1, tables: { lists: [{ id: "L" }] } }),
+    );
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].error).toMatch(/NOT NULL/i);
+    expect(result.failed[0].error).not.toMatch(/incomplete input|syntax/i);
+  });
+});
+
+describe("the restore's primary keys", () => {
+  it("names the real primary key of every table it restores", async () => {
+    // A wrong name makes `ON CONFLICT(pk)` throw and costs the whole table, and
+    // the map is easy to leave stale — it carried two tables that are not even
+    // restored.
+    const db = createTestDb();
+    const wrong: string[] = [];
+    for (const table of IMPORT_ORDER) {
+      const info = await db.getAllAsync<{ name: string; pk: number }>(
+        `PRAGMA table_info(${table})`,
+      );
+      const actual = info.filter((c) => c.pk > 0).map((c) => c.name);
+      const used = PRIMARY_KEYS[table] ?? "id";
+      if (actual.length !== 1 || actual[0] !== used) {
+        wrong.push(`${table}: restore uses ${used}, schema says ${actual.join("+") || "none"}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
+describe("a backup that predates a required column", () => {
+  it("restores mnemonics from a pre-feature backup instead of losing all of them", async () => {
+    // `user_kanji_notes.updated_at` is NOT NULL with no default and was in
+    // neither the export nor the restore list, so every row of a backup taken
+    // before it failed on the constraint. Pre-existing on master; the "survives
+    // a schema change" work is what makes it this file's problem.
+    const db = createTestDb();
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: { user_kanji_notes: [{ literal: "水", mnemonic: "water", keyword: "water" }] },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    const row = await db.getFirstAsync<{ mnemonic: string; updated_at: string }>(
+      "SELECT mnemonic, updated_at FROM user_kanji_notes WHERE literal = '水'",
+    );
+    expect(row?.mnemonic).toBe("water");
+    // Stamped at the epoch, not now: a restored note must not outrank a live
+    // one in `updated_at > ?` comparisons it never earned.
+    expect(row?.updated_at).toBe("1970-01-01T00:00:00.000Z");
   });
 });

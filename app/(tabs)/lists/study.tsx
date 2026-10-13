@@ -20,6 +20,9 @@ import { MnemonicClozeInput } from "@/components/MnemonicClozeInput";
 import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
 import { isRtkReviewList } from "@/lib/rtk-review";
+import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
+import { resolveNewPerSession, UNLIMITED } from "@/stores/simple-srs";
+import { loadSimpleQueuePools } from "@/db/simple-queue";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -74,12 +77,9 @@ import { reviewCard, Rating, getFsrsInstance, previewIntervals } from "@/stores/
 import { formatInterval as formatDueInterval } from "@/lib/format-interval";
 import { japaneseFontStyle } from "@/lib/japanese-font";
 import {
-  simpleGraduate,
-  simpleReviewFail,
-  simpleInitCard,
+  nextSimpleReview,
   endOfLogicalDayEpochDays,
   endOfLogicalDayISO,
-  SIMPLE_SRS_REQUIRED_CORRECT,
 } from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
 import { useListsStore, parseListRow } from "@/stores/lists";
@@ -465,7 +465,6 @@ interface StudyCardViewProps {
   frontFaces: CardFace[];
   backFaces: CardFace[];
   flashcardMode: FlashcardMode;
-  simpleCorrectCount: number;
   // Voice/typing (only active for cursor card)
   voiceStatus: "idle" | "correct" | "wrong";
   voiceHeard: string | null;
@@ -496,7 +495,6 @@ const StudyCardView = React.memo(
       frontFaces,
       backFaces,
       flashcardMode,
-      simpleCorrectCount,
       voiceStatus,
       voiceHeard,
       isListening,
@@ -595,10 +593,7 @@ const StudyCardView = React.memo(
 
     // Stats & checks
     const stats = getCardStats(item.srsCard, flashcardMode);
-    const checkCount =
-      flashcardMode === "simple_srs" && item.srsCard
-        ? (simpleCorrectCount ?? getCheckCount(item.srsCard, "simple_srs"))
-        : getCheckCount(item.srsCard, flashcardMode);
+    const checkCount = getCheckCount(item.srsCard, flashcardMode);
 
     // Render kana face with pitch accent visualization when available
     function renderFaceContent(
@@ -909,6 +904,8 @@ interface SrsSnapshot {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  simpleRelearning: number | null;
+  simpleRun: number | null;
   lastConfusionCheck: string | null;
   learningSteps: number;
 }
@@ -923,7 +920,6 @@ interface StudyCard {
   snapshot?: SrsSnapshot | null;
   reviewLogId?: string | null;
   preStudyPosition?: number | null;
-  wasNewSimpleSrs?: boolean;
   reQueueOf?: number;
 }
 
@@ -941,6 +937,8 @@ function captureSnapshot(card: SrsCardRow): SrsSnapshot {
     simpleStage: card.simpleStage,
     simpleN: card.simpleN,
     simpleInterval: card.simpleInterval,
+    simpleRelearning: card.simpleRelearning,
+    simpleRun: card.simpleRun,
     lastConfusionCheck: card.lastConfusionCheck,
     learningSteps: card.learningSteps,
   };
@@ -952,8 +950,9 @@ function getCheckCount(srsCard: SrsCardRow | undefined, mode: FlashcardMode): nu
   if (mode === "simple_srs") {
     if (srsCard.simpleStage == null) return 0;
     if (srsCard.simpleStage === 1) return 3; // graduated
-    // stage 0 (learning): 1 check after init, 2 if interval has grown
-    return srsCard.simpleInterval != null && srsCard.simpleInterval > 0.5 ? 2 : 1;
+    // The real count, now that it is persisted — this used to be guessed from
+    // the interval, because the count died with the screen.
+    return srsCard.simpleRun ?? 0;
   }
 
   if (mode === "srs") {
@@ -1065,6 +1064,12 @@ function StudyScreen() {
   type SessionPhase = "studying" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
   const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * Unseen cards this session has answered, which spend its allowance. Ids, not
+   * a count: re-rating a card re-applies the same answer, and the deque keeps
+   * the pre-answer row, so a counter spent a slot every walk-back.
+   */
+  const newAnsweredRef = useRef<Set<string>>(new Set());
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -1084,7 +1089,6 @@ function StudyScreen() {
   const sessionCorrectRef = useRef(0);
   const cursorCardRef = useRef<StudyCardViewHandle>(null);
   // Simple SRS: track correct-in-a-row per card (need 3 to graduate)
-  const simpleCorrectCountRef = useRef(new Map<string, number>());
   // Simple SRS: track cards that completed this session (graduated or passed review)
   const completedSrsIdsRef = useRef(new Set<string>());
 
@@ -1333,19 +1337,15 @@ function StudyScreen() {
 
   useEffect(() => {
     if (!dictDb || !userDb || !list) return;
+    // A different list or scope is a new session; "Continue Studying" is not,
+    // and must keep both so it neither re-serves answered cards nor hands out
+    // another full allowance of new ones.
+    newAnsweredRef.current.clear();
+    reviewedSrsIdsRef.current.clear();
     loadQueue();
   }, [dictDb, userDb, list?.id, scope]);
 
-  const srsSelectClause = `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-    stability, difficulty, elapsed_days as elapsedDays,
-    scheduled_days as scheduledDays, reps, lapses, state,
-    last_review as lastReview, front_mode as frontMode,
-    back_mode as backMode, created_at as createdAt,
-    updated_at as updatedAt,
-    simple_stage as simpleStage, simple_n as simpleN,
-    simple_interval as simpleInterval,
-    last_confusion_check as lastConfusionCheck,
-    learning_steps as learningSteps`;
+  const srsSelectClause = SRS_CARD_SELECT;
 
   /** Resolve SRS card rows into QueueItems with full dict entries */
   async function resolveCards(srsRows: SrsCardRow[]): Promise<QueueItem[]> {
@@ -1631,18 +1631,39 @@ function StudyScreen() {
         {
           // Dynamic deque: load all due + all new into pools,
           // then seed the active deque with the first batch.
-          const dueRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
-             ORDER BY simple_n ASC`,
-            [...scope.args, dueCutoffDays],
-          );
-          const newRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage IS NULL AND deleted_at IS NULL
-             ORDER BY created_at ASC`,
-            [...scope.args],
-          );
+          // A flagged or smart review is assembled on purpose and is all-new,
+          // so a cap would show ten of it and call that a session (-1 is
+          // SQLite's own "no limit"). Everywhere else the cap is the point:
+          // the whole list at once is why nothing could ever reach three
+          // correct answers.
+          //
+          // Read from the row, not from `list`: the settings modal reloads the
+          // queue from its own close handler, which closes over the pre-save
+          // value, and depending on it here instead would race that reload.
+          let newCap: number = UNLIMITED;
+          if (!isEphemeralListId(listId)) {
+            const capRow = await userDb.getFirstAsync<{ new_per_session: number | null }>(
+              "SELECT new_per_session FROM lists WHERE id = ?",
+              [listId],
+            );
+            newCap = resolveNewPerSession(capRow?.new_per_session);
+          }
+          // "Continue Studying" calls this again, so the allowance is what is
+          // LEFT of the cap rather than a fresh one — otherwise ten taps
+          // introduce a hundred new cards. It counts cards the session has
+          // answered, not cards it has loaded: a reload re-queries the unseen
+          // cards still sitting unanswered in the pool, and counting those
+          // again left a session unable to offer new cards it still owed.
+          const newAllowance =
+            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newAnsweredRef.current.size);
+          const { dueRows, newRows } = await loadSimpleQueuePools({
+            query: (sql, args) => userDb.getAllAsync<SrsCardRow>(sql, args),
+            scope,
+            dueCutoffDays,
+            newCap,
+            newAllowance,
+            excludeIds: reviewedSrsIdsRef.current,
+          });
 
           if (dueRows.length > 0 || newRows.length > 0) {
             const dueItems = await resolveCards(dueRows);
@@ -1819,7 +1840,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: card ? card.simpleStage == null : false,
     };
     // Push failed card to end for re-review (non-FSRS only; FSRS uses timer)
     if (sessionMode !== "srs") {
@@ -1886,7 +1906,6 @@ function StudyScreen() {
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
     let preStudyPosition: number | null = null;
-    const wasNewSimpleSrs = card ? card.simpleStage == null : false;
     let shouldReQueue = false;
     let reQueueItem = item;
 
@@ -1943,7 +1962,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition,
-      wasNewSimpleSrs,
     };
     if (shouldReQueue) {
       updatedCards.push({
@@ -2028,7 +2046,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: false,
     };
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -2095,7 +2112,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: false,
     };
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -2216,69 +2232,34 @@ function StudyScreen() {
   ): Promise<{ graduated: boolean; card: SrsCardRow }> {
     if (!userDb) return { graduated: true, card };
     const now = new Date().toISOString();
-    const isNew = card.simpleStage == null;
-    const isEasy = action === "easy";
     const pass = action !== "fail";
 
-    let updates: { simpleStage: number; simpleN: number; simpleInterval: number };
-    let graduated = false;
+    // The decision lives in stores/simple-srs.ts so it can be tested: the lapse
+    // bug was in which flag this call site handed over, not in the arithmetic.
+    // The correct-in-a-row count rides in `updates` and is persisted — it used
+    // to live in a ref that died with the screen, so a card answered twice and
+    // left came back to a count of zero and stayed due forever.
+    // An unseen card's first answer is what spends the session's allowance.
+    if (card.simpleStage == null) newAnsweredRef.current.add(card.id);
 
-    if (!pass) {
-      // FAIL: preserve interval, reset to learning, increment lapses
-      if (isNew) {
-        updates = simpleInitCard();
-      } else {
-        updates = simpleReviewFail(card);
-      }
-      // Reset correct count for this card
-      simpleCorrectCountRef.current.set(card.id, 0);
-    } else if (isEasy) {
-      // EASY: skip correctCount gate, immediately graduate
-      if (isNew) {
-        const init = simpleInitCard();
-        updates = simpleGraduate({ ...card, ...init }, true, card.lapses > 0);
-      } else {
-        updates = simpleGraduate(card, true, card.lapses > 0);
-      }
-      graduated = true;
-      simpleCorrectCountRef.current.delete(card.id);
-    } else {
-      // CORRECT: behavior depends on card state
-      if (isNew) {
-        // First time seeing this card -- initialize and start counting
-        updates = simpleInitCard();
-        simpleCorrectCountRef.current.set(card.id, 1);
-        // Not graduated yet (need 3 correct)
-      } else if (card.simpleStage === 1) {
-        // Already graduated, due for review -- pass once → done
-        updates = simpleGraduate(card, false, card.lapses > 0);
-        graduated = true;
-        simpleCorrectCountRef.current.delete(card.id);
-      } else {
-        // Learning/lapsed card (stage 0) -- need 3 correct to graduate
-        const count = (simpleCorrectCountRef.current.get(card.id) ?? 0) + 1;
-        simpleCorrectCountRef.current.set(card.id, count);
-
-        if (count >= SIMPLE_SRS_REQUIRED_CORRECT) {
-          // Graduated! Update interval and schedule next review
-          updates = simpleGraduate(card, false, card.lapses > 0);
-          graduated = true;
-          simpleCorrectCountRef.current.delete(card.id);
-        } else {
-          // Still learning -- keep current state, card will be re-queued
-          updates = {
-            simpleStage: 0,
-            simpleN: 0, // immediately due
-            simpleInterval: card.simpleInterval ?? 0,
-          };
-        }
-      }
-    }
+    const decision = nextSimpleReview(card, action);
+    const updates = decision.updates;
+    const graduated = decision.graduated;
 
     await userDb.runAsync(
       `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-        reps = reps + 1, lapses = lapses + ?, updated_at = ? WHERE id = ?`,
-      [updates.simpleStage, updates.simpleN, updates.simpleInterval, pass ? 0 : 1, now, card.id],
+        simple_relearning = ?, simple_run = ?, reps = reps + 1, lapses = lapses + ?,
+        updated_at = ? WHERE id = ?`,
+      [
+        updates.simpleStage,
+        updates.simpleN,
+        updates.simpleInterval,
+        updates.simpleRelearning,
+        updates.simpleRun,
+        pass ? 0 : 1,
+        now,
+        card.id,
+      ],
     );
 
     return {
@@ -2372,15 +2353,7 @@ function StudyScreen() {
 
     // Find the srs_card for this confused entry
     const cardRow = await userDb.getFirstAsync<SrsCardRow>(
-      `SELECT id, entry_id as entryId, kanji_literal as kanjiLiteral, list_id as listId, due,
-        stability, difficulty, elapsed_days as elapsedDays,
-        scheduled_days as scheduledDays, reps, lapses, state,
-        last_review as lastReview, front_mode as frontMode,
-        back_mode as backMode, created_at as createdAt,
-        updated_at as updatedAt,
-        simple_stage as simpleStage, simple_n as simpleN,
-        simple_interval as simpleInterval,
-        last_confusion_check as lastConfusionCheck
+      `${SRS_CARD_SELECT}
        FROM srs_cards WHERE ${scope.clause} AND entry_id = ? AND kanji_literal IS NULL AND deleted_at IS NULL
        ORDER BY due ASC`,
       [...scope.args, result.entry.id],
@@ -2395,9 +2368,24 @@ function StudyScreen() {
         await rateSrsCard(cardRow, Rating.Again);
       }
 
+      // Drop every stale copy of it first. The pools hold the row as it was at
+      // session start, and the deque may already have pulled one — either
+      // carries a correct-run from before this fail reset it, so answering it
+      // would graduate the card on one pass and write it twice in one session.
+      // Only copies not yet answered are dropped; an answered one is history.
+      const queuedId = queuedCard.id;
+      duePoolRef.current = duePoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
+      newPoolRef.current = newPoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
+
+      // Back in learning, so it is no longer one of the cards finished.
+      completedSrsIdsRef.current.delete(queuedId);
+
       // Push to end of current session
       setCards((prev) => [
-        ...prev,
+        ...prev.filter(
+          (card, index) =>
+            index <= cursor || card.status !== "pending" || card.item.srsCard?.id !== queuedId,
+        ),
         {
           item: { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: queuedCard },
           status: "pending" as CardStatus,
@@ -2453,15 +2441,19 @@ function StudyScreen() {
       }
       // Reset completed status on undo
       completedSrsIdsRef.current.delete(card.id);
+      reviewedSrsIdsRef.current.delete(card.id);
     } else if (sessionMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
       await userDb.runAsync(
         `UPDATE srs_cards SET simple_stage = ?, simple_n = ?, simple_interval = ?,
-          reps = ?, lapses = ?, last_confusion_check = ?, updated_at = ? WHERE id = ?`,
+          simple_relearning = ?, simple_run = ?, reps = ?, lapses = ?,
+          last_confusion_check = ?, updated_at = ? WHERE id = ?`,
         [
           snap.simpleStage,
           snap.simpleN,
           snap.simpleInterval,
+          snap.simpleRelearning,
+          snap.simpleRun,
           snap.reps,
           snap.lapses,
           snap.lastConfusionCheck,
@@ -2469,9 +2461,13 @@ function StudyScreen() {
           card.id,
         ],
       );
-      // Reset correct count and completed status for this card on undo
-      simpleCorrectCountRef.current.delete(card.id);
+      // The restored snapshot carries the correct-in-a-row count with it now.
       completedSrsIdsRef.current.delete(card.id);
+      // An undone answer is not an answer: refund the allowance it spent and
+      // let the card be loaded again, or walking back five cards left the
+      // session with no new cards while the database still called them unseen.
+      if (snap.simpleStage == null) newAnsweredRef.current.delete(card.id);
+      reviewedSrsIdsRef.current.delete(card.id);
     } else if (sessionMode === "add_order" && studyCard.preStudyPosition != null) {
       // Restore study_position
       await userDb.runAsync("UPDATE lists SET study_position = ?, updated_at = ? WHERE id = ?", [
@@ -2510,8 +2506,21 @@ function StudyScreen() {
     }
     next.push({ item: cards[cursor].item, status: "revealed", flipped: true });
     for (let i = cursor + 1; i < cards.length; i++) {
-      if (cards[i].reQueueOf == null) {
+      const reQueuedBy = cards[i].reQueueOf;
+      // A re-queue copy is void only if the answer that created it is being
+      // undone. One owned by a card BEFORE the cursor keeps its place: its
+      // owner has already left the pool, so dropping the copy stranded the
+      // card for the rest of the session and the progress bar could never
+      // reach 100%.
+      if (reQueuedBy == null) {
         next.push({ item: cards[i].item, status: "pending", flipped: false });
+      } else if (reQueuedBy < cursor) {
+        next.push({
+          item: cards[i].item,
+          status: "pending",
+          flipped: false,
+          reQueueOf: reQueuedBy,
+        });
       }
     }
     cardsRef.current = next;
@@ -2846,7 +2855,6 @@ function StudyScreen() {
             onPress={() => {
               setSessionPhase("studying");
               setReviewedCount(0);
-              reviewedSrsIdsRef.current.clear();
               loadQueue();
             }}
           />
@@ -2959,11 +2967,6 @@ function StudyScreen() {
                       frontFaces={frontFaces}
                       backFaces={backFaces}
                       flashcardMode={sessionMode}
-                      simpleCorrectCount={
-                        studyCard.item.srsCard
-                          ? (simpleCorrectCountRef.current.get(studyCard.item.srsCard.id) ?? 0)
-                          : 0
-                      }
                       voiceStatus={isCursor ? voiceStatus : "idle"}
                       voiceHeard={isCursor ? voiceHeard : null}
                       isListening={isCursor && isListening}

@@ -157,6 +157,8 @@ export interface WordList {
   disableSwipeAnimation: boolean;
   learningSteps: string[] | null;
   relearningSteps: string[] | null;
+  /** Unseen cards a simple-SRS session may introduce. Absent reads as the default. */
+  newPerSession?: number | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -218,6 +220,10 @@ export interface SrsCardRow {
   simpleStage: number | null;
   simpleN: number | null;
   simpleInterval: number | null;
+  /** 1 while the card is recovering from a lapse — see stores/simple-srs.ts. */
+  simpleRelearning: number | null;
+  /** Correct answers in a row so far, toward the three a learning card needs. */
+  simpleRun: number | null;
   // Confusion detection cooldown
   lastConfusionCheck: string | null;
   // FSRS learning step index

@@ -9,7 +9,11 @@
  * - Due date = n (directly stored, not computed)
  * - Correct multiplier: ×1.9, Easy multiplier: ×2.6125 (1.9 × 1.375)
  * - Fail: preserve interval, reset correctCount, set n=0 (immediately due)
- * - Re-graduation (3 correct after lapse): interval ×0.5, clamp [1/3, 365]
+ * - Re-graduation (3 correct after lapse): interval ×0.5, clamp [1/3, 365].
+ *   ONCE — the halving belongs to the lapse being recovered from, not to the
+ *   card's history. Scoped to `lapses > 0` instead, every pass after a card's
+ *   first ever failure halved it, so the interval ratcheted down to the floor
+ *   and the card was due every 8 hours for the rest of its life.
  * - Normal graduation (never lapsed): interval ×1.9 (or ×2.6125), clamp [1/3, 365]
  * - Graduated cards due for review: pass once → done (recalculate interval)
  * - New/learning cards: need 3 correct in a row to graduate
@@ -18,6 +22,16 @@
  */
 
 import type { SrsCardRow } from "@/db/types";
+
+/** Every field a simple-SRS review writes back to `srs_cards`. */
+export interface SimpleSrsUpdate {
+  simpleStage: number;
+  simpleN: number;
+  simpleInterval: number;
+  simpleRelearning: number;
+  /** Correct answers in a row, toward the three a learning card needs. */
+  simpleRun: number;
+}
 
 const MAC_EPOCH_MS = new Date("2001-01-01T00:00:00Z").getTime();
 const CORRECT_MULTIPLIER = 1.9;
@@ -91,21 +105,17 @@ export function getEndOfLogicalDay(resetHour: number, now?: Date): Date {
  *
  * @param card - The SRS card being reviewed
  * @param easy - Whether this was an "easy" action (long-press pass)
- * @param hasLapsed - Whether the card has ever been failed (lapses > 0)
+ * @param isRelearning - Whether the card is recovering from a lapse right now
  */
 export function simpleGraduate(
   card: SrsCardRow,
   easy: boolean,
-  hasLapsed: boolean,
-): {
-  simpleStage: number;
-  simpleN: number;
-  simpleInterval: number;
-} {
+  isRelearning: boolean,
+): SimpleSrsUpdate {
   const now = dateToSrsEpochDays();
   let newInterval: number;
 
-  if (hasLapsed) {
+  if (isRelearning) {
     // Re-graduating after a lapse: halve the interval, clamp [1/3, 365]
     const currentInterval = card.simpleInterval ?? INITIAL_INTERVAL;
     newInterval = Math.max(MIN_INTERVAL, Math.min(currentInterval * 0.5, MAX_INTERVAL));
@@ -120,35 +130,120 @@ export function simpleGraduate(
     simpleStage: 1,
     simpleN: now + newInterval, // n = due date
     simpleInterval: newInterval,
+    // The lapse this graduation recovered from is paid for.
+    simpleRelearning: 0,
+    simpleRun: 0,
   };
 }
 
 /** Process a fail review — returns updated simple SRS fields */
-export function simpleReviewFail(card: SrsCardRow): {
-  simpleStage: number;
-  simpleN: number;
-  simpleInterval: number;
-} {
+export function simpleReviewFail(card: SrsCardRow): SimpleSrsUpdate {
   // Fail: preserve interval, set stage to 0 (learning), n=0 (immediately due)
   return {
     simpleStage: 0,
     simpleN: 0,
     simpleInterval: card.simpleInterval ?? INITIAL_INTERVAL,
+    simpleRelearning: 1,
+    simpleRun: 0,
   };
 }
 
 /** Initialize a new card for simple SRS (first time seeing it) */
-export function simpleInitCard(): {
-  simpleStage: number;
-  simpleN: number;
-  simpleInterval: number;
-} {
+export function simpleInitCard(): SimpleSrsUpdate {
   return {
     simpleStage: 0,
     simpleN: 0, // immediately due (in learning)
     simpleInterval: INITIAL_INTERVAL,
+    simpleRelearning: 0,
+    simpleRun: 0,
   };
 }
 
 /** Number of correct answers needed to graduate from learning */
 export const SIMPLE_SRS_REQUIRED_CORRECT = REQUIRED_CORRECT;
+
+/**
+ * Unseen cards a session introduces when the list does not say otherwise.
+ * Midori mixes in about ten; the whole list at once is what kept 8,000 cards
+ * in the queue every day, since none of them could reach three correct answers.
+ */
+export const DEFAULT_NEW_PER_SESSION = 10;
+
+/** What a list's `newPerSession` means, with the floor and ceiling applied. */
+export function resolveNewPerSession(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_NEW_PER_SESSION;
+  return Math.max(1, Math.min(Math.floor(value), 500));
+}
+
+/** SQLite's own "no limit" for a bound LIMIT, used by the ephemeral lists. */
+export const UNLIMITED = -1;
+
+/**
+ * How many cards in learning a session takes on, given its new-card cap.
+ *
+ * A learning card needs three correct answers, so three learning slots are one
+ * new card's worth of work. Without a bound, a deck left by the uncapped
+ * session puts every stage-0 card in the queue at once — all of them due, none
+ * of them finishable — which is the queue that came back unchanged every day.
+ */
+export function learningCapFor(newPerSession: number): number {
+  return newPerSession === UNLIMITED ? UNLIMITED : newPerSession * REQUIRED_CORRECT;
+}
+
+/** What a single simple-SRS answer does to a card. */
+export interface SimpleSrsDecision {
+  updates: SimpleSrsUpdate;
+  /** Whether the card leaves the session, or is re-queued to be asked again. */
+  graduated: boolean;
+}
+
+/**
+ * Decide one simple-SRS answer.
+ *
+ * Extracted from the study screen so the WIRING is testable: the lapse bug
+ * lived here, in which flag the call site handed to `simpleGraduate`, and a
+ * test that only called `simpleGraduate` could not see it.
+ */
+export function nextSimpleReview(
+  card: SrsCardRow,
+  action: "pass" | "easy" | "fail",
+): SimpleSrsDecision {
+  const isNew = card.simpleStage == null;
+  const relearning = card.simpleRelearning === 1;
+
+  if (action === "fail") {
+    return { updates: isNew ? simpleInitCard() : simpleReviewFail(card), graduated: false };
+  }
+
+  if (action === "easy") {
+    // Easy skips the correct-in-a-row gate and graduates at once.
+    const base = isNew ? { ...card, ...simpleInitCard() } : card;
+    return { updates: simpleGraduate(base, true, relearning), graduated: true };
+  }
+
+  if (isNew) {
+    // First sight: start the card and start counting.
+    return { updates: { ...simpleInitCard(), simpleRun: 1 }, graduated: false };
+  }
+
+  if (card.simpleStage === 1) {
+    // Graduated and due: one correct answer settles it.
+    return { updates: simpleGraduate(card, false, relearning), graduated: true };
+  }
+
+  const run = (card.simpleRun ?? 0) + 1;
+  if (run >= REQUIRED_CORRECT) {
+    return { updates: simpleGraduate(card, false, relearning), graduated: true };
+  }
+  return {
+    updates: {
+      simpleStage: 0,
+      simpleN: 0, // immediately due
+      simpleInterval: card.simpleInterval ?? 0,
+      // Still inside the lapse it is recovering from, if it was in one.
+      simpleRelearning: card.simpleRelearning ?? 0,
+      simpleRun: run,
+    },
+    graduated: false,
+  };
+}

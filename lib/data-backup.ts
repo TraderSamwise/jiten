@@ -21,7 +21,7 @@ export const BACKUP_TABLES: {
   {
     name: "lists",
     query:
-      "SELECT id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, confusion_detection, voice_mode, typing_mode, disable_flip_animation, disable_swipe_animation, is_default, learning_steps, relearning_steps, mnemonic_cloze, created_at, updated_at FROM lists",
+      "SELECT id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, confusion_detection, voice_mode, typing_mode, disable_flip_animation, disable_swipe_animation, is_default, learning_steps, relearning_steps, mnemonic_cloze, new_per_session, created_at, updated_at FROM lists",
   },
   {
     name: "list_entries",
@@ -31,7 +31,7 @@ export const BACKUP_TABLES: {
   {
     name: "srs_cards",
     query:
-      "SELECT id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, simple_stage, simple_n, simple_interval, last_confusion_check, kanji_literal, learning_steps, created_at, updated_at FROM srs_cards",
+      "SELECT id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, front_mode, back_mode, simple_stage, simple_n, simple_interval, simple_relearning, simple_run, last_confusion_check, kanji_literal, learning_steps, created_at, updated_at FROM srs_cards",
   },
   {
     name: "review_logs",
@@ -63,7 +63,12 @@ export const BACKUP_TABLES: {
     query:
       "SELECT id, book_id, surface, reading, created_at, updated_at, deleted_at FROM furigana_pins",
   },
-  { name: "user_kanji_notes", query: "SELECT literal, mnemonic, keyword FROM user_kanji_notes" },
+  {
+    name: "user_kanji_notes",
+    // `updated_at` or a restored mnemonic is invisible to the push, which
+    // selects `WHERE updated_at > ?`.
+    query: "SELECT literal, mnemonic, keyword, updated_at FROM user_kanji_notes",
+  },
   {
     name: "practice_sessions",
     query:
@@ -82,7 +87,28 @@ export const BACKUP_TABLES: {
 ];
 
 // Column names for each table — used for INSERT during import
-const TABLE_COLUMNS: Record<string, string[]> = {
+/**
+ * Where a table in `IMPORT_ORDER` has a primary key that is not `id`. A wrong
+ * name makes `ON CONFLICT(pk)` throw, so this list is checked against the
+ * schema by `lib/data-backup.test.ts`.
+ */
+/**
+ * Columns a restore must supply if the backup did not, because the schema makes
+ * them NOT NULL with no default. Checked against `PRAGMA table_info` by
+ * `lib/data-backup.test.ts`.
+ */
+const REQUIRED_TIMESTAMPS: Record<string, string[]> = {
+  user_kanji_notes: ["updated_at"],
+};
+
+/** When a restore stands in for a timestamp a backup never had. */
+const RESTORE_TIMESTAMP = new Date(0).toISOString();
+
+export const PRIMARY_KEYS: Record<string, string> = {
+  user_kanji_notes: "literal",
+};
+
+export const TABLE_COLUMNS: Record<string, string[]> = {
   lists: [
     "id",
     "name",
@@ -102,6 +128,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "learning_steps",
     "relearning_steps",
     "mnemonic_cloze",
+    "new_per_session",
     "created_at",
     "updated_at",
   ],
@@ -132,6 +159,8 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "simple_stage",
     "simple_n",
     "simple_interval",
+    "simple_relearning",
+    "simple_run",
     "last_confusion_check",
     "kanji_literal",
     "learning_steps",
@@ -199,11 +228,12 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "last_read_at",
     "is_default",
     "saved",
+    "read_complete",
     "created_at",
     "updated_at",
   ],
   furigana_pins: ["id", "book_id", "surface", "reading", "created_at", "updated_at", "deleted_at"],
-  user_kanji_notes: ["literal", "mnemonic", "keyword"],
+  user_kanji_notes: ["literal", "mnemonic", "keyword", "updated_at"],
   practice_sessions: [
     "id",
     "session_id",
@@ -242,7 +272,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
 };
 
 // Import order matters for FK constraints
-const IMPORT_ORDER = [
+export const IMPORT_ORDER = [
   "lists",
   "list_entries",
   "srs_cards",
@@ -258,6 +288,20 @@ const IMPORT_ORDER = [
   "course_progress",
 ];
 
+/** The columns a table actually has, or null if it cannot be read at all. */
+export async function existingColumns(
+  db: WrappedUserDb,
+  tableName: string,
+): Promise<Set<string> | null> {
+  try {
+    const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+    if (!rows.length) return null;
+    return new Set(rows.map((row) => row.name));
+  } catch {
+    return null;
+  }
+}
+
 export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
   const result: BackupResult = { tables: {}, succeeded: [], failed: [] };
   for (const table of BACKUP_TABLES) {
@@ -266,6 +310,30 @@ export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
       result.tables[table.name] = rows;
       result.succeeded.push(table.name);
     } catch (err) {
+      // This runs on a database that failed to open or migrate, which is
+      // exactly when a column the query names may not exist yet. Falling back
+      // to the columns the table really has rescues the rows instead of
+      // reporting the whole table as lost — a missing `new_per_session` used to
+      // cost the user every list, and a missing `simple_relearning` every card.
+      //
+      // Only for a missing column. A locked, corrupt or absent table must stay
+      // a failure: re-selecting fewer columns would report a clean rescue of
+      // whatever came back, and the recovery screen would believe it.
+      const cols = /no such column/i.test(String(err))
+        ? await existingColumns(db, table.name)
+        : null;
+      const wanted = TABLE_COLUMNS[table.name];
+      if (cols && wanted) {
+        const usable = wanted.filter((col) => cols.has(col));
+        try {
+          const rows = await db.getAllAsync<any>(`SELECT ${usable.join(", ")} FROM ${table.name}`);
+          result.tables[table.name] = rows;
+          result.succeeded.push(table.name);
+          continue;
+        } catch (fallbackErr) {
+          console.error(`[Recovery] Fallback backup of ${table.name} failed:`, fallbackErr);
+        }
+      }
       console.error(`[Recovery] Failed to backup ${table.name}:`, err);
       result.failed.push(table.name);
     }
@@ -301,8 +369,19 @@ export async function importBackup(
       continue;
     }
 
-    const cols = TABLE_COLUMNS[tableName];
-    if (!cols) {
+    const allowed = TABLE_COLUMNS[tableName];
+    if (!allowed) {
+      result.skipped.push(tableName);
+      continue;
+    }
+
+    // Only the columns this database actually has. A backup written by a newer
+    // build names columns an older one lacks, and SQLite rejects the whole
+    // statement for an unknown column — so one added column used to cost every
+    // list and every flashcard in the restore, not just that column.
+    const present = await existingColumns(db, tableName);
+    const cols = present ? allowed.filter((col) => present.has(col)) : allowed;
+    if (!cols.length) {
       result.skipped.push(tableName);
       continue;
     }
@@ -312,14 +391,81 @@ export async function importBackup(
       `Importing ${tableName}...`,
     );
 
+    // `INSERT OR REPLACE` is a DELETE followed by an INSERT, so restoring a
+    // parent row fires every foreign-key cascade hanging off it: restoring
+    // `lists` alone emptied `list_entries` and set `srs_cards.list_id` to NULL,
+    // leaving the list with no words and its cards orphaned. An upsert touches
+    // only the row named.
+    const pk = PRIMARY_KEYS[tableName] ?? "id";
+    const upsert = (columns: string[]) => {
+      const assignments = columns
+        .filter((col) => col !== pk)
+        .map((col) => `${col} = excluded.${col}`)
+        .join(", ");
+      return `INSERT INTO ${tableName} (${columns.join(", ")})
+        VALUES (${columns.map(() => "?").join(", ")})
+        ON CONFLICT(${pk}) ${assignments ? `DO UPDATE SET ${assignments}` : "DO NOTHING"}`;
+    };
+
     try {
-      const placeholders = cols.map(() => "?").join(", ");
-      const sql = `INSERT OR REPLACE INTO ${tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
+      const sql = upsert(cols);
+      const rowErrors: string[] = [];
 
       for (const row of rows) {
-        const values = cols.map((col) => row[col] ?? null);
-        await db.runAsync(sql, values);
+        // A row with no primary key would insert under a NULL one — SQLite
+        // allows that in a TEXT PRIMARY KEY — and then poison sync, which keys
+        // on it. Skip it rather than write it.
+        if (row[pk] == null) {
+          processedRows++;
+          continue;
+        }
+        // A named NULL is written as NULL; an upsert does NOT fall back to the
+        // column default. So a column the backup never had is left out of the
+        // statement entirely, and takes its default.
+        const named = cols.filter((col) => row[col] !== undefined);
+        const values: unknown[] = named.map((col) => row[col] ?? null);
+
+        // A timestamp a backup never carried is metadata, not the user's data,
+        // and the schema requires it: `user_kanji_notes.updated_at` is NOT NULL
+        // with no default, so every mnemonic in a pre-feature backup failed on
+        // it. Supplying one restores the row; leaving it out loses the lot.
+        for (const col of REQUIRED_TIMESTAMPS[tableName] ?? []) {
+          if (cols.includes(col) && row[col] === undefined) {
+            named.push(col);
+            values.push(RESTORE_TIMESTAMP);
+          }
+        }
+        try {
+          await db.runAsync(named.length === cols.length ? sql : upsert(named), values);
+        } catch (rowErr) {
+          // A table can carry a unique index besides its primary key —
+          // `confusion_pairs` does — and a row that collides on it raises an
+          // error the pk's ON CONFLICT cannot absorb. Replacing that one row is
+          // safe (nothing references it); aborting the table was not, because a
+          // single colliding pair used to cost every row after it.
+          if (/UNIQUE constraint failed/i.test(String(rowErr))) {
+            await db.runAsync(
+              `INSERT OR REPLACE INTO ${tableName} (${named.join(", ")})
+               VALUES (${named.map(() => "?").join(", ")})`,
+              values,
+            );
+          } else {
+            // One bad row is not the table. Collect it and keep going, so a
+            // truncated or hand-edited file costs that row and not the rest.
+            rowErrors.push(String(rowErr));
+          }
+        }
         processedRows++;
+      }
+
+      // Every row failed, so the table did: report it as before, with the
+      // first row's error rather than a wrapper around it.
+      if (rowErrors.length === rows.length && rows.length > 0) {
+        result.failed.push({ table: tableName, error: rowErrors[0] });
+        continue;
+      }
+      if (rowErrors.length > 0) {
+        console.warn(`[Import] ${rowErrors.length} row(s) of ${tableName} failed`, rowErrors[0]);
       }
 
       result.succeeded.push(tableName);

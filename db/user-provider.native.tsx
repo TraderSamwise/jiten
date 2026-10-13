@@ -3,6 +3,7 @@ import { open } from "@op-engineering/op-sqlite";
 import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { repairRatchetedIntervals } from "./simple-repair";
 import { migrateLegacyMnemonics } from "./mnemonic-migration";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
@@ -64,8 +65,14 @@ export function UserDatabaseProvider({
         console.log(`[UserDB Native] Migrated to version ${USER_DB_MIGRATIONS.length}`);
       }
 
-      // Programmatic migration: rename random default IDs → deterministic slugs
       const wrapped = wrapUserDb(db, { shouldNotifyError: () => live.current });
+
+      // Once per device, flag-keyed rather than `user_version`-keyed — see
+      // db/simple-repair.ts for why it is neither a migration nor per-launch.
+      const lifted = await repairRatchetedIntervals(wrapped);
+      if (lifted > 0) console.log(`[UserDB Native] Lifted ${lifted} ratcheted cards`);
+
+      // Programmatic migration: rename random default IDs → deterministic slugs
       const migrated = await wrapped.getFirstAsync<{ value: string }>(
         "SELECT value FROM app_flags WHERE key = 'default_ids_migrated'",
       );

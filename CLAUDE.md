@@ -31,6 +31,16 @@ designed past.
 - Do not invent a requirement to justify a design. If the task is lookup, a
   page-marking feature nobody asked for is not evidence that an index is needed.
 
+## The SRS schedulers are measured, not argued
+
+`stores/simple-srs.ts` is a Midori clone and every scheduling rule in it has been changed
+on simulated evidence; some tempting changes were measured and rejected. Read
+[docs/simple-srs-decisions.md](docs/simple-srs-decisions.md) before editing it or the
+simple-SRS branches of `app/(tabs)/lists/study.tsx`. Simulate a deck through
+`nextSimpleReview` itself rather than reimplementing the rules — the lapse bug survived
+every test for months because the tests called `simpleGraduate` directly and the defect
+was in the argument the screen passed it.
+
 ## Reader lookup and furigana scoring is settled — measure before you touch it
 
 Tap ranking, furigana resolution, counter readings and the deinflection rule

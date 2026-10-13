@@ -39,7 +39,8 @@ export function StudyStatisticsModal({
     if (flashcardMode === "simple_srs") {
       const now = new Date().toISOString();
       await userDb.runAsync(
-        "UPDATE srs_cards SET simple_stage = NULL, simple_n = NULL, simple_interval = NULL, updated_at = ? WHERE list_id = ?",
+        `UPDATE srs_cards SET simple_stage = NULL, simple_n = NULL, simple_interval = NULL,
+          simple_relearning = 0, simple_run = 0, updated_at = ? WHERE list_id = ?`,
         [now, listId],
       );
     } else if (flashcardMode === "srs") {

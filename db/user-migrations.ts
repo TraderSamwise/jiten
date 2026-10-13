@@ -248,4 +248,39 @@ export const USER_DB_MIGRATIONS = [
   // Ask a kanji card by blanking the keyword out of the learner's own story
   // (lib/rtk-cloze.ts) instead of showing the character.
   `ALTER TABLE lists ADD COLUMN mnemonic_cloze INTEGER NOT NULL DEFAULT 0`,
+  // Whether a simple-SRS card is recovering from a lapse RIGHT NOW. The halved
+  // re-graduation used `lapses > 0`, a lifetime counter, so every pass after a
+  // card's first failure halved its interval and the card ratcheted down to the
+  // 8-hour floor and never left the daily queue again.
+  `ALTER TABLE srs_cards ADD COLUMN simple_relearning INTEGER DEFAULT 0`,
+  // Cards sitting in a lapse when this lands are relearning by definition.
+  //
+  // `updated_at` is deliberately NOT touched. Every device runs this same
+  // statement over its own rows, so the backfill does not need to travel — and
+  // bumping the timestamp would make a device that has not been opened in
+  // months the newest writer of every lapsed card, so `sync` would skip the
+  // remote row (`localTs >= remoteTs`) and push stale values over reviews done
+  // elsewhere. The soft-delete guard is here for the same reason: a bumped row
+  // would win and push its `deleted_at = NULL` back, resurrecting the card.
+  `UPDATE srs_cards SET simple_relearning = 1
+     WHERE simple_stage = 0 AND lapses > 0 AND deleted_at IS NULL`,
+  // How many correct answers in a row a learning card has. It lived in a React
+  // ref, so it died with the screen: a card answered twice and left was back to
+  // zero, and with `simple_n = 0` it stayed due forever. Nullable because a
+  // restore from a backup that predates the column binds an explicit NULL for
+  // it — `INSERT OR REPLACE` does NOT fall back to the column default for a
+  // named NULL, so NOT NULL here would fail the whole restore.
+  `ALTER TABLE srs_cards ADD COLUMN simple_run INTEGER DEFAULT 0`,
+  // How many unseen cards a simple-SRS session may introduce. The session used
+  // to load the whole list at once, so an 8,000-word list put 8,000 cards in
+  // front of the learner, none of them could reach the three correct answers a
+  // card needs, and the same queue came back every day. Midori, which this
+  // engine clones, mixes in about ten.
+  `ALTER TABLE lists ADD COLUMN new_per_session INTEGER DEFAULT 10`,
 ];
+
+// The repair of already-ratcheted intervals is deliberately NOT here. It is
+// keyed to an `app_flags` row rather than `PRAGMA user_version`, and the flag is
+// only written once the device has seen a simple-SRS deck — a fresh install
+// would otherwise spend its one run on an empty table and never repair the deck
+// that arrives on the next sync. See `db/simple-repair.ts`.

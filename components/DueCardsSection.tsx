@@ -6,7 +6,12 @@ import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { useListsStore } from "@/stores/lists";
 import { getCardStateDistribution, type CardDistribution } from "@/lib/practice-stats";
-import { srsEpochDaysToDate, endOfLogicalDayEpochDays } from "@/stores/simple-srs";
+import {
+  srsEpochDaysToDate,
+  endOfLogicalDayEpochDays,
+  resolveNewPerSession,
+  learningCapFor,
+} from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
 import { dayResetHourAtom } from "@/stores/settings";
 import type { FlashcardMode } from "@/db/types";
@@ -122,7 +127,7 @@ export function DueCardsSection({
     if (flashcardMode === "simple_srs") {
       const rows = await userDb.getAllAsync<{ dueDays: number }>(
         `SELECT simple_n as dueDays
-         FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL AND deleted_at IS NULL`,
+         FROM srs_cards WHERE list_id = ? AND simple_stage = 1 AND deleted_at IS NULL`,
         [listId],
       );
       for (const row of rows) {
@@ -130,6 +135,26 @@ export function DueCardsSection({
         const idx = dateToBucketIndex(dueDate, dayResetHour);
         counts[idx]++;
       }
+      // What the session will actually serve, not what the deck holds: cards in
+      // learning are all due now and the session shows three times the
+      // new-card cap of them, plus up to a cap of unseen cards. Counting the
+      // deck promised 8,000 due where the session showed thirty and then said
+      // it was done; ignoring the new cards under-reported a fresh list as 0.
+      const capRow = await userDb.getFirstAsync<{ new_per_session: number | null }>(
+        "SELECT new_per_session FROM lists WHERE id = ?",
+        [listId],
+      );
+      const newCap = resolveNewPerSession(capRow?.new_per_session);
+      const pending = await userDb.getFirstAsync<{ learning: number; unseen: number }>(
+        // SUM(CASE …) rather than COUNT(*) FILTER, which needs SQLite 3.30+.
+        `SELECT
+           SUM(CASE WHEN simple_stage = 0 AND simple_n <= ? THEN 1 ELSE 0 END) as learning,
+           SUM(CASE WHEN simple_stage IS NULL THEN 1 ELSE 0 END) as unseen
+         FROM srs_cards WHERE list_id = ? AND deleted_at IS NULL`,
+        [endOfLogicalDayEpochDays(dayResetHour), listId],
+      );
+      counts[0] += Math.min(pending?.learning ?? 0, learningCapFor(newCap));
+      counts[0] += Math.min(pending?.unseen ?? 0, newCap);
     } else {
       const newRow = await userDb.getFirstAsync<{ c: number }>(
         "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",
