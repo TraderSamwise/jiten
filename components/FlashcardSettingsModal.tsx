@@ -225,7 +225,10 @@ export function FlashcardSettingsModal({
     if (onStartStudy) {
       onStartStudy();
     } else {
-      onClose(mode !== list?.flashcardMode);
+      // The queue is rebuilt for a changed mode and for a changed new-card cap:
+      // the cap decides how many cards the session loads, so leaving it until
+      // the next session means the setting looks ignored.
+      onClose(mode !== list?.flashcardMode || newPerSession !== (list?.newPerSession ?? null));
     }
   }
 

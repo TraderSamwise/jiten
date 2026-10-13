@@ -1,5 +1,12 @@
 import { describe, test, expect } from "vitest";
-import { parseListImport, type JitenExportFile } from "./list-transfer";
+import { createTestDb } from "@/test/test-db";
+import { DEFAULT_NEW_PER_SESSION } from "@/stores/simple-srs";
+import {
+  buildListExport,
+  importListToDb,
+  parseListImport,
+  type JitenExportFile,
+} from "./list-transfer";
 
 // ─── Helpers ───
 
@@ -212,5 +219,38 @@ describe("parseListImport", () => {
       (data as any).entries = "not an array";
       expect(() => parseListImport(JSON.stringify(data))).toThrow("Missing entries data");
     });
+  });
+});
+
+describe("the new-card cap travels with a shared list", () => {
+  test("exports it and imports it, so a shared list keeps its pace", async () => {
+    const db = createTestDb();
+    const now = "2026-05-01T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO lists (id, name, is_default, study_position, flashcard_mode,
+         new_per_session, created_at, updated_at)
+       VALUES ('src', 'Core 8k', 0, 0, 'simple_srs', 40, ?, ?)`,
+      [now, now],
+    );
+    const exported = await buildListExport(db, "src", false);
+    expect(exported.list.newPerSession).toBe(40);
+
+    const listId = await importListToDb(db, exported, false);
+    const row = await db.getFirstAsync<{ new_per_session: number }>(
+      "SELECT new_per_session FROM lists WHERE id = ?",
+      [listId],
+    );
+    expect(row?.new_per_session).toBe(40);
+  });
+
+  test("gives a file that predates the column the default, not a pin to ten", async () => {
+    const db = createTestDb();
+    // No `newPerSession` key at all, the way a pre-feature file looks.
+    const listId = await importListToDb(db, validExport(), false, undefined);
+    const row = await db.getFirstAsync<{ new_per_session: number }>(
+      "SELECT new_per_session FROM lists WHERE id = ?",
+      [listId],
+    );
+    expect(row?.new_per_session).toBe(DEFAULT_NEW_PER_SESSION);
   });
 });

@@ -254,15 +254,22 @@ export const USER_DB_MIGRATIONS = [
   // 8-hour floor and never left the daily queue again.
   `ALTER TABLE srs_cards ADD COLUMN simple_relearning INTEGER DEFAULT 0`,
   // Cards sitting in a lapse when this lands are relearning by definition.
-  // `updated_at` moves too, or the backfill never pushes and a device that
-  // pulls the row afterwards takes the remote 0 back over it.
-  `UPDATE srs_cards SET simple_relearning = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-     WHERE simple_stage = 0 AND lapses > 0`,
+  //
+  // `updated_at` is deliberately NOT touched. Every device runs this same
+  // statement over its own rows, so the backfill does not need to travel — and
+  // bumping the timestamp would make a device that has not been opened in
+  // months the newest writer of every lapsed card, so `sync` would skip the
+  // remote row (`localTs >= remoteTs`) and push stale values over reviews done
+  // elsewhere. The soft-delete guard is here for the same reason: a bumped row
+  // would win and push its `deleted_at = NULL` back, resurrecting the card.
+  `UPDATE srs_cards SET simple_relearning = 1
+     WHERE simple_stage = 0 AND lapses > 0 AND deleted_at IS NULL`,
   // How many correct answers in a row a learning card has. It lived in a React
   // ref, so it died with the screen: a card answered twice and left was back to
-  // zero, and with `simple_n = 0` it stayed due forever. Nullable to match its
-  // neighbours; restore would survive NOT NULL too, since it inserts with
-  // `INSERT OR REPLACE`, which substitutes the default for an explicit NULL.
+  // zero, and with `simple_n = 0` it stayed due forever. Nullable because a
+  // restore from a backup that predates the column binds an explicit NULL for
+  // it — `INSERT OR REPLACE` does NOT fall back to the column default for a
+  // named NULL, so NOT NULL here would fail the whole restore.
   `ALTER TABLE srs_cards ADD COLUMN simple_run INTEGER DEFAULT 0`,
   // How many unseen cards a simple-SRS session may introduce. The session used
   // to load the whole list at once, so an 8,000-word list put 8,000 cards in
@@ -272,8 +279,8 @@ export const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN new_per_session INTEGER DEFAULT 10`,
   // One-time repair of the decks the lifetime-lapse bug flattened. Fixing the
   // rule does not fix the stored intervals: a ratcheted card sits at the 8-hour
-  // floor and returns every day, and at 200 answers a day 3,542 of 8,000 such
-  // cards are still queued a year later. Spreading them over the next month
+  // floor and returns every day, and at 200 answers a day 3,579 of 8,000 such
+  // cards are still queued a year later (`yarn simulate:srs drain`). Spreading them over the next month
   // drains the backlog instead — the numbers, and what was rejected, are in
   // docs/simple-srs-decisions.md.
   //
@@ -288,10 +295,12 @@ export const USER_DB_MIGRATIONS = [
   // new cards START, and with the whole list loading as new, those are most of
   // the stage-0 population — repairing them would hand thousands of unlearned
   // words a fortnight.
+  // `updated_at` is left alone, as in the backfill above: every device repairs
+  // its own rows, and a stale device that bumped them would push months-old
+  // values over reviews done on another device.
   `UPDATE srs_cards SET
      simple_interval = 2 + (rowid % 29),
-     simple_n = (julianday('now') - julianday('2001-01-01')) + 2 + (rowid % 29),
-     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     simple_n = (julianday('now') - julianday('2001-01-01')) + 2 + (rowid % 29)
    WHERE simple_stage = 1 AND simple_interval <= 0.34 AND lapses > 0 AND reps >= 12
      AND deleted_at IS NULL`,
 ];

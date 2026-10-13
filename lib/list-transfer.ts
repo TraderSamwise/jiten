@@ -1,6 +1,7 @@
 import type { WrappedUserDb } from "@/db/user-db";
 import type { CardFace, FlashcardMode } from "@/db/types";
 import { parseFaces } from "./card-faces";
+import { resolveNewPerSession } from "@/stores/simple-srs";
 
 // ─── Export file schema ───
 
@@ -19,6 +20,8 @@ export interface JitenExportFile {
     frontFaces: CardFace[];
     backFaces: CardFace[];
     autoPlayAudio: boolean;
+    /** Unseen cards a simple-SRS session introduces; absent means the default. */
+    newPerSession?: number | null;
   };
 
   entries: JitenExportEntry[];
@@ -97,6 +100,7 @@ export async function buildListExport(
       frontFaces,
       backFaces,
       autoPlayAudio: Boolean(listRow.auto_play_audio ?? listRow.autoPlayAudio ?? 0),
+      newPerSession: listRow.new_per_session ?? listRow.newPerSession ?? null,
     },
     entries: [],
   };
@@ -252,8 +256,8 @@ export async function importListToDb(
   const configured = hasStudyData ? 1 : 0;
 
   await userDb.runAsync(
-    `INSERT OR IGNORE INTO lists (id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO lists (id, name, description, flashcard_mode, front_faces, back_faces, study_position, configured, auto_play_audio, new_per_session, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       listId,
       name,
@@ -265,6 +269,9 @@ export async function importListToDb(
       studyPosition,
       configured,
       data.list.autoPlayAudio ? 1 : 0,
+      // A shared list carries its pace; a file that predates the column takes
+      // the column default rather than being pinned to ten.
+      resolveNewPerSession(data.list.newPerSession),
       now,
       now,
     ],

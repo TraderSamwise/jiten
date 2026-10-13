@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/test-db";
 import { attemptBackup, importBackup } from "./data-backup";
@@ -129,5 +130,88 @@ describe("data backup", () => {
       sourceDb.close();
       targetDb.close();
     }
+  });
+});
+
+/**
+ * A schema change must not cost the user their data in either direction.
+ *
+ * Review proved both halves broke: a backup from a build with
+ * `new_per_session` restored onto one without it failed per TABLE, so every
+ * list and every flashcard was skipped; and `attemptBackup`'s SELECT names the
+ * new columns while the recovery screen only runs when the database failed to
+ * migrate — precisely when they may not exist.
+ */
+describe("backup across a schema change", () => {
+  /** A `WrappedUserDb`-shaped wrapper over better-sqlite3. */
+  function wrap(db: Database.Database) {
+    return {
+      getAllAsync: async <T>(sql: string, args: unknown[] = []) =>
+        db.prepare(sql).all(...(args as unknown[])) as T[],
+      getFirstAsync: async <T>(sql: string, args: unknown[] = []) =>
+        (db.prepare(sql).get(...(args as unknown[])) ?? null) as T | null,
+      runAsync: async (sql: string, args: unknown[] = []) => {
+        db.prepare(sql).run(...(args as unknown[]));
+      },
+      execAsync: async (sql: string) => {
+        db.exec(sql);
+      },
+    } as unknown as Parameters<typeof importBackup>[0];
+  }
+
+  /** The `lists` table as it was before `new_per_session` existed. */
+  function olderDb(): Database.Database {
+    const db = new Database(":memory:");
+    db.exec(`CREATE TABLE lists (
+      id TEXT PRIMARY KEY, name TEXT, description TEXT,
+      flashcard_mode TEXT DEFAULT 'add_order', front_faces TEXT, back_faces TEXT,
+      study_position INTEGER DEFAULT 0, configured INTEGER DEFAULT 0,
+      auto_play_audio INTEGER DEFAULT 0, confusion_detection INTEGER DEFAULT 1,
+      voice_mode INTEGER DEFAULT 0, typing_mode INTEGER DEFAULT 0,
+      disable_flip_animation INTEGER DEFAULT 0, disable_swipe_animation INTEGER DEFAULT 0,
+      is_default INTEGER DEFAULT 0, learning_steps TEXT, relearning_steps TEXT,
+      mnemonic_cloze INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`);
+    return db;
+  }
+
+  it("restores onto an older build instead of losing every list", async () => {
+    const db = olderDb();
+    const backup = JSON.stringify({
+      version: 1,
+      tables: {
+        lists: [
+          { id: "l1", name: "Core 8k", new_per_session: 25, created_at: "x", updated_at: "y" },
+        ],
+      },
+    });
+    const result = await importBackup(wrap(db), backup);
+    expect(result.failed).toEqual([]);
+    expect(result.succeeded).toContain("lists");
+    expect(db.prepare("SELECT name FROM lists WHERE id = 'l1'").get()).toEqual({ name: "Core 8k" });
+  });
+
+  it("takes the column default for a column an older backup never had", async () => {
+    const db = new Database(":memory:");
+    db.exec(`CREATE TABLE lists (id TEXT PRIMARY KEY, name TEXT,
+      new_per_session INTEGER DEFAULT 10, created_at TEXT, updated_at TEXT)`);
+    // No `new_per_session` key at all, the way a pre-feature backup looks.
+    const backup = JSON.stringify({
+      version: 1,
+      tables: { lists: [{ id: "l1", name: "Core 8k", created_at: "x", updated_at: "y" }] },
+    });
+    await importBackup(wrap(db), backup);
+    expect(db.prepare("SELECT new_per_session FROM lists WHERE id = 'l1'").get()).toEqual({
+      new_per_session: 10,
+    });
+  });
+
+  it("rescues the rows a failed migration leaves readable", async () => {
+    const db = olderDb();
+    db.prepare("INSERT INTO lists (id, name) VALUES ('l1', 'Core 8k')").run();
+    // BACKUP_TABLES names `new_per_session`, which this database lacks.
+    const result = await attemptBackup(wrap(db) as never);
+    expect(result.failed).not.toContain("lists");
+    expect(result.tables.lists).toHaveLength(1);
+    expect((result.tables.lists[0] as { name: string }).name).toBe("Core 8k");
   });
 });

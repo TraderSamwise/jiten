@@ -54,6 +54,8 @@ describe("the simple_relearning backfill", () => {
     db.exec(card("mid-lapse", 0, 4));
     db.exec(card("graduated", 1, 4));
     db.exec(card("never-seen", null, 0));
+    db.exec(card("deleted-mid-lapse", 0, 4));
+    db.exec("UPDATE srs_cards SET deleted_at = 'gone' WHERE id = 'deleted-mid-lapse'");
     apply(db, ADDED);
     return db;
   };
@@ -66,7 +68,6 @@ describe("the simple_relearning backfill", () => {
   it("leaves a graduated card alone however often it has failed", () => {
     const row = migrated().prepare("SELECT * FROM srs_cards WHERE id = 'graduated'").get() as any;
     expect(row.simple_relearning).toBe(0);
-    // and does not dirty a row it did not change
     expect(row.updated_at).toBe("OLD");
   });
 
@@ -75,10 +76,19 @@ describe("the simple_relearning backfill", () => {
     expect(row.simple_relearning).toBe(0);
   });
 
-  it("bumps updated_at on the rows it changes, so they sync", () => {
+  it("leaves updated_at alone, so a stale device cannot win last-write-wins", () => {
+    // Every device runs this statement over its own rows, so the backfill does
+    // not need to travel. Bumping the timestamp would make a device that has
+    // not been opened in months the newest writer of every lapsed card: sync
+    // skips the remote row when `localTs >= remoteTs` and pushes the stale one.
     const row = migrated().prepare("SELECT * FROM srs_cards WHERE id = 'mid-lapse'").get() as any;
-    expect(row.updated_at).not.toBe("OLD");
-    // the format the rest of the app writes
-    expect(row.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(row.updated_at).toBe("OLD");
+  });
+
+  it("leaves a soft-deleted card alone, so it cannot be resurrected by a push", () => {
+    const db = migrated();
+    const row = db.prepare("SELECT * FROM srs_cards WHERE id = 'deleted-mid-lapse'").get() as any;
+    expect(row.simple_relearning).toBe(0);
+    expect(row.updated_at).toBe("OLD");
   });
 });

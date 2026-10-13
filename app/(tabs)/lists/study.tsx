@@ -21,7 +21,8 @@ import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
 import { isRtkReviewList } from "@/lib/rtk-review";
 import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
-import { learningCapFor, resolveNewPerSession, UNLIMITED } from "@/stores/simple-srs";
+import { resolveNewPerSession, UNLIMITED } from "@/stores/simple-srs";
+import { loadSimpleQueuePools } from "@/db/simple-queue";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -1064,6 +1065,8 @@ function StudyScreen() {
   type SessionPhase = "studying" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
   const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
+  /** Unseen cards this session has already introduced, across reloads. */
+  const newIntroducedRef = useRef(0);
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -1331,6 +1334,11 @@ function StudyScreen() {
 
   useEffect(() => {
     if (!dictDb || !userDb || !list) return;
+    // A different list or scope is a new session; "Continue Studying" is not,
+    // and must keep both so it neither re-serves answered cards nor hands out
+    // another full allowance of new ones.
+    newIntroducedRef.current = 0;
+    reviewedSrsIdsRef.current.clear();
     loadQueue();
   }, [dictDb, userDb, list?.id, scope]);
 
@@ -1637,39 +1645,21 @@ function StudyScreen() {
             );
             newCap = resolveNewPerSession(capRow?.new_per_session);
           }
-          // Graduated cards due today are the real review load and are never
-          // capped. Cards still in learning are: measured on an 8,000-card
-          // legacy deck at 200 answers a day, the cap shows 110 cards instead
-          // of 8,000 and still graduates 3,681 of them in a year against 3,733
-          // uncapped.
-          const learningCap = learningCapFor(newCap);
-          const dueRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage = 1 AND simple_n <= ? AND deleted_at IS NULL
-             ORDER BY simple_n ASC`,
-            [...scope.args, dueCutoffDays],
-          );
-          // Most recently answered first: finish the cards already in hand
-          // before reaching back into the backlog.
-          const learningRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage = 0 AND simple_n <= ? AND deleted_at IS NULL
-             ORDER BY updated_at DESC, rowid ASC
-             LIMIT ?`,
-            [...scope.args, dueCutoffDays, learningCap],
-          );
-          // Learning first: these are cards half-finished, and a graduated load
-          // bigger than the learner's stamina would otherwise mean nothing in
-          // learning or new ever advances. Before the split they led anyway,
-          // since `simple_n` is 0 on a learning card.
-          dueRows.unshift(...learningRows);
-          const newRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage IS NULL AND deleted_at IS NULL
-             ORDER BY created_at ASC, rowid ASC
-             LIMIT ?`,
-            [...scope.args, newCap],
-          );
+          // "Continue Studying" calls this again, so the cap is topped up to
+          // the session's allowance rather than granted afresh — otherwise ten
+          // taps introduce a hundred new cards — and the cards just answered
+          // are held back, since a graduated card's 0.633-day interval falls
+          // inside today's cutoff and it would come straight back.
+          const newAllowance =
+            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newIntroducedRef.current);
+          const { dueRows, newRows } = await loadSimpleQueuePools({
+            query: (sql, args) => userDb.getAllAsync<SrsCardRow>(sql, args),
+            scope,
+            dueCutoffDays,
+            newAllowance,
+            excludeIds: reviewedSrsIdsRef.current,
+          });
+          newIntroducedRef.current += newRows.length;
 
           if (dueRows.length > 0 || newRows.length > 0) {
             const dueItems = await resolveCards(dueRows);
@@ -2376,16 +2366,24 @@ function StudyScreen() {
         await rateSrsCard(cardRow, Rating.Again);
       }
 
-      // Drop it from the pools first: they hold the row as it was at session
-      // start, and a second copy pulled later would carry a stale correct-run
-      // and graduate the card on one pass after this fail just reset it.
+      // Drop every stale copy of it first. The pools hold the row as it was at
+      // session start, and the deque may already have pulled one — either
+      // carries a correct-run from before this fail reset it, so answering it
+      // would graduate the card on one pass and write it twice in one session.
+      // Only copies not yet answered are dropped; an answered one is history.
       const queuedId = queuedCard.id;
       duePoolRef.current = duePoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
       newPoolRef.current = newPoolRef.current.filter((item) => item.srsCard?.id !== queuedId);
 
+      // Back in learning, so it is no longer one of the cards finished.
+      completedSrsIdsRef.current.delete(queuedId);
+
       // Push to end of current session
       setCards((prev) => [
-        ...prev,
+        ...prev.filter(
+          (card, index) =>
+            index <= cursor || card.status !== "pending" || card.item.srsCard?.id !== queuedId,
+        ),
         {
           item: { kind: "entry" as const, entry: result.entry as DictEntry, srsCard: queuedCard },
           status: "pending" as CardStatus,
@@ -2500,8 +2498,21 @@ function StudyScreen() {
     }
     next.push({ item: cards[cursor].item, status: "revealed", flipped: true });
     for (let i = cursor + 1; i < cards.length; i++) {
-      if (cards[i].reQueueOf == null) {
+      const reQueuedBy = cards[i].reQueueOf;
+      // A re-queue copy is void only if the answer that created it is being
+      // undone. One owned by a card BEFORE the cursor keeps its place: its
+      // owner has already left the pool, so dropping the copy stranded the
+      // card for the rest of the session and the progress bar could never
+      // reach 100%.
+      if (reQueuedBy == null) {
         next.push({ item: cards[i].item, status: "pending", flipped: false });
+      } else if (reQueuedBy < cursor) {
+        next.push({
+          item: cards[i].item,
+          status: "pending",
+          flipped: false,
+          reQueueOf: reQueuedBy,
+        });
       }
     }
     cardsRef.current = next;
@@ -2836,7 +2847,6 @@ function StudyScreen() {
             onPress={() => {
               setSessionPhase("studying");
               setReviewedCount(0);
-              reviewedSrsIdsRef.current.clear();
               loadQueue();
             }}
           />

@@ -3,9 +3,9 @@
  *
  * Fixing the rule does not fix the stored intervals: a card the bug ratcheted
  * is sitting at the 8-hour floor and comes back every day forever. Measured at
- * 200 answers a day, 3,542 of 8,000 such cards are still queued a year later
- * without a repair and 50 with one — the numbers are in
- * docs/simple-srs-decisions.md.
+ * 200 answers a day, 3,579 of 8,000 such cards are still queued a year later
+ * without a repair and 47 with one — `yarn simulate:srs drain`, and the
+ * decisions are in docs/simple-srs-decisions.md.
  *
  * What must NOT move: a card that has barely been seen, a card on a healthy
  * interval, an FSRS-only card, and any learning card — a card at stage 0 sits
@@ -113,7 +113,13 @@ describe("the interval repair", () => {
     expect(r.simple_interval).toBeLessThanOrEqual(30);
     expect(Number(r.simple_n) - today()).toBeGreaterThanOrEqual(2);
     expect(Number(r.simple_n) - today()).toBeLessThanOrEqual(30);
-    expect(r.updated_at).not.toBe("OLD");
+  });
+
+  it("leaves updated_at alone, so a stale device cannot win last-write-wins", () => {
+    // Each device repairs its own rows; a bumped timestamp would let a device
+    // opened for the first time in months push its values over another's
+    // reviews, because sync skips the remote row when `localTs >= remoteTs`.
+    expect(row(repaired(), "ratcheted").updated_at).toBe("OLD");
   });
 
   it("leaves a card part-way down the ratchet to climb on its own", () => {
@@ -121,18 +127,18 @@ describe("the interval repair", () => {
     // 3.2, 6.1 … by itself. The clause is for cards PINNED at the floor, where
     // a card honestly at 0.88 after one lapse is indistinguishable from a
     // victim — at 75% accuracy, including them doubles the cards wrongly lifted.
-    expect(row(repaired(), "part-way-down").updated_at).toBe("OLD");
+    expect(row(repaired(), "part-way-down").simple_interval).toBe(0.88);
   });
 
   it("leaves a soft-deleted card alone rather than rewriting and pushing it", () => {
-    expect(row(repaired(), "deleted").updated_at).toBe("OLD");
+    expect(row(repaired(), "deleted").simple_interval).toBeCloseTo(FLOOR);
   });
 
   it("leaves a card with too few answers behind it alone", () => {
     // Honestly at the floor: a young card that failed once and re-graduated
     // lands there. Measured, those have a median of 4 answers; a card the
     // ratchet dragged down from 56 days has 32.
-    expect(row(repaired(), "barely-seen").updated_at).toBe("OLD");
+    expect(row(repaired(), "barely-seen").simple_interval).toBeCloseTo(FLOOR);
   });
 
   it("leaves every learning card alone, mid-lapse or never graduated", () => {
@@ -147,18 +153,17 @@ describe("the interval repair", () => {
   });
 
   it("leaves a card one halving above the clause alone", () => {
-    expect(row(repaired(), "just-above").updated_at).toBe("OLD");
+    expect(row(repaired(), "just-above").simple_interval).toBe(0.4);
   });
 
   it("leaves a card that has never failed alone — the bug cannot have touched it", () => {
-    expect(row(repaired(), "never-failed").updated_at).toBe("OLD");
+    expect(row(repaired(), "never-failed").simple_interval).toBeCloseTo(FLOOR);
   });
 
   it("leaves a healthy interval and an FSRS-only card alone", () => {
     const db = repaired();
     expect(row(db, "healthy").simple_interval).toBe(56.61);
-    expect(row(db, "healthy").updated_at).toBe("OLD");
-    expect(row(db, "fsrs-only").updated_at).toBe("OLD");
+    expect(row(db, "fsrs-only").simple_interval).toBe(null);
   });
 
   it("rewrites the schedule and nothing else", () => {
@@ -171,6 +176,7 @@ describe("the interval repair", () => {
     expect(r.simple_relearning).toBe(0);
     expect(r.simple_run).toBe(0);
     expect(r.created_at).toBe("created");
+    expect(r.updated_at).toBe("OLD");
   });
 
   // Recorded, not asserted as desirable: `reps` is not per-mode, so a list

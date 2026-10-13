@@ -261,6 +261,20 @@ const IMPORT_ORDER = [
   "course_progress",
 ];
 
+/** The columns a table actually has, or null if it cannot be read at all. */
+export async function existingColumns(
+  db: WrappedUserDb,
+  tableName: string,
+): Promise<Set<string> | null> {
+  try {
+    const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+    if (!rows.length) return null;
+    return new Set(rows.map((row) => row.name));
+  } catch {
+    return null;
+  }
+}
+
 export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
   const result: BackupResult = { tables: {}, succeeded: [], failed: [] };
   for (const table of BACKUP_TABLES) {
@@ -269,6 +283,24 @@ export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
       result.tables[table.name] = rows;
       result.succeeded.push(table.name);
     } catch (err) {
+      // This runs on a database that failed to open or migrate, which is
+      // exactly when a column the query names may not exist yet. Falling back
+      // to the columns the table really has rescues the rows instead of
+      // reporting the whole table as lost — a missing `new_per_session` used to
+      // cost the user every list, and a missing `simple_relearning` every card.
+      const cols = await existingColumns(db, table.name);
+      const wanted = TABLE_COLUMNS[table.name];
+      if (cols && wanted) {
+        const usable = wanted.filter((col) => cols.has(col));
+        try {
+          const rows = await db.getAllAsync<any>(`SELECT ${usable.join(", ")} FROM ${table.name}`);
+          result.tables[table.name] = rows;
+          result.succeeded.push(table.name);
+          continue;
+        } catch (fallbackErr) {
+          console.error(`[Recovery] Fallback backup of ${table.name} failed:`, fallbackErr);
+        }
+      }
       console.error(`[Recovery] Failed to backup ${table.name}:`, err);
       result.failed.push(table.name);
     }
@@ -304,8 +336,19 @@ export async function importBackup(
       continue;
     }
 
-    const cols = TABLE_COLUMNS[tableName];
-    if (!cols) {
+    const allowed = TABLE_COLUMNS[tableName];
+    if (!allowed) {
+      result.skipped.push(tableName);
+      continue;
+    }
+
+    // Only the columns this database actually has. A backup written by a newer
+    // build names columns an older one lacks, and SQLite rejects the whole
+    // statement for an unknown column — so one added column used to cost every
+    // list and every flashcard in the restore, not just that column.
+    const present = await existingColumns(db, tableName);
+    const cols = present ? allowed.filter((col) => present.has(col)) : allowed;
+    if (!cols.length) {
       result.skipped.push(tableName);
       continue;
     }
@@ -320,8 +363,22 @@ export async function importBackup(
       const sql = `INSERT OR REPLACE INTO ${tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
 
       for (const row of rows) {
-        const values = cols.map((col) => row[col] ?? null);
-        await db.runAsync(sql, values);
+        // `INSERT OR REPLACE` writes a named NULL as NULL — it does NOT fall
+        // back to the column default — so a column missing from an older backup
+        // is left out of the statement entirely and takes its default.
+        const named = cols.filter((col) => row[col] !== undefined);
+        if (named.length === cols.length) {
+          await db.runAsync(
+            sql,
+            cols.map((col) => row[col] ?? null),
+          );
+        } else {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO ${tableName} (${named.join(", ")})
+             VALUES (${named.map(() => "?").join(", ")})`,
+            named.map((col) => row[col] ?? null),
+          );
+        }
         processedRows++;
       }
 
