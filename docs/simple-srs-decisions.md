@@ -245,7 +245,12 @@ Accepted trades, written down because they are real:
   push a ratcheted interval back, and nothing lifts it again. That is the better trade — one
   stale card against repeatedly burying hard words — and it is why the repair is not a
   migration keyed to `PRAGMA user_version` either.
-- Cards imported later are never repaired: `lib/data-backup.ts` restore and
-  `lib/list-transfer.ts` import run against an already-migrated database, so a floored row
-  arriving afterwards stays floored. `simple_relearning`'s backfill has the same hole. Not
-  worth a mechanism; worth knowing.
+- Cards arriving after the repair has run are never repaired: a backup restore, a list
+  import, **and a sync pull**, which is the common one. The flag is only written once the
+  device has seen a simple-SRS deck, so a fresh install does not spend its one run on an
+  empty table — review proved that version left a reinstalling user with a permanently
+  flattened deck, since the repair never pushes either. A deck that arrives _after_ a
+  repaired launch still stays as it is.
+- A restore no longer resurrects a soft-deleted row. `INSERT OR REPLACE` cleared
+  `deleted_at` because it deleted and re-inserted; an upsert does not name the column unless
+  the backup carried it. Deliberate, and the better behaviour.

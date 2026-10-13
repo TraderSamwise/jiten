@@ -473,3 +473,28 @@ describe("the restore's primary keys", () => {
     expect(wrong).toEqual([]);
   });
 });
+
+describe("a backup that predates a required column", () => {
+  it("restores mnemonics from a pre-feature backup instead of losing all of them", async () => {
+    // `user_kanji_notes.updated_at` is NOT NULL with no default and was in
+    // neither the export nor the restore list, so every row of a backup taken
+    // before it failed on the constraint. Pre-existing on master; the "survives
+    // a schema change" work is what makes it this file's problem.
+    const db = createTestDb();
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: { user_kanji_notes: [{ literal: "水", mnemonic: "water", keyword: "water" }] },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    const row = await db.getFirstAsync<{ mnemonic: string; updated_at: string }>(
+      "SELECT mnemonic, updated_at FROM user_kanji_notes WHERE literal = '水'",
+    );
+    expect(row?.mnemonic).toBe("water");
+    // Stamped at the epoch, not now: a restored note must not outrank a live
+    // one in `updated_at > ?` comparisons it never earned.
+    expect(row?.updated_at).toBe("1970-01-01T00:00:00.000Z");
+  });
+});

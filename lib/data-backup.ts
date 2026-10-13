@@ -92,6 +92,18 @@ export const BACKUP_TABLES: {
  * name makes `ON CONFLICT(pk)` throw, so this list is checked against the
  * schema by `lib/data-backup.test.ts`.
  */
+/**
+ * Columns a restore must supply if the backup did not, because the schema makes
+ * them NOT NULL with no default. Checked against `PRAGMA table_info` by
+ * `lib/data-backup.test.ts`.
+ */
+const REQUIRED_TIMESTAMPS: Record<string, string[]> = {
+  user_kanji_notes: ["updated_at"],
+};
+
+/** When a restore stands in for a timestamp a backup never had. */
+const RESTORE_TIMESTAMP = new Date(0).toISOString();
+
 export const PRIMARY_KEYS: Record<string, string> = {
   user_kanji_notes: "literal",
 };
@@ -411,7 +423,18 @@ export async function importBackup(
         // column default. So a column the backup never had is left out of the
         // statement entirely, and takes its default.
         const named = cols.filter((col) => row[col] !== undefined);
-        const values = named.map((col) => row[col] ?? null);
+        const values: unknown[] = named.map((col) => row[col] ?? null);
+
+        // A timestamp a backup never carried is metadata, not the user's data,
+        // and the schema requires it: `user_kanji_notes.updated_at` is NOT NULL
+        // with no default, so every mnemonic in a pre-feature backup failed on
+        // it. Supplying one restores the row; leaving it out loses the lot.
+        for (const col of REQUIRED_TIMESTAMPS[tableName] ?? []) {
+          if (cols.includes(col) && row[col] === undefined) {
+            named.push(col);
+            values.push(RESTORE_TIMESTAMP);
+          }
+        }
         try {
           await db.runAsync(named.length === cols.length ? sql : upsert(named), values);
         } catch (rowErr) {

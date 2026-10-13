@@ -279,8 +279,8 @@ export const USER_DB_MIGRATIONS = [
   `ALTER TABLE lists ADD COLUMN new_per_session INTEGER DEFAULT 10`,
 ];
 
-// The repair of already-ratcheted intervals is deliberately NOT here: a
-// migration runs once, keyed to `PRAGMA user_version`, and a device still on an
-// old build can push a ratcheted value back afterwards, at which point a
-// one-shot repair is gone for good. It lives in `db/simple-repair.ts` and runs
-// on every launch instead.
+// The repair of already-ratcheted intervals is deliberately NOT here. It is
+// keyed to an `app_flags` row rather than `PRAGMA user_version`, and the flag is
+// only written once the device has seen a simple-SRS deck — a fresh install
+// would otherwise spend its one run on an empty table and never repair the deck
+// that arrives on the next sync. See `db/simple-repair.ts`.

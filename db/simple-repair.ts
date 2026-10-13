@@ -50,6 +50,9 @@ export const REPAIR_RATCHETED_INTERVALS = `UPDATE srs_cards SET
 /**
  * Run the repair if this device has not. Returns how many cards were lifted, or
  * -1 if it had already run.
+ *
+ * "Has not" means the flag is absent, and the flag is only written once the
+ * device has actually seen a simple-SRS deck — see below.
  */
 export async function repairRatchetedIntervals(db: WrappedUserDb): Promise<number> {
   try {
@@ -60,12 +63,22 @@ export async function repairRatchetedIntervals(db: WrappedUserDb): Promise<numbe
     if (done) return -1;
 
     const result = await db.runAsync(REPAIR_RATCHETED_INTERVALS, []);
-    // The flag is written even when nothing matched: a healthy deck has nothing
-    // to repair and must not be re-examined on every launch forever.
-    await db.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
-      REPAIR_FLAG,
-      new Date().toISOString(),
-    ]);
+
+    // Only claim the repair is done once there was a deck to repair. A fresh
+    // install has no cards yet: writing the flag then would spend the one run
+    // on an empty table, and the ratcheted deck arriving on the next sync pull
+    // would stay flattened forever, with no path back — the repair never
+    // pushes, so the remote copy is flattened too. A reinstall is the common
+    // way a user meets this, not an edge case.
+    const seen = await db.getFirstAsync<{ c: number }>(
+      "SELECT COUNT(*) as c FROM srs_cards WHERE simple_stage IS NOT NULL",
+    );
+    if ((seen?.c ?? 0) > 0) {
+      await db.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
+        REPAIR_FLAG,
+        new Date().toISOString(),
+      ]);
+    }
     return result?.changes ?? 0;
   } catch (err) {
     // A deck left at the floor is bad; a launch that fails because of it is

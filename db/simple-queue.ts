@@ -7,6 +7,12 @@
  * left the whole suite green — the 8,000-card queue and the graduation fix both
  * fully revertable without a single failure. `db/simple-queue.test.ts` runs
  * THESE functions, so the SQL a session uses is the SQL a test gates.
+ *
+ * That gates the SQL and not the screen calling it, which an earlier commit
+ * message claimed and review disproved: the same one-line reverts still passed
+ * once the queries had moved. `app/study-wiring.test.ts` reads the screen's
+ * source for exactly those edits — a guard, not a behavioural test, and the
+ * honest limit of testing a React screen nothing can render here.
  */
 
 import { SRS_CARD_SELECT } from "./srs-card-columns";

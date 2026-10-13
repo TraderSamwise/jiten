@@ -12,9 +12,8 @@
  * at 1/3 because that is where new cards start, and with the whole list loading
  * as new those are most of the stage-0 population.
  *
- * It runs on every launch rather than once, so running it twice must be a
- * no-op — that is what lets a repair survive an old build pushing a ratcheted
- * value back.
+ * It runs once per device, so the statement itself is still written to be
+ * idempotent: the flag is the mechanism, the spread starting at 2 is the belt.
  */
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
@@ -298,8 +297,36 @@ describe("the repair runs once per device", () => {
     ).toEqual({ simple_interval: 0.3333 });
   });
 
-  it("writes the flag even when a healthy deck has nothing to repair", async () => {
+  it("claims nothing on an empty database, so a reinstall still gets repaired", async () => {
+    // A fresh install has no cards: the deck arrives on the next sync pull, and
+    // the repair never pushes, so if the flag were spent here the deck would
+    // stay flattened forever on every device.
     const db = createTestDb();
+    expect(await repairRatchetedIntervals(db)).toBe(0);
+    expect(await repairRatchetedIntervals(db)).toBe(0);
+
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days,
+         scheduled_days, reps, lapses, state, simple_stage, simple_n, simple_interval,
+         created_at, updated_at)
+       VALUES ('pulled', 1, NULL, 'x', 0, 0, 0, 0, 40, 5, 0, 1, 0, 0.3333, ?, 'OLD')`,
+      [now],
+    );
+    expect(await repairRatchetedIntervals(db)).toBe(1);
+    expect(await repairRatchetedIntervals(db)).toBe(-1);
+  });
+
+  it("settles on a healthy deck after one run", async () => {
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days,
+         scheduled_days, reps, lapses, state, simple_stage, simple_n, simple_interval,
+         created_at, updated_at)
+       VALUES ('healthy', 1, NULL, 'x', 0, 0, 0, 0, 40, 0, 0, 1, 9000, 56.61, ?, 'OLD')`,
+      [now],
+    );
     expect(await repairRatchetedIntervals(db)).toBe(0);
     expect(await repairRatchetedIntervals(db)).toBe(-1);
   });
