@@ -14,6 +14,7 @@ import { alert } from "@/lib/confirm";
 import { requestVoicePermissions } from "@/lib/voice-recognition";
 import { useSync } from "@/db/sync-provider";
 import type { CardFace, FlashcardMode } from "@/db/types";
+import { DEFAULT_NEW_PER_SESSION } from "@/stores/simple-srs";
 
 interface FlashcardSettingsModalProps {
   visible: boolean;
@@ -55,6 +56,7 @@ export function FlashcardSettingsModal({
   const [buttonAnimation, setButtonAnimation] = useAtom(flashcardButtonAnimationAtom);
   const [learningStepsText, setLearningStepsText] = useState("");
   const [relearningStepsText, setRelearningStepsText] = useState("");
+  const [newPerSessionText, setNewPerSessionText] = useState("");
   const [hasKanjiEntries, setHasKanjiEntries] = useState(false);
 
   const inputMode = voiceMode
@@ -85,6 +87,7 @@ export function FlashcardSettingsModal({
       setMnemonicCloze(list.mnemonicCloze ?? false);
       setLearningStepsText(list.learningSteps ? list.learningSteps.join(", ") : "");
       setRelearningStepsText(list.relearningSteps ? list.relearningSteps.join(", ") : "");
+      setNewPerSessionText(list.newPerSession != null ? String(list.newPerSession) : "");
     }
   }, [visible, list]);
 
@@ -120,6 +123,23 @@ export function FlashcardSettingsModal({
 
   async function handleSave() {
     if (!userDb) return;
+
+    // Empty means "use the default", not zero: a cap of 0 would send a list
+    // with nothing due straight to the done screen. The input only shows for
+    // simple SRS, so any other mode keeps whatever the list already stored
+    // rather than writing NULL over it.
+    let newPerSession: number | null = list?.newPerSession ?? null;
+    if (mode === "simple_srs") {
+      newPerSession = null;
+      if (newPerSessionText.trim()) {
+        const parsed = Number(newPerSessionText.trim());
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+          alert("Invalid number", "New cards per session must be a whole number from 1 to 500.");
+          return;
+        }
+        newPerSession = parsed;
+      }
+    }
 
     // Validate learning steps if provided
     let learningSteps: string[] | null = null;
@@ -159,7 +179,8 @@ export function FlashcardSettingsModal({
         typingMode === (list.typingMode ?? false) &&
         mnemonicCloze === (list.mnemonicCloze ?? false) &&
         arrEq(learningSteps, list.learningSteps) &&
-        arrEq(relearningSteps, list.relearningSteps);
+        arrEq(relearningSteps, list.relearningSteps) &&
+        newPerSession === (list.newPerSession ?? null);
       if (unchanged) {
         onClose(false);
         return;
@@ -168,7 +189,7 @@ export function FlashcardSettingsModal({
 
     const now = new Date().toISOString();
     await userDb.runAsync(
-      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, mnemonic_cloze = ?, learning_steps = ?, relearning_steps = ?, configured = 1, updated_at = ? WHERE id = ?",
+      "UPDATE lists SET flashcard_mode = ?, front_faces = ?, back_faces = ?, auto_play_audio = ?, confusion_detection = ?, voice_mode = ?, typing_mode = ?, mnemonic_cloze = ?, learning_steps = ?, relearning_steps = ?, new_per_session = ?, configured = 1, updated_at = ? WHERE id = ?",
       [
         mode,
         JSON.stringify(frontFaces),
@@ -180,6 +201,7 @@ export function FlashcardSettingsModal({
         mnemonicCloze ? 1 : 0,
         learningSteps ? JSON.stringify(learningSteps) : null,
         relearningSteps ? JSON.stringify(relearningSteps) : null,
+        newPerSession,
         now,
         listId,
       ],
@@ -196,6 +218,7 @@ export function FlashcardSettingsModal({
       mnemonicCloze,
       learningSteps,
       relearningSteps,
+      newPerSession,
       updatedAt: now,
     });
     markDirty();
@@ -294,6 +317,28 @@ export function FlashcardSettingsModal({
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
+              </View>
+            )}
+
+            {/* New cards per session (simple SRS only) */}
+            {mode === "simple_srs" && (
+              <View className="mb-4">
+                <Text className="text-sm font-medium text-muted-foreground mb-2">
+                  New cards per session
+                </Text>
+                <TextInput
+                  value={newPerSessionText}
+                  onChangeText={setNewPerSessionText}
+                  placeholder={String(DEFAULT_NEW_PER_SESSION)}
+                  placeholderTextColor="#999"
+                  keyboardType="number-pad"
+                  className="border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text className="text-xs text-muted-foreground mt-2">
+                  Each new card costs about ten reviews a day once it settles in.
+                </Text>
               </View>
             )}
 

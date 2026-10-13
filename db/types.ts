@@ -157,6 +157,8 @@ export interface WordList {
   disableSwipeAnimation: boolean;
   learningSteps: string[] | null;
   relearningSteps: string[] | null;
+  /** Unseen cards a simple-SRS session may introduce. Absent reads as the default. */
+  newPerSession?: number | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;

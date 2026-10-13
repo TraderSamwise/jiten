@@ -162,6 +162,19 @@ export function simpleInitCard(): SimpleSrsUpdate {
 /** Number of correct answers needed to graduate from learning */
 export const SIMPLE_SRS_REQUIRED_CORRECT = REQUIRED_CORRECT;
 
+/**
+ * Unseen cards a session introduces when the list does not say otherwise.
+ * Midori mixes in about ten; the whole list at once is what kept 8,000 cards
+ * in the queue every day, since none of them could reach three correct answers.
+ */
+export const DEFAULT_NEW_PER_SESSION = 10;
+
+/** What a list's `newPerSession` means, with the floor and ceiling applied. */
+export function resolveNewPerSession(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_NEW_PER_SESSION;
+  return Math.max(1, Math.min(Math.floor(value), 500));
+}
+
 /** What a single simple-SRS answer does to a card. */
 export interface SimpleSrsDecision {
   updates: SimpleSrsUpdate;

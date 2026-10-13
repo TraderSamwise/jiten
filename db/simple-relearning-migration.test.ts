@@ -11,9 +11,22 @@ import { describe, expect, it } from "vitest";
 
 import { USER_DB_MIGRATIONS } from "./user-migrations";
 
-/** Everything except the two statements this change added. */
-const BEFORE = USER_DB_MIGRATIONS.slice(0, -2);
-const ADDED = USER_DB_MIGRATIONS.slice(-2);
+/**
+ * Split at the statements this change added, found by what they say rather than
+ * by counting from the end of the array — later phases append more migrations,
+ * and a `slice(-2)` silently starts testing the wrong pair.
+ */
+const ADD_COLUMN = USER_DB_MIGRATIONS.findIndex((sql) =>
+  /ALTER TABLE srs_cards ADD COLUMN simple_relearning/.test(sql),
+);
+const BACKFILL = USER_DB_MIGRATIONS.findIndex((sql) =>
+  /UPDATE srs_cards SET simple_relearning = 1/.test(sql),
+);
+if (ADD_COLUMN < 0 || BACKFILL !== ADD_COLUMN + 1) {
+  throw new Error("the simple_relearning migrations are not where this test expects them");
+}
+const BEFORE = USER_DB_MIGRATIONS.slice(0, ADD_COLUMN);
+const ADDED = USER_DB_MIGRATIONS.slice(ADD_COLUMN, BACKFILL + 1);
 
 function apply(db: Database.Database, statements: readonly string[]) {
   for (const sql of statements) {

@@ -21,6 +21,7 @@ import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
 import { isRtkReviewList } from "@/lib/rtk-review";
 import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
+import { resolveNewPerSession } from "@/stores/simple-srs";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -1625,11 +1626,29 @@ function StudyScreen() {
              ORDER BY simple_n ASC`,
             [...scope.args, dueCutoffDays],
           );
+          // A flagged or smart review is assembled on purpose and is all-new,
+          // so a cap would show ten of it and call that a session (-1 is
+          // SQLite's own "no limit"). Everywhere else the cap is the point:
+          // the whole list at once is why nothing could ever reach three
+          // correct answers.
+          //
+          // Read from the row, not from `list`: the settings modal reloads the
+          // queue from its own close handler, which closes over the pre-save
+          // value, and depending on it here instead would race that reload.
+          let newCap = -1;
+          if (!isEphemeralListId(listId)) {
+            const capRow = await userDb.getFirstAsync<{ new_per_session: number | null }>(
+              "SELECT new_per_session FROM lists WHERE id = ?",
+              [listId],
+            );
+            newCap = resolveNewPerSession(capRow?.new_per_session);
+          }
           const newRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards
              WHERE ${scope.clause} AND simple_stage IS NULL AND deleted_at IS NULL
-             ORDER BY created_at ASC`,
-            [...scope.args],
+             ORDER BY created_at ASC, rowid ASC
+             LIMIT ?`,
+            [...scope.args, newCap],
           );
 
           if (dueRows.length > 0 || newRows.length > 0) {

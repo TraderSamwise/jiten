@@ -1,0 +1,85 @@
+/**
+ * The cap on unseen cards a session introduces.
+ *
+ * The simple-SRS session used to load the whole list: 8,000 words meant 8,000
+ * cards at once, none of which could collect the three correct answers a card
+ * needs to graduate, so the same queue came back every day. Midori, which this
+ * engine clones, mixes in about ten.
+ */
+import Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
+
+import { USER_DB_MIGRATIONS } from "@/db/user-migrations";
+import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
+import { DEFAULT_NEW_PER_SESSION, resolveNewPerSession } from "@/stores/simple-srs";
+
+describe("resolveNewPerSession", () => {
+  it("falls back to the default when the list says nothing", () => {
+    expect(resolveNewPerSession(null)).toBe(DEFAULT_NEW_PER_SESSION);
+    expect(resolveNewPerSession(undefined)).toBe(DEFAULT_NEW_PER_SESSION);
+  });
+
+  it("never returns zero, which would send a session straight to the done screen", () => {
+    expect(resolveNewPerSession(0)).toBe(1);
+    expect(resolveNewPerSession(-5)).toBe(1);
+  });
+
+  it("keeps a chosen value and caps the absurd", () => {
+    expect(resolveNewPerSession(25)).toBe(25);
+    expect(resolveNewPerSession(10_000)).toBe(500);
+  });
+});
+
+describe("the query that fills the new pool", () => {
+  function deck(size: number): Database.Database {
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = OFF");
+    for (const sql of USER_DB_MIGRATIONS) {
+      try {
+        db.exec(sql);
+      } catch (err) {
+        if (!/duplicate column/i.test(String(err))) throw err;
+      }
+    }
+    const insert = db.prepare(`INSERT INTO srs_cards (id, entry_id, list_id, due, stability,
+      difficulty, elapsed_days, scheduled_days, reps, lapses, state, front_mode, back_mode,
+      created_at, updated_at) VALUES (?, ?, 'l', 'x', 0, 0, 0, 0, 0, 0, 0, 'kanji', 'english',
+      'same-timestamp', 'now')`);
+    // Every card carries the SAME created_at, the way the backfill writes them.
+    for (let i = 0; i < size; i++) insert.run(`c${i}`, i);
+    return db;
+  }
+
+  const newRows = (db: Database.Database, cap: number) =>
+    db
+      .prepare(
+        `${SRS_CARD_SELECT} FROM srs_cards
+         WHERE list_id = 'l' AND simple_stage IS NULL AND deleted_at IS NULL
+         ORDER BY created_at ASC, rowid ASC
+         LIMIT ?`,
+      )
+      .all(cap);
+
+  it("hands the session the cap, not the list", () => {
+    expect(newRows(deck(8000), DEFAULT_NEW_PER_SESSION)).toHaveLength(10);
+  });
+
+  // A guard, not a gate: this passes without the `rowid ASC` tiebreak too,
+  // because SQLite happens to return rowid order for equal keys. The tiebreak
+  // is there to make that a promise rather than a coincidence — the backfill
+  // stamps every card the same `created_at`, and there is no index on it.
+  it("is stable when every card shares a timestamp", () => {
+    const db = deck(50);
+    const first = newRows(db, 10).map((r) => (r as { id: string }).id);
+    expect(newRows(db, 10).map((r) => (r as { id: string }).id)).toEqual(first);
+    // and it starts at the beginning of the list, not somewhere in the middle
+    expect(first[0]).toBe("c0");
+  });
+
+  // What the ephemeral-list exemption binds: SQLite reads a negative LIMIT as
+  // no limit, and -1 binds as an integer where a JS number past 2^31 would
+  // reach op-sqlite as a double.
+  it("gives everything to a session that asks for everything", () => {
+    expect(newRows(deck(40), -1)).toHaveLength(40);
+  });
+});

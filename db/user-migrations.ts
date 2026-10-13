@@ -264,4 +264,10 @@ export const USER_DB_MIGRATIONS = [
   // neighbours; restore would survive NOT NULL too, since it inserts with
   // `INSERT OR REPLACE`, which substitutes the default for an explicit NULL.
   `ALTER TABLE srs_cards ADD COLUMN simple_run INTEGER DEFAULT 0`,
+  // How many unseen cards a simple-SRS session may introduce. The session used
+  // to load the whole list at once, so an 8,000-word list put 8,000 cards in
+  // front of the learner, none of them could reach the three correct answers a
+  // card needs, and the same queue came back every day. Midori, which this
+  // engine clones, mixes in about ten.
+  `ALTER TABLE lists ADD COLUMN new_per_session INTEGER DEFAULT 10`,
 ];
