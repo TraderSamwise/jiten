@@ -6,7 +6,12 @@ import { useUserDb } from "@/db/user-provider";
 import { useSync } from "@/db/sync-provider";
 import { useListsStore } from "@/stores/lists";
 import { getCardStateDistribution, type CardDistribution } from "@/lib/practice-stats";
-import { srsEpochDaysToDate, endOfLogicalDayEpochDays } from "@/stores/simple-srs";
+import {
+  srsEpochDaysToDate,
+  endOfLogicalDayEpochDays,
+  resolveNewPerSession,
+  learningCapFor,
+} from "@/stores/simple-srs";
 import { useAtomValue } from "jotai";
 import { dayResetHourAtom } from "@/stores/settings";
 import type { FlashcardMode } from "@/db/types";
@@ -122,7 +127,7 @@ export function DueCardsSection({
     if (flashcardMode === "simple_srs") {
       const rows = await userDb.getAllAsync<{ dueDays: number }>(
         `SELECT simple_n as dueDays
-         FROM srs_cards WHERE list_id = ? AND simple_stage IS NOT NULL AND deleted_at IS NULL`,
+         FROM srs_cards WHERE list_id = ? AND simple_stage = 1 AND deleted_at IS NULL`,
         [listId],
       );
       for (const row of rows) {
@@ -130,6 +135,18 @@ export function DueCardsSection({
         const idx = dateToBucketIndex(dueDate, dayResetHour);
         counts[idx]++;
       }
+      // Cards in learning are all due now, and the session only shows three
+      // times the new-card cap of them. Counting them all promised 8,000 due on
+      // a deck the uncapped session left behind, while the session showed
+      // thirty and then said it was done.
+      const list = useListsStore.getState().lists.find((l) => l.id === listId);
+      const learningCap = learningCapFor(resolveNewPerSession(list?.newPerSession));
+      const learning = await userDb.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM srs_cards
+         WHERE list_id = ? AND simple_stage = 0 AND deleted_at IS NULL`,
+        [listId],
+      );
+      counts[0] += Math.min(learning?.c ?? 0, learningCap);
     } else {
       const newRow = await userDb.getFirstAsync<{ c: number }>(
         "SELECT COUNT(*) as c FROM srs_cards WHERE list_id = ? AND state = 0 AND deleted_at IS NULL",

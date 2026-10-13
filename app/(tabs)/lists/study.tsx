@@ -21,7 +21,7 @@ import { shouldAskAsCloze } from "@/lib/rtk-cloze";
 import { rtkReviewScope, singleList, type ListScope } from "@/lib/list-scope";
 import { isRtkReviewList } from "@/lib/rtk-review";
 import { SRS_CARD_SELECT } from "@/db/srs-card-columns";
-import { resolveNewPerSession } from "@/stores/simple-srs";
+import { learningCapFor, resolveNewPerSession, UNLIMITED } from "@/stores/simple-srs";
 import {
   getFaceText,
   getKanjiFaceText,
@@ -1620,12 +1620,6 @@ function StudyScreen() {
         {
           // Dynamic deque: load all due + all new into pools,
           // then seed the active deque with the first batch.
-          const dueRows = await userDb.getAllAsync<SrsCardRow>(
-            `${srsSelectClause} FROM srs_cards
-             WHERE ${scope.clause} AND simple_stage IS NOT NULL AND simple_n <= ? AND deleted_at IS NULL
-             ORDER BY simple_n ASC`,
-            [...scope.args, dueCutoffDays],
-          );
           // A flagged or smart review is assembled on purpose and is all-new,
           // so a cap would show ten of it and call that a session (-1 is
           // SQLite's own "no limit"). Everywhere else the cap is the point:
@@ -1635,7 +1629,7 @@ function StudyScreen() {
           // Read from the row, not from `list`: the settings modal reloads the
           // queue from its own close handler, which closes over the pre-save
           // value, and depending on it here instead would race that reload.
-          let newCap = -1;
+          let newCap: number = UNLIMITED;
           if (!isEphemeralListId(listId)) {
             const capRow = await userDb.getFirstAsync<{ new_per_session: number | null }>(
               "SELECT new_per_session FROM lists WHERE id = ?",
@@ -1643,6 +1637,32 @@ function StudyScreen() {
             );
             newCap = resolveNewPerSession(capRow?.new_per_session);
           }
+          // Graduated cards due today are the real review load and are never
+          // capped. Cards still in learning are: measured on an 8,000-card
+          // legacy deck at 200 answers a day, the cap shows 110 cards instead
+          // of 8,000 and still graduates 3,681 of them in a year against 3,733
+          // uncapped.
+          const learningCap = learningCapFor(newCap);
+          const dueRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE ${scope.clause} AND simple_stage = 1 AND simple_n <= ? AND deleted_at IS NULL
+             ORDER BY simple_n ASC`,
+            [...scope.args, dueCutoffDays],
+          );
+          // Most recently answered first: finish the cards already in hand
+          // before reaching back into the backlog.
+          const learningRows = await userDb.getAllAsync<SrsCardRow>(
+            `${srsSelectClause} FROM srs_cards
+             WHERE ${scope.clause} AND simple_stage = 0 AND simple_n <= ? AND deleted_at IS NULL
+             ORDER BY updated_at DESC, rowid ASC
+             LIMIT ?`,
+            [...scope.args, dueCutoffDays, learningCap],
+          );
+          // Learning first: these are cards half-finished, and a graduated load
+          // bigger than the learner's stamina would otherwise mean nothing in
+          // learning or new ever advances. Before the split they led anyway,
+          // since `simple_n` is 0 on a learning card.
+          dueRows.unshift(...learningRows);
           const newRows = await userDb.getAllAsync<SrsCardRow>(
             `${srsSelectClause} FROM srs_cards
              WHERE ${scope.clause} AND simple_stage IS NULL AND deleted_at IS NULL

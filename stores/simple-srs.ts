@@ -175,6 +175,21 @@ export function resolveNewPerSession(value: number | null | undefined): number {
   return Math.max(1, Math.min(Math.floor(value), 500));
 }
 
+/** SQLite's own "no limit" for a bound LIMIT, used by the ephemeral lists. */
+export const UNLIMITED = -1;
+
+/**
+ * How many cards in learning a session takes on, given its new-card cap.
+ *
+ * A learning card needs three correct answers, so three learning slots are one
+ * new card's worth of work. Without a bound, a deck left by the uncapped
+ * session puts every stage-0 card in the queue at once — all of them due, none
+ * of them finishable — which is the queue that came back unchanged every day.
+ */
+export function learningCapFor(newPerSession: number): number {
+  return newPerSession === UNLIMITED ? UNLIMITED : newPerSession * REQUIRED_CORRECT;
+}
+
 /** What a single simple-SRS answer does to a card. */
 export interface SimpleSrsDecision {
   updates: SimpleSrsUpdate;

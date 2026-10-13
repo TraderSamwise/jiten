@@ -1241,16 +1241,22 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
 
 **Card states:**
 
-- `NULL` d → New (never seen)
-- `s:0` → Learning/lapsed (in-session, needs 3 correct to graduate)
+- `NULL` `s` → New (never seen)
+- `s:0` → Learning/lapsed (needs 3 correct in a row to graduate, counted in
+  `simple_run` on the card)
 - `s:1` → Graduated (scheduled for future review)
+- `simple_relearning` → 1 while a card is recovering from a lapse, cleared by the
+  re-graduation that pays for it
 
 **Interval parameters:**
 
 - Initial interval: 1/3 day (~8 hours)
 - Correct: interval × 1.9 (chain: 0.33 → 0.63 → 1.20 → 2.29 → 4.34 → 8.25 → 15.68 → 29.79 → 56.61 → 107.55 → 204.37 → 365)
 - Easy: interval × 2.6125 (1.9 × 1.375 bonus)
-- Lapse: interval × 0.5
+- Lapse: the interval is preserved on the failure itself and halved **once**, on the
+  re-graduation that follows (`simple_relearning`) — never again. Scoping that to
+  `lapses > 0`, a lifetime counter, ratcheted every card that had ever failed down to
+  the floor; see [simple-srs-decisions.md](simple-srs-decisions.md)
 - Max interval: 365 days
 - Due dates stored as fractional days since 2001-01-01 (Mac/Core Foundation epoch)
 
@@ -1258,16 +1264,30 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
 
 - **Dynamic deque**: maintains ~10 active cards at a time, pulling from pools as needed
   - Two pools loaded at session start: due cards (priority) and new cards
+  - The new pool is capped at `lists.new_per_session` (default 10), read from the row
+    inside `loadQueue`. Smart Review and the flagged-cards list are exempt
+    (`isEphemeralListId`), since both are assembled on purpose and are entirely new
+  - The due pool is loaded in two parts: graduated cards due today, uncapped — that is the
+    real review load — and cards still in learning, capped at `learningCapFor()` (three
+    times `new_per_session`), ordered most-recently-answered first and placed at the head
+    of the queue. A deck left by the uncapped session has thousands of stage-0 cards all
+    due at once; `DueCardsSection` applies the same cap to its "due today" count
   - When active deque drops below 10 pending cards, pulls more from due pool first, then new pool
   - This naturally introduces new cards as the deque thins out
 - **Re-queue**: failed/learning cards push to back of the active deque (~10 cards away, not 300+)
 - Graduated cards (stage 1) pass in 1 correct answer → recalculate interval, removed from session
-- New/learning cards (stage 0) need 3 correct to graduate
+- New/learning cards (stage 0) need 3 correct in a row to graduate, counted in
+  `simple_run` on the row — it used to live in a screen ref, so a card answered once a
+  session never graduated at all
 - **Continuous session**: no checkpoint screen — session flows until all pools and deque are exhausted
 - **Progress bar**: tracks only due cards (not new cards) — turns green when all due cards graduated
   - Counter: `completedDueCards / totalDueAtStart (totalInList)`
   - `simpleDueIdsRef` tracks which cards were due at start; `completedSrsIdsRef` tracks graduated due cards
 - Session length is dynamic — failing cards extends the session, new cards trickle in continuously
+
+Scheduling changes here are measured by simulating a deck through `nextSimpleReview`
+itself; [simple-srs-decisions.md](simple-srs-decisions.md) records what has been decided,
+the numbers behind it, and what was measured and rejected.
 
 ### FSRS (`ts-fsrs` library)
 

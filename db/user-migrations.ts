@@ -270,4 +270,28 @@ export const USER_DB_MIGRATIONS = [
   // card needs, and the same queue came back every day. Midori, which this
   // engine clones, mixes in about ten.
   `ALTER TABLE lists ADD COLUMN new_per_session INTEGER DEFAULT 10`,
+  // One-time repair of the decks the lifetime-lapse bug flattened. Fixing the
+  // rule does not fix the stored intervals: a ratcheted card sits at the 8-hour
+  // floor and returns every day, and at 200 answers a day 3,542 of 8,000 such
+  // cards are still queued a year later. Spreading them over the next month
+  // drains the backlog instead — the numbers, and what was rejected, are in
+  // docs/simple-srs-decisions.md.
+  //
+  // `reps >= 12` is the discriminator, measured rather than guessed: a card the
+  // bug ratcheted down from 56 days has a median of 32 answers behind it, while
+  // one honestly at the floor has 4. `lapses >= 3` was the obvious guard and is
+  // wrong — under the bug a single lapse starts the ratchet, so it would miss a
+  // third of them. `2 +` makes the repair idempotent, which matters because
+  // every device runs it against its own rowids.
+  //
+  // `simple_stage = 1` only. A learning card sits at 1/3 because that is where
+  // new cards START, and with the whole list loading as new, those are most of
+  // the stage-0 population — repairing them would hand thousands of unlearned
+  // words a fortnight.
+  `UPDATE srs_cards SET
+     simple_interval = 2 + (rowid % 29),
+     simple_n = (julianday('now') - julianday('2001-01-01')) + 2 + (rowid % 29),
+     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+   WHERE simple_stage = 1 AND simple_interval <= 0.34 AND lapses > 0 AND reps >= 12
+     AND deleted_at IS NULL`,
 ];
