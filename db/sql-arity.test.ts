@@ -17,11 +17,15 @@ import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const QUERY_METHODS = new Set(["runAsync", "getAllAsync", "getFirstAsync", "execAsync"]);
 
-const REPO_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+// `fileURLToPath`, not `.pathname`: a checkout path containing a space
+// arrives percent-encoded and `git -C` is handed a directory that does not
+// exist, so the gate fails before it scans a single query.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function sourceFiles(): string[] {
   return execFileSync(

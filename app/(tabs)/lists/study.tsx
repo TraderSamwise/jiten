@@ -920,7 +920,6 @@ interface StudyCard {
   snapshot?: SrsSnapshot | null;
   reviewLogId?: string | null;
   preStudyPosition?: number | null;
-  wasNewSimpleSrs?: boolean;
   reQueueOf?: number;
 }
 
@@ -1065,8 +1064,12 @@ function StudyScreen() {
   type SessionPhase = "studying" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
   const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
-  /** Unseen cards this session has answered, which spend its allowance. */
-  const newAnsweredRef = useRef(0);
+  /**
+   * Unseen cards this session has answered, which spend its allowance. Ids, not
+   * a count: re-rating a card re-applies the same answer, and the deque keeps
+   * the pre-answer row, so a counter spent a slot every walk-back.
+   */
+  const newAnsweredRef = useRef<Set<string>>(new Set());
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -1337,7 +1340,7 @@ function StudyScreen() {
     // A different list or scope is a new session; "Continue Studying" is not,
     // and must keep both so it neither re-serves answered cards nor hands out
     // another full allowance of new ones.
-    newAnsweredRef.current = 0;
+    newAnsweredRef.current.clear();
     reviewedSrsIdsRef.current.clear();
     loadQueue();
   }, [dictDb, userDb, list?.id, scope]);
@@ -1652,7 +1655,7 @@ function StudyScreen() {
           // cards still sitting unanswered in the pool, and counting those
           // again left a session unable to offer new cards it still owed.
           const newAllowance =
-            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newAnsweredRef.current);
+            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newAnsweredRef.current.size);
           const { dueRows, newRows } = await loadSimpleQueuePools({
             query: (sql, args) => userDb.getAllAsync<SrsCardRow>(sql, args),
             scope,
@@ -1837,7 +1840,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: card ? card.simpleStage == null : false,
     };
     // Push failed card to end for re-review (non-FSRS only; FSRS uses timer)
     if (sessionMode !== "srs") {
@@ -1904,7 +1906,6 @@ function StudyScreen() {
     const snapshot = card ? captureSnapshot(card) : null;
     let reviewLogId: string | null = null;
     let preStudyPosition: number | null = null;
-    const wasNewSimpleSrs = card ? card.simpleStage == null : false;
     let shouldReQueue = false;
     let reQueueItem = item;
 
@@ -1961,7 +1962,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition,
-      wasNewSimpleSrs,
     };
     if (shouldReQueue) {
       updatedCards.push({
@@ -2046,7 +2046,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: false,
     };
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -2113,7 +2112,6 @@ function StudyScreen() {
       snapshot,
       reviewLogId,
       preStudyPosition: null,
-      wasNewSimpleSrs: false,
     };
     cardsRef.current = updatedCards;
     setCards(updatedCards);
@@ -2242,7 +2240,7 @@ function StudyScreen() {
     // to live in a ref that died with the screen, so a card answered twice and
     // left came back to a count of zero and stayed due forever.
     // An unseen card's first answer is what spends the session's allowance.
-    if (card.simpleStage == null) newAnsweredRef.current += 1;
+    if (card.simpleStage == null) newAnsweredRef.current.add(card.id);
 
     const decision = nextSimpleReview(card, action);
     const updates = decision.updates;
@@ -2443,6 +2441,7 @@ function StudyScreen() {
       }
       // Reset completed status on undo
       completedSrsIdsRef.current.delete(card.id);
+      reviewedSrsIdsRef.current.delete(card.id);
     } else if (sessionMode === "simple_srs" && card && snap) {
       // Restore simple SRS fields
       await userDb.runAsync(
@@ -2464,6 +2463,11 @@ function StudyScreen() {
       );
       // The restored snapshot carries the correct-in-a-row count with it now.
       completedSrsIdsRef.current.delete(card.id);
+      // An undone answer is not an answer: refund the allowance it spent and
+      // let the card be loaded again, or walking back five cards left the
+      // session with no new cards while the database still called them unseen.
+      if (snap.simpleStage == null) newAnsweredRef.current.delete(card.id);
+      reviewedSrsIdsRef.current.delete(card.id);
     } else if (sessionMode === "add_order" && studyCard.preStudyPosition != null) {
       // Restore study_position
       await userDb.runAsync("UPDATE lists SET study_position = ?, updated_at = ? WHERE id = ?", [

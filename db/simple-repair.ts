@@ -1,23 +1,31 @@
 /**
  * Lift simple-SRS cards the lapse bug ratcheted to the 8-hour floor.
  *
- * This runs on every launch rather than once as a migration, and both halves
- * of that matter:
+ * ONCE per device, keyed to an `app_flags` row. Both halves of that matter, and
+ * both were got wrong first:
  *
  * - It cannot bump `updated_at`. A device opened for the first time in months
  *   would become the newest writer of every card it touched, and sync skips the
  *   remote row when `localTs >= remoteTs` — so it would push months-old values
  *   over reviews done elsewhere.
- * - Which means the repair never travels, so a device still on an old build can
- *   push a ratcheted `simple_interval` back. As a one-shot migration keyed to
- *   `PRAGMA user_version` the repair was then gone for good. Run every launch,
- *   it simply happens again.
+ * - It cannot run on every launch. The clause matches rows the FIXED engine
+ *   legitimately produces: a card that fails and re-graduates from a short
+ *   interval lands at exactly `MIN_INTERVAL`, so three honest lapses leave it at
+ *   1/3 with `reps = 15` and `lapses = 3`, matching every condition. As a
+ *   one-time repair that is a bounded cost, measured and accepted in
+ *   docs/simple-srs-decisions.md. Run on every launch it becomes a standing
+ *   policy that pushes a learner's hardest cards a month out, again and again.
  *
- * The clause is self-limiting: a repaired row no longer matches it, so this is
- * one indexed UPDATE that changes nothing on a healthy deck.
+ * The cost of running once is that a device still on an old build can push a
+ * ratcheted interval back afterwards, and nothing lifts it again. That is the
+ * better trade: one stale card against repeatedly burying the words someone is
+ * working hardest on.
  */
 
 import type { WrappedUserDb } from "./user-db";
+
+/** The `app_flags` key that records this device has run the repair. */
+export const REPAIR_FLAG = "simple_intervals_repaired";
 
 /**
  * `reps >= 12` is the discriminator, measured rather than guessed: a card the
@@ -30,8 +38,8 @@ import type { WrappedUserDb } from "./user-db";
  * new cards START, and with the whole list loading as new those are most of the
  * stage-0 population. They are bounded by the learning cap instead.
  *
- * The spread starts at 2 so a repaired row can never match again, which is what
- * makes running this repeatedly free.
+ * The spread starts at 2 so a repaired row can never match again, which keeps
+ * the statement idempotent even though the flag already stops it re-running.
  */
 export const REPAIR_RATCHETED_INTERVALS = `UPDATE srs_cards SET
      simple_interval = 2 + (rowid % 29),
@@ -39,14 +47,29 @@ export const REPAIR_RATCHETED_INTERVALS = `UPDATE srs_cards SET
    WHERE simple_stage = 1 AND simple_interval <= 0.34 AND lapses > 0 AND reps >= 12
      AND deleted_at IS NULL`;
 
-/** Returns how many cards were lifted, for the log. */
+/**
+ * Run the repair if this device has not. Returns how many cards were lifted, or
+ * -1 if it had already run.
+ */
 export async function repairRatchetedIntervals(db: WrappedUserDb): Promise<number> {
   try {
+    const done = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM app_flags WHERE key = ?",
+      [REPAIR_FLAG],
+    );
+    if (done) return -1;
+
     const result = await db.runAsync(REPAIR_RATCHETED_INTERVALS, []);
+    // The flag is written even when nothing matched: a healthy deck has nothing
+    // to repair and must not be re-examined on every launch forever.
+    await db.runAsync("INSERT OR REPLACE INTO app_flags (key, value) VALUES (?, ?)", [
+      REPAIR_FLAG,
+      new Date().toISOString(),
+    ]);
     return result?.changes ?? 0;
   } catch (err) {
     // A deck left at the floor is bad; a launch that fails because of it is
-    // worse. The next launch tries again.
+    // worse. The flag is not written, so the next launch tries again.
     console.warn("[SimpleSRS] Interval repair skipped:", err);
     return 0;
   }

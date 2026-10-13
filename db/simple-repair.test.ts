@@ -79,6 +79,13 @@ function repaired() {
     run: 2,
   });
   insert(db, { id: "barely-seen", stage: 1, n: 9000, interval: FLOOR, reps: 4, lapses: 1 });
+  // The reps threshold is the measured discriminator, so both sides of it are
+  // pinned: 11 must not move, 12 must.
+  insert(db, { id: "reps-11", stage: 1, n: 0, interval: FLOOR, reps: 11, lapses: 2 });
+  insert(db, { id: "reps-12", stage: 1, n: 0, interval: FLOOR, reps: 12, lapses: 2 });
+  // Nothing in the engine writes a stage above 1, and the clause must not
+  // reach one if anything ever does.
+  insert(db, { id: "stage-2", stage: 2, n: 0, interval: FLOOR, reps: 40, lapses: 5 });
   insert(db, { id: "never-failed", stage: 1, n: 9000, interval: FLOOR, reps: 40, lapses: 0 });
   insert(db, { id: "healthy", stage: 1, n: 9100, interval: 56.61, reps: 40, lapses: 2 });
   insert(db, { id: "part-way-down", stage: 1, n: 0, interval: 0.88, reps: 40, lapses: 5 });
@@ -150,6 +157,16 @@ describe("the interval repair", () => {
     expect(r.updated_at).toBe("OLD");
   });
 
+  it("holds the measured reps threshold at exactly twelve", () => {
+    const db = repaired();
+    expect(row(db, "reps-11").simple_interval).toBeCloseTo(FLOOR);
+    expect(Number(row(db, "reps-12").simple_interval)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not reach a stage the engine never writes", () => {
+    expect(row(repaired(), "stage-2").simple_interval).toBeCloseTo(FLOOR);
+  });
+
   it("leaves a card one halving above the clause alone", () => {
     expect(row(repaired(), "just-above").simple_interval).toBe(0.4);
   });
@@ -212,7 +229,7 @@ describe("the interval repair", () => {
 });
 
 describe("repairRatchetedIntervals", () => {
-  it("reports how many cards it lifted, and lifts none twice", async () => {
+  it("reports how many cards it lifted, and never bumps updated_at", async () => {
     const db = createTestDb();
     const now = "2026-04-05T00:00:00.000Z";
     for (const [id, interval, reps] of [
@@ -230,7 +247,6 @@ describe("repairRatchetedIntervals", () => {
     }
 
     expect(await repairRatchetedIntervals(db)).toBe(1);
-    expect(await repairRatchetedIntervals(db)).toBe(0);
 
     const row = await db.getFirstAsync<{ simple_interval: number; updated_at: string }>(
       "SELECT simple_interval, updated_at FROM srs_cards WHERE id = 'ratcheted'",
@@ -240,9 +256,57 @@ describe("repairRatchetedIntervals", () => {
     // months-old values over reviews done on another device.
     expect(row!.updated_at).toBe("OLD");
   });
+});
 
-  it("survives a database that cannot run it, rather than failing the launch", async () => {
+describe("the repair runs once per device", () => {
+  async function deck() {
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days,
+         scheduled_days, reps, lapses, state, simple_stage, simple_n, simple_interval,
+         created_at, updated_at)
+       VALUES ('r', 1, NULL, 'x', 0, 0, 0, 0, 40, 5, 0, 1, 0, 0.3333, ?, 'OLD')`,
+      [now],
+    );
+    return db;
+  }
+
+  it("lifts on the first launch and does nothing on the next", async () => {
+    const db = await deck();
+    expect(await repairRatchetedIntervals(db)).toBe(1);
+    // -1, not 0: the flag said it had already run, so the clause was never
+    // even evaluated.
+    expect(await repairRatchetedIntervals(db)).toBe(-1);
+  });
+
+  it("does not re-lift a card the fixed engine honestly put back at the floor", async () => {
+    // Three honest lapses leave a card at exactly MIN_INTERVAL with reps 15 and
+    // lapses 3 — every condition of the clause, with no bug involved. Running
+    // the repair on every launch would bury the learner's hardest words again
+    // and again; this is why it is flag-keyed.
+    const db = await deck();
+    await repairRatchetedIntervals(db);
+    await db.runAsync(
+      "UPDATE srs_cards SET simple_interval = 0.3333, simple_n = 0, reps = 15, lapses = 3 WHERE id = 'r'",
+    );
+    expect(await repairRatchetedIntervals(db)).toBe(-1);
+    expect(
+      await db.getFirstAsync<{ simple_interval: number }>(
+        "SELECT simple_interval FROM srs_cards WHERE id = 'r'",
+      ),
+    ).toEqual({ simple_interval: 0.3333 });
+  });
+
+  it("writes the flag even when a healthy deck has nothing to repair", async () => {
+    const db = createTestDb();
+    expect(await repairRatchetedIntervals(db)).toBe(0);
+    expect(await repairRatchetedIntervals(db)).toBe(-1);
+  });
+
+  it("leaves the flag unwritten when it fails, so the next launch retries", async () => {
     const broken = {
+      getFirstAsync: async () => null,
       runAsync: async () => {
         throw new Error("no such table: srs_cards");
       },

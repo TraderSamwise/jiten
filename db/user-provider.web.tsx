@@ -110,8 +110,10 @@ async function openAndMigrateUserDb(): Promise<{
     sync: () => {},
   };
 
-  // Every launch, not once: see db/simple-repair.ts for why a one-shot
-  // migration loses the repair the first time an old build pushes.
+  // Once per device, flag-keyed rather than `user_version`-keyed — see
+  // db/simple-repair.ts for why it is neither a migration nor per-launch. The
+  // flag also stops it firing mid-session, since this runs again whenever the
+  // web lock is reacquired.
   const lifted = await repairRatchetedIntervals(wrapped);
   if (lifted > 0) console.log(`[UserDB Web] Lifted ${lifted} ratcheted cards`);
 

@@ -76,20 +76,23 @@ every run driven by the shipped `nextSimpleReview`:
 | answers/day | repair       | d1   | d7   | d30  | d90  | d180 | d365 |
 | ----------- | ------------ | ---- | ---- | ---- | ---- | ---- | ---- |
 | 1000        | none         | 8000 | 7338 | 5270 | 1328 | 81   | 18   |
-| 1000        | spread 2–30d | 8000 | 3633 | 261  | 109  | 63   | 39   |
-| 1000        | flat 7d      | 8000 | 3985 | 511  | 402  | 357  | 259  |
-| 200         | none         | 8000 | 7874 | 7492 | 6699 | 5554 | 3567 |
-| 200         | spread 2–30d | 8000 | 7096 | 5359 | 3388 | 1131 | 55   |
-| 200         | flat 7d      | 8000 | 7128 | 6134 | 4886 | 2259 | 198  |
-| 150         | none         | 8000 | 7888 | 7595 | 6990 | 6180 | 4661 |
-| 150         | spread 2–30d | 8000 | 7332 | 6074 | 4581 | 2854 | 72   |
+| 1000        | spread 2–30d | 8000 | 3607 | 243  | 116  | 64   | 58   |
+| 1000        | flat 7d      | 8000 | 3461 | 174  | 553  | 579  | 13   |
+| 200         | none         | 8000 | 7863 | 7462 | 6676 | 5552 | 3579 |
+| 200         | spread 2–30d | 8000 | 7106 | 5311 | 3431 | 1166 | 47   |
+| 200         | flat 7d      | 8000 | 7072 | 6094 | 4860 | 2272 | 252  |
+| 150         | none         | 8000 | 7900 | 7581 | 6980 | 6164 | 4664 |
+| 150         | spread 2–30d | 8000 | 7343 | 5958 | 4530 | 2839 | 76   |
 
-A four-digit cell is one sample of a stochastic process; `--seed=N` resamples. The
-conclusions below hold across seeds, the exact numbers do not.
+A four-digit cell is one sample of a stochastic process at seed 7; `--seed=N` resamples
+(the `ratchet` and `discriminate` scenarios are exhaustive sweeps and ignore it). Every row
+of a comparison shares one seed, which was not true at first: sampling each row from its own
+stream confounded the thing being compared with the sample, and produced a conclusion below
+that reversed at every other seed.
 
 **At 1,000 answers a day the deck heals itself in about four months, and at 150–200 it does
 not.** That single number is why the first conclusion here — natural recovery, no repair —
-was wrong: it was measured at an effort nobody sustains. At 200 a day, 3,567 cards are still
+was wrong: it was measured at an effort nobody sustains. At 200 a day, 3,579 cards are still
 queued a year later, because a card answered today returns within hours and takes tomorrow's
 slot.
 
@@ -100,10 +103,10 @@ not repaired** says by how much. What was rejected,
 and why:
 
 - **No repair.** The numbers above, at the effort the deck is actually reviewed at.
-- **A flat lift to 7 days.** Half the drain of the spread at every horizon — 2,259 still
-  queued at d180 against 1,131 — and it re-synchronises the deck: at 1,000 answers a day the
-  spread is down to 39 cards by d365 while the flat lift still shows 259, the same wave
-  coming back together.
+- **A flat lift to 7 days.** Half the drain of the spread at every horizon — 2,272 still
+  queued at d180 against 1,166 — and it re-synchronises the deck: at 1,000 answers a day the
+  queue falls to 174 by d30 and then swings back to 553 and 579 on d90 and d180, the whole
+  deck returning together, where the spread settles at 116 and 64.
 - **A narrower spread.** A shorter window drains more slowly for the same reason the flat
   lift does: more cards land on the same days. The backlog is the complaint, and a card
   given more days than it has earned costs one failed review when it comes back.
@@ -178,24 +181,37 @@ interval longer than a day — i.e. actually kept (`yarn simulate:srs learningCa
 
 | learning cap | answers/day | d1   | d7   | d30  | d180 | d365 | touched stage 1 | kept |
 | ------------ | ----------- | ---- | ---- | ---- | ---- | ---- | --------------- | ---- |
-| none         | 200         | 8000 | 8000 | 8000 | 8000 | 5447 | 8000            | 2665 |
-| 30 (3 × 10)  | 200         | 30   | 102  | 91   | 108  | 123  | 3042            | 3008 |
-| 10           | 200         | 10   | 46   | 80   | 107  | 113  | 3238            | 3221 |
-| none         | 400         | 8000 | 8000 | 8000 | 5287 | 817  | 8000            | 7451 |
-| 30 (3 × 10)  | 400         | 30   | 147  | 214  | 259  | 266  | 7042            | 7005 |
-| 10           | 400         | 10   | 50   | 77   | 123  | 122  | 3650            | 3634 |
+| none         | 200         | 8000 | 8000 | 8000 | 8000 | 5480 | 8000            | 2642 |
+| 30 (3 × 10)  | 200         | 30   | 119  | 86   | 133  | 140  | 3706            | 3674 |
+| 10           | 200         | 10   | 47   | 75   | 106  | 112  | 3240            | 3223 |
+| none         | 400         | 8000 | 8000 | 8000 | 5256 | 762  | 8000            | 7489 |
+| 30 (3 × 10)  | 400         | 30   | 137  | 221  | 246  | 230  | 7051            | 7006 |
+| 10           | 400         | 10   | 47   | 75   | 118  | 126  | 3650            | 3631 |
 
 **Which column you read decides the answer, and an earlier version of this section read the
 wrong one.** It said the cap cost thousands of words, counting cards that touched stage 1.
-Uncapped, 8,000 do — and only 2,665 are still there at the end, because an uncapped deck
-churns: a card graduates at 0.633 days, comes back the same day, fails, and sits at the
-floor again. Capped, almost everything touched is kept (3,008 of 3,042). **On words actually
-retained the cap wins**, 3,008 against 2,665, while showing 100 cards a day instead of 8,000.
+Uncapped, 8,000 do — and only 2,642 are still there at the end, because an uncapped deck
+churns: a card graduates at 0.633 days, comes back the same day, fails, and sits at the floor
+again. Capped, almost everything touched is kept (3,674 of 3,706). **On words actually
+retained the cap wins at the effort this is about**, 3,674 against 2,642, while showing 140
+cards a day instead of 8,000.
 
-The ×3 is what keeps it from starving a learner who does more: at 400 answers a day the
-cap of thirty keeps 7,005 words against 3,634 for a cap of ten. At 200 a day the cap of ten
-is marginally ahead (3,221 against 3,008), so the multiplier costs a little at low effort
-and is worth several thousand words at high effort.
+The ×3 is ahead of a flat cap at both efforts, and that needed four seeds to say, because a
+single seed said the opposite (`yarn simulate:srs capSeeds`):
+
+| seed | answers/day | kept, cap 30 | kept, cap 10 | uncapped |
+| ---- | ----------- | ------------ | ------------ | -------- |
+| 7    | 200         | 3674         | 3223         | 2642     |
+| 11   | 200         | 3673         | 3226         | 2614     |
+| 42   | 200         | 3665         | 3215         | 2657     |
+| 99   | 200         | 3669         | 3221         | 2639     |
+| 7    | 400         | 7006         | 3631         | 7489     |
+| 11   | 400         | 6991         | 3626         | 7451     |
+
+Uncapped is ahead only at 400 answers a day, and only by about 6% — for which it shows the
+entire 8,000-card deck every day for six months. A cap of ten costs half the words at that
+effort, which is what the multiplier is for: three answers graduate one card, so ten slots
+cannot deliver them alongside reviews.
 
 A genuinely ratcheted card currently in learning is the price of not repairing stage 0: it
 re-graduates to the floor once and then climbs 0.33 → 0.63 → 1.2 by itself.
@@ -216,12 +232,19 @@ Accepted trades, written down because they are real:
 - A list moved from simple SRS to FSRS has its dormant `simple_*` columns rewritten and its
   `updated_at` bumped, so rows that no longer schedule anything get pushed. Harmless, and
   cheaper than a `flashcard_mode` join that would also skip a list switched back later.
-- The spread is `2 + (rowid % 29)`, deterministic rather than random, so the repair is
-  idempotent: a repaired row no longer matches the clause, which matters because every
-  device runs the UPDATE against its own rowids. A stale second device re-spreads its own
-  copies with its own offsets, which is harmless — they stay inside the same month.
-- `isRemoteRelevant` keeps the UPDATE out of remote replay and the bumped `updated_at`
-  carries the result by row sync.
+- **The repair runs once per device, keyed to an `app_flags` row, and cannot run on every
+  launch.** The clause matches rows the FIXED engine legitimately produces: a card that fails
+  and re-graduates from a short interval lands at exactly `MIN_INTERVAL`, so three honest
+  lapses leave it at 1/3 with `reps = 15` and `lapses = 3`, matching every condition. Once,
+  that is the bounded cost in the table above. Every launch, it is a standing policy that
+  buries the words someone is working hardest on, over and over. It was written that way
+  first and review caught it.
+- It does not bump `updated_at`, so it never travels: a device opened for the first time in
+  months would otherwise become the newest writer of every card it touched and push stale
+  values over reviews done elsewhere. The price is that a device still on an old build can
+  push a ratcheted interval back, and nothing lifts it again. That is the better trade — one
+  stale card against repeatedly burying hard words — and it is why the repair is not a
+  migration keyed to `PRAGMA user_version` either.
 - Cards imported later are never repaired: `lib/data-backup.ts` restore and
   `lib/list-transfer.ts` import run against an already-migrated database, so a floored row
   arriving afterwards stays floored. `simple_relearning`'s backfill has the same hole. Not

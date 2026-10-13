@@ -501,3 +501,25 @@ describe("one answer, decided the way the screen decides it", () => {
     expect(nextSimpleReview(graduated(), "pass").graduated).toBe(true);
   });
 });
+
+describe("the stage domain", () => {
+  test("writes only 0 and 1, which every consumer keys on", () => {
+    // `db/simple-queue.ts`, `DueCardsSection`, the lists index, `stores/lists.ts`
+    // and `lib/practice-stats.ts` all treat stage 1 as graduated and 0 as
+    // learning. A third value would be served by some and counted by none, so
+    // the invariant is pinned where it is produced.
+    const stages = new Set<number>();
+    const seen: SrsCardRow[] = [
+      { simpleStage: null, simpleN: null, simpleInterval: null, simpleRelearning: 0, simpleRun: 0 },
+      { simpleStage: 0, simpleN: 0, simpleInterval: 1 / 3, simpleRelearning: 0, simpleRun: 0 },
+      { simpleStage: 0, simpleN: 0, simpleInterval: 1 / 3, simpleRelearning: 1, simpleRun: 2 },
+      { simpleStage: 1, simpleN: 9000, simpleInterval: 56.61, simpleRelearning: 0, simpleRun: 0 },
+    ] as unknown as SrsCardRow[];
+    for (const card of seen) {
+      for (const action of ["pass", "easy", "fail"] as const) {
+        stages.add(nextSimpleReview(card, action).updates.simpleStage);
+      }
+    }
+    expect([...stages].sort()).toEqual([0, 1]);
+  });
+});

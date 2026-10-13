@@ -1,7 +1,14 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/test-db";
-import { attemptBackup, importBackup, BACKUP_TABLES, TABLE_COLUMNS } from "./data-backup";
+import {
+  attemptBackup,
+  importBackup,
+  BACKUP_TABLES,
+  TABLE_COLUMNS,
+  IMPORT_ORDER,
+  PRIMARY_KEYS,
+} from "./data-backup";
 
 describe("data backup", () => {
   it("round-trips local-only history tables through backup and import", async () => {
@@ -354,5 +361,115 @@ describe("restoring one table does not take its neighbours with it", () => {
     const result = await attemptBackup(busy);
     expect(result.failed).toContain("books");
     expect(result.succeeded).not.toContain("books");
+  });
+});
+
+describe("a row that will not go in does not take the table with it", () => {
+  it("survives a collision on a unique index other than the primary key", async () => {
+    // `confusion_pairs` carries a unique index on its five content columns, so
+    // a pair that already exists locally under a different id raises an error
+    // the primary key's ON CONFLICT cannot absorb. That used to abort the table
+    // and drop every row after it.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync(
+      `INSERT INTO confusion_pairs (id, entry_id_a, kanji_literal_a, entry_id_b,
+         kanji_literal_b, confusion_type, confusion_count, last_confused_at, created_at)
+       VALUES ('local', 1, '漢', 2, '字', 'meaning', 1, ?, ?)`,
+      [now, now],
+    );
+
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          confusion_pairs: [
+            {
+              id: "incoming",
+              entry_id_a: 1,
+              kanji_literal_a: "漢",
+              entry_id_b: 2,
+              kanji_literal_b: "字",
+              confusion_type: "meaning",
+              confusion_count: 9,
+              last_confused_at: now,
+              created_at: now,
+            },
+            {
+              id: "unrelated",
+              entry_id_a: 7,
+              kanji_literal_a: null,
+              entry_id_b: 8,
+              kanji_literal_b: null,
+              confusion_type: "meaning",
+              confusion_count: 1,
+              last_confused_at: now,
+              created_at: now,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(result.failed).toEqual([]);
+    // The colliding pair was replaced, and the row behind it still landed.
+    const rows = await db.getAllAsync<{ id: string }>("SELECT id FROM confusion_pairs ORDER BY id");
+    expect(rows.map((r) => r.id)).toEqual(["incoming", "unrelated"]);
+  });
+
+  it("writes the rows it can when one row is unwritable", async () => {
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          lists: [
+            // No `name`, which is NOT NULL: this row cannot go in.
+            { id: "bad", created_at: now, updated_at: now },
+            { id: "good", name: "Core 8k", created_at: now, updated_at: now },
+          ],
+        },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    expect(await db.getAllAsync<{ id: string }>("SELECT id FROM lists")).toEqual([{ id: "good" }]);
+  });
+
+  it("builds valid SQL for a row that carries only its primary key", async () => {
+    // `ON CONFLICT(id) DO UPDATE SET` with nothing to set is a syntax error,
+    // and cost the whole table. The row still cannot go in — `lists.name` is
+    // NOT NULL — but it must fail on the constraint, not on the statement.
+    const db = createTestDb();
+    const result = await importBackup(
+      db,
+      JSON.stringify({ version: 1, tables: { lists: [{ id: "L" }] } }),
+    );
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].error).toMatch(/NOT NULL/i);
+    expect(result.failed[0].error).not.toMatch(/incomplete input|syntax/i);
+  });
+});
+
+describe("the restore's primary keys", () => {
+  it("names the real primary key of every table it restores", async () => {
+    // A wrong name makes `ON CONFLICT(pk)` throw and costs the whole table, and
+    // the map is easy to leave stale — it carried two tables that are not even
+    // restored.
+    const db = createTestDb();
+    const wrong: string[] = [];
+    for (const table of IMPORT_ORDER) {
+      const info = await db.getAllAsync<{ name: string; pk: number }>(
+        `PRAGMA table_info(${table})`,
+      );
+      const actual = info.filter((c) => c.pk > 0).map((c) => c.name);
+      const used = PRIMARY_KEYS[table] ?? "id";
+      if (actual.length !== 1 || actual[0] !== used) {
+        wrong.push(`${table}: restore uses ${used}, schema says ${actual.join("+") || "none"}`);
+      }
+    }
+    expect(wrong).toEqual([]);
   });
 });

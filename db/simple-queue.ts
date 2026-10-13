@@ -53,14 +53,15 @@ export interface SimpleQueuePools {
 /**
  * Graduated and due today. Never capped — this is the real review load.
  *
- * `!= 0` rather than `= 1` so a stage outside the engine's {0, 1} can still be
- * studied: splitting the old `IS NOT NULL` query in two would otherwise drop
- * such a row from every slice and strand it forever.
+ * `= 1` because the engine writes 0 and 1 and nothing else, which
+ * `stores/simple-srs.test.ts` pins. Every other consumer agrees —
+ * `DueCardsSection`, the lists index, `stores/lists.ts`, `lib/practice-stats.ts`
+ * — and `!= 0` here would have served a stage this split cannot otherwise reach
+ * while those four counted it in no bucket at all.
  */
 export const graduatedDueSql = (scopeClause: string) =>
   `${SRS_CARD_SELECT} FROM srs_cards
-     WHERE ${scopeClause} AND simple_stage IS NOT NULL AND simple_stage != 0
-       AND simple_n <= ? AND deleted_at IS NULL
+     WHERE ${scopeClause} AND simple_stage = 1 AND simple_n <= ? AND deleted_at IS NULL
      ORDER BY simple_n ASC`;
 
 /**

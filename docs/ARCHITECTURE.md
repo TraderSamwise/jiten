@@ -1264,9 +1264,13 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
 
 - **Dynamic deque**: maintains ~10 active cards at a time, pulling from pools as needed
   - Two pools loaded at session start: due cards (priority) and new cards
+  - Both pools are loaded by `loadSimpleQueuePools` in `db/simple-queue.ts`, which is where
+    the SQL lives so a test can run it rather than a copy of it
   - The new pool is capped at `lists.new_per_session` (default 10), read from the row
-    inside `loadQueue`. Smart Review and the flagged-cards list are exempt
-    (`isEphemeralListId`), since both are assembled on purpose and are entirely new
+    inside `loadQueue`, less the unseen cards this session has already answered — so
+    "Continue Studying" tops the session up to the cap rather than granting another one.
+    Smart Review and the flagged-cards list are exempt (`isEphemeralListId`), since both are
+    assembled on purpose and are entirely new
   - The due pool is loaded in two parts: graduated cards due today, uncapped — that is the
     real review load — and cards still in learning, capped at `learningCapFor()` (three
     times `new_per_session`), ordered most-recently-answered first and placed at the head
@@ -1285,9 +1289,13 @@ Simple spaced repetition with a day-based epoch and fixed interval multipliers.
   - `simpleDueIdsRef` tracks which cards were due at start; `completedSrsIdsRef` tracks graduated due cards
 - Session length is dynamic — failing cards extends the session, new cards trickle in continuously
 
-Scheduling changes here are measured by simulating a deck through `nextSimpleReview`
-itself; [simple-srs-decisions.md](simple-srs-decisions.md) records what has been decided,
-the numbers behind it, and what was measured and rejected.
+**Repair:** `db/simple-repair.ts` lifts cards the pre-fix lapse rule ratcheted to the floor.
+It runs once per device, keyed to an `app_flags` row — not as a migration, and not on every
+launch, because the clause also matches cards the fixed engine honestly leaves at the floor.
+
+Scheduling changes here are measured by simulating a deck through `nextSimpleReview` itself,
+with `yarn simulate:srs`; [simple-srs-decisions.md](simple-srs-decisions.md) records what has
+been decided, the numbers behind it, and what was measured and rejected.
 
 ### FSRS (`ts-fsrs` library)
 

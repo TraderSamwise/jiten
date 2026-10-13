@@ -124,9 +124,13 @@ describe("the learning slice", () => {
   // card the same `updated_at` and there is no index on it.
   it("breaks a shared timestamp on rowid, so the slice is the same every build", async () => {
     for (let i = 0; i < 40; i++) insert({ id: `l${i}`, stage: 0, n: 0, updatedAt: "same" });
-    const first = ids((await pools(DEFAULT_NEW_PER_SESSION)).dueRows);
-    expect(first).toEqual(ids((await pools(DEFAULT_NEW_PER_SESSION)).dueRows));
-    expect(first[0]).toBe("l0");
+    // Comparing two calls proves nothing — same function, same rows. What can
+    // be said is which cards the slice takes.
+    expect(ids((await pools(DEFAULT_NEW_PER_SESSION)).dueRows).slice(0, 3)).toEqual([
+      "l0",
+      "l1",
+      "l2",
+    ]);
   });
 
   it("takes the most recently answered first, so cards in hand get finished", async () => {
@@ -162,12 +166,14 @@ describe("the graduated slice", () => {
     expect(ids((await pools(1)).dueRows)).toEqual(["today", "on-the-cutoff"]);
   });
 
-  it("still serves a card whose stage is outside the engine's 0 and 1", async () => {
-    // Splitting the old `simple_stage IS NOT NULL` query in two could drop such
-    // a row from every slice and strand it forever, so the graduated slice asks
-    // for `!= 0` rather than `= 1`.
+  it("serves only the stages the engine writes", async () => {
+    // The engine writes 0 and 1 and nothing else — pinned by
+    // `stores/simple-srs.test.ts` — and the statistics, the badge and the lists
+    // index all key on `= 1`, so this query does too. A stage nothing can
+    // create is in no slice, and in no bucket either; consistent beats clever.
     insert({ id: "odd", stage: 2, n: 0 });
-    expect(ids((await pools(1)).dueRows)).toEqual(["odd"]);
+    insert({ id: "graduated", stage: 1, n: 0 });
+    expect(ids((await pools(1)).dueRows)).toEqual(["graduated"]);
   });
 
   it("comes back in due order, oldest first", async () => {

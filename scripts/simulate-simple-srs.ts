@@ -213,7 +213,6 @@ const SCENARIOS: Record<string, () => void> = {
     console.log(`(seed ${SEED})\n`);
     console.log("| answers/day | repair | " + header.slice(2));
     console.log("| --- | --- |" + MARKS.map(() => " --- |").join(""));
-    let seed = SEED;
     for (const budget of [1000, 200, 150]) {
       for (const [label, interval] of [
         ["none", () => 1 / 3],
@@ -226,9 +225,8 @@ const SCENARIOS: Record<string, () => void> = {
           budget,
           newPerDay: 0,
           learningCap: UNLIMITED,
-          seed,
+          seed: SEED,
         });
-        seed += 1;
         console.log(`| ${budget} | ${label} | ` + at(run.shown).join(" | ") + " |");
       }
     }
@@ -298,23 +296,48 @@ const SCENARIOS: Record<string, () => void> = {
       "| learning cap | answers/day | " + header.slice(2) + " touched stage 1 | learned |",
     );
     console.log("| --- | --- |" + MARKS.map(() => " --- |").join("") + " --- | --- |");
-    let seed = SEED;
     for (const budget of [200, 400]) {
       for (const cap of [UNLIMITED, learningCapFor(10), 10]) {
-        seed += 1;
         const run = simulate({
           deck: learningDeck(),
           days: 365,
           budget,
           newPerDay: 0,
           learningCap: cap,
-          seed,
+          // Every row of a comparison shares the seed, or the thing being
+          // compared is confounded with the sample: sampling each cap from its
+          // own stream made a cap of ten look ahead of thirty at 200 answers a
+          // day, which reversed at every other seed.
+          seed: SEED,
         });
         const label = cap === UNLIMITED ? "none" : String(cap);
         console.log(
           `| ${label} | ${budget} | ` +
             at(run.shown).join(" | ") +
             ` | ${run.graduatedEver} | ${run.learnedAtEnd} |`,
+        );
+      }
+    }
+  },
+
+  /** Is the x3 multiplier ahead of a flat cap, across seeds? */
+  capSeeds() {
+    console.log("\n## The learning cap's multiplier, across seeds\n");
+    console.log("| seed | answers/day | kept, cap 30 | kept, cap 10 | uncapped |");
+    console.log("| --- | --- | --- | --- | --- |");
+    for (const seed of [7, 11, 42, 99]) {
+      for (const budget of [200, 400]) {
+        const kept = (cap: number) =>
+          simulate({
+            deck: learningDeck(),
+            days: 365,
+            budget,
+            newPerDay: 0,
+            learningCap: cap,
+            seed,
+          }).learnedAtEnd;
+        console.log(
+          `| ${seed} | ${budget} | ${kept(learningCapFor(10))} | ${kept(10)} | ${kept(UNLIMITED)} |`,
         );
       }
     }

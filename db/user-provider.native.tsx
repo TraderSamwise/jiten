@@ -67,8 +67,8 @@ export function UserDatabaseProvider({
 
       const wrapped = wrapUserDb(db, { shouldNotifyError: () => live.current });
 
-      // Every launch, not once: see db/simple-repair.ts for why a one-shot
-      // migration loses the repair the first time an old build pushes.
+      // Once per device, flag-keyed rather than `user_version`-keyed — see
+      // db/simple-repair.ts for why it is neither a migration nor per-launch.
       const lifted = await repairRatchetedIntervals(wrapped);
       if (lifted > 0) console.log(`[UserDB Native] Lifted ${lifted} ratcheted cards`);
 

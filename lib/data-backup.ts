@@ -87,11 +87,13 @@ export const BACKUP_TABLES: {
 ];
 
 // Column names for each table — used for INSERT during import
-/** Where a table's primary key is not `id`. Used for the restore's upsert. */
-const PRIMARY_KEYS: Record<string, string> = {
-  app_flags: "key",
+/**
+ * Where a table in `IMPORT_ORDER` has a primary key that is not `id`. A wrong
+ * name makes `ON CONFLICT(pk)` throw, so this list is checked against the
+ * schema by `lib/data-backup.test.ts`.
+ */
+export const PRIMARY_KEYS: Record<string, string> = {
   user_kanji_notes: "literal",
-  sync_meta: "key",
 };
 
 export const TABLE_COLUMNS: Record<string, string[]> = {
@@ -258,7 +260,7 @@ export const TABLE_COLUMNS: Record<string, string[]> = {
 };
 
 // Import order matters for FK constraints
-const IMPORT_ORDER = [
+export const IMPORT_ORDER = [
   "lists",
   "list_entries",
   "srs_cards",
@@ -383,16 +385,19 @@ export async function importBackup(
     // leaving the list with no words and its cards orphaned. An upsert touches
     // only the row named.
     const pk = PRIMARY_KEYS[tableName] ?? "id";
-    const upsert = (columns: string[]) =>
-      `INSERT INTO ${tableName} (${columns.join(", ")})
-       VALUES (${columns.map(() => "?").join(", ")})
-       ON CONFLICT(${pk}) DO UPDATE SET ${columns
-         .filter((col) => col !== pk)
-         .map((col) => `${col} = excluded.${col}`)
-         .join(", ")}`;
+    const upsert = (columns: string[]) => {
+      const assignments = columns
+        .filter((col) => col !== pk)
+        .map((col) => `${col} = excluded.${col}`)
+        .join(", ");
+      return `INSERT INTO ${tableName} (${columns.join(", ")})
+        VALUES (${columns.map(() => "?").join(", ")})
+        ON CONFLICT(${pk}) ${assignments ? `DO UPDATE SET ${assignments}` : "DO NOTHING"}`;
+    };
 
     try {
       const sql = upsert(cols);
+      const rowErrors: string[] = [];
 
       for (const row of rows) {
         // A row with no primary key would insert under a NULL one — SQLite
@@ -406,11 +411,38 @@ export async function importBackup(
         // column default. So a column the backup never had is left out of the
         // statement entirely, and takes its default.
         const named = cols.filter((col) => row[col] !== undefined);
-        await db.runAsync(
-          named.length === cols.length ? sql : upsert(named),
-          named.map((col) => row[col] ?? null),
-        );
+        const values = named.map((col) => row[col] ?? null);
+        try {
+          await db.runAsync(named.length === cols.length ? sql : upsert(named), values);
+        } catch (rowErr) {
+          // A table can carry a unique index besides its primary key —
+          // `confusion_pairs` does — and a row that collides on it raises an
+          // error the pk's ON CONFLICT cannot absorb. Replacing that one row is
+          // safe (nothing references it); aborting the table was not, because a
+          // single colliding pair used to cost every row after it.
+          if (/UNIQUE constraint failed/i.test(String(rowErr))) {
+            await db.runAsync(
+              `INSERT OR REPLACE INTO ${tableName} (${named.join(", ")})
+               VALUES (${named.map(() => "?").join(", ")})`,
+              values,
+            );
+          } else {
+            // One bad row is not the table. Collect it and keep going, so a
+            // truncated or hand-edited file costs that row and not the rest.
+            rowErrors.push(String(rowErr));
+          }
+        }
         processedRows++;
+      }
+
+      // Every row failed, so the table did: report it as before, with the
+      // first row's error rather than a wrapper around it.
+      if (rowErrors.length === rows.length && rows.length > 0) {
+        result.failed.push({ table: tableName, error: rowErrors[0] });
+        continue;
+      }
+      if (rowErrors.length > 0) {
+        console.warn(`[Import] ${rowErrors.length} row(s) of ${tableName} failed`, rowErrors[0]);
       }
 
       result.succeeded.push(tableName);
