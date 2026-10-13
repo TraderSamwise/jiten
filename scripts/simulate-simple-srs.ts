@@ -29,6 +29,13 @@ const DECK = 8000;
 const PASS_GRADUATED = 0.9;
 const PASS_LEARNING = 0.8;
 
+/**
+ * Pass `--seed=N` to resample. A four-digit cell is one sample of a stochastic
+ * process: the conclusions here hold across seeds, the exact numbers do not, so
+ * re-run before quoting a new one.
+ */
+const SEED = Number(process.argv.find((a) => a.startsWith("--seed="))?.slice(7) ?? 7);
+
 /** Deterministic LCG, so every run of this file prints the same table. */
 function rng(seed: number) {
   let s = seed;
@@ -104,7 +111,10 @@ function studyOneDay(
 interface Run {
   shown: number[];
   answered: number[];
+  /** Cards that reached stage 1 at any point. */
   graduatedEver: number;
+  /** Cards still graduated at the end, above a one-day interval — i.e. learned. */
+  learnedAtEnd: number;
 }
 
 function simulate(opts: {
@@ -116,12 +126,11 @@ function simulate(opts: {
   seed?: number;
 }): Run {
   const t0 = Date.now();
-  const rand = rng(opts.seed ?? 7);
+  const rand = rng(opts.seed ?? SEED);
   const shown: number[] = [];
   const answered: number[] = [];
   const graduated = new Set<string>();
   for (let day = 0; day < opts.days; day++) {
-    const before = opts.deck.filter((c) => c.simpleStage === 1).map((c) => c.id);
     const result = studyOneDay(
       opts.deck,
       day,
@@ -132,11 +141,16 @@ function simulate(opts: {
       rand,
     );
     for (const c of opts.deck) if (c.simpleStage === 1) graduated.add(c.id);
-    void before;
     shown.push(result.shown);
     answered.push(result.answered);
   }
-  return { shown, answered, graduatedEver: graduated.size };
+  // "Touched stage 1 once" flatters a deck that is churning: a card can
+  // graduate, fail, and sit back at the floor. What the learner has actually
+  // kept is a card still graduated and no longer due daily.
+  const learnedAtEnd = opts.deck.filter(
+    (c) => c.simpleStage === 1 && (c.simpleInterval ?? 0) > 1,
+  ).length;
+  return { shown, answered, graduatedEver: graduated.size, learnedAtEnd };
 }
 
 const MARKS = [0, 6, 29, 89, 179, 364];
@@ -196,8 +210,10 @@ const SCENARIOS: Record<string, () => void> = {
   /** Does a flattened deck drain on its own, and does a repair help? */
   drain() {
     console.log("\n## Draining a deck of 8,000 cards pinned at the floor\n");
+    console.log(`(seed ${SEED})\n`);
     console.log("| answers/day | repair | " + header.slice(2));
     console.log("| --- | --- |" + MARKS.map(() => " --- |").join(""));
+    let seed = SEED;
     for (const budget of [1000, 200, 150]) {
       for (const [label, interval] of [
         ["none", () => 1 / 3],
@@ -210,7 +226,9 @@ const SCENARIOS: Record<string, () => void> = {
           budget,
           newPerDay: 0,
           learningCap: UNLIMITED,
+          seed,
         });
+        seed += 1;
         console.log(`| ${budget} | ${label} | ` + at(run.shown).join(" | ") + " |");
       }
     }
@@ -274,21 +292,29 @@ const SCENARIOS: Record<string, () => void> = {
 
   /** What capping the learning slice costs and saves. */
   learningCap() {
+    console.log(`(seed ${SEED})`);
     console.log("\n## Capping the learning slice of a legacy deck\n");
-    console.log("| learning cap | answers/day | " + header.slice(2) + " graduated in a year |");
-    console.log("| --- | --- |" + MARKS.map(() => " --- |").join("") + " --- |");
+    console.log(
+      "| learning cap | answers/day | " + header.slice(2) + " touched stage 1 | learned |",
+    );
+    console.log("| --- | --- |" + MARKS.map(() => " --- |").join("") + " --- | --- |");
+    let seed = SEED;
     for (const budget of [200, 400]) {
       for (const cap of [UNLIMITED, learningCapFor(10), 10]) {
+        seed += 1;
         const run = simulate({
           deck: learningDeck(),
           days: 365,
           budget,
           newPerDay: 0,
           learningCap: cap,
+          seed,
         });
         const label = cap === UNLIMITED ? "none" : String(cap);
         console.log(
-          `| ${label} | ${budget} | ` + at(run.shown).join(" | ") + ` | ${run.graduatedEver} |`,
+          `| ${label} | ${budget} | ` +
+            at(run.shown).join(" | ") +
+            ` | ${run.graduatedEver} | ${run.learnedAtEnd} |`,
         );
       }
     }

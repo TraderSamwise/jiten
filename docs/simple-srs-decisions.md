@@ -34,13 +34,15 @@ at 79 cards shown on d30 and 117 on d365, with 139 and 227 answers given. It doe
 instead of 1.9. A card climbed to 56 days, failed once, and then ratcheted 28 → 14 → 7 →
 3.5 → … to the 8-hour floor, where it was due every day for the rest of its life. At 90%
 accuracy, over 20,000 sampled cards, **92% sit at or below a one-day interval after 40
-answers** and 96% after 45; under the corrected rule it is 0.1% and then none. (An earlier
+answers** and 96% after 45; under the corrected rule it is 0.1%, and 0.01% at 45. (An earlier
 version of this line said 96% at 40, from a 400-card sample — `yarn simulate:srs ratchet`.)
 
 The flag is now `simple_relearning`, a column, set on the failure and cleared by the
 re-graduation that pays for it. Midori's own file is the check — 2,450 cards with a median
 interval of 37 days, 187 at the 365-day cap and 107 below a day, which is the shape the
-corrected rule produces and nothing like what the shipped one did.
+corrected rule produces and nothing like what the shipped one did. (Measured from Sam's own
+Midori export, which is not in this repo, so that one figure is the only number here
+`yarn simulate:srs` cannot reproduce.)
 
 ## The correct-in-a-row count lives on the card (2026-10-13)
 
@@ -74,16 +76,20 @@ every run driven by the shipped `nextSimpleReview`:
 | answers/day | repair       | d1   | d7   | d30  | d90  | d180 | d365 |
 | ----------- | ------------ | ---- | ---- | ---- | ---- | ---- | ---- |
 | 1000        | none         | 8000 | 7338 | 5270 | 1328 | 81   | 18   |
-| 1000        | spread 2–30d | 8000 | 3607 | 243  | 116  | 64   | 58   |
-| 200         | none         | 8000 | 7863 | 7462 | 6676 | 5552 | 3579 |
-| 200         | spread 2–30d | 8000 | 7106 | 5311 | 3431 | 1166 | 47   |
-| 200         | flat 7d      | 8000 | 7072 | 6094 | 4860 | 2272 | 252  |
-| 150         | none         | 8000 | 7900 | 7581 | 6980 | 6164 | 4664 |
-| 150         | spread 2–30d | 8000 | 7343 | 5958 | 4530 | 2839 | 76   |
+| 1000        | spread 2–30d | 8000 | 3633 | 261  | 109  | 63   | 39   |
+| 1000        | flat 7d      | 8000 | 3985 | 511  | 402  | 357  | 259  |
+| 200         | none         | 8000 | 7874 | 7492 | 6699 | 5554 | 3567 |
+| 200         | spread 2–30d | 8000 | 7096 | 5359 | 3388 | 1131 | 55   |
+| 200         | flat 7d      | 8000 | 7128 | 6134 | 4886 | 2259 | 198  |
+| 150         | none         | 8000 | 7888 | 7595 | 6990 | 6180 | 4661 |
+| 150         | spread 2–30d | 8000 | 7332 | 6074 | 4581 | 2854 | 72   |
+
+A four-digit cell is one sample of a stochastic process; `--seed=N` resamples. The
+conclusions below hold across seeds, the exact numbers do not.
 
 **At 1,000 answers a day the deck heals itself in about four months, and at 150–200 it does
 not.** That single number is why the first conclusion here — natural recovery, no repair —
-was wrong: it was measured at an effort nobody sustains. At 200 a day, 3,579 cards are still
+was wrong: it was measured at an effort nobody sustains. At 200 a day, 3,567 cards are still
 queued a year later, because a card answered today returns within hours and takes tomorrow's
 slot.
 
@@ -94,9 +100,10 @@ not repaired** says by how much. What was rejected,
 and why:
 
 - **No repair.** The numbers above, at the effort the deck is actually reviewed at.
-- **A flat lift to 7 days.** Half the drain of the spread at every horizon — 2,272 still
-  queued at d180 against 1,166, and at 1,000 answers a day it visibly re-synchronises, the
-  queue swinging back up to 553 and 579 on d90 and d180 as one wave returns together.
+- **A flat lift to 7 days.** Half the drain of the spread at every horizon — 2,259 still
+  queued at d180 against 1,131 — and it re-synchronises the deck: at 1,000 answers a day the
+  spread is down to 39 cards by d365 while the flat lift still shows 259, the same wave
+  coming back together.
 - **A narrower spread.** A shorter window drains more slowly for the same reason the flat
   lift does: more cards land on the same days. The backlog is the complaint, and a card
   given more days than it has earned costs one failed review when it comes back.
@@ -165,28 +172,30 @@ learner's stamina cannot stop anything in learning from advancing. The list scre
 today" badge applies the same cap, or it promises 8,000 cards for a session that shows
 thirty and then says it is done.
 
-Cards shown per day, and words that reached stage 1 within the year, on a legacy deck of
-8,000 stage-0 cards (`yarn simulate:srs learningCap`):
+Cards shown per day on a legacy deck of 8,000 stage-0 cards, and two counts of what was
+learned: cards that touched stage 1 at any point, and cards still graduated at the end on an
+interval longer than a day — i.e. actually kept (`yarn simulate:srs learningCap`, seed 7):
 
-| learning cap | answers/day | d1   | d7   | d30  | d180 | d365 | graduated in a year |
-| ------------ | ----------- | ---- | ---- | ---- | ---- | ---- | ------------------- |
-| none         | 200         | 8000 | 8000 | 8000 | 8000 | 5480 | 8000                |
-| 30 (3 × 10)  | 200         | 30   | 119  | 86   | 133  | 140  | 3706                |
-| 10           | 200         | 10   | 47   | 75   | 106  | 112  | 3240                |
-| none         | 400         | 8000 | 8000 | 8000 | 5256 | 762  | 8000                |
-| 30 (3 × 10)  | 400         | 30   | 137  | 221  | 246  | 230  | 7051                |
+| learning cap | answers/day | d1   | d7   | d30  | d180 | d365 | touched stage 1 | kept |
+| ------------ | ----------- | ---- | ---- | ---- | ---- | ---- | --------------- | ---- |
+| none         | 200         | 8000 | 8000 | 8000 | 8000 | 5447 | 8000            | 2665 |
+| 30 (3 × 10)  | 200         | 30   | 102  | 91   | 108  | 123  | 3042            | 3008 |
+| 10           | 200         | 10   | 46   | 80   | 107  | 113  | 3238            | 3221 |
+| none         | 400         | 8000 | 8000 | 8000 | 5287 | 817  | 8000            | 7451 |
+| 30 (3 × 10)  | 400         | 30   | 147  | 214  | 259  | 266  | 7042            | 7005 |
+| 10           | 400         | 10   | 50   | 77   | 123  | 122  | 3650            | 3634 |
 
-**The cap is not free, and an earlier version of this section understated the cost badly**
-(it claimed 52 words a year; it is thousands). Uncapped, a learner who answers 200 a day
-does finish all 8,000 inside a year — by being shown the entire deck every day for six
-months, which is the thing being reported as broken. Capped at thirty they are shown about
-130 a day and learn 3,706, which is what ten new cards a day _means_: 3,650 a year. The cap
-paces the legacy backlog at the rate the learner chose rather than dumping the list again,
-and `new_per_session` is the dial — at 400 answers a day the same cap delivers 7,051.
+**Which column you read decides the answer, and an earlier version of this section read the
+wrong one.** It said the cap cost thousands of words, counting cards that touched stage 1.
+Uncapped, 8,000 do — and only 2,665 are still there at the end, because an uncapped deck
+churns: a card graduates at 0.633 days, comes back the same day, fails, and sits at the
+floor again. Capped, almost everything touched is kept (3,008 of 3,042). **On words actually
+retained the cap wins**, 3,008 against 2,665, while showing 100 cards a day instead of 8,000.
 
-Capping at the new number itself rather than three times it costs another 466 words at 200
-answers a day, because a learning card needs three answers and ten slots cannot deliver
-them alongside reviews.
+The ×3 is what keeps it from starving a learner who does more: at 400 answers a day the
+cap of thirty keeps 7,005 words against 3,634 for a cap of ten. At 200 a day the cap of ten
+is marginally ahead (3,221 against 3,008), so the multiplier costs a little at low effort
+and is worth several thousand words at high effort.
 
 A genuinely ratcheted card currently in learning is the price of not repairing stage 0: it
 re-graduates to the floor once and then climbs 0.33 → 0.63 → 1.2 by itself.

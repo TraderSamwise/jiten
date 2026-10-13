@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/test-db";
-import { attemptBackup, importBackup } from "./data-backup";
+import { attemptBackup, importBackup, BACKUP_TABLES, TABLE_COLUMNS } from "./data-backup";
 
 describe("data backup", () => {
   it("round-trips local-only history tables through backup and import", async () => {
@@ -104,7 +104,9 @@ describe("data backup", () => {
       const failingDb = {
         ...targetDb,
         runAsync: async (sql: string, params?: any[]) => {
-          if (sql.includes("INSERT OR REPLACE INTO lists")) {
+          // Matches whatever statement shape the restore uses; it is an upsert
+          // now, because `INSERT OR REPLACE` deletes the row and cascades.
+          if (/INTO lists\b/.test(sql)) {
             throw new Error("lists import failed");
           }
           return targetDb.runAsync(sql, params);
@@ -213,5 +215,144 @@ describe("backup across a schema change", () => {
     expect(result.failed).not.toContain("lists");
     expect(result.tables.lists).toHaveLength(1);
     expect((result.tables.lists[0] as { name: string }).name).toBe("Core 8k");
+  });
+});
+
+/**
+ * The export's SELECT and the restore's column list must agree.
+ *
+ * They had drifted: `books.read_complete` was exported and then dropped on
+ * restore, and `user_kanji_notes.updated_at` was in neither, so a restored
+ * mnemonic was invisible to the push, which selects `WHERE updated_at > ?`.
+ */
+describe("the backup's column lists", () => {
+  const selected = (query: string) =>
+    query
+      .replace(/^SELECT\s+/i, "")
+      .replace(/\s+FROM\s+.*$/i, "")
+      .split(",")
+      .map((col) => col.trim());
+
+  it("restores every column it exports", () => {
+    const drift: string[] = [];
+    for (const table of BACKUP_TABLES) {
+      const restored = new Set(TABLE_COLUMNS[table.name] ?? []);
+      for (const col of selected(table.query)) {
+        if (!restored.has(col)) drift.push(`${table.name}.${col}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+
+  it("exports every column it would restore", () => {
+    const drift: string[] = [];
+    for (const table of BACKUP_TABLES) {
+      const exported = new Set(selected(table.query));
+      for (const col of TABLE_COLUMNS[table.name] ?? []) {
+        if (!exported.has(col)) drift.push(`${table.name}.${col}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+});
+
+describe("restoring one table does not take its neighbours with it", () => {
+  it("keeps a list's words when only `lists` is in the backup", async () => {
+    // `INSERT OR REPLACE` is a DELETE then an INSERT, so restoring the parent
+    // fired every cascade: the list came back with zero words and its cards
+    // orphaned. A partial backup is the normal case — `attemptBackup` reports
+    // per table and only the ones that succeeded are written.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    await db.runAsync("PRAGMA foreign_keys = ON");
+    await db.runAsync(
+      `INSERT INTO lists (id, name, is_default, study_position, created_at, updated_at)
+       VALUES ('L', 'List', 0, 0, ?, ?)`,
+      [now, now],
+    );
+    await db.runAsync(
+      `INSERT INTO list_entries (id, list_id, entry_id, added_at, position, updated_at)
+       VALUES ('e1', 'L', 1001, ?, 0, ?)`,
+      [now, now],
+    );
+    await db.runAsync(
+      `INSERT INTO srs_cards
+        (id, entry_id, list_id, due, stability, difficulty, elapsed_days, scheduled_days,
+         reps, lapses, state, created_at, updated_at)
+       VALUES ('c1', 1001, 'L', ?, 0, 0, 0, 0, 0, 0, 0, ?, ?)`,
+      [now, now, now],
+    );
+
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: { lists: [{ id: "L", name: "List renamed", created_at: now, updated_at: now }] },
+      }),
+    );
+
+    expect(result.failed).toEqual([]);
+    expect(await db.getFirstAsync<{ c: number }>("SELECT COUNT(*) as c FROM list_entries")).toEqual(
+      { c: 1 },
+    );
+    expect(
+      await db.getFirstAsync<{ list_id: string | null }>("SELECT list_id FROM srs_cards"),
+    ).toEqual({ list_id: "L" });
+    // and the row itself really was updated
+    expect(await db.getFirstAsync<{ name: string }>("SELECT name FROM lists")).toEqual({
+      name: "List renamed",
+    });
+  });
+
+  it("skips a row with no primary key rather than writing a NULL-keyed one", async () => {
+    // SQLite allows NULL in a TEXT PRIMARY KEY, and sync keys on it. Every
+    // other column is filled, or the row would fail for its own reasons and
+    // the guard would go untested.
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    const result = await importBackup(
+      db,
+      JSON.stringify({
+        version: 1,
+        tables: {
+          furigana_pins: [
+            {
+              book_id: "b",
+              surface: "\u6c34",
+              reading: "\u307f\u305a",
+              created_at: now,
+              updated_at: now,
+              deleted_at: null,
+            },
+          ],
+        },
+      }),
+    );
+    expect(result.failed).toEqual([]);
+    expect(
+      await db.getFirstAsync<{ c: number }>("SELECT COUNT(*) as c FROM furigana_pins"),
+    ).toEqual({ c: 0 });
+  });
+
+  it("reports a locked or corrupt table as failed, not as a clean rescue", async () => {
+    // The column fallback must not swallow a real error: re-selecting fewer
+    // columns would hand `DbRecoveryScreen` whatever came back and call it a
+    // success.
+    const db = createTestDb();
+    let thrown = 0;
+    const busy = {
+      ...db,
+      getAllAsync: async (sql: string, params?: unknown[]) => {
+        // Transient, the way a lock is: a retry would succeed. The fallback
+        // must not retry, or it reports the table rescued.
+        if (/FROM books/.test(sql) && thrown++ === 0) {
+          throw new Error("SQLITE_BUSY: database is locked");
+        }
+        return db.getAllAsync(sql, params as never);
+      },
+    } as unknown as Parameters<typeof attemptBackup>[0];
+    const result = await attemptBackup(busy);
+    expect(result.failed).toContain("books");
+    expect(result.succeeded).not.toContain("books");
   });
 });

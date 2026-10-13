@@ -63,7 +63,12 @@ export const BACKUP_TABLES: {
     query:
       "SELECT id, book_id, surface, reading, created_at, updated_at, deleted_at FROM furigana_pins",
   },
-  { name: "user_kanji_notes", query: "SELECT literal, mnemonic, keyword FROM user_kanji_notes" },
+  {
+    name: "user_kanji_notes",
+    // `updated_at` or a restored mnemonic is invisible to the push, which
+    // selects `WHERE updated_at > ?`.
+    query: "SELECT literal, mnemonic, keyword, updated_at FROM user_kanji_notes",
+  },
   {
     name: "practice_sessions",
     query:
@@ -82,7 +87,14 @@ export const BACKUP_TABLES: {
 ];
 
 // Column names for each table — used for INSERT during import
-const TABLE_COLUMNS: Record<string, string[]> = {
+/** Where a table's primary key is not `id`. Used for the restore's upsert. */
+const PRIMARY_KEYS: Record<string, string> = {
+  app_flags: "key",
+  user_kanji_notes: "literal",
+  sync_meta: "key",
+};
+
+export const TABLE_COLUMNS: Record<string, string[]> = {
   lists: [
     "id",
     "name",
@@ -202,11 +214,12 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "last_read_at",
     "is_default",
     "saved",
+    "read_complete",
     "created_at",
     "updated_at",
   ],
   furigana_pins: ["id", "book_id", "surface", "reading", "created_at", "updated_at", "deleted_at"],
-  user_kanji_notes: ["literal", "mnemonic", "keyword"],
+  user_kanji_notes: ["literal", "mnemonic", "keyword", "updated_at"],
   practice_sessions: [
     "id",
     "session_id",
@@ -288,7 +301,13 @@ export async function attemptBackup(db: WrappedUserDb): Promise<BackupResult> {
       // to the columns the table really has rescues the rows instead of
       // reporting the whole table as lost — a missing `new_per_session` used to
       // cost the user every list, and a missing `simple_relearning` every card.
-      const cols = await existingColumns(db, table.name);
+      //
+      // Only for a missing column. A locked, corrupt or absent table must stay
+      // a failure: re-selecting fewer columns would report a clean rescue of
+      // whatever came back, and the recovery screen would believe it.
+      const cols = /no such column/i.test(String(err))
+        ? await existingColumns(db, table.name)
+        : null;
       const wanted = TABLE_COLUMNS[table.name];
       if (cols && wanted) {
         const usable = wanted.filter((col) => cols.has(col));
@@ -358,27 +377,39 @@ export async function importBackup(
       `Importing ${tableName}...`,
     );
 
+    // `INSERT OR REPLACE` is a DELETE followed by an INSERT, so restoring a
+    // parent row fires every foreign-key cascade hanging off it: restoring
+    // `lists` alone emptied `list_entries` and set `srs_cards.list_id` to NULL,
+    // leaving the list with no words and its cards orphaned. An upsert touches
+    // only the row named.
+    const pk = PRIMARY_KEYS[tableName] ?? "id";
+    const upsert = (columns: string[]) =>
+      `INSERT INTO ${tableName} (${columns.join(", ")})
+       VALUES (${columns.map(() => "?").join(", ")})
+       ON CONFLICT(${pk}) DO UPDATE SET ${columns
+         .filter((col) => col !== pk)
+         .map((col) => `${col} = excluded.${col}`)
+         .join(", ")}`;
+
     try {
-      const placeholders = cols.map(() => "?").join(", ");
-      const sql = `INSERT OR REPLACE INTO ${tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
+      const sql = upsert(cols);
 
       for (const row of rows) {
-        // `INSERT OR REPLACE` writes a named NULL as NULL — it does NOT fall
-        // back to the column default — so a column missing from an older backup
-        // is left out of the statement entirely and takes its default.
-        const named = cols.filter((col) => row[col] !== undefined);
-        if (named.length === cols.length) {
-          await db.runAsync(
-            sql,
-            cols.map((col) => row[col] ?? null),
-          );
-        } else {
-          await db.runAsync(
-            `INSERT OR REPLACE INTO ${tableName} (${named.join(", ")})
-             VALUES (${named.map(() => "?").join(", ")})`,
-            named.map((col) => row[col] ?? null),
-          );
+        // A row with no primary key would insert under a NULL one — SQLite
+        // allows that in a TEXT PRIMARY KEY — and then poison sync, which keys
+        // on it. Skip it rather than write it.
+        if (row[pk] == null) {
+          processedRows++;
+          continue;
         }
+        // A named NULL is written as NULL; an upsert does NOT fall back to the
+        // column default. So a column the backup never had is left out of the
+        // statement entirely, and takes its default.
+        const named = cols.filter((col) => row[col] !== undefined);
+        await db.runAsync(
+          named.length === cols.length ? sql : upsert(named),
+          named.map((col) => row[col] ?? null),
+        );
         processedRows++;
       }
 

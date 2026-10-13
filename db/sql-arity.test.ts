@@ -57,6 +57,38 @@ function countPlaceholders(raw: string): number {
 
 type Mismatch = { file: string; line: number; sql: number; args: number };
 
+/** Call sites this gate can check, against every call site there is. */
+export function coverage(): { checked: number; total: number } {
+  let checked = 0;
+  let total = 0;
+  for (const file of sourceFiles()) {
+    const text = readFileSync(join(REPO_ROOT, file), "utf8");
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        if (QUERY_METHODS.has(node.expression.name.text)) {
+          total++;
+          const [sqlArg, argsArg] = node.arguments;
+          const literal =
+            sqlArg &&
+            (ts.isStringLiteralLike(sqlArg) || ts.isNoSubstitutionTemplateLiteral(sqlArg));
+          if (
+            literal &&
+            argsArg &&
+            ts.isArrayLiteralExpression(argsArg) &&
+            !argsArg.elements.some((e) => ts.isSpreadElement(e))
+          ) {
+            checked++;
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return { checked, total };
+}
+
 function mismatchesIn(file: string): Mismatch[] {
   const text = readFileSync(join(REPO_ROOT, file), "utf8");
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
@@ -108,6 +140,14 @@ describe("SQL placeholder arity", () => {
     expect(
       mismatches.map((m) => `${m.file}:${m.line} ${m.sql} placeholders, ${m.args} args`),
     ).toEqual([]);
+  });
+
+  it("reports how much of the codebase it can actually see", () => {
+    // So a passing run is never read as "every query is checked". Quoting this
+    // share anywhere means running this test; it has been quoted wrong twice.
+    const { checked, total } = coverage();
+    expect(total).toBeGreaterThan(checked);
+    console.log(`[sql-arity] checks ${checked} of ${total} query call sites`);
   });
 
   it("counts placeholders outside quoted literals and comments only", () => {

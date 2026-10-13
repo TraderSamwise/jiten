@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { createTestDb } from "@/test/test-db";
-import { DEFAULT_NEW_PER_SESSION } from "@/stores/simple-srs";
+import { DEFAULT_NEW_PER_SESSION, resolveNewPerSession } from "@/stores/simple-srs";
 import {
   buildListExport,
   importListToDb,
@@ -243,14 +243,17 @@ describe("the new-card cap travels with a shared list", () => {
     expect(row?.new_per_session).toBe(40);
   });
 
-  test("gives a file that predates the column the default, not a pin to ten", async () => {
+  test("leaves a file that predates the column unset, rather than pinning it", async () => {
+    // No `newPerSession` key at all, the way a pre-feature file looks. NULL is
+    // the meaningful "unset" state: the settings input shows a placeholder, and
+    // `resolveNewPerSession` turns it into the default at read time.
     const db = createTestDb();
-    // No `newPerSession` key at all, the way a pre-feature file looks.
     const listId = await importListToDb(db, validExport(), false, undefined);
-    const row = await db.getFirstAsync<{ new_per_session: number }>(
+    const row = await db.getFirstAsync<{ new_per_session: number | null }>(
       "SELECT new_per_session FROM lists WHERE id = ?",
       [listId],
     );
-    expect(row?.new_per_session).toBe(DEFAULT_NEW_PER_SESSION);
+    expect(row?.new_per_session).toBeNull();
+    expect(resolveNewPerSession(row?.new_per_session)).toBe(DEFAULT_NEW_PER_SESSION);
   });
 });

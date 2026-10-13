@@ -1,5 +1,5 @@
 /**
- * The one-time repair of decks the lapse bug flattened.
+ * The repair of decks the lapse bug flattened.
  *
  * Fixing the rule does not fix the stored intervals: a card the bug ratcheted
  * is sitting at the 8-hour floor and comes back every day forever. Measured at
@@ -11,22 +11,20 @@
  * interval, an FSRS-only card, and any learning card — a card at stage 0 sits
  * at 1/3 because that is where new cards start, and with the whole list loading
  * as new those are most of the stage-0 population.
+ *
+ * It runs on every launch rather than once, so running it twice must be a
+ * no-op — that is what lets a repair survive an old build pushing a ratcheted
+ * value back.
  */
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { REPAIR_RATCHETED_INTERVALS, repairRatchetedIntervals } from "./simple-repair";
+import { createTestDb } from "@/test/test-db";
 
-const SPREADS = USER_DB_MIGRATIONS.filter((sql) =>
-  /simple_interval = \d+ \+ \(rowid % \d+\)/.test(sql),
-);
-const REPAIR_AT = USER_DB_MIGRATIONS.indexOf(SPREADS[0]);
-if (SPREADS.length !== 1) {
-  // A second spreading migration would be silently untested otherwise.
-  throw new Error(`expected exactly one interval repair migration, found ${SPREADS.length}`);
-}
-const BEFORE = USER_DB_MIGRATIONS.slice(0, REPAIR_AT);
-const REPAIR = USER_DB_MIGRATIONS.slice(REPAIR_AT, REPAIR_AT + 1);
+const BEFORE = USER_DB_MIGRATIONS;
+const REPAIR = [REPAIR_RATCHETED_INTERVALS];
 
 function apply(db: Database.Database, statements: readonly string[]) {
   for (const sql of statements) {
@@ -205,10 +203,50 @@ describe("the interval repair", () => {
     expect(spread.hi).toBe(30);
   });
 
-  it("runs once: a repaired row no longer matches, whichever device replays it", () => {
+  it("is a no-op the second time, so it can run on every launch", () => {
     const db = repaired();
     const before = row(db, "ratcheted");
     apply(db, REPAIR);
     expect(row(db, "ratcheted")).toEqual(before);
+  });
+});
+
+describe("repairRatchetedIntervals", () => {
+  it("reports how many cards it lifted, and lifts none twice", async () => {
+    const db = createTestDb();
+    const now = "2026-04-05T00:00:00.000Z";
+    for (const [id, interval, reps] of [
+      ["ratcheted", 1 / 3, 40],
+      ["honest", 1 / 3, 4],
+      ["healthy", 56.61, 40],
+    ] as const) {
+      await db.runAsync(
+        `INSERT INTO srs_cards (id, entry_id, list_id, due, stability, difficulty, elapsed_days,
+           scheduled_days, reps, lapses, state, simple_stage, simple_n, simple_interval,
+           created_at, updated_at)
+         VALUES (?, 1, NULL, 'x', 0, 0, 0, 0, ?, 5, 0, 1, 0, ?, ?, 'OLD')`,
+        [id, reps, interval, now],
+      );
+    }
+
+    expect(await repairRatchetedIntervals(db)).toBe(1);
+    expect(await repairRatchetedIntervals(db)).toBe(0);
+
+    const row = await db.getFirstAsync<{ simple_interval: number; updated_at: string }>(
+      "SELECT simple_interval, updated_at FROM srs_cards WHERE id = 'ratcheted'",
+    );
+    expect(row!.simple_interval).toBeGreaterThanOrEqual(2);
+    // Never bumped: a stale device would otherwise win last-write-wins and push
+    // months-old values over reviews done on another device.
+    expect(row!.updated_at).toBe("OLD");
+  });
+
+  it("survives a database that cannot run it, rather than failing the launch", async () => {
+    const broken = {
+      runAsync: async () => {
+        throw new Error("no such table: srs_cards");
+      },
+    } as unknown as Parameters<typeof repairRatchetedIntervals>[0];
+    await expect(repairRatchetedIntervals(broken)).resolves.toBe(0);
   });
 });

@@ -269,9 +269,11 @@ export async function importListToDb(
       studyPosition,
       configured,
       data.list.autoPlayAudio ? 1 : 0,
-      // A shared list carries its pace; a file that predates the column takes
-      // the column default rather than being pinned to ten.
-      resolveNewPerSession(data.list.newPerSession),
+      // A shared list carries its pace. A file that predates the column has no
+      // value, and NULL is the meaningful state for that — the settings input
+      // shows a placeholder rather than a number, and the list follows the
+      // default if it ever changes — so it is not resolved to ten here.
+      data.list.newPerSession == null ? null : resolveNewPerSession(data.list.newPerSession),
       now,
       now,
     ],

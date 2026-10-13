@@ -3,6 +3,7 @@ import { open } from "@op-engineering/op-sqlite";
 import type { DB } from "@op-engineering/op-sqlite";
 import { wrapUserDb, type WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { repairRatchetedIntervals } from "./simple-repair";
 import { migrateLegacyMnemonics } from "./mnemonic-migration";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
@@ -64,8 +65,14 @@ export function UserDatabaseProvider({
         console.log(`[UserDB Native] Migrated to version ${USER_DB_MIGRATIONS.length}`);
       }
 
-      // Programmatic migration: rename random default IDs → deterministic slugs
       const wrapped = wrapUserDb(db, { shouldNotifyError: () => live.current });
+
+      // Every launch, not once: see db/simple-repair.ts for why a one-shot
+      // migration loses the repair the first time an old build pushes.
+      const lifted = await repairRatchetedIntervals(wrapped);
+      if (lifted > 0) console.log(`[UserDB Native] Lifted ${lifted} ratcheted cards`);
+
+      // Programmatic migration: rename random default IDs → deterministic slugs
       const migrated = await wrapped.getFirstAsync<{ value: string }>(
         "SELECT value FROM app_flags WHERE key = 'default_ids_migrated'",
       );

@@ -1065,8 +1065,8 @@ function StudyScreen() {
   type SessionPhase = "studying" | "done" | "waiting";
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>("studying");
   const reviewedSrsIdsRef = useRef<Set<string>>(new Set());
-  /** Unseen cards this session has already introduced, across reloads. */
-  const newIntroducedRef = useRef(0);
+  /** Unseen cards this session has answered, which spend its allowance. */
+  const newAnsweredRef = useRef(0);
   const [reviewedCount, setReviewedCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -1337,7 +1337,7 @@ function StudyScreen() {
     // A different list or scope is a new session; "Continue Studying" is not,
     // and must keep both so it neither re-serves answered cards nor hands out
     // another full allowance of new ones.
-    newIntroducedRef.current = 0;
+    newAnsweredRef.current = 0;
     reviewedSrsIdsRef.current.clear();
     loadQueue();
   }, [dictDb, userDb, list?.id, scope]);
@@ -1645,21 +1645,22 @@ function StudyScreen() {
             );
             newCap = resolveNewPerSession(capRow?.new_per_session);
           }
-          // "Continue Studying" calls this again, so the cap is topped up to
-          // the session's allowance rather than granted afresh — otherwise ten
-          // taps introduce a hundred new cards — and the cards just answered
-          // are held back, since a graduated card's 0.633-day interval falls
-          // inside today's cutoff and it would come straight back.
+          // "Continue Studying" calls this again, so the allowance is what is
+          // LEFT of the cap rather than a fresh one — otherwise ten taps
+          // introduce a hundred new cards. It counts cards the session has
+          // answered, not cards it has loaded: a reload re-queries the unseen
+          // cards still sitting unanswered in the pool, and counting those
+          // again left a session unable to offer new cards it still owed.
           const newAllowance =
-            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newIntroducedRef.current);
+            newCap === UNLIMITED ? UNLIMITED : Math.max(0, newCap - newAnsweredRef.current);
           const { dueRows, newRows } = await loadSimpleQueuePools({
             query: (sql, args) => userDb.getAllAsync<SrsCardRow>(sql, args),
             scope,
             dueCutoffDays,
+            newCap,
             newAllowance,
             excludeIds: reviewedSrsIdsRef.current,
           });
-          newIntroducedRef.current += newRows.length;
 
           if (dueRows.length > 0 || newRows.length > 0) {
             const dueItems = await resolveCards(dueRows);
@@ -2240,6 +2241,9 @@ function StudyScreen() {
     // The correct-in-a-row count rides in `updates` and is persisted — it used
     // to live in a ref that died with the screen, so a card answered twice and
     // left came back to a count of zero and stayed due forever.
+    // An unseen card's first answer is what spends the session's allowance.
+    if (card.simpleStage == null) newAnsweredRef.current += 1;
+
     const decision = nextSimpleReview(card, action);
     const updates = decision.updates;
     const graduated = decision.graduated;

@@ -27,8 +27,19 @@ export interface SimpleQueueRequest {
   scope: SimpleQueueScope;
   /** End of the logical day, in the epoch `simple_n` is stored in. */
   dueCutoffDays: number;
-  /** Unseen cards this session may still introduce, or `UNLIMITED`. */
-  newAllowance: number;
+  /**
+   * The list's `new_per_session`, or `UNLIMITED`. The learning slice is sized
+   * from THIS, never from the allowance below: a session that has already
+   * introduced its new cards has no allowance left, and keying the learning
+   * slice off it emptied the whole queue and sent the session to the done
+   * screen with cards still owed.
+   */
+  newCap: number;
+  /**
+   * Unseen cards this session may still introduce — the cap less the ones it
+   * has already answered. Defaults to `newCap`.
+   */
+  newAllowance?: number;
   /** Cards already answered in this session, which must not come back. */
   excludeIds?: ReadonlySet<string>;
 }
@@ -39,10 +50,17 @@ export interface SimpleQueuePools {
   newRows: SrsCardRow[];
 }
 
-/** Graduated and due today. Never capped — this is the real review load. */
+/**
+ * Graduated and due today. Never capped — this is the real review load.
+ *
+ * `!= 0` rather than `= 1` so a stage outside the engine's {0, 1} can still be
+ * studied: splitting the old `IS NOT NULL` query in two would otherwise drop
+ * such a row from every slice and strand it forever.
+ */
 export const graduatedDueSql = (scopeClause: string) =>
   `${SRS_CARD_SELECT} FROM srs_cards
-     WHERE ${scopeClause} AND simple_stage = 1 AND simple_n <= ? AND deleted_at IS NULL
+     WHERE ${scopeClause} AND simple_stage IS NOT NULL AND simple_stage != 0
+       AND simple_n <= ? AND deleted_at IS NULL
      ORDER BY simple_n ASC`;
 
 /**
@@ -87,11 +105,12 @@ export async function loadSimpleQueuePools({
   query,
   scope,
   dueCutoffDays,
-  newAllowance,
+  newCap,
+  newAllowance = newCap,
   excludeIds,
 }: SimpleQueueRequest): Promise<SimpleQueuePools> {
   const excluded = excludeIds?.size ?? 0;
-  const learningCap = learningCapFor(newAllowance);
+  const learningCap = learningCapFor(newCap);
 
   const graduated = await query(graduatedDueSql(scope.clause), [...scope.args, dueCutoffDays]);
   const learning = await query(learningDueSql(scope.clause), [

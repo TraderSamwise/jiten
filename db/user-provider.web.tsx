@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import * as SQLite from "expo-sqlite";
 import type { WrappedUserDb } from "./user-db";
 import { USER_DB_MIGRATIONS } from "./user-migrations";
+import { repairRatchetedIntervals } from "./simple-repair";
 import { migrateLegacyMnemonics } from "./mnemonic-migration";
 import { makeDefaultListId } from "@/lib/seed-default-lists";
 import { cleanupOrphanedSmartLists } from "@/lib/smart-review";
@@ -108,6 +109,11 @@ async function openAndMigrateUserDb(): Promise<{
 
     sync: () => {},
   };
+
+  // Every launch, not once: see db/simple-repair.ts for why a one-shot
+  // migration loses the repair the first time an old build pushes.
+  const lifted = await repairRatchetedIntervals(wrapped);
+  if (lifted > 0) console.log(`[UserDB Web] Lifted ${lifted} ratcheted cards`);
 
   // Programmatic migration: rename random default IDs → deterministic slugs
   // Disable FKs during migration — UPDATE on PK internally does DELETE+INSERT

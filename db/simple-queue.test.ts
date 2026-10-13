@@ -24,6 +24,8 @@ type Card = {
   n: number | null;
   /** ISO timestamp; `updated_at` is the learning slice's ordering key. */
   updatedAt?: string;
+  /** Deliberately set against rowid order, so the ORDER BY is what sorts. */
+  createdAt?: string;
   deleted?: boolean;
 };
 
@@ -44,7 +46,7 @@ function insert(c: Card) {
     c.id,
     c.stage,
     c.n,
-    `created-${c.id}`,
+    c.createdAt ?? `created-${c.id}`,
     c.updatedAt ?? "2026-01-01T00:00:00.000Z",
     c.deleted ? "gone" : null,
   );
@@ -62,18 +64,26 @@ beforeEach(() => {
   }
 });
 
-const pools = (newAllowance: number, excludeIds?: Set<string>) =>
-  loadSimpleQueuePools({ query, scope, dueCutoffDays: CUTOFF, newAllowance, excludeIds });
+/** `newCap` is the list's setting; `allowance` is what the session has left. */
+const pools = (newCap: number, excludeIds?: Set<string>, newAllowance?: number) =>
+  loadSimpleQueuePools({ query, scope, dueCutoffDays: CUTOFF, newCap, newAllowance, excludeIds });
 
 const ids = (rows: SrsCardRow[]) => rows.map((r) => r.id);
 
 describe("the new-card cap", () => {
   it("introduces the allowance, not the list", async () => {
     for (let i = 0; i < 8000; i++) insert({ id: `n${i}`, stage: null, n: null });
-    const { newRows } = await pools(DEFAULT_NEW_PER_SESSION);
-    expect(newRows).toHaveLength(10);
-    // Oldest first, so a session works through the list in order.
-    expect(ids(newRows)[0]).toBe("n0");
+    expect((await pools(DEFAULT_NEW_PER_SESSION)).newRows).toHaveLength(10);
+  });
+
+  it("introduces the oldest first, whatever order the rows were written in", async () => {
+    // created_at runs against rowid here on purpose: with the two agreeing,
+    // deleting the ORDER BY entirely still passed.
+    for (let i = 0; i < 20; i++) {
+      const day = String(20 - i).padStart(2, "0");
+      insert({ id: `n${i}`, stage: null, n: null, createdAt: `2026-01-${day}` });
+    }
+    expect(ids((await pools(3)).newRows)).toEqual(["n19", "n18", "n17"]);
   });
 
   it("gives an ephemeral session every unseen card", async () => {
@@ -83,7 +93,20 @@ describe("the new-card cap", () => {
 
   it("introduces nothing once the session has spent its allowance", async () => {
     for (let i = 0; i < 50; i++) insert({ id: `n${i}`, stage: null, n: null });
-    expect((await pools(0)).newRows).toHaveLength(0);
+    expect((await pools(10, undefined, 0)).newRows).toHaveLength(0);
+  });
+
+  it("keeps serving the cards in learning after the allowance is spent", async () => {
+    // The learning slice is sized from the list's cap, never from what is left
+    // of it: keying it off the allowance emptied the whole queue once the
+    // session had introduced its new cards, and a mid-session settings save —
+    // which now rebuilds the queue — sent the session to the done screen with
+    // cards still owed.
+    for (let i = 0; i < 20; i++) insert({ id: `l${i}`, stage: 0, n: 0 });
+    for (let i = 0; i < 20; i++) insert({ id: `n${i}`, stage: null, n: null });
+    const { dueRows, newRows } = await pools(10, undefined, 0);
+    expect(newRows).toHaveLength(0);
+    expect(dueRows).toHaveLength(20);
   });
 });
 
@@ -93,6 +116,17 @@ describe("the learning slice", () => {
     // one due, which is the queue that came back unchanged every day.
     for (let i = 0; i < 8000; i++) insert({ id: `l${i}`, stage: 0, n: 0 });
     expect((await pools(DEFAULT_NEW_PER_SESSION)).dueRows).toHaveLength(30);
+  });
+
+  // A guard, not a gate: this passes without the `rowid ASC` tiebreak too,
+  // because SQLite happens to return rowid order for equal keys. The tiebreak
+  // makes that a promise rather than a coincidence — the backfill stamps every
+  // card the same `updated_at` and there is no index on it.
+  it("breaks a shared timestamp on rowid, so the slice is the same every build", async () => {
+    for (let i = 0; i < 40; i++) insert({ id: `l${i}`, stage: 0, n: 0, updatedAt: "same" });
+    const first = ids((await pools(DEFAULT_NEW_PER_SESSION)).dueRows);
+    expect(first).toEqual(ids((await pools(DEFAULT_NEW_PER_SESSION)).dueRows));
+    expect(first[0]).toBe("l0");
   });
 
   it("takes the most recently answered first, so cards in hand get finished", async () => {
@@ -121,10 +155,19 @@ describe("the graduated slice", () => {
     expect((await pools(DEFAULT_NEW_PER_SESSION)).dueRows).toHaveLength(500);
   });
 
-  it("leaves out a card due after the cutoff", async () => {
+  it("includes a card due exactly on the cutoff, and excludes one past it", async () => {
     insert({ id: "today", stage: 1, n: CUTOFF - 1 });
+    insert({ id: "on-the-cutoff", stage: 1, n: CUTOFF });
     insert({ id: "tomorrow", stage: 1, n: CUTOFF + 1 });
-    expect(ids((await pools(1)).dueRows)).toEqual(["today"]);
+    expect(ids((await pools(1)).dueRows)).toEqual(["today", "on-the-cutoff"]);
+  });
+
+  it("still serves a card whose stage is outside the engine's 0 and 1", async () => {
+    // Splitting the old `simple_stage IS NOT NULL` query in two could drop such
+    // a row from every slice and strand it forever, so the graduated slice asks
+    // for `!= 0` rather than `= 1`.
+    insert({ id: "odd", stage: 2, n: 0 });
+    expect(ids((await pools(1)).dueRows)).toEqual(["odd"]);
   });
 
   it("comes back in due order, oldest first", async () => {
