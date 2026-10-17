@@ -518,10 +518,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           );
 
           if (Platform.OS === "web" && finalVersion > action.fromVersion) {
-            // Web: serialize migrated DB back to IDB so changes persist
-            const SQLiteModule = require("expo-sqlite");
-            const bytes: Uint8Array = await SQLiteModule.serializeDatabaseAsync(db);
-            await storeDbBytes(bytes);
+            // Web: serialize migrated DB back to IDB so changes persist.
+            // `serializeAsync` is a method on the database — there is no
+            // module-level `serializeDatabaseAsync`, and reaching for it
+            // through `require` hid that from the typechecker.
+            await storeDbBytes(await db.serializeAsync());
           }
 
           await setLocalVersion(finalVersion);
@@ -715,9 +716,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         const finalVersion = await runClientDictMigrations(db, m.version, DICT_VERSION);
 
         if (Platform.OS === "web" && finalVersion > m.version) {
-          const SQLiteModule = require("expo-sqlite");
-          const bytes: Uint8Array = await SQLiteModule.serializeDatabaseAsync(db);
-          await storeDbBytes(bytes);
+          await storeDbBytes(await db.serializeAsync());
         }
 
         await setLocalVersion(finalVersion);
