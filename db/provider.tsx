@@ -18,7 +18,6 @@ import {
   determineUpdateAction,
   loadWebDictDb,
   loadWebAudioDb,
-  storeDbBytes,
   isStrokesReady,
   hasInstalledStrokesDb,
   downloadStrokesDb,
@@ -517,15 +516,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             action.toVersion,
           );
 
-          if (Platform.OS === "web" && finalVersion > action.fromVersion) {
-            // Web: serialize migrated DB back to IDB so changes persist.
-            // `serializeAsync` is a method on the database — there is no
-            // module-level `serializeDatabaseAsync`, and reaching for it
-            // through `require` hid that from the typechecker.
-            await storeDbBytes(await db.serializeAsync());
-          }
-
-          await setLocalVersion(finalVersion);
+          // Web does NOT persist the migrated dict, and the stored version
+          // stays at the base so these run again next boot. The dict lives in
+          // IndexedDB as bytes and is deserialized into the wasm heap on every
+          // load, so persisting means serializing the whole file back out —
+          // and `sqlite3_serialize` mallocs a second full copy beside the
+          // resident one, which traps a 120 MB dict with "memory access out of
+          // bounds". These migrations are an ADD COLUMN and one 3,000-row
+          // index; re-applying them is milliseconds against a 120 MB write.
+          await setLocalVersion(Platform.OS === "web" ? action.fromVersion : finalVersion);
 
           openRetryAttempt.current = 0;
           dictDbRef.current = db;
@@ -715,11 +714,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         console.log(`[DB] Post-download client migrations: v${m.version} → v${DICT_VERSION}`);
         const finalVersion = await runClientDictMigrations(db, m.version, DICT_VERSION);
 
-        if (Platform.OS === "web" && finalVersion > m.version) {
-          await storeDbBytes(await db.serializeAsync());
-        }
-
-        await setLocalVersion(finalVersion);
+        // Same as the client-migration path above: web re-applies rather than
+        // serializing 120 MB back into IndexedDB.
+        await setLocalVersion(Platform.OS === "web" ? m.version : finalVersion);
       }
 
       dictDbRef.current = db;

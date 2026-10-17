@@ -247,3 +247,51 @@ describe("the restored index on heisig_lesson", () => {
     expect(plan.map((r) => r.detail).join(" ")).toContain("heisig_lesson=?");
   });
 });
+
+/**
+ * Why web re-applies these instead of persisting them.
+ *
+ * On web the dict lives in IndexedDB as bytes and is deserialized into the
+ * wasm heap on every boot. Persisting a migration means serializing the whole
+ * file back out, and `sqlite3_serialize` mallocs a second full copy beside the
+ * resident one — which trapped a 120 MB dict with "memory access out of
+ * bounds". So `db/provider.tsx` leaves the stored version at the base and lets
+ * the migrations run again next boot, against the untouched image.
+ */
+describe("re-applying the migrations the way web now does", () => {
+  function baseImage(): { raw: Database.Database; db: SQLiteDatabase } {
+    const raw = new Database(":memory:");
+    raw.exec("CREATE TABLE dict_meta (key TEXT PRIMARY KEY, value TEXT)");
+    raw.exec(`INSERT INTO dict_meta (key, value) VALUES ('version', '${DICT_BASE_VERSION}')`);
+    raw.exec(
+      "CREATE TABLE kanji_characters (literal TEXT PRIMARY KEY, heisig_lesson INTEGER, heisig_index INTEGER)",
+    );
+    return { raw, db: wrapBetterSqlite(raw) };
+  }
+
+  it("reaches the target version on a fresh base image, every time", async () => {
+    // Each boot starts from the same untouched bytes, so the ADD COLUMN always
+    // lands on a table that does not have the column yet.
+    for (let boot = 1; boot <= 3; boot++) {
+      const { raw, db } = baseImage();
+      const reached = await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION);
+      expect(reached).toBe(DICT_VERSION);
+      const cols = raw.prepare("PRAGMA table_info(kanji_characters)").all() as { name: string }[];
+      expect(cols.map((c) => c.name)).toContain("glyph_origin");
+      raw.close();
+    }
+  });
+
+  it("would NOT survive a second run against an already-migrated image", async () => {
+    // The reason the stored version must stay at the base on web: if the
+    // migrated database were persisted and the version left behind, the next
+    // boot would re-run `ALTER TABLE ADD COLUMN` on a table that already has
+    // it, and `runClientDictMigrations` has no duplicate-column guard — it
+    // stops at the first failure.
+    const { raw, db } = baseImage();
+    expect(await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION)).toBe(DICT_VERSION);
+    const second = await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION);
+    expect(second).toBe(DICT_BASE_VERSION);
+    raw.close();
+  });
+});
