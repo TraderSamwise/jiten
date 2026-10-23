@@ -83,6 +83,7 @@ module.exports = {
       ...(SENTRY_PLUGIN ? [SENTRY_PLUGIN] : []),
       "expo-router",
       "expo-updates",
+      "./plugins/with-pod-deployment-target",
       [
         "expo-splash-screen",
         {
