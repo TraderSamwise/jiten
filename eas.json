@@ -16,7 +16,7 @@
       "node": "24.16.0",
       "ios": {
         "buildConfiguration": "Release",
-        "image": "latest"
+        "image": "sdk-54"
       },
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
@@ -29,7 +29,7 @@
       "node": "24.16.0",
       "ios": {
         "buildConfiguration": "Release",
-        "image": "latest"
+        "image": "sdk-54"
       },
       "android": {
         "image": "latest"
