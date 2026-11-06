@@ -295,3 +295,91 @@ describe("re-applying the migrations the way web now does", () => {
     raw.close();
   });
 });
+
+// ─── In-memory (web) dict safety ───
+//
+// Web has no dict file. The published bytes are deserialized into the wasm
+// heap with a buffer sized exactly to the image, and a write that has to grow
+// past that buffer traps the whole wasm instance — which every database in the
+// app shares, so the user DB and the audio/strokes/extended dicts die with it.
+// That is the "Database Error" screen jiten.tokyo showed from 2026-10-04, when
+// v25's CREATE INDEX landed, until this guard.
+describe("in-memory dict migrations (web)", () => {
+  function baseImage(): { raw: Database.Database; db: SQLiteDatabase } {
+    const raw = new Database(":memory:");
+    raw.exec("CREATE TABLE dict_meta (key TEXT PRIMARY KEY, value TEXT)");
+    raw.exec(`INSERT INTO dict_meta (key, value) VALUES ('version', '${DICT_BASE_VERSION}')`);
+    raw.exec(
+      "CREATE TABLE kanji_characters (literal TEXT PRIMARY KEY, heisig_lesson INTEGER, heisig_index INTEGER)",
+    );
+    return { raw, db: wrapBetterSqlite(raw) };
+  }
+
+  const storedVersion = (raw: Database.Database) =>
+    (raw.prepare("SELECT value FROM dict_meta WHERE key = 'version'").get() as { value: string })
+      .value;
+
+  it("stops at the first migration that cannot run in memory", async () => {
+    const firstUnsafe = [...CLIENT_DICT_MIGRATIONS]
+      .sort((a, b) => a.version - b.version)
+      .find((m) => !m.inMemorySafe);
+    expect(firstUnsafe, "expected at least one migration marked unsafe").toBeDefined();
+
+    const { raw, db } = baseImage();
+    const reached = await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION, {
+      inMemory: true,
+    });
+    expect(reached).toBe(firstUnsafe!.version - 1);
+
+    // The safe migration before it still ran.
+    const cols = (
+      raw.prepare("PRAGMA table_info(kanji_characters)").all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(cols).toContain("glyph_origin");
+
+    // ...and the unsafe one did not: no index was built.
+    const indexes = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+      .all("kanji_characters") as { name: string }[];
+    expect(indexes.map((i) => i.name)).not.toContain("idx_kc_heisig_lesson");
+    raw.close();
+  });
+
+  it("writes no dict_meta version in memory, where nothing is persisted", async () => {
+    const { raw, db } = baseImage();
+    await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION, { inMemory: true });
+    expect(storedVersion(raw)).toBe(String(DICT_BASE_VERSION));
+    raw.close();
+  });
+
+  it("still applies everything, and records the version, off web", async () => {
+    const { raw, db } = baseImage();
+    const reached = await runClientDictMigrations(db, DICT_BASE_VERSION, DICT_VERSION);
+    expect(reached).toBe(DICT_VERSION);
+    expect(storedVersion(raw)).toBe(String(DICT_VERSION));
+    const indexes = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+      .all("kanji_characters") as { name: string }[];
+    expect(indexes.map((i) => i.name)).toContain("idx_kc_heisig_lesson");
+    raw.close();
+  });
+
+  // The tripwire. `inMemorySafe: true` is a claim that the statement fits in
+  // the pages the image already has, which only schema edits do. Writing rows
+  // or building an index grows the file; measured on the published v23 dict,
+  // CREATE INDEX traps with "memory access out of bounds" and a 2 MB insert
+  // traps with "remainder by zero". Marking one of those safe would take web
+  // down on the next boot, so the shape of the SQL is checked here rather than
+  // left to the next author's memory.
+  it("rejects growth statements in any migration claiming to be in-memory safe", () => {
+    const growsTheImage = /\b(CREATE\s+(UNIQUE\s+)?INDEX|INSERT|UPDATE|DELETE|REINDEX|VACUUM)\b/i;
+    for (const migration of CLIENT_DICT_MIGRATIONS.filter((m) => m.inMemorySafe)) {
+      for (const sql of migration.sql) {
+        expect(
+          growsTheImage.test(sql),
+          `v${migration.version} is marked inMemorySafe but this statement grows the image: ${sql}`,
+        ).toBe(false);
+      }
+    }
+  });
+});

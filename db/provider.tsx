@@ -514,6 +514,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             db,
             action.fromVersion,
             action.toVersion,
+            { inMemory: Platform.OS === "web" },
           );
 
           // Web does NOT persist the migrated dict, and the stored version
@@ -522,8 +523,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           // load, so persisting means serializing the whole file back out —
           // and `sqlite3_serialize` mallocs a second full copy beside the
           // resident one, which traps a 120 MB dict with "memory access out of
-          // bounds". These migrations are an ADD COLUMN and one 3,000-row
-          // index; re-applying them is milliseconds against a 120 MB write.
+          // bounds". Re-applying the in-memory-safe migrations is milliseconds
+          // against a 120 MB write; `inMemory` is what keeps the rest, which
+          // would have to grow the image, from running at all.
           await setLocalVersion(Platform.OS === "web" ? action.fromVersion : finalVersion);
 
           openRetryAttempt.current = 0;
@@ -712,7 +714,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       // After a fresh download, run client migrations if DICT_VERSION > base
       if (m.version < DICT_VERSION) {
         console.log(`[DB] Post-download client migrations: v${m.version} → v${DICT_VERSION}`);
-        const finalVersion = await runClientDictMigrations(db, m.version, DICT_VERSION);
+        const finalVersion = await runClientDictMigrations(db, m.version, DICT_VERSION, {
+          inMemory: Platform.OS === "web",
+        });
 
         // Same as the client-migration path above: web re-applies rather than
         // serializing 120 MB back into IndexedDB.

@@ -15,6 +15,29 @@ export interface ClientDictMigration {
   version: number;
   description: string;
   sql: string[];
+  /**
+   * Whether this migration may run against an in-memory dict image (web).
+   *
+   * Web has no dict file: the bytes are deserialized into the wasm heap, and
+   * `sqlite3_deserialize` is handed a buffer sized exactly to the image. A
+   * write that stays inside the pages already there is fine; one that has to
+   * grow the image is not. Growth reaches `memdbEnlarge`, and in this
+   * wa-sqlite build that either traps the whole wasm instance with "memory
+   * access out of bounds" or — if the buffer is given headroom — silently
+   * returns a malformed image. Measured against the published v23 dict:
+   * `ALTER TABLE ADD COLUMN` commits with `integrity_check` still ok, while
+   * `CREATE INDEX` and a 2 MB insert both trap.
+   *
+   * One trap is not survivable. Every database in the app shares a single
+   * SQLite worker and a single wasm instance, so trapping it here takes the
+   * user DB and the audio, strokes and extended dicts down with it — the
+   * "Database Error" screen, on a boot that never touched user data.
+   *
+   * Set this false for anything that writes rows or builds an index. Web skips
+   * it (and everything after it, so ordering still holds) and throws the
+   * migrated dict away at the end of the session regardless.
+   */
+  inMemorySafe: boolean;
 }
 
 /**
@@ -29,6 +52,8 @@ export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
     version: 24,
     description: "Add glyph_origin column to kanji_characters",
     sql: ["ALTER TABLE kanji_characters ADD COLUMN glyph_origin TEXT"],
+    // Schema row only — it fits in the pages the image already has.
+    inMemorySafe: true,
   },
   {
     // Migration 014 created an index on heisig_lesson; migration 020 rebuilt
@@ -45,6 +70,11 @@ export const CLIENT_DICT_MIGRATIONS: ClientDictMigration[] = [
       "DROP INDEX IF EXISTS idx_kc_heisig_lesson",
       "CREATE INDEX IF NOT EXISTS idx_kc_heisig_lesson ON kanji_characters(heisig_lesson, heisig_index)",
     ],
+    // Building the index grows the image, which web cannot survive. No loss
+    // there: the index exists to spare a phone the cold page reads out of a
+    // 120 MB file, and web has already paid for the whole dict in RAM, where
+    // scanning 3,000 Heisig-indexed rows is not worth a boot failure.
+    inMemorySafe: false,
   },
 ];
 
@@ -60,7 +90,9 @@ export async function runClientDictMigrations(
   db: SQLiteDatabase,
   fromVersion: number,
   toVersion: number,
+  options: { inMemory?: boolean } = {},
 ): Promise<number> {
+  const { inMemory = false } = options;
   const pending = CLIENT_DICT_MIGRATIONS.filter(
     (m) => m.version > fromVersion && m.version <= toVersion,
   ).sort((a, b) => a.version - b.version);
@@ -74,16 +106,26 @@ export async function runClientDictMigrations(
   let currentVersion = fromVersion;
 
   for (const migration of pending) {
+    if (inMemory && !migration.inMemorySafe) {
+      // Stop rather than skip ahead: a later migration may assume this one ran.
+      console.log(
+        `[DictMigrate] v${migration.version} (${migration.description}) cannot run on an in-memory dict — stopping at v${currentVersion}`,
+      );
+      break;
+    }
     console.log(`[DictMigrate] v${migration.version}: ${migration.description}`);
     try {
       await db.execAsync("BEGIN TRANSACTION");
       for (const sql of migration.sql) {
         await db.execAsync(sql);
       }
-      // Update dict_meta version
-      await db.execAsync(
-        `INSERT OR REPLACE INTO dict_meta (key, value) VALUES ('version', '${migration.version}')`,
-      );
+      // Record the version, except in memory, where nothing is persisted and
+      // the write is one more chance to grow the image past its buffer.
+      if (!inMemory) {
+        await db.execAsync(
+          `INSERT OR REPLACE INTO dict_meta (key, value) VALUES ('version', '${migration.version}')`,
+        );
+      }
       await db.execAsync("COMMIT");
       currentVersion = migration.version;
       console.log(`[DictMigrate] v${migration.version} applied`);
