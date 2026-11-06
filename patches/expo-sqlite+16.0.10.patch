@@ -13,10 +13,44 @@ index 717c987..fff9b57 100644
 +  await invokeWorkerAsync(getWorker(), 'closeVFS' as any, {});
 +};
 diff --git a/node_modules/expo-sqlite/web/worker.ts b/node_modules/expo-sqlite/web/worker.ts
-index deaf721..3e88454 100644
+index deaf721..0d0f2dd 100644
 --- a/node_modules/expo-sqlite/web/worker.ts
 +++ b/node_modules/expo-sqlite/web/worker.ts
-@@ -227,6 +227,26 @@ async function handleMessageImpl<T extends SQLiteWorkerMessageType>({
+@@ -61,7 +61,23 @@ const sessionIdMap = new Map<number, SessionEntity>();
+ 
+ class SQLiteErrorException extends Error {}
+ 
+-self.onmessage = async (event: MessageEvent<SQLiteWorkerMessage>) => {
++// jiten patch: run one message at a time.
++//
++// This handler is async, and without a queue every incoming message starts its
++// own handler immediately, so handlers interleave at each `await`. One worker
++// serves every database, so deserializing the 120 MB dictionary calls
++// `_sqlite3_malloc` and grows the wasm memory — which detaches every existing
++// typed-array view. Another database's in-flight handler then resumes against a
++// stale view and traps with "memory access out of bounds". Chaining the
++// handlers means no allocation can move the heap while an operation is
++// mid-flight.
++let messageQueue: Promise<void> = Promise.resolve();
++
++self.onmessage = (event: MessageEvent<SQLiteWorkerMessage>) => {
++  messageQueue = messageQueue.then(() => handleMessageSerially(event));
++};
++
++async function handleMessageSerially(event: MessageEvent<SQLiteWorkerMessage>) {
+   let result: ResultType | null = null;
+   let error: Error | null = null;
+   try {
+@@ -83,7 +99,7 @@ self.onmessage = async (event: MessageEvent<SQLiteWorkerMessage>) => {
+     error,
+     syncTrait,
+   });
+-};
++}
+ 
+ async function handleMessageImpl<T extends SQLiteWorkerMessageType>({
+   type,
+@@ -227,6 +243,26 @@ async function handleMessageImpl<T extends SQLiteWorkerMessageType>({
        break;
      }
  
