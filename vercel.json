@@ -1,4 +1,5 @@
 {
+  "installCommand": "rm -rf node_modules/expo-sqlite && yarn install --check-files",
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 60
