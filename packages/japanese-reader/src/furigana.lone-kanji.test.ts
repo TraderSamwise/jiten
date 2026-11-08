@@ -31,18 +31,42 @@ const wrap = (db: Database.Database) => ({
 describe.skipIf(!hasBothDbs)("furigana over a kanji standing alone", () => {
   /**
    * JMdict holds two common entries spelled 娘: 1355930 娘/じょう and 1531190
-   * 娘/むすめ. The tap ranks むすめ first; the furigana resolver writes じょう
-   * over every bare 娘 on the page. Nothing about the page separates them, so
-   * this is a ranking disagreement between the two readers of the same table,
-   * not a missing rule.
+   * 娘/むすめ. The tap ranked むすめ first and the resolver wrote じょう over
+   * every bare 娘 on the page — a ranking disagreement between two readers of
+   * the same table, not a missing rule.
    */
-  it("娘 gets じょう from the resolver and むすめ from the tap", async () => {
+  it("娘 reads むすめ, the same word the tap answers", async () => {
     const furigana = await resolveFuriganaBatch(["娘"], wrap(dict!), wrap(ext!));
-    expect(furigana["娘"]?.reading).toBe("じょう");
+    expect(furigana["娘"]?.reading).toBe("むすめ");
 
     const text = "娘の無事を黙ってられるか";
     const [top] = await smartLookupWithOffset(text, 0, wrap(dict!), wrap(ext!));
     expect(top.entries[0].kana[0].text).toBe("むすめ");
+  });
+
+  /**
+   * The same tie, on the commonest word there is. 人 before kana — 人が, 人は —
+   * is ひと, and the reader was printing じん over it. This one surface is 65
+   * of the 100 chunks the render sweep moves.
+   */
+  it("人 reads ひと, not じん", async () => {
+    const furigana = await resolveFuriganaBatch(["人", "仏", "瓦", "米"], wrap(dict!), wrap(ext!));
+    expect(furigana["人"]?.reading).toBe("ひと");
+    expect(furigana["仏"]?.reading).toBe("ほとけ");
+    expect(furigana["瓦"]?.reading).toBe("かわら");
+    expect(furigana["米"]?.reading).toBe("こめ");
+  });
+
+  /**
+   * A compound is untouched: the kun preference is only for a kanji standing
+   * on its own, because an on reading of a single character is normally part
+   * of a compound and a compound would be a longer surface.
+   */
+  it("leaves compounds alone", async () => {
+    const furigana = await resolveFuriganaBatch(["人間", "米国", "瓦解"], wrap(dict!), wrap(ext!));
+    expect(furigana["人間"]?.reading).toBe("にんげん");
+    expect(furigana["米国"]?.reading).toBe("べいこく");
+    expect(furigana["瓦解"]?.reading).toBe("がかい");
   });
 
   /**

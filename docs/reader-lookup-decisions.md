@@ -2135,6 +2135,45 @@ answer and nothing newly gains one.
   answer, not a longer one, and it cost the 励み/励む pill the earlier work
   exists for. The gate read 97.5% / 143 until that was separated.
 
+### A kanji standing on its own is read kun
+
+The ruby over 娘 said じょう where tapping it said むすめ. JMdict holds two
+common entries spelled 娘 — 1355930 じょう, the "-ess" suffix, and 1531190
+むすめ — and `batchLookup` picks one `DictMatch` per word by a rank before any
+scoring runs. A single kanji always heads its own entry, so the `headsEntry`
+term is deliberately limited to compounds, and with both entries common every
+term tied: the ruby fell to whichever row the database returned first.
+
+The rank now also asks whether the reading is a **kun** reading of that kanji.
+A lone kanji is read kun far more often than on, because an on reading of a
+single character is normally part of a compound — and if the page meant a
+compound the surface would be longer. It is the preference
+`scoreSingleKanjiEntryForTap` has applied on the tap side since the single-kanji
+work, so the ruby and the tap now agree, which is the whole of this defect.
+
+Measured with `yarn sweep:furigana` over all 67,299 corpus surfaces:
+**52 change, none gained a reading, none lost one.** Led by 人 じん → ひと,
+which alone is most of what the render sweep sees, and 仏 ふつ → ほとけ, 前 さき
+→ まえ, 瓦 グラム → かわら, 米 メートル → こめ, 裏 うち → うら, 頭 とう →
+あたま, 風 ふり → かぜ, 畳 じょう → たたみ, 札 さつ → ふだ, 印 いん → しるし,
+角 かく → かど, 異 い → こと, 薄 ススキ → うす, 蝦 かえる → えび.
+`yarn sweep:render` moves 65 of 100 chunks, which is 人 reaching the page.
+
+**Named and accepted**: 案 あん → つくえ is a loss — 案 alone is the plan, not
+the desk. 架 たるき → か and 財 ざい → たから are lateral. 一 いち → ひと,
+円 えん → まる and 京 きょう → みやこ look like losses in a word list and are
+not: a single-kanji run only arises when kana follows, and 一つ, 円い and 京の
+are exactly where the kun reading belongs.
+
+**Rejected: ranking by `commonForm` instead.** 娘 is marked common on むすめ's
+entry and not on じょう's, so the flag the resolver already carries fixes the
+reported case on its own — 37 surfaces change, including 瓦, 米 and 数. But it
+is a statement about spellings, not readings, and it hands every tie to
+whichever reading JMdict marks common: 勢 いきおい → ぜい, which the
+`headsEntry` note already names as the outcome that term was narrowed to avoid,
+plus 問 とい → もん and 願 ねがい → がん. The kun test fixes those three and
+娘 together, and leaves 勢, 問 and 願 where they were.
+
 ## Open
 
 ### Kana-run junk in tap lookup

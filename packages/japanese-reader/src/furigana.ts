@@ -203,6 +203,32 @@ async function batchLookupCounters(
   return result;
 }
 
+/**
+ * The kun readings of each of these kanji, as bare kana.
+ *
+ * KANJIDIC writes okurigana after a dot (おく.れる) and prefixes/suffixes with
+ * a hyphen, and a word's kana form carries neither, so both are stripped
+ * before the comparison.
+ */
+async function loadKunReadings(
+  dictDb: ReaderSqlDb,
+  literals: string[],
+): Promise<Map<string, Set<string>>> {
+  const byLiteral = new Map<string, Set<string>>();
+  if (literals.length === 0) return byLiteral;
+  for (let i = 0; i < literals.length; i += BATCH_SIZE) {
+    for (const kanji of await getKanjiBatchAsync(dictDb, literals.slice(i, i + BATCH_SIZE))) {
+      const readings = new Set<string>();
+      for (const reading of kanji.readingsKun) {
+        const bare = reading.split(".")[0].replace(/-/g, "");
+        if (bare) readings.add(bare);
+      }
+      byLiteral.set(kanji.literal, readings);
+    }
+  }
+  return byLiteral;
+}
+
 async function batchLookup(
   dictDb: ReaderSqlDb,
   searchWords: string[],
@@ -328,7 +354,20 @@ async function batchLookup(
   // Phase C: For each search word, pick best entry
   const result = new Map<string, DictMatch>();
 
+  // A bare kanji standing on its own is read kun far more often than on: an
+  // on reading of a single character is normally part of a compound, and if
+  // the page meant a compound the surface would be longer. Without this the
+  // ruby fell to whichever row came back first whenever the other terms tied,
+  // which put じょう over 娘, ぜい over 勢, もん over 問 and がん over 願 — and
+  // it is the same preference `scoreSingleKanjiEntryForTap` applies when a tap
+  // lands on a lone kanji, so the ruby and the tap now agree.
+  const kunReadingsByLiteral = await loadKunReadings(
+    dictDb,
+    [...wordToEntryIds.keys()].filter((word) => [...word].length === 1 && isKanji(word)),
+  );
+
   for (const [word, ids] of wordToEntryIds) {
+    const kunReadings = kunReadingsByLiteral.get(word);
     let bestMatch: DictMatch | null = null;
     let bestRank = -1;
 
@@ -348,7 +387,8 @@ async function batchLookup(
       // kanji, so the term carries no information there and just reorders —
       // it turned 勢 from いきおい into ぜい and 取 from とり into しゅ.
       const headsEntry = [...word].length > 1 && kanjiTexts[0] === word;
-      const rank = (common ? 2 : 0) + (headsEntry ? 1 : 0);
+      const readsKun = kunReadings?.has(kana) ?? false;
+      const rank = (common ? 4 : 0) + (readsKun ? 2 : 0) + (headsEntry ? 1 : 0);
 
       if (rank > bestRank) {
         bestMatch = {
@@ -361,7 +401,7 @@ async function batchLookup(
         };
         bestRank = rank;
       }
-      if (bestRank === 3) break;
+      if (bestRank === 7) break;
     }
 
     if (bestMatch) result.set(word, bestMatch);
