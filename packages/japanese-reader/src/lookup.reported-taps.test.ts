@@ -77,9 +77,20 @@ describe.skipIf(!hasBothDbs)("taps reported from the reader", () => {
    * is a real entry. A script-boundary rule is worth measuring, but it has to
    * leave katakana→hiragana open (ググる, ノックする).
    */
-  it("script boundary: にキリム → にキリ", async () => {
+  it("script boundary: a span may not run from hiragana into katakana", async () => {
     const text = "そのすぐ下にキリムが敷かれている";
-    expect((await tap(text, text.indexOf("リ"))).span).toBe("にキリ");
+    for (const at of ["に", "キ", "リ"]) {
+      const { span } = await tap(text, text.indexOf(at));
+      expect(span, `tapping ${at} gave 「${span}」`).not.toMatch(
+        /^[\u3040-\u309f]+[\u30a0-\u30ff]/,
+      );
+    }
+  });
+
+  /** Katakana into hiragana stays open — それ is how ググる and サボる are built. */
+  it("katakana into hiragana is still allowed", async () => {
+    const text = "ちょっとググってみる";
+    expect((await tap(text, text.indexOf("グ"))).span).toBe("ググって");
   });
 
   /**
@@ -88,9 +99,10 @@ describe.skipIf(!hasBothDbs)("taps reported from the reader", () => {
    * already refuses these (`entryAdmitsInflection` in bookmarks.ts); the tap
    * does not. Fixable, with the gate already written one file away.
    */
-  it("impossible inflection: けっこうおてんば reaches 甲乙 via imperative", async () => {
+  it("impossible inflection: けっこうおてんば does not reach 甲乙", async () => {
     const text = "けっこうおてんばだったんだ";
-    expect(await tap(text, text.indexOf("お"))).toEqual({ span: "こうおて", head: "甲乙" });
+    const { span, head } = await tap(text, text.indexOf("お"));
+    expect({ span, head }).not.toEqual({ span: "こうおて", head: "甲乙" });
   });
 
   /**
@@ -133,7 +145,7 @@ describe.skipIf(!hasBothDbs)("taps reported from the reader", () => {
     const firstEntry = async (text: string) =>
       (await smartLookupWithOffset(text, text.indexOf("腰"), wrap(dict!), wrap(ext!)))[0].entries[0]
         .id;
-    expect(await firstEntry("若い男に腰揉ましてんだから")).toBe(2844070); // ctr, not common
+    expect(await firstEntry("若い男に腰揉ましてんだから")).toBe(1288340); // the common noun
     expect(await firstEntry("腰が痛い")).toBe(1288340); // the common noun — correct
     expect(await firstEntry("彼の腰は")).toBe(1288340);
   });
@@ -147,11 +159,11 @@ describe.skipIf(!hasBothDbs)("taps reported from the reader", () => {
    * avoid. The duplicate is a symptom; the missing exact-surface entry is the
    * cause.
    */
-  it("駆られる offers only the deinflected entry, not the exact one", async () => {
+  it("駆られる offers the exact entry as well as the deinflected one", async () => {
     const text = "このごろ俺はしょっちゅう不安に駆られる。";
     const [top] = await smartLookupWithOffset(text, text.indexOf("駆"), wrap(dict!), wrap(ext!));
     expect(top.matchedText).toBe("駆られる");
-    expect(top.entries.map((e) => e.id)).toEqual([1244840]); // 1636460 駆られる is absent
+    expect(top.entries.map((e) => e.id)).toContain(1636460); // the exact surface
   });
 
   /** Correct today. Pinned so that a fix elsewhere cannot quietly break them. */

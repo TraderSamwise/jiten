@@ -14,12 +14,14 @@ import {
 } from "./auto-name";
 import type { ReaderSqlDb } from "./backend";
 import {
+  ANY_TYPE_MASK,
   CONTRACTION_REASONS,
   SURU_NOUN_REASON,
   deinflect,
   generateSubstrings,
   kanaSpellings,
   particleVariants,
+  posTagsToTypeMask,
 } from "./deinflect";
 import {
   getKanjiAsync,
@@ -85,6 +87,30 @@ interface TapCandidate {
   particleSwapped?: boolean;
   /** A rule on the way here was a guess — see `DeinflectRule.guess`. */
   guessed?: boolean;
+  /** What an entry for `word` must be for the path that reached it to be real. */
+  entryMask?: number;
+}
+
+/**
+ * Whether the entry can be the part of speech the deinflection needed.
+ *
+ * 甲乙 is a noun, so けっこうおてんば cannot be こうおつ in its imperative, and
+ * the span こうおて is not a reading of anything. The painter has asked this of
+ * every match since `entryAdmitsInflection`; the tap only ever asked it of a
+ * guess, through the much coarser "is this an inflecting word at all".
+ */
+function entryAdmitsTapInflection(candidate: TapCandidate, entry: ReaderDictEntry): boolean {
+  const required = candidate.entryMask ?? ANY_TYPE_MASK;
+  if (required === ANY_TYPE_MASK) return true;
+  // The suru-noun strip is exempt, and it is the reason the obvious
+  // generalisation was rejected before: it takes a verb off the end and hands
+  // back whatever stood in front, which is legitimately a noun, an adverb or
+  // an adverbial phrase that the rule's own mask does not describe. Asking it
+  // of that path takes 正直にしていれば from 直に to nothing.
+  if (candidate.reasons.includes(SURU_NOUN_REASON)) return true;
+  const tags = entry.senses.flatMap((sense) => sense.partOfSpeech ?? []);
+  const entryMask = posTagsToTypeMask(tags);
+  return entryMask === ANY_TYPE_MASK || (required & entryMask) !== 0;
 }
 
 const DIGIT_TO_KANJI: Record<string, string> = {
@@ -255,11 +281,18 @@ async function maybeSortSingleKanjiTapEntries(params: {
   const kanjiRecord = kanjiCache.get(literal);
   if (!kanjiRecord) return entries;
 
-  return [...entries].sort(
-    (a, b) =>
-      scoreSingleKanjiEntryForTap(b, literal, kanjiRecord, context) -
-      scoreSingleKanjiEntryForTap(a, literal, kanjiRecord, context),
-  );
+  // The reading pattern is a TIEBREAK, not a verdict. Returning it on its own
+  // dropped commonness, exact surface, headword spelling and the counter
+  // penalty, so 腰 before 揉 was sorted by nothing but whether a reading looked
+  // Sino-Japanese and answered with 腰/よう — the counter for swords, which is
+  // not even a common entry. 腰が痛い and 彼の腰は were right the whole time,
+  // because neither is a single kanji followed by another.
+  const sortContext: EntrySortContext = { matchedText };
+  const score = (entry: ReaderDictEntry) =>
+    scoreEntryForMatchedSurface(entry, sortContext) +
+    scoreSingleKanjiEntryForTap(entry, literal, kanjiRecord, context);
+
+  return [...entries].sort((a, b) => score(b) - score(a));
 }
 
 function scoreCounterHint(result: LookupResult, hint: CounterHint | null | undefined): number {
@@ -331,6 +364,26 @@ function isKanaChar(ch?: string): boolean {
   if (!ch) return false;
   const c = ch.codePointAt(0)!;
   return (c >= 0x3040 && c <= 0x309f) || (c >= 0x30a0 && c <= 0x30ff);
+}
+
+/**
+ * A span may not begin in hiragana and run on into katakana.
+ *
+ * The change of script is a word boundary the walk cannot otherwise see, so
+ * その下にキリムが was read as にキ (二期) and にキリ (煮切り) — the particle
+ * fused to the front of a loanword. Katakana into hiragana is left open,
+ * because that is how ググる, サボる and ノックする are built, and the long
+ * vowel mark and the iteration marks are not treated as katakana here: they
+ * attach to kana of either script (ねー, そうねー).
+ */
+function startsInHiraganaAndReachesKatakana(substr: string): boolean {
+  const first = substr.codePointAt(0);
+  if (first === undefined || first < 0x3041 || first > 0x309f) return false;
+  for (const ch of substr) {
+    const code = ch.codePointAt(0)!;
+    if (code >= 0x30a1 && code <= 0x30fa) return true;
+  }
+  return false;
 }
 
 function isKanjiChar(ch?: string): boolean {
@@ -1381,6 +1434,7 @@ export async function smartLookupWithOffset(
       // than the best and a condemned span would still shield the rest.
       if (okuriganaStarts.has(start)) continue;
       const substr = text.slice(start, start + len);
+      if (startsInHiraganaAndReachesKatakana(substr)) continue;
       const candidates: TapCandidate[] = [...deinflect(substr)];
       for (const variant of particleVariants(substr)) {
         candidates.push({ word: variant, reasons: [], particleSwapped: true });
@@ -1394,6 +1448,9 @@ export async function smartLookupWithOffset(
     await prefetch(spans.flatMap((span) => span.candidates.map((candidate) => candidate.word)));
 
     for (const { start, substr, candidates } of spans) {
+      // Candidates are ordered literal-first, so the span as written has always
+      // been asked about by the time a deinflected reading of it is scored.
+      let entriesAsWritten: ReaderDictEntry[] = [];
       // Candidates are ordered literal-first. A particle swap is a guess about
       // what the book meant, so it is only allowed to speak when reading the
       // span as written found nothing — にしては is an entry in its own right
@@ -1432,6 +1489,7 @@ export async function smartLookupWithOffset(
         // 出たりはいったりして from 入る to 配流, because an adverb reached by
         // stripping する is a perfectly good answer.
         entries = entriesAGuessMayLandOn(candidate, entries);
+        entries = entries.filter((entry) => entryAdmitsTapInflection(candidate, entry));
         if (entries.length > 0) {
           let sortedEntries = sortEntriesForMatchedSurface(
             entries,
@@ -1449,16 +1507,36 @@ export async function smartLookupWithOffset(
           const hasCommon = entries.some(
             (entry) => entry.common && entryMatchesSearchSurface(entry, candidate.word),
           );
+          const asWritten = !guessed && !candidate.spelledKanji && candidate.reasons.length === 0;
           if (!guessed && !candidate.spelledKanji) literalMatched = true;
+          if (asWritten) entriesAsWritten = sortedEntries;
+          // A deinflected reading still owes the reader the word the page
+          // actually spells, where the dictionary has one: 駆られる is entry
+          // 1636460 in its own right as well as the passive of 駆る, and
+          // offering only 駆る left the saved-word pill beside it reading
+          // 駆られる too — two pills saying the same thing. Appended, never
+          // promoted, so `entries[0]` and every tap answer stay where they are.
           const result: LookupResult = {
             matchedText: substr,
             entries: sortedEntries,
             deinflectReasons: candidate.reasons,
             matchStart: start,
           };
+          // Scored on what the candidate itself found. The words appended
+          // below are an extra offer, not evidence about which reading of the
+          // span is right — scoring them moved 毎朝励み off the noun 励み and
+          // onto 励む, which is a different answer, not a longer one.
           const score =
             scoreTapCandidate(text, result, start, hasCommon) +
             scoreCounterHint(result, counterHints.get(substr));
+          if (!asWritten && candidate.reasons.length > 0 && entriesAsWritten.length > 0) {
+            result.entries = [
+              ...sortedEntries,
+              ...entriesAsWritten.filter(
+                (entry) => !sortedEntries.some((chosen) => chosen.id === entry.id),
+              ),
+            ];
+          }
           if (!bestForLength || score > bestForLength.score) {
             bestForLength = { result, score, length: len, start };
           }

@@ -2081,6 +2081,60 @@ Measured over the same corpus: **+25 spans, −5**, and the five are read.
 now reaches its whole compound. 朝 and 手の平 lose their boxes to longer
 neighbours. 持て余している → 持て is the one genuine loss, accepted.
 
+### Four tap defects from one page of 天使の梯子
+
+Reported 2026-11-08 with the bookmark cases above. All four measured together,
+one sweep: **12,455 taps over `test/corpus/bocchan.txt`, 313 change, 184
+distinct transitions**, `check:tap-consistency` **98.0% / 125 → 98.1% / 118**.
+Two taps stop answering, both junk — 捺った, which is not a conjugation, had
+been answering 突く, and a bare れ had been answering 流. Nothing else loses an
+answer and nothing newly gains one.
+
+- **A single kanji before another kanji was sorted by reading pattern alone.**
+  `maybeSortSingleKanjiTapEntries` returned `scoreSingleKanjiEntryForTap`
+  instead of adding it to `scoreEntryForMatchedSurface`, so commonness, exact
+  surface, headword spelling and the −240 counter penalty were all dropped for
+  that one shape. 腰 in 腰揉まして answered 腰/よう, the counter for swords,
+  which is not even a common entry; 腰が痛い and 彼の腰は were right throughout,
+  because neither is a single kanji followed by a kanji. The pattern score is
+  now a tiebreak on top of the base score, which is what it reads as.
+
+- **A deinflection the entry's part of speech cannot take.** 甲乙 is a noun, so
+  けっこうおてんば cannot be こうおつ in its imperative — but the tap only ever
+  asked this of a guess, through the much coarser "is this an inflecting word
+  at all", while the painter has asked it of every match since
+  `entryAdmitsInflection`. It now asks the same question of every deinflected
+  candidate, using the candidate's own `entryMask`.
+
+  **The suru-noun strip is exempt, and that exemption is the whole reason this
+  was rejected before.** That rule takes a verb off the end and hands back
+  whatever stood in front, which is legitimately a noun, an adverb or an
+  adverbial phrase that the rule's mask does not describe; asking it there
+  takes 正直にしていれば from 直に to nothing, exactly as the earlier note
+  predicted. Most of the 313 changed taps are this gate: なった ナウ → 成る,
+  こうして 皇室 → 斯う, よかろう 宵 → 良い, 勝てなければ 勝る → 勝つ, 極まってる
+  決まって → 極まる, きて 斬る → 着る, しらない 汁 → 知る, しなく 市内 → 為る,
+  がき 額 → が, へく 塀 → へ.
+
+- **A span may not begin in hiragana and run on into katakana.** The change of
+  script is a boundary the walk cannot otherwise see, so その下にキリムが was
+  read as にキ (二期) and にキリ (煮切り) — a particle fused to the front of a
+  loanword. Katakana into hiragana stays open, because that is how ググる,
+  サボる and ノックする are built, and the long vowel and iteration marks are not
+  counted as katakana because they attach to kana of either script (ねー).
+
+- **A deinflected answer now also offers the word the page spells.** 駆られる is
+  entry 1636460 in its own right as well as the passive of 駆る (1244840), and
+  the tap returned only 駆る — so the saved-word pill appended beside it was
+  labelled 駆られる too, two pills saying the same thing, which is the outcome
+  "A tap offers the bookmarked word inside its own span" was written to avoid.
+  The as-written entries are appended, never promoted.
+
+  **Scored on the candidate's own entries, not the merged list.** Scoring the
+  appended ones moved 毎朝励み off the noun 励み and onto 励む — a different
+  answer, not a longer one, and it cost the 励み/励む pill the earlier work
+  exists for. The gate read 97.5% / 143 until that was separated.
+
 ## Open
 
 ### Kana-run junk in tap lookup
