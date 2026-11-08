@@ -3,14 +3,13 @@
  *
  * Each case does what the device does: tap the word, bookmark the entry the tap
  * returned, then ask the matcher where it would paint. Nine words were reported
- * and eight of them are not painted anywhere, for two unrelated reasons that
- * these tests separate.
+ * and eight were painted nowhere, for two unrelated reasons that these tests
+ * separate — a kana-spelling rule written for 事/こと, and a whole-run
+ * segmentation that one stretch of text can destabilise from a distance.
  *
- * Both are deliberate rules meeting a case they were not written for, so the
- * answers are pinned rather than asserted as correct — see
- * docs/reader-lookup-decisions.md, "A kanji word's kana reading loses to the
- * word the characters already spell" and "A bookmark is painted where it was
- * confirmed".
+ * Both rules are deliberate and both stay; what changes is how far they reach.
+ * The guards here are the cases they exist for — 事 must still not light up
+ * every こと — see docs/reader-lookup-decisions.md.
  */
 import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
@@ -49,14 +48,16 @@ async function paintedAfterSaving(text: string, word: string): Promise<string[]>
 
 describe.skipIf(!hasBothDbs)("a word the page writes in kana is never painted", () => {
   /**
-   * `matchAnalysedBookmarks` drops a kana match of an entry the dictionary also
-   * writes in kanji, unless an inflection was undone. The rule exists so that a
-   * bookmarked 事 does not light up every こと — but it fires on any word the
-   * page happens to spell in kana, and this novel spells most of its adverbs
-   * that way. Seven of the nine reported words land here.
+   * `matchAnalysedBookmarks` used to drop every kana match of an entry the
+   * dictionary also writes in kanji. The rule exists so that a bookmarked 事
+   * does not light up every こと — but it fired on any word the page happens to
+   * spell in kana, and this novel spells most of its adverbs that way. Seven of
+   * the nine reported words landed here.
    *
    * `uk` ("usually written in kana") does not separate them: 事 carries it too,
-   * and 襖 and 取り繕う do not carry it and are still dropped.
+   * and 襖 and 取り繕う do not carry it and were still dropped. What separates
+   * them is the small closed class of formal nouns that have grammaticalised,
+   * which is what the rule was written for in the first place.
    */
   const SAVED_IN_KANA: Record<string, { text: string; word: string }> = {
     くくる: { text: "そういう言葉でくくることに何の意味があるのか。", word: "くくる" },
@@ -71,8 +72,39 @@ describe.skipIf(!hasBothDbs)("a word the page writes in kana is never painted", 
     とりつくろう: { text: "その場を適当にとりつくろうこともできない", word: "とりつくろう" },
   };
   for (const [name, c] of Object.entries(SAVED_IN_KANA)) {
-    it(`${name} is saved and painted nowhere`, async () => {
-      expect(await paintedAfterSaving(c.text, c.word)).toEqual([]);
+    it(`${name} is painted where it was saved`, async () => {
+      expect(await paintedAfterSaving(c.text, c.word)).toContain(c.word);
+    });
+  }
+
+  /**
+   * The guard. These are the words the rule exists for: formal nouns that are
+   * grammar far more often than they are the noun, so a page full of them is
+   * not evidence the saved word is meant. Saving 事 must not light up こと.
+   */
+  const GRAMMATICALISED: Record<string, { text: string; kana: string; kanji: string }> = {
+    こと: { text: "そういうことがあるということだ。", kana: "こと", kanji: "事" },
+    もの: { text: "そういうものだと思っていた。", kana: "もの", kanji: "物" },
+    とき: { text: "そのときはわからなかった。", kana: "とき", kanji: "時" },
+    ところ: { text: "いまのところ問題はない。", kana: "ところ", kanji: "所" },
+    わけ: { text: "そういうわけではない。", kana: "わけ", kanji: "訳" },
+    ため: { text: "そのためにきたのだ。", kana: "ため", kanji: "為" },
+  };
+  for (const [name, c] of Object.entries(GRAMMATICALISED)) {
+    it(`saving ${c.kanji} does not light up ${name}`, async () => {
+      const ids = (
+        dict!.prepare(`SELECT entry_id FROM kanji WHERE text = ?`).all(c.kanji) as {
+          entry_id: number;
+        }[]
+      ).map((r) => r.entry_id);
+      const match = await matchBookmarksInHtml(wrap(dict!), `<p>${c.text}</p>`, {
+        version: "test",
+        hasEntryId: (id) => ids.includes(id),
+      });
+      const painted = match.placements.flatMap((p) =>
+        p.spans.map(([start, len]) => p.run.slice(start, start + len)),
+      );
+      expect(painted).not.toContain(c.kana);
     });
   }
 
@@ -95,14 +127,14 @@ describe.skipIf(!hasBothDbs)("a word the page writes in kana is never painted", 
 describe.skipIf(!hasBothDbs)("a bookmark un-placed by text elsewhere in the run", () => {
   /**
    * The eighth word, 植物, is written in kanji and so clears the rule above. It
-   * is dropped by the other gate — "the characters have to be a word HERE".
+   * was dropped by the other gate — "the characters have to be a word HERE".
    *
    * `segmentRun` is a whole-run DP maximising the sum of squared segment
    * lengths, and `best[i]` depends on the entire suffix after `i`. 物の名 and
-   * 前に are both real entries, and 9 + 4 beats 物 + の + 名前 at 1 + 1 + 4, so
-   * adding 「に詳しかった」 to the end of the sentence moves a boundary at the
-   * start of it and destroys 植物. The same deficiency as the tap's kana-run
-   * junk — no part-of-speech or connection costs — but in the painter.
+   * 前に are both real entries, and 9 + 4 beat 物 + の + 名前 at 1 + 1 + 4, so
+   * adding 「に詳しかった」 to the end of the sentence moved a boundary at the
+   * start of it and destroyed 植物 — a split straight through the middle of a
+   * two-kanji run, which is the signal the segmenter now refuses.
    */
   const isWord = (surface: string) =>
     !!dict!
@@ -125,22 +157,15 @@ describe.skipIf(!hasBothDbs)("a bookmark un-placed by text elsewhere in the run"
     expect(split("植物の名前だ。")).toEqual(["植物", "の", "名前", "だ", "。"]);
   });
 
-  it("loses the boundary once the sentence continues", () => {
-    expect(split("植物の名前に詳しかった。")).toEqual([
-      "植",
-      "物の名",
-      "前に",
-      "詳",
-      "し",
-      "かっ",
-      "た",
-      "。",
-    ]);
+  it("keeps it when the sentence continues", () => {
+    expect(split("植物の名前に詳しかった。")).toContain("植物");
   });
 
-  it("so the saved word is painted in one sentence and not the other", async () => {
-    expect(await paintedAfterSaving("植物の名前だ。", "植物")).toEqual(["植物"]);
-    expect(await paintedAfterSaving("夏姫さんは植物の名前に詳しかった。", "植物")).toEqual([]);
+  it("paints the saved word in both sentences", async () => {
+    expect(await paintedAfterSaving("植物の名前だ。", "植物")).toContain("植物");
+    expect(await paintedAfterSaving("夏姫さんは植物の名前に詳しかった。", "植物")).toContain(
+      "植物",
+    );
   });
 });
 

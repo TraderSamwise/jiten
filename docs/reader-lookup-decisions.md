@@ -2017,6 +2017,70 @@ distinct, every one a span rescued from junk into a phrase.
 `id`/`proverb`/`yoji` together fire five times in 40,000 characters of corpus,
 catching none of the idioms that actually come up. `exp` is the tag that works.
 
+### A word the page writes in kana is the word, unless it is grammar
+
+Reported 2026-11-08 from 天使の梯子: nine words saved in the reader, eight with
+no highlight anywhere. Seven of them — くくる, かえって, ふすま, すなわち,
+せいぜい, よほど, とりつくろう — were stopped by one line, the rule that a kana
+match of an entry the dictionary also writes in kanji is not evidence unless an
+inflection was undone. It was written so a bookmarked 事 would not light up
+every こと, and it caught the language with it: kana is simply how those words
+are written.
+
+`uk` cannot sort them. 事 carries it and 襖 does not, and 俺 — 211 of the spans
+this change adds — does not either. What sorts them is two tests the rule now
+makes instead of one:
+
+- **The surface is not a formal noun or a particle.** `GRAMMATICALISED_KANA`
+  names that class, closed and short, plus a formal noun carrying a case
+  particle, because ことに in 「ことにする」 is こと + に and not 殊に. Suffixing
+  is tested rather than prefixing: はずかしい starts with はず, ようやく with
+  よう, ものすごい with もの, and all three are words a reader may save.
+- **The reading is not purely Sino-Japanese.** A kun reading written in kana is
+  an ordinary spelling — 俺/おれ, 襖/ふすま, 親父/おやじ, 入る/はいる. An on
+  reading is a two-mora syllable shared with half the language, so without this
+  test 過渡 lit every か+と, 茶 every ては contraction, 労 every volitional ろう,
+  内科 every ない+か and 蛇 every だ+は. Those five alone were 57 of the 70 junk
+  spans the first version let through, and the test costs none of the words a
+  reader had actually saved.
+
+Measured against the proxy list over `test/corpus/bocchan.txt`:
+**7,105 → 8,086 painted characters, 19.0% → 21.7%**, 3,991 → 4,419 spans.
+**+433 spans, −5.** The additions are led by おれ (211), みんな (22), おやじ
+(18), すぐ (17), いたずら (11), もし (9), まるで (7), はいる (7), ほか (6),
+つら (6), はずれ (5) — every one of them a word this novel writes in kana and
+the reader could not highlight at all.
+
+**The residue, named.** About sixty of the added spans are a kun reading that is
+also a boundary: だか over だ+か (高), たから over た+から (宝), はす, はか, はや.
+Nothing local separates them, which is the same wall the tap's kana-run junk
+runs into, and the same analyzer would take both.
+
+### A segment may not start inside a kanji run and reach past it
+
+The eighth unpainted word, 植物, is written in kanji and clears the rule above.
+It was dropped by the other gate — the characters have to be a word HERE — and
+the reason is that `segmentRun` is a whole-run DP whose `best[i]` depends on the
+entire suffix after `i`. 物の名 and 前に are both real entries, so
+
+    植物の名前だ。          →  植物 / の / 名前 / だ / 。
+    植物の名前に詳しかった。  →  植 / 物の名 / 前に / 詳 / し / かっ / た / 。
+
+9 + 4 beat 1 + 1 + 4 and six characters of unrelated text un-painted a bookmark
+at the start of the sentence.
+
+A word may begin part-way through a run of kanji — 大学生活 is 大学 + 生活 — and
+it may trail off into its own okurigana — 毎朝励み is 毎朝 + 励み, which an
+earlier and stricter version of this rule broke. What it may not do is reach on
+into the NEXT kanji, because that fuses two words. 物の名 starts inside 植物 and
+swallows 名, so it is refused; 前に is left alone and does no harm once 植物 is
+whole.
+
+Measured over the same corpus: **+25 spans, −5**, and the five are read.
+制 → 制服 and 昼 → 昼飯 are the rule working — a word cut off at a run boundary
+now reaches its whole compound. 朝 and 手の平 lose their boxes to longer
+neighbours. 持て余している → 持て is the one genuine loss, accepted.
+
 ## Open
 
 ### Kana-run junk in tap lookup

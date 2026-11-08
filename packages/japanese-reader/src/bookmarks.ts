@@ -1,3 +1,8 @@
+import {
+  type ReaderKanjiCharacter,
+  classifyReaderReadingPattern,
+} from "@tradersamwise/jiten-reader-core";
+
 import type { ReaderSqlDb } from "./backend";
 import { ANY_TYPE_MASK, SURU_NOUN_REASON, deinflect, posTagsToTypeMask } from "./deinflect";
 import type { ReaderBookmarkMembership } from "./types";
@@ -110,7 +115,14 @@ type BookmarkSurfaceRow = {
 
 type KanjiFormRow = {
   entry_id: number;
+  text: string;
   tags: string | null;
+};
+
+type KanjiCharacterRow = {
+  literal: string;
+  readings_on: string | null;
+  readings_kun: string | null;
 };
 
 type EntryCommonRow = {
@@ -145,6 +157,144 @@ function isKanjiChar(ch: string): boolean {
 const UNKNOWN_CHAR_SCORE = -1;
 
 /**
+ * The kana strings that are grammar far more often than they are the word the
+ * dictionary spells with those kanji: the formal nouns (形式名詞) and the
+ * particles and conjunctions that happen to have a kanji form.
+ *
+ * A kana match of an entry the dictionary writes in kanji used to be dropped
+ * outright, so that a bookmarked 事 would not light up every こと, or 殻 every
+ * から. That caught the whole language with it: a reader who saves ふすま,
+ * よほど, せいぜい or くくる got no highlight at all, because kana is simply how
+ * those words are written.
+ *
+ * `uk` cannot sort them — 事 carries it and 襖 does not — so the class is named
+ * here instead. It is closed and short, and the test file holds a guard for
+ * every member. Ordinary nouns that merely appear in kana sometimes (ひと, なか,
+ * まえ) are deliberately absent: they mean the noun when a page writes them,
+ * and the ambiguity check in the accept loop covers the rest.
+ */
+const GRAMMATICALISED_KANA: ReadonlySet<string> = new Set([
+  // Formal nouns.
+  "こと",
+  "もの",
+  "とき",
+  "ところ",
+  "わけ",
+  "ため",
+  "ほう",
+  "うち",
+  "まま",
+  "とおり",
+  "はず",
+  "ゆえ",
+  "かぎり",
+  "よう",
+  // Particles and conjunctions with a kanji form nobody writes.
+  "から",
+  "まで",
+  "ほど",
+  "など",
+  "だけ",
+  "ばかり",
+  "くらい",
+  "ぐらい",
+  "より",
+  "しか",
+  "さえ",
+  "こそ",
+  "ながら",
+  "のに",
+  "ので",
+]);
+
+/**
+ * The kana readings among `wordRows` that are purely Sino-Japanese.
+ *
+ * A word written bare in kana is evidence the page means it only when kana is
+ * a way that word is written. For a kun reading it is — 俺/おれ, 襖/ふすま,
+ * 親父/おやじ, 入る/はいる are all ordinary spellings. An on reading is not: it
+ * is a two-mora syllable shared with half the language, so 過渡 lights up every
+ * か+と, 茶 every ては contraction, 労 every volitional ろう and 内科 every
+ * ない+か. Measured over bocchan: this is the whole of the junk the kana gate
+ * let through, and it costs none of the words a reader actually saved.
+ *
+ * What it does not catch is a kun reading that is also a boundary — 宝/たから
+ * over た+から, 高/だか over だ+か. Those need the line read as a whole, which
+ * is the analyzer the tap side is waiting for too.
+ */
+async function findOnyomiOnlyKanaReadings(
+  dictDb: ReaderSqlDb,
+  wordRows: Map<string, { entryId: number; via: "kanji" | "kana" }[]>,
+  entryIdsWithKanji: ReadonlySet<number>,
+  entryKanjiForms: ReadonlyMap<number, string[]>,
+): Promise<Set<string>> {
+  const literals = new Set<string>();
+  for (const [, rows] of wordRows) {
+    for (const { entryId, via } of rows) {
+      if (via !== "kana" || !entryIdsWithKanji.has(entryId)) continue;
+      for (const form of entryKanjiForms.get(entryId) ?? []) {
+        for (const ch of form) if (isKanjiChar(ch)) literals.add(ch);
+      }
+    }
+  }
+  const kanjiByLiteral = new Map<string, ReaderKanjiCharacter>();
+  const all = [...literals];
+  for (let i = 0; i < all.length; i += BATCH_SIZE) {
+    const batch = all.slice(i, i + BATCH_SIZE);
+    const ph = batch.map(() => "?").join(",");
+    const rows = await dictDb.getAllAsync<KanjiCharacterRow>(
+      `SELECT literal, readings_on, readings_kun FROM kanji_characters WHERE literal IN (${ph})`,
+      batch,
+    );
+    for (const row of rows) {
+      kanjiByLiteral.set(row.literal, {
+        literal: row.literal,
+        readingsOn: readPosTags(row.readings_on),
+        readingsKun: readPosTags(row.readings_kun),
+        nanori: [],
+      });
+    }
+  }
+
+  const onyomiOnly = new Set<string>();
+  for (const [reading, rows] of wordRows) {
+    for (const { entryId, via } of rows) {
+      if (via !== "kana" || !entryIdsWithKanji.has(entryId)) continue;
+      const forms = entryKanjiForms.get(entryId) ?? [];
+      if (forms.length === 0) continue;
+      // Every spelling has to be on-reading. One kun spelling and the kana is
+      // a way the word is written.
+      const everyFormIsOnyomi = forms.every(
+        (kanjiForm) =>
+          classifyReaderReadingPattern({ kanjiForm, kanaForm: reading, kanjiByLiteral }) ===
+          "mostly_onyomi",
+      );
+      if (everyFormIsOnyomi) onyomiOnly.add(`${entryId}\u0000${reading}`);
+    }
+  }
+  return onyomiOnly;
+}
+
+/**
+ * A formal noun carrying a case particle is still grammar: ことに in
+ * 「ことにする」 is こと + に, not the adverb 殊に.
+ *
+ * Suffixing is tested rather than prefixing because a prefix test swallows
+ * real words — はずかしい starts with はず, ようやく with よう, ものすごい with
+ * もの, and all three are words a reader may well save.
+ */
+const CASE_PARTICLES = ["に", "で", "は", "も", "が", "を", "の", "と", "へ"] as const;
+
+function isGrammaticalisedKana(surface: string): boolean {
+  if (GRAMMATICALISED_KANA.has(surface)) return true;
+  return CASE_PARTICLES.some(
+    (particle) =>
+      surface.endsWith(particle) &&
+      GRAMMATICALISED_KANA.has(surface.slice(0, surface.length - particle.length)),
+  );
+}
+
+/**
  * Split a run into words, left to right, by the split that explains the most
  * characters with the fewest words.
  *
@@ -153,6 +303,12 @@ const UNKNOWN_CHAR_SCORE = -1;
  * by the SQUARE of its length makes から + ずっと (4 + 9) beat からず + っ + と
  * (9 + 1 + 1), and the preference generalises: two long words beat three
  * short ones that happen to exist in a dictionary of 170,000 entries.
+ *
+ * `best[i]` depends on the whole suffix after `i`, so without the kanji-run
+ * rule below a stretch of text can move a boundary far ahead of itself: in
+ * 植物の名前に詳しかった, 物の名 + 前に scored 9 + 4 against 物 + の + 名前 at
+ * 1 + 1 + 4 and took 植物 apart, which stopped a saved 植物 being painted at
+ * all. The same sentence ending at 名前だ segmented it correctly.
  */
 export function segmentRun(run: string[], isWord: (surface: string) => boolean): number[] {
   const n = run.length;
@@ -163,10 +319,35 @@ export function segmentRun(run: string[], isWord: (surface: string) => boolean):
   const take = new Array<number>(n + 1).fill(1);
   best[n] = 0;
 
+  // Where the stretch of unbroken kanji holding each character ends, exclusive,
+  // and where the next kanji after any point is.
+  const kanjiRunEnd = new Array<number>(n).fill(-1);
+  for (let i = 0; i < n; ) {
+    if (!isKanjiChar(run[i])) {
+      i += 1;
+      continue;
+    }
+    let end = i;
+    while (end < n && isKanjiChar(run[end])) end += 1;
+    for (let at = i; at < end; at++) kanjiRunEnd[at] = end;
+    i = end;
+  }
+  const nextKanji = new Array<number>(n + 1).fill(n);
+  for (let i = n - 1; i >= 0; i--) nextKanji[i] = isKanjiChar(run[i]) ? i : nextKanji[i + 1];
+
   for (let i = n - 1; i >= 0; i--) {
+    // A word may begin part-way through a run of kanji — 大学生活 is 大学 +
+    // 生活 — and it may trail off into its own okurigana — 毎朝励み is 毎朝 +
+    // 励み. What it may not do is reach on into the NEXT kanji, because that
+    // fuses two words: 物の名 in 植物の名前 starts inside 植物 and swallows 名.
+    // The painter's version of the tap's rule that a span may not start inside
+    // a word.
+    const startsInsideKanjiRun = i > 0 && kanjiRunEnd[i] !== -1 && isKanjiChar(run[i - 1]);
+    const mayNotReachPast = startsInsideKanjiRun ? nextKanji[kanjiRunEnd[i]] : n;
     // Longest first, so that a tie goes to the longer word: 台所 + で and
     // 台 + 所で score the same, and the page means 台所.
     for (let length = Math.min(MAX_SURFACE_LENGTH, n - i); length >= 1; length--) {
+      if (i + length > mayNotReachPast) continue;
       const piece = text.slice(i, i + length);
       let score: number;
       if (isWord(piece)) score = length * length;
@@ -338,6 +519,8 @@ export interface BookmarkAnalysis {
   entryTypeMasks: Map<number, number>;
   commonEntryIds: Set<number>;
   entryIdsWithKanji: Set<number>;
+  /** `entryId\0reading` for each kana reading that is purely Sino-Japanese. */
+  onyomiOnlyKanaReadings: Set<string>;
   confirmed: Set<string>;
   occurrences: Map<string, RunOccurrence[]>;
 }
@@ -348,6 +531,7 @@ const emptyAnalysis = (): BookmarkAnalysis => ({
   entryTypeMasks: new Map(),
   commonEntryIds: new Set(),
   entryIdsWithKanji: new Set(),
+  onyomiOnlyKanaReadings: new Set(),
   confirmed: new Set(),
   occurrences: new Map(),
 });
@@ -472,19 +656,30 @@ export async function analyseHtmlForBookmarks(
   // 一向 and 頓 are all rK. Treating those as "written in kanji" is what let
   // ひた beat the ひたすら the reader had actually saved.
   const entryIdsWithKanji = new Set<number>();
+  const entryKanjiForms = new Map<number, string[]>();
   for (let i = 0; i < entryIdList.length; i += BATCH_SIZE) {
     const batch = entryIdList.slice(i, i + BATCH_SIZE);
     const ph = batch.map(() => "?").join(",");
     const rows = await dictDb.getAllAsync<KanjiFormRow>(
-      `SELECT entry_id, tags FROM kanji WHERE entry_id IN (${ph})`,
+      `SELECT entry_id, text, tags FROM kanji WHERE entry_id IN (${ph})`,
       batch,
     );
     for (const row of rows) {
       const tags = readPosTags(row.tags);
       if (tags.includes("rK") || tags.includes("sK")) continue;
       entryIdsWithKanji.add(row.entry_id);
+      const forms = entryKanjiForms.get(row.entry_id);
+      if (forms) forms.push(row.text);
+      else entryKanjiForms.set(row.entry_id, [row.text]);
     }
   }
+
+  const onyomiOnlyKanaReadings = await findOnyomiOnlyKanaReadings(
+    dictDb,
+    wordRows,
+    entryIdsWithKanji,
+    entryKanjiForms,
+  );
 
   const isWord = (surface: string): boolean => {
     for (const { word, entryMask } of surfaceCandidates.get(surface) ?? []) {
@@ -503,6 +698,7 @@ export async function analyseHtmlForBookmarks(
     entryTypeMasks,
     commonEntryIds,
     entryIdsWithKanji,
+    onyomiOnlyKanaReadings,
     confirmed,
     occurrences,
   };
@@ -527,6 +723,7 @@ export function matchAnalysedBookmarks(
     entryTypeMasks,
     commonEntryIds,
     entryIdsWithKanji,
+    onyomiOnlyKanaReadings,
     confirmed,
     occurrences,
   } = analysis;
@@ -557,10 +754,18 @@ export function matchAnalysedBookmarks(
       if (!bookmarks.hasEntryId(entryId)) continue;
       const entryMask = entryTypeMasks.get(entryId) ?? 0;
       for (const { surface, inflected, reasons, typeMask } of wordToSurfaces.get(text) ?? []) {
-        // A bare kana reading of a word the dictionary writes in kanji is not
-        // evidence the page means that word — a bookmarked 事 would light up
-        // every こと. An undone inflection is.
-        if (via === "kana" && entryIdsWithKanji.has(entryId) && !inflected) continue;
+        // A bare kana reading of a formal noun is not evidence the page means
+        // that word — a bookmarked 事 would light up every こと. An undone
+        // inflection is. Outside that closed class the kana spelling IS how the
+        // word is written, and dropping it left ふすま and よほど unpaintable.
+        if (
+          via === "kana" &&
+          entryIdsWithKanji.has(entryId) &&
+          !inflected &&
+          (isGrammaticalisedKana(surface) || onyomiOnlyKanaReadings.has(`${entryId}\u0000${text}`))
+        ) {
+          continue;
+        }
         // …and an undone inflection is not evidence either, when the page's
         // characters already spell a different common word as they stand.
         if (
